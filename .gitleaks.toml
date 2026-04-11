@@ -1,0 +1,11 @@
+# Gitleaks configuration for Nalu
+# https://github.com/gitleaks/gitleaks
+
+title = "Nalu gitleaks config"
+
+[allowlist]
+  # Next.js build output contains auto-generated preview mode keys — not real secrets
+  paths = [
+    '''^\.next/''',
+    '''node_modules/''',
+  ]
