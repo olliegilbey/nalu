@@ -44,18 +44,17 @@ const eslintConfig = defineConfig([
     files: ["**/*.test.ts", "**/*.test.tsx"],
     rules: {
       "max-lines": "off",
+      // Catch .only anywhere in the member chain: it.only(), describe.only(),
+      // test.only(), it.only.each(), test.concurrent.only(), etc.
       "no-restricted-syntax": [
         "error",
         {
-          selector: "CallExpression[callee.object.name='it'][callee.property.name='only']",
+          selector: "MemberExpression[property.name='only'][object.name=/^(it|describe|test)$/]",
           message: "Remove .only before committing",
         },
         {
-          selector: "CallExpression[callee.object.name='describe'][callee.property.name='only']",
-          message: "Remove .only before committing",
-        },
-        {
-          selector: "CallExpression[callee.object.name='test'][callee.property.name='only']",
+          selector:
+            "MemberExpression[property.name='only'][object.object.name=/^(it|describe|test)$/]",
           message: "Remove .only before committing",
         },
       ],

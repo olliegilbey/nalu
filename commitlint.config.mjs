@@ -1,6 +1,6 @@
 // Conventional Commits, restricted to the types we actually use.
 // Mirrors the global prefs in ~/.claude/CLAUDE.md.
-export default {
+const config = {
   extends: ["@commitlint/config-conventional"],
   rules: {
     "type-enum": [
@@ -10,3 +10,5 @@ export default {
     ],
   },
 };
+
+export default config;

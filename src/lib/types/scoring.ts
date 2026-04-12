@@ -1,9 +1,11 @@
+import type { QualityScore } from "@/lib/types/spaced-repetition";
+
 /**
  * Minimal concept state needed for tier advancement checks — just the most
  * recent quality score per concept in the current tier.
  */
 export interface ConceptState {
-  readonly lastQualityScore: number;
+  readonly lastQualityScore: QualityScore;
 }
 
 /**

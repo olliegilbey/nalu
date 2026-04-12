@@ -36,8 +36,9 @@ format-check:
 deadcode:
     bun x knip
 
-# Run all checks (format + lint + typecheck + test)
-check: format-check lint typecheck test
+# Run all checks (format + lint + typecheck + test + deadcode).
+# Matches CI; green locally means green on PR.
+check: format-check lint typecheck test deadcode
 
 # Start production server
 start:

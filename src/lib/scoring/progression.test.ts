@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { checkTierAdvancement } from "./progression";
 import type { ConceptState } from "@/lib/types/scoring";
+import type { QualityScore } from "@/lib/types/spaced-repetition";
 
-const concept = (q: number): ConceptState => ({ lastQualityScore: q });
+const concept = (q: QualityScore): ConceptState => ({ lastQualityScore: q });
 
 describe("checkTierAdvancement", () => {
   describe("minimum concept threshold (5)", () => {

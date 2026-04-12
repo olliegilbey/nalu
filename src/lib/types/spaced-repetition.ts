@@ -21,6 +21,12 @@ export const qualityScoreSchema = z.union([
   z.literal(4),
   z.literal(5),
 ]);
+
+/**
+ * The integer 0-5 quality score produced by the LLM assessment step.
+ *
+ * @see qualityScoreSchema for the validation boundary.
+ */
 export type QualityScore = z.infer<typeof qualityScoreSchema>;
 
 /**
