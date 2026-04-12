@@ -28,3 +28,5 @@ AI-powered learning platform. See `docs/PRD.md` for full spec, `CLAUDE.md` for d
 - TypeScript strict. No `any`. Zod at all trust boundaries.
 - Max 200 lines per file. Colocated tests (`foo.test.ts` next to `foo.ts`).
 - The LLM generates content. **Deterministic code** controls XP, progression, and scoring.
+- **Never bypass git hooks.** No `--no-verify`, no `HUSKY=0`, no hook deletion. If a hook fails, fix the root cause. CI re-runs every check and will reject the PR anyway.
+- **All algorithm tunables in `src/lib/config/tuning.ts`.** Scoring and spaced-repetition files enforce `no-magic-numbers` via ESLint.
