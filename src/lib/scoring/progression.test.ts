@@ -21,9 +21,7 @@ describe("checkTierAdvancement", () => {
     });
 
     it("exactly 5 concepts all passing → can advance", () => {
-      const r = checkTierAdvancement([
-        concept(3), concept(4), concept(5), concept(3), concept(4),
-      ]);
+      const r = checkTierAdvancement([concept(3), concept(4), concept(5), concept(3), concept(4)]);
       expect(r.canAdvance).toBe(true);
       expect(r.minimumConceptsMet).toBe(true);
       expect(r.totalConcepts).toBe(5);
@@ -33,27 +31,30 @@ describe("checkTierAdvancement", () => {
 
   describe("80% passing threshold", () => {
     it("5 concepts, 4 passing (80%) → can advance (inclusive)", () => {
-      const r = checkTierAdvancement([
-        concept(3), concept(4), concept(5), concept(3), concept(2),
-      ]);
+      const r = checkTierAdvancement([concept(3), concept(4), concept(5), concept(3), concept(2)]);
       expect(r.canAdvance).toBe(true);
       expect(r.passingConcepts).toBe(4);
       expect(r.passingPercentage).toBe(0.8);
     });
 
     it("5 concepts, 3 passing (60%) → cannot advance", () => {
-      const r = checkTierAdvancement([
-        concept(3), concept(4), concept(5), concept(1), concept(0),
-      ]);
+      const r = checkTierAdvancement([concept(3), concept(4), concept(5), concept(1), concept(0)]);
       expect(r.canAdvance).toBe(false);
       expect(r.passingConcepts).toBe(3);
     });
 
     it("10 concepts, 8 passing → can advance", () => {
       const states: readonly ConceptState[] = [
-        concept(4), concept(4), concept(4), concept(4),
-        concept(4), concept(4), concept(4), concept(4),
-        concept(1), concept(2),
+        concept(4),
+        concept(4),
+        concept(4),
+        concept(4),
+        concept(4),
+        concept(4),
+        concept(4),
+        concept(4),
+        concept(1),
+        concept(2),
       ];
       const r = checkTierAdvancement(states);
       expect(r.canAdvance).toBe(true);
@@ -62,9 +63,16 @@ describe("checkTierAdvancement", () => {
 
     it("10 concepts, 7 passing → cannot advance", () => {
       const states: readonly ConceptState[] = [
-        concept(4), concept(4), concept(4), concept(4),
-        concept(4), concept(4), concept(4),
-        concept(1), concept(2), concept(0),
+        concept(4),
+        concept(4),
+        concept(4),
+        concept(4),
+        concept(4),
+        concept(4),
+        concept(4),
+        concept(1),
+        concept(2),
+        concept(0),
       ];
       const r = checkTierAdvancement(states);
       expect(r.canAdvance).toBe(false);
@@ -73,17 +81,13 @@ describe("checkTierAdvancement", () => {
 
   describe("quality boundary", () => {
     it("quality exactly 3 counts as passing", () => {
-      const r = checkTierAdvancement([
-        concept(3), concept(3), concept(3), concept(3), concept(3),
-      ]);
+      const r = checkTierAdvancement([concept(3), concept(3), concept(3), concept(3), concept(3)]);
       expect(r.canAdvance).toBe(true);
       expect(r.passingConcepts).toBe(5);
     });
 
     it("quality exactly 2 does not count as passing", () => {
-      const r = checkTierAdvancement([
-        concept(2), concept(2), concept(2), concept(2), concept(2),
-      ]);
+      const r = checkTierAdvancement([concept(2), concept(2), concept(2), concept(2), concept(2)]);
       expect(r.canAdvance).toBe(false);
       expect(r.passingConcepts).toBe(0);
     });

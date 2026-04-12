@@ -30,8 +30,10 @@
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-functional": "^9.0.4",
     "husky": "^9.1.7",
+    "prettier": "^3.8.2",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.4"

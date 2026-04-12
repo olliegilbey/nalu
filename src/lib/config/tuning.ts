@@ -45,12 +45,12 @@ export const SM2 = {
 export const XP = {
   basePerTier: 10,
   qualityMultipliers: {
-    0: 0,     // no engagement / nonsensical
-    1: 0,     // wrong with clear misunderstanding
-    2: 0.25,  // wrong but partial understanding
-    3: 0.75,  // correct but uncertain or incomplete
-    4: 1,     // correct and clear
-    5: 1.5,   // deep understanding; could teach it
+    0: 0, // no engagement / nonsensical
+    1: 0, // wrong with clear misunderstanding
+    2: 0.25, // wrong but partial understanding
+    3: 0.75, // correct but uncertain or incomplete
+    4: 1, // correct and clear
+    5: 1.5, // deep understanding; could teach it
   },
 } as const satisfies {
   readonly basePerTier: number;
