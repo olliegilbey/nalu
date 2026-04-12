@@ -90,3 +90,24 @@ export const PROGRESSION = {
   // "don't trap learners on one stubborn concept." PRD-tunable.
   passingRatio: 0.8,
 } as const;
+
+/**
+ * LLM transport defaults. Applied in `src/lib/llm/generate.ts` to every
+ * structured / chat call unless the caller overrides.
+ *
+ * `defaultTemperature` favours consistency over creativity — a pedagogical
+ * tutor should explain the same concept the same way twice. Individual
+ * flows (e.g. creative framing) may override upward.
+ *
+ * `maxRetries` bounds transient-failure retries (timeouts, 5xx) for
+ * every call. The AI SDK handles JSON-parse repair on structured
+ * outputs internally — no separate budget.
+ */
+export const LLM = {
+  // Low temp → consistent explanations + predictable XML tag emission.
+  // PRD-tunable; raise per-flow only where variety aids learning.
+  defaultTemperature: 0.3,
+  // Transport retry budget for transient errors. Used by both structured
+  // and chat calls so resilience is uniform.
+  maxRetries: 3,
+} as const;

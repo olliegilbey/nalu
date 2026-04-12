@@ -26,7 +26,7 @@ Next.js 16.2 (App Router, Turbopack), TypeScript strict, tRPC v11, Zod, Tailwind
 | --------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Business logic  | `src/lib/` only. Components and routers contain zero logic.                                                          |
 | Prompts         | `src/lib/prompts/` only. Pure template functions → strings.                                                          |
-| LLM calls       | `src/lib/llm/client.ts` only. No direct provider API calls elsewhere.                                                |
+| LLM calls       | `src/lib/llm/` only (`provider.ts` + `generate.ts`). No direct `ai` SDK imports elsewhere.                           |
 | DB access       | `src/db/queries/` only. No raw SQL in routers or components.                                                         |
 | Routers         | `src/server/routers/`. Orchestrate lib calls. Thin.                                                                  |
 | Components      | `src/components/`. Thin render layer. Call tRPC hooks for data.                                                      |
