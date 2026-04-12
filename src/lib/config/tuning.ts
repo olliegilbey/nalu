@@ -99,19 +99,15 @@ export const PROGRESSION = {
  * tutor should explain the same concept the same way twice. Individual
  * flows (e.g. creative framing) may override upward.
  *
- * `maxRetries` bounds transient-failure retries (timeouts, 5xx). The AI
- * SDK handles structured-output repair internally via
- * `structuredRepairAttempts`; that is separate from transport retries.
+ * `maxRetries` bounds transient-failure retries (timeouts, 5xx) for
+ * every call. The AI SDK handles JSON-parse repair on structured
+ * outputs internally — no separate budget.
  */
 export const LLM = {
   // Low temp → consistent explanations + predictable XML tag emission.
   // PRD-tunable; raise per-flow only where variety aids learning.
   defaultTemperature: 0.3,
-  // Transport retry budget for transient errors. Matches the scaffolding
-  // doc ("max 3") and the AI SDK default.
+  // Transport retry budget for transient errors. Used by both structured
+  // and chat calls so resilience is uniform.
   maxRetries: 3,
-  // Structured-output repair attempts — when Zod validation of a
-  // `generateObject` response fails, the SDK re-prompts with the error
-  // this many times before giving up.
-  structuredRepairAttempts: 2,
 } as const;

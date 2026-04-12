@@ -18,13 +18,28 @@ export interface GenerateOptions {
   readonly model?: LlmModel;
 }
 
+/**
+ * Successful structured-output result.
+ *
+ * @typeParam T - The Zod-inferred shape returned by the caller's schema.
+ *                The SDK guarantees `object` parses under that schema.
+ */
 export interface StructuredResult<T> {
+  /** Parsed, schema-validated payload. */
   readonly object: T;
+  /** Provider-reported token usage for this call. */
   readonly usage: LlmUsage;
 }
 
+/**
+ * Successful free-form chat result. Text is raw model output — callers
+ * extract embedded XML blocks via `extractTag` and Zod-validate the
+ * payload at that boundary.
+ */
 export interface ChatResult {
+  /** Raw model output. May be empty on abnormal completions. */
   readonly text: string;
+  /** Provider-reported token usage for this call. */
   readonly usage: LlmUsage;
 }
 
@@ -33,8 +48,8 @@ export interface ChatResult {
  * provider-native JSON-schema enforcement where available (Cerebras
  * does) and falls back to prompt-coaxed JSON + validation elsewhere.
  *
- * Retry/repair on Zod-validation failures is handled by the SDK —
- * `structuredRepairAttempts` is the budget.
+ * `maxRetries` bounds transport-level retries (timeouts, 5xx). The
+ * SDK's internal JSON-parse repair is a separate, automatic pass.
  */
 export async function generateStructured<T>(
   schema: z.ZodType<T>,
@@ -46,7 +61,7 @@ export async function generateStructured<T>(
     schema,
     messages: [...messages],
     temperature: opts.temperature ?? LLM.defaultTemperature,
-    maxRetries: opts.maxRetries ?? LLM.structuredRepairAttempts,
+    maxRetries: opts.maxRetries ?? LLM.maxRetries,
   });
   return { object: result.object as T, usage: result.usage };
 }

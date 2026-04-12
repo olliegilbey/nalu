@@ -35,7 +35,7 @@ describe("generateStructured", () => {
       expect.objectContaining({
         schema,
         temperature: LLM.defaultTemperature,
-        maxRetries: LLM.structuredRepairAttempts,
+        maxRetries: LLM.maxRetries,
       }),
     );
   });

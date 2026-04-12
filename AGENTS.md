@@ -23,7 +23,7 @@ AI-powered learning platform. See `docs/PRD.md` for full spec, `CLAUDE.md` for d
 
 - **All business logic in `src/lib/`** — not in components or routers.
 - **All prompts in `src/lib/prompts/`** — no prompt text anywhere else.
-- **All LLM calls through `src/lib/llm/client.ts`** — no direct provider API calls.
+- **All LLM calls through `src/lib/llm/`** (`provider.ts` + `generate.ts`) — no direct `ai` SDK imports elsewhere.
 - **All DB access through `src/db/queries/`** — no raw SQL elsewhere.
 - TypeScript strict. No `any`. Zod at all trust boundaries.
 - Max 200 lines per file. Colocated tests (`foo.test.ts` next to `foo.ts`).
