@@ -79,6 +79,19 @@ printf "${GREEN}✅ Phase 1 complete: No secrets detected${NC}\n"
 echo ""
 
 # ============================================
+# PHASE 1.5: AUTO-FORMAT STAGED (lint-staged)
+# Prettier --write + eslint --fix on staged files only.
+# Auto-fixes reformat-only drift; re-stages under the hood.
+# ============================================
+printf "${BLUE}→ Phase 1.5/4: Auto-format staged${NC}\n"
+if ! bun x lint-staged 2>&1; then
+  printf "${RED}❌ lint-staged failed${NC}\n"
+  exit 1
+fi
+printf "${GREEN}✅ Phase 1.5 complete: staged files formatted${NC}\n"
+echo ""
+
+# ============================================
 # PHASE 2: LINT (~3-5s, only staged TS files)
 # Agents introduce lint violations frequently.
 # ============================================

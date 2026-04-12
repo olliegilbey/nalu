@@ -24,8 +24,21 @@ lint:
 typecheck:
     bunx tsc --noEmit
 
-# Run all checks (lint + typecheck + test)
-check: lint typecheck test
+# Format all files with Prettier
+format:
+    bun x prettier --write .
+
+# Check formatting without writing
+format-check:
+    bun x prettier --check .
+
+# Find unused exports, deps, files
+deadcode:
+    bun x knip
+
+# Run all checks (format + lint + typecheck + test + deadcode).
+# Matches CI; green locally means green on PR.
+check: format-check lint typecheck test deadcode
 
 # Start production server
 start:

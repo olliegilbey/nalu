@@ -10,21 +10,21 @@ Thin rendering layer. Components call tRPC hooks for data. No business logic, sc
 
 ## Kanagawa Palette (from kanagawa.nvim)
 
-| Role | Token | Hex |
-|------|-------|-----|
-| Background | sumiInk3 | #1F1F28 |
-| Subtle bg | sumiInk4 | #2A2A37 |
-| Card/float bg | waveBlue1 | #223249 |
-| Card border/hover | waveBlue2 | #2D4F67 |
-| Primary | crystalBlue | #7E9CD8 |
-| Foreground | fujiWhite | #DCD7BA |
-| Muted text | fujiGray | #727169 |
-| Accent gold | carpYellow | #E6C384 |
-| Success/correct | springGreen | #98BB6C |
-| Error/incorrect | waveRed | #E46876 |
-| Warning/review | autumnYellow | #DCA561 |
-| Accent violet | oniViolet | #957FB8 |
-| Accent pink | sakuraPink | #D27E99 |
-| Accent orange | surimiOrange | #FFA066 |
+| Role              | Token        | Hex     |
+| ----------------- | ------------ | ------- |
+| Background        | sumiInk3     | #1F1F28 |
+| Subtle bg         | sumiInk4     | #2A2A37 |
+| Card/float bg     | waveBlue1    | #223249 |
+| Card border/hover | waveBlue2    | #2D4F67 |
+| Primary           | crystalBlue  | #7E9CD8 |
+| Foreground        | fujiWhite    | #DCD7BA |
+| Muted text        | fujiGray     | #727169 |
+| Accent gold       | carpYellow   | #E6C384 |
+| Success/correct   | springGreen  | #98BB6C |
+| Error/incorrect   | waveRed      | #E46876 |
+| Warning/review    | autumnYellow | #DCA561 |
+| Accent violet     | oniViolet    | #957FB8 |
+| Accent pink       | sakuraPink   | #D27E99 |
+| Accent orange     | surimiOrange | #FFA066 |
 
 Glassmorphic, Apple liquid glass inspired. Rounded corners. Generous whitespace. Translucent panels with subtle blur.

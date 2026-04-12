@@ -24,9 +24,7 @@ export function Providers({ children }: { readonly children: React.ReactNode }) 
 
   return (
     <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>
-        {children}
-      </QueryClientProvider>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </TRPCProvider>
   );
 }
