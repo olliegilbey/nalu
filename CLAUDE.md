@@ -30,6 +30,8 @@ Next.js 16.2 (App Router, Turbopack), TypeScript strict, tRPC v11, Zod, Tailwind
 | DB access | `src/db/queries/` only. No raw SQL in routers or components. |
 | Routers | `src/server/routers/`. Orchestrate lib calls. Thin. |
 | Components | `src/components/`. Thin render layer. Call tRPC hooks for data. |
+| Tuning | `src/lib/config/tuning.ts` only. All algorithm knobs (SM-2, XP, progression). Zero magic numbers in algorithm files. |
+| Types vs config | `src/lib/types/` holds types + Zod schemas only. Runtime constants live in `src/lib/config/`. |
 
 ## Code Standards
 
