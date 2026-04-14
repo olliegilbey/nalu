@@ -262,6 +262,8 @@ User types a topic
   -> Redirect to first learning session
 ```
 
+**Scoping vs. course-start prompts.** The clarification and baseline turns use dedicated _scoping prompts_ whose only purpose is to elicit questions and evaluate answers. Once the learner finishes the baseline, those scoping prompts are discarded. The first learning session builds a fresh course-start system prompt (Section 5.1) that embeds the clarification answers as semi-static context (`<topic_scope>`) alongside the framework and starting tier. Scoping instructions never leak into ongoing course turns.
+
 ### 4.2 Learning Session Flow
 
 ```
@@ -332,6 +334,11 @@ The framework is a scaffold, not a cage.
 **All prompt text lives in `src/lib/prompts/`. No exceptions.**
 
 Prompts are pure template functions. They accept typed parameters, return strings, and contain zero business logic.
+
+Two prompt families exist:
+
+1. **Scoping prompts** (`clarification.ts`, `assessment.ts` when used for the baseline) — ephemeral. Drive the onboarding turns only, then are discarded. They do not persist into the course.
+2. **Course prompts** (Section 5.1 and below) — constructed fresh at the start of the first learning session from the gathered scoping answers plus the generated framework, and reused for every subsequent turn.
 
 ### 5.1 System Prompt (ordered for cache efficiency)
 
