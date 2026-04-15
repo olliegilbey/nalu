@@ -103,6 +103,31 @@ export const PROGRESSION = {
  * every call. The AI SDK handles JSON-parse repair on structured
  * outputs internally — no separate budget.
  */
+/**
+ * Proficiency-framework generation bounds. Consumed by
+ * `src/lib/prompts/framework.ts` (prompt instructions + Zod schema) so the
+ * two never drift. Tier counts are PRD-sourced; per-item character caps are
+ * defence-in-depth — a runaway LLM could otherwise emit multi-kilobyte
+ * tiers and exhaust the context window on the next turn.
+ */
+export const FRAMEWORK = {
+  // PRD §3: "3-8 tiers generated per topic (flexible by breadth)".
+  minTiers: 3,
+  maxTiers: 8,
+  // PRD §4.1: each tier carries example concepts; baseline generation
+  // (next flow) uses these to spread 7–9 questions across tiers. 4–7
+  // gives baseline enough seeds without bloating the stored framework.
+  minExampleConceptsPerTier: 4,
+  maxExampleConceptsPerTier: 7,
+  // Defence-in-depth character caps. The prompt asks for concise fields;
+  // the schema enforces it. Chosen to comfortably fit any reasonable
+  // tier label / one-to-two-sentence description / concept phrase while
+  // refusing pathological output.
+  tierNameMaxChars: 80,
+  tierDescriptionMaxChars: 400,
+  exampleConceptMaxChars: 120,
+} as const;
+
 export const LLM = {
   // Low temp → consistent explanations + predictable XML tag emission.
   // PRD-tunable; raise per-flow only where variety aids learning.
