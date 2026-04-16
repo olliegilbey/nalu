@@ -14,7 +14,15 @@ import type { LlmMessage } from "@/lib/types/llm";
  * embeds those answers as semi-static context; this scoping prompt is
  * discarded and is not layered onto subsequent course turns.
  */
-const CLARIFICATION_SYSTEM_PROMPT = `<scoping_role>
+/**
+ * The scoping conversation's single system prompt. Only the clarification
+ * turn emits a `role: "system"` message; every subsequent scoping turn
+ * (framework generation, baseline generation, baseline grading) is
+ * appended as additional user/assistant messages on the growing history
+ * initiated by this block. Exported so those downstream modules can
+ * reconstruct the same history.
+ */
+export const CLARIFICATION_SYSTEM_PROMPT = `<scoping_role>
 You are Nalu, an AI tutor scoping a new course.
 </scoping_role>
 
@@ -25,6 +33,7 @@ A learner has supplied a topic they want to study. Your job is to ask 2 to 4 sho
 <question_rules>
 - Keep each question short and specific. Prefer one concept per question.
 - Focus on scope (sub-area), baseline knowledge, and desired outcome.
+- Probe the learner's current grasp of the topic alongside their sub-area interest and end goal, so the next scoping turn can both shape tiers and place the learner at a realistic starting tier.
 - Do not answer the topic, teach, or suggest a framework yet.
 - Do not ask for personal information.
 </question_rules>

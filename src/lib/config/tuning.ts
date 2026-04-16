@@ -126,6 +126,64 @@ export const FRAMEWORK = {
   tierNameMaxChars: 80,
   tierDescriptionMaxChars: 400,
   exampleConceptMaxChars: 120,
+  // P-ON-02: baseline scope is narrow, not broad. Framework generation
+  // emits `[estimate-1, estimate, estimate+1]` clamped to the produced
+  // tier range, so the natural upper bound is 3. The schema enforces it
+  // so an over-eager model cannot widen scope to the whole framework.
+  maxBaselineScopeSize: 3,
+} as const;
+
+/**
+ * Baseline-assessment bounds. Consumed by `src/lib/prompts/baseline.ts`
+ * (generation), `src/lib/prompts/baselineEvaluation.ts` (batch grading),
+ * and `src/lib/course/gradeBaseline.ts` (mechanical MC scoring). Keeping
+ * the numbers in one place means prompt text, Zod schemas, and grading
+ * code can't drift.
+ *
+ * Question counts follow PRD §4.1: 7–9 baseline questions total, with
+ * ~3 per in-scope tier. `FRAMEWORK.maxBaselineScopeSize` × 3 = 9 caps
+ * the upper bound; 7 floors it so single-tier-scope edge cases still
+ * produce a useful signal.
+ *
+ * Mechanical MC quality scores (q=4 correct, q=1 incorrect) encode what
+ * a correct click tells us and what a wrong click tells us — a correct
+ * MC is "correct and clear" but not the teach-level q=5 a free-text
+ * answer can earn; an incorrect MC is "wrong with clear misunderstanding"
+ * (q=1) rather than q=0 non-engagement, because clicking is engagement.
+ * The XP multiplier table in `XP.qualityMultipliers` floors q=1 to 0,
+ * so wrong MC clicks still earn nothing — anti-gaming holds.
+ */
+export const BASELINE = {
+  // PRD §4.1: "baseline assessment — 7-9 questions". Floor/ceiling enforced
+  // by the Zod schema; generation aims for `questionsPerTier × |scope|`.
+  minQuestions: 7,
+  maxQuestions: 9,
+  // Three probes per in-scope tier give enough signal to detect friction
+  // without fatiguing the learner before teaching even begins.
+  questionsPerTier: 3,
+  // PRD §4.1 UX simulation: MC cards are always four options. No "Not sure"
+  // button — the freetext escape is the non-engagement affordance (P-AC-02).
+  mcOptionCount: 4,
+  // Defence-in-depth character caps. Mirrors FRAMEWORK's rationale: prompt
+  // asks for concise fields, schema refuses pathological output.
+  conceptNameMaxChars: 120,
+  questionMaxChars: 500,
+  optionMaxChars: 200,
+  rubricMaxChars: 400,
+  rationaleMaxChars: 400,
+  // Mechanical MC scoring (P-AC-04). A correct click maps to q=4 ("correct
+  // and clear") — reserve q=5 for free-text answers where the learner has
+  // room to demonstrate teach-level depth. An incorrect click maps to q=1
+  // ("wrong with clear misunderstanding"): clicking is engagement, so not
+  // q=0, but the XP multiplier table still floors q=1 rewards to zero.
+  mcCorrectQuality: 4,
+  mcIncorrectQuality: 1,
+  // P-AC-03: when an MC question is answered via the freetext-escape hatch,
+  // the grader prompt prepends this sentence to the learner's prose. This
+  // lets the model distinguish a genuine-but-unsure attempt from a flat
+  // "don't know" from a sideways insight when scoring.
+  freetextEscapePrefix:
+    "The learner did not select a multiple-choice option. They wrote the following instead:",
 } as const;
 
 export const LLM = {

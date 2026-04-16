@@ -62,11 +62,13 @@ describe("generateFramework", () => {
       messages: readonly { role: string; content: string }[];
     };
     expect(call.schema).toBe(frameworkSchema);
-    // system + topic + clarifications
-    expect(call.messages).toHaveLength(3);
+    // Scoping is one conversation: clarification system + topic + clarification
+    // assistant replay + framework-task user message.
+    expect(call.messages).toHaveLength(4);
     expect(call.messages[0]?.role).toBe("system");
     expect(call.messages[1]?.role).toBe("user");
-    expect(call.messages[2]?.role).toBe("user");
+    expect(call.messages[2]?.role).toBe("assistant");
+    expect(call.messages[3]?.role).toBe("user");
   });
 
   it("sanitises topic and every answer before dispatch", async () => {
@@ -84,7 +86,10 @@ describe("generateFramework", () => {
       messages: readonly { role: string; content: string }[];
     };
     const topic = String(call.messages[1]?.content);
-    const qa = String(call.messages[2]?.content);
+    // Q&A body lives in the framework-task user message (index 3) after
+    // the continuation refactor — the assistant message at index 2 only
+    // replays the model's clarification questions, not the answers.
+    const qa = String(call.messages[3]?.content);
 
     expect(topic).toContain("&lt;script&gt;topic&lt;/script&gt;");
     expect(topic).not.toContain("<script>");

@@ -25,6 +25,15 @@ describe("buildClarificationPrompt", () => {
     expect(text.toLowerCase()).toContain("data");
   });
 
+  it("system block asks questions to support starting-tier placement (P-ON-01)", () => {
+    // Clarification runs before framework generation, so tiers don't exist
+    // yet. The goal is indirect: elicit grasp-of-topic + goal so the next
+    // turn can pick a realistic estimatedStartingTier.
+    const [system] = buildClarificationPrompt({ topic: "anything" });
+    const text = String(system?.content).toLowerCase();
+    expect(text).toContain("starting tier");
+  });
+
   it("wraps the topic via sanitiseUserInput in the user message", () => {
     const [, user] = buildClarificationPrompt({ topic: "<script>x</script>" });
     const text = String(user?.content);
