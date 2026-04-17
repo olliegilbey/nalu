@@ -1,10 +1,21 @@
 import { describe, it, expect } from "vitest";
 import { FRAMEWORK } from "@/lib/config/tuning";
 import { buildFrameworkPrompt, frameworkSchema } from "./framework";
+import { CLARIFICATION_SYSTEM_PROMPT, buildClarificationPrompt } from "./clarification";
 
 // Minimal valid framework built from tuning bounds — reused across schema
 // assertions so bound changes only edit this one fixture.
 function buildValidFramework(tierCount: number) {
+  // Mid-tier estimate with a full three-wide contiguous scope that fits
+  // inside `tierCount` for any tierCount ≥ 3 (the minimum). Keeps every
+  // positive schema test on a single shape.
+  const estimatedStartingTier = Math.min(2, tierCount);
+  const scopeLow = Math.max(1, estimatedStartingTier - 1);
+  const scopeHigh = Math.min(tierCount, estimatedStartingTier + 1);
+  const baselineScopeTiers = Array.from(
+    { length: scopeHigh - scopeLow + 1 },
+    (_, i) => scopeLow + i,
+  );
   return {
     tiers: Array.from({ length: tierCount }, (_, i) => ({
       number: i + 1,
@@ -15,49 +26,95 @@ function buildValidFramework(tierCount: number) {
         (_, j) => `concept ${j + 1}`,
       ),
     })),
+    estimatedStartingTier,
+    baselineScopeTiers,
   };
 }
 
 describe("buildFrameworkPrompt", () => {
-  it("returns system + topic + clarifications in that order", () => {
+  it("continues the clarification conversation: sys + topic + assistant + framework-task", () => {
     const messages = buildFrameworkPrompt({
       topic: "Rust ownership",
       clarifications: [{ question: "Scope?", answer: "Backend services." }],
     });
-    expect(messages).toHaveLength(3);
+    expect(messages).toHaveLength(4);
     expect(messages[0]?.role).toBe("system");
     expect(messages[1]?.role).toBe("user");
-    expect(messages[2]?.role).toBe("user");
+    expect(messages[2]?.role).toBe("assistant");
+    expect(messages[3]?.role).toBe("user");
   });
 
-  it("keeps the system block byte-identical across inputs (cache-friendly)", () => {
-    const a = buildFrameworkPrompt({
-      topic: "Rust",
+  it("the first two messages are byte-identical to the clarification turn (cache prefix)", () => {
+    // The scoping phase is a single growing conversation. Each downstream
+    // turn MUST share the clarification's leading [system, topic] messages
+    // byte-for-byte so prompt-cache prefixes hit.
+    const topic = "Rust ownership";
+    const clarifyMessages = buildClarificationPrompt({ topic });
+    const frameworkMessages = buildFrameworkPrompt({
+      topic,
       clarifications: [{ question: "q?", answer: "a" }],
     });
-    const b = buildFrameworkPrompt({
-      topic: "Cooking sourdough",
-      clarifications: [
-        { question: "q1?", answer: "a1" },
-        { question: "q2?", answer: "a2" },
-      ],
-    });
-    expect(a[0]?.content).toBe(b[0]?.content);
+    expect(frameworkMessages[0]?.content).toBe(clarifyMessages[0]?.content);
+    expect(frameworkMessages[1]?.content).toBe(clarifyMessages[1]?.content);
   });
 
-  it("system block cites tier bounds and security guidance", () => {
+  it("the system block is the shared clarification system prompt", () => {
     const [system] = buildFrameworkPrompt({
       topic: "anything",
       clarifications: [{ question: "q?", answer: "a" }],
     });
-    const text = String(system?.content);
-    // Accepts "3-8", "3 to 8", "3–8".
-    expect(text).toMatch(/3.{0,5}8/);
-    expect(text.toLowerCase()).toContain("user_message");
-    expect(text.toLowerCase()).toContain("data");
+    expect(system?.content).toBe(CLARIFICATION_SYSTEM_PROMPT);
   });
 
-  it("wraps the topic via sanitiseUserInput, encoding HTML-dangerous chars", () => {
+  it("reconstructs the clarification assistant output from typed Q/A pairs", () => {
+    // The assistant message faithfully replays what the model produced on
+    // the prior turn (the clarifying questions), so the scoping history is
+    // a coherent transcript the model can reason over.
+    const [, , assistant] = buildFrameworkPrompt({
+      topic: "Rust",
+      clarifications: [
+        { question: "Scope?", answer: "a" },
+        { question: "Goal?", answer: "b" },
+      ],
+    });
+    const parsed = JSON.parse(String(assistant?.content));
+    expect(parsed).toEqual({ questions: ["Scope?", "Goal?"] });
+  });
+
+  it("the framework-task user message cites tier bounds and scope fields", () => {
+    const [, , , taskMsg] = buildFrameworkPrompt({
+      topic: "anything",
+      clarifications: [{ question: "q?", answer: "a" }],
+    });
+    const text = String(taskMsg?.content);
+    // Accepts "3-8", "3 to 8", "3–8".
+    expect(text).toMatch(/3.{0,5}8/);
+    expect(text).toContain("estimatedStartingTier");
+    expect(text).toContain("baselineScopeTiers");
+  });
+
+  it("sanitises every answer; questions are embedded verbatim in the task message", () => {
+    const [, , , taskMsg] = buildFrameworkPrompt({
+      topic: "safe topic",
+      clarifications: [
+        { question: "What sub-area?", answer: "<img onerror=1>" },
+        { question: "Prior experience?", answer: "none & new" },
+      ],
+    });
+    const text = String(taskMsg?.content);
+    // Questions are our own prior output (trusted, schema-bounded upstream)
+    // so they appear verbatim.
+    expect(text).toContain("What sub-area?");
+    expect(text).toContain("Prior experience?");
+    // Answers are HTML-encoded and wrapped in <user_message>.
+    expect(text).toContain("&lt;img onerror=1&gt;");
+    expect(text).not.toContain("<img onerror=1>");
+    expect(text).toContain("none &amp; new");
+    const openings = text.match(/<user_message>/g) ?? [];
+    expect(openings.length).toBe(2);
+  });
+
+  it("wraps the topic via sanitiseUserInput inside the shared clarification user turn", () => {
     const [, topicMsg] = buildFrameworkPrompt({
       topic: "<script>x</script>",
       clarifications: [{ question: "q?", answer: "a" }],
@@ -67,27 +124,6 @@ describe("buildFrameworkPrompt", () => {
     expect(text).toContain("</user_message>");
     expect(text).toContain("&lt;script&gt;");
     expect(text).not.toContain("<script>");
-  });
-
-  it("sanitises every answer; questions are embedded verbatim", () => {
-    const [, , qa] = buildFrameworkPrompt({
-      topic: "safe topic",
-      clarifications: [
-        { question: "What sub-area?", answer: "<img onerror=1>" },
-        { question: "Prior experience?", answer: "none & new" },
-      ],
-    });
-    const text = String(qa?.content);
-    // Questions appear unmodified (trusted, schema-bounded upstream).
-    expect(text).toContain("What sub-area?");
-    expect(text).toContain("Prior experience?");
-    // Answers are HTML-encoded and wrapped.
-    expect(text).toContain("&lt;img onerror=1&gt;");
-    expect(text).not.toContain("<img onerror=1>");
-    expect(text).toContain("none &amp; new");
-    // Each sanitised answer wrapped in its own <user_message> block.
-    const openings = text.match(/<user_message>/g) ?? [];
-    expect(openings.length).toBe(2);
   });
 });
 
@@ -115,6 +151,7 @@ describe("frameworkSchema", () => {
   it("rejects non-contiguous tier numbering", () => {
     const base = buildValidFramework(FRAMEWORK.minTiers);
     const skewed = {
+      ...base,
       tiers: base.tiers.map((t, i) => (i === 0 ? { ...t, number: 99 } : t)),
     };
     expect(frameworkSchema.safeParse(skewed).success).toBe(false);
@@ -123,6 +160,7 @@ describe("frameworkSchema", () => {
   it("rejects duplicate tier numbers", () => {
     const base = buildValidFramework(FRAMEWORK.minTiers);
     const dup = {
+      ...base,
       tiers: base.tiers.map((t) => ({ ...t, number: 1 })),
     };
     expect(frameworkSchema.safeParse(dup).success).toBe(false);
@@ -131,8 +169,48 @@ describe("frameworkSchema", () => {
   it("rejects empty example-concept arrays", () => {
     const base = buildValidFramework(FRAMEWORK.minTiers);
     const empty = {
+      ...base,
       tiers: base.tiers.map((t) => ({ ...t, exampleConcepts: [] })),
     };
     expect(frameworkSchema.safeParse(empty).success).toBe(false);
+  });
+
+  it("rejects estimatedStartingTier outside the produced tier set", () => {
+    const base = buildValidFramework(FRAMEWORK.minTiers);
+    const skew = { ...base, estimatedStartingTier: 99, baselineScopeTiers: [99] };
+    expect(frameworkSchema.safeParse(skew).success).toBe(false);
+  });
+
+  it("rejects non-contiguous baselineScopeTiers", () => {
+    const base = buildValidFramework(FRAMEWORK.maxTiers);
+    const skew = { ...base, estimatedStartingTier: 1, baselineScopeTiers: [1, 3] };
+    expect(frameworkSchema.safeParse(skew).success).toBe(false);
+  });
+
+  it("rejects unsorted / duplicate baselineScopeTiers", () => {
+    const base = buildValidFramework(FRAMEWORK.maxTiers);
+    const unsorted = { ...base, estimatedStartingTier: 2, baselineScopeTiers: [3, 2] };
+    expect(frameworkSchema.safeParse(unsorted).success).toBe(false);
+    const dup = { ...base, estimatedStartingTier: 2, baselineScopeTiers: [2, 2] };
+    expect(frameworkSchema.safeParse(dup).success).toBe(false);
+  });
+
+  it("rejects baselineScopeTiers larger than maxBaselineScopeSize", () => {
+    const base = buildValidFramework(FRAMEWORK.maxTiers);
+    const tooWide = {
+      ...base,
+      estimatedStartingTier: 2,
+      baselineScopeTiers: Array.from(
+        { length: FRAMEWORK.maxBaselineScopeSize + 1 },
+        (_, i) => i + 1,
+      ),
+    };
+    expect(frameworkSchema.safeParse(tooWide).success).toBe(false);
+  });
+
+  it("rejects baselineScopeTiers that omit estimatedStartingTier", () => {
+    const base = buildValidFramework(FRAMEWORK.maxTiers);
+    const missing = { ...base, estimatedStartingTier: 3, baselineScopeTiers: [1, 2] };
+    expect(frameworkSchema.safeParse(missing).success).toBe(false);
   });
 });

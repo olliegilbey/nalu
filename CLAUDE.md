@@ -47,9 +47,16 @@ Next.js 16.2 (App Router, Turbopack), TypeScript strict, tRPC v11, Zod, Tailwind
 ## Agent Workflow
 
 1. **Create a TODO list before each phase.** Check off items as you go.
-2. **Explain intent before writing code.** Brief comment or message on what and why.
-3. **Comment more than normal.** Optimise for a human reviewing in real-time at speed.
-4. **Run tests before committing.**
+2. **Pull the latest documentation** of the packages/frameworks you're using.
+3. **Explain intent before writing code.** Brief comment or message on what and why.
+4. **Comment more than normal.** Optimise for a human reviewing in real-time at speed.
+5. **Run tests before committing.**
+
+## Agent Directives
+
+- Be very concise in messages to the user, plan mode should remain as verbose as needed to achieve good results and unambiguity.
+- Use up-to-date documentation for implementations
+- Write functional code - the code checkers enforce functional-style programming
 
 ## Core Design Principle
 
