@@ -268,7 +268,7 @@ User types a topic
 
 ### 4.2 Learning Session Flow
 
-```
+```text
 User opens course
   -> Load: course, framework, summary, custom_instructions, startingContext
   -> Load: full chat history from last session (render in UI)
