@@ -238,42 +238,44 @@ CREATE TABLE assessments (
 
 ```
 User types a topic
-  -> tRPC: clarifyCourse
+  -> tRPC: course.clarify
     -> Call LLM with clarification prompt
     -> Model returns 2-3 targeted questions about scope and interest
     -> Render questions to user
     -> User answers
-  -> tRPC: generateFramework
+  -> tRPC: course.generateFramework
     -> Call LLM with topic + clarification answers
     -> Generate 3-8 proficiency tiers with names, descriptions, example concepts
     -> Validate with Zod
-    -> Store course with framework
-  -> tRPC: generateBaseline
-    -> Call LLM with framework
-    -> Generate 7-9 questions spanning tiers
+    -> Store course with framework. User may edit before continuing.
+  -> tRPC: course.generateBaseline
+    -> Call LLM with (potentially edited) framework
+    -> Generate 7-9 questions spanning tiers in baseline scope
     -> Render as assessment cards
     -> User answers each
-  -> For each answer:
-    -> Call LLM to evaluate (quality 0-5, concept name)
-    -> Create concept in DB
-    -> Run SM-2
-    -> Calculate and award XP
-  -> Determine starting tier
-  -> Redirect to first learning session
+  -> tRPC: course.submitBaseline
+    -> Router grades MC mechanically (string compare, no LLM)
+    -> Single batched LLM call: grades free-text + emits `startingContext`
+       (handoff string for the fresh teaching session)
+    -> determineStartingTier (pure): per-tier aggregate → starting tier
+    -> Bulk-insert concepts + assessments, seed SM-2, award XP
+    -> UPDATE courses SET current_tier, baseline (+startingContext), total_xp
+    -> Return { startingTier, xpEarned, gradings }
+  -> Transition to first learning session
 ```
 
-**Scoping vs. course-start prompts.** The clarification and baseline turns use dedicated _scoping prompts_ whose only purpose is to elicit questions and evaluate answers. Once the learner finishes the baseline, those scoping prompts are discarded. The first learning session builds a fresh course-start system prompt (Section 5.1) that embeds the clarification answers as semi-static context (`<topic_scope>`) alongside the framework and starting tier. Scoping instructions never leak into ongoing course turns.
+**Scoping vs. teaching prompts.** Scoping is one append-only conversation: only `clarification.ts` emits a `role: system` message; each subsequent scoping prompt appends user/assistant messages to keep the cache prefix byte-stable, making the extra LLM round trips cheap. Once scoping completes, the scoping prompts and history are discarded. The first teaching session assembles a _fresh_ course-start system prompt (Section 5.1) seeded from DB state: topic, `<topic_scope>` from clarification answers, framework, starting tier, and `startingContext` handoff. Scoping instructions never leak into ongoing course turns.
 
 ### 4.2 Learning Session Flow
 
 ```
 User opens course
-  -> Load: course, framework, summary, custom_instructions
+  -> Load: course, framework, summary, custom_instructions, startingContext
   -> Load: full chat history from last session (render in UI)
   -> Query: concepts due for review
-  -> Assemble system prompt (Section 5)
+  -> Assemble fresh system prompt (Section 5)
   -> Call LLM to generate opening message:
-      - First session: "Based on your assessment, you're at {tier}. Let's start with..."
+      - First session: seeded by startingContext from scoping
       - Returning: "Welcome back. Last time we covered {summary}. [review question or continuation]"
   -> Render opening message. User sees something to respond to.
   -> Conversation loop:
@@ -615,14 +617,15 @@ Each phase is independently testable. Agents should create a TODO list at the st
 4. Write all prompt templates in `src/lib/prompts/`
 5. Implement input sanitisation utility
 6. Build tRPC: `course.clarify` (clarification questions for new topic)
-7. Build tRPC: `course.generateFramework` (create course + framework)
-8. Build tRPC: `course.generateBaseline` (baseline assessment)
-9. Build tRPC: `session.start` (open session, generate Nalu's opening message)
-10. Build tRPC: `session.sendMessage` (core teaching loop with review injection)
-11. Build tRPC: `session.evaluateAnswer` (assess card answer, SM-2, XP)
-12. Build tRPC: `session.end` (generate summary, save state)
-13. Build spaced repetition scheduler (query due concepts, format injection, exclude assessed)
-14. Integration tests for all procedures with mock LLM
+7. Build tRPC: `course.generateFramework` (create course + framework, user may edit before continuing)
+8. Build tRPC: `course.generateBaseline` (baseline questions scoped by estimated starting tier)
+9. Build tRPC: `course.submitBaseline` (mechanical MC grading + single batched LLM call for free-text + `startingContext` handoff)
+10. Build tRPC: `session.start` (open session, generate Nalu's opening message seeded by `startingContext`)
+11. Build tRPC: `session.sendMessage` (core teaching loop with review injection)
+12. Build tRPC: `session.evaluateAnswer` (assess card answer, SM-2, XP)
+13. Build tRPC: `session.end` (generate summary, save state)
+14. Build spaced repetition scheduler (query due concepts, format injection, exclude assessed)
+15. Integration tests for all procedures with mock LLM
 
 ### Phase 3: UI (Days 8-11)
 

@@ -1,8 +1,7 @@
 # src/server/routers
 
-Routers are thin orchestration. All logic lives in `src/lib/`.
+Thin interceptor between User and LLM. All logic lives in `src/lib/`.
 
-- Every LLM-calling procedure follows: sanitise input → assemble prompt (`src/lib/prompts/`) → call LLM (`src/lib/llm/client.ts`) → parse response (`src/lib/llm/parsers.ts`)
-- Validate all inputs with Zod in procedure definition
+- Every LLM-calling procedure: Zod-validate input → call the relevant step in `src/lib/course/` (which owns prompt assembly + LLM dispatch + Zod validation of the reply) → persist via `src/db/queries/` → return a typed payload.
 - No imports from `src/components/`. API layer is UI-independent.
-- Split into sub-routers if a file exceeds 150 lines.
+- Split by turn if a file exceeds 150 lines (e.g. `course/clarify.ts`, `course/framework.ts`, `course/submitBaseline.ts`).

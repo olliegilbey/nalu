@@ -2,6 +2,18 @@
 
 AI-powered learning platform. "Duolingo for anything." Full spec in `docs/PRD.md`.
 
+## Nomenclature
+
+- **LLM** — stateless. Rebuilds its context from DB each HTTP call.
+- **User** — the learner.
+- **Harness** — this repo.
+- **Router** (`src/server/routers/`) — interceptor between User and LLM. Parses structure in/out, persists. No logic.
+- **Step** (`src/lib/course/*.ts`) — one file = one LLM call wrapped. Routers sequence steps.
+
+## Turn principle
+
+Each turn is a ping-pong: User → Router → LLM → Router → User. The Router intercepts structure in both directions; the LLM is stateless and rebuilds its context from DB each call. Scoping is one append-only conversation (only `clarification.ts` emits `role: system`; later scoping prompts append user/assistant messages onto the growing, cache-stable prefix). The teaching session starts fresh, seeded from DB.
+
 ## Commands
 
 ```bash
@@ -28,7 +40,7 @@ Next.js 16.2 (App Router, Turbopack), TypeScript strict, tRPC v11, Zod, Tailwind
 | Prompts         | `src/lib/prompts/` only. Pure template functions → strings.                                                          |
 | LLM calls       | `src/lib/llm/` only (`provider.ts` + `generate.ts`). No direct `ai` SDK imports elsewhere.                           |
 | DB access       | `src/db/queries/` only. No raw SQL in routers or components.                                                         |
-| Routers         | `src/server/routers/`. Orchestrate lib calls. Thin.                                                                  |
+| Routers         | `src/server/routers/`. Interceptor between User and LLM. Parse in/out, persist. Thin.                                |
 | Components      | `src/components/`. Thin render layer. Call tRPC hooks for data.                                                      |
 | Tuning          | `src/lib/config/tuning.ts` only. All algorithm knobs (SM-2, XP, progression). Zero magic numbers in algorithm files. |
 | Types vs config | `src/lib/types/` holds types + Zod schemas only. Runtime constants live in `src/lib/config/`.                        |
@@ -78,9 +90,9 @@ Review injection is stripped and rebuilt fresh every turn from DB state. Assesse
 
 ## Key Flows
 
-1. **New course**: topic input → clarification questions → framework generation (3-8 tiers) → baseline assessment (7-9 questions) → starting tier → first session
-2. **Session**: load state + summary + due reviews → Nalu opens with context → conversation loop (teach, assess via cards or inferred comprehension, SM-2 update, XP award) → session summary on end
-3. **Spaced repetition**: SM-2 pure function. Scheduler queries due concepts. Injection appended per-turn. Resolved concepts removed from injection on next turn.
+1. **New course (scoping)**: topic → clarify (Q's) → answers → framework (user may edit) → baseline questions → answers → grade + `startingContext` handoff → starting tier set.
+2. **Session**: fresh system prompt seeded from DB (framework, tier, summary, due reviews, `startingContext`). Nalu opens. Conversation loop (teach, assess via cards or inferred comprehension, SM-2 update, XP award). Session summary on end.
+3. **Spaced repetition**: SM-2 pure function. Scheduler queries due concepts. Injection appended per-turn. Resolved concepts removed on next turn.
 
 ## Design
 
