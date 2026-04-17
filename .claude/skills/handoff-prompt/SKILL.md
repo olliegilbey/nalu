@@ -53,7 +53,7 @@ Write it as one continuous brief. Structure (adapt — don't force empty section
 2. **What to read first** — bullet list of the docs + sibling modules from Step 2, each with a one-clause reason.
 3. **Next chunk** — what it is, where it's pointed to in the spec. State the _output_ it produces and who consumes it downstream, so the agent picks a shape the later flows actually need.
 4. **Design wrinkles worth thinking about before coding** — non-obvious trade-offs, boundaries between deterministic and model-driven logic, things that might split into multiple PRs. Phrase as things to consider, not choices to make.
-5. **Scope for ~$ARGUMENTS** — bulleted scope budget. Say what's explicitly _out_ (adjacent layers, wiring, persistence) as well as what's in.
+5. **Scope for the time budget** (use **~30 min** if no argument is provided) — bulleted scope budget. Say what's explicitly _out_ (adjacent layers, wiring, persistence) as well as what's in.
 6. **Constraints** — one line listing the durable rules from Step 4.
 7. **Close** — "Open a branch, sketch a short plan, get it approved, then implement. If unsure about X, ask rather than guess."
 

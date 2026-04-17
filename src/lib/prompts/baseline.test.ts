@@ -22,7 +22,7 @@ function validFramework(): Framework {
   return {
     tiers,
     estimatedStartingTier: 2,
-    baselineScopeTiers: [1, 2, 3].slice(0, FRAMEWORK.minTiers),
+    baselineScopeTiers: tiers.map((t) => t.number).slice(0, FRAMEWORK.maxBaselineScopeSize),
   } as Framework;
 }
 
@@ -201,6 +201,22 @@ describe("baselineSchema", () => {
   it("rejects empty question text", () => {
     const bad = { ...baseMc("b1", 1), question: "" };
     const questions = [bad, ...buildQuestions(BASELINE.minQuestions - 1)];
+    expect(baselineSchema.safeParse({ questions }).success).toBe(false);
+  });
+
+  it("rejects a free-text question missing the rubric", () => {
+    // Symmetric with the MC missing-rubric case. Pick allowed fields
+    // explicitly instead of deleting off a copy to keep the
+    // `functional/immutable-data` rule happy.
+    const full = baseFt("b1", 1);
+    const q = {
+      id: full.id,
+      tier: full.tier,
+      conceptName: full.conceptName,
+      type: full.type,
+      question: full.question,
+    };
+    const questions = [q, ...buildQuestions(BASELINE.minQuestions - 1)];
     expect(baselineSchema.safeParse({ questions }).success).toBe(false);
   });
 });

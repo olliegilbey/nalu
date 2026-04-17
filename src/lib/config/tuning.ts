@@ -178,12 +178,6 @@ export const BASELINE = {
   // q=0, but the XP multiplier table still floors q=1 rewards to zero.
   mcCorrectQuality: 4,
   mcIncorrectQuality: 1,
-  // P-AC-03: when an MC question is answered via the freetext-escape hatch,
-  // the grader prompt prepends this sentence to the learner's prose. This
-  // lets the model distinguish a genuine-but-unsure attempt from a flat
-  // "don't know" from a sideways insight when scoring.
-  freetextEscapePrefix:
-    "The learner did not select a multiple-choice option. They wrote the following instead:",
 } as const;
 
 export const LLM = {

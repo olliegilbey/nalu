@@ -56,7 +56,7 @@ Next.js 16.2 (App Router, Turbopack), TypeScript strict, tRPC v11, Zod, Tailwind
 
 - Be very concise in messages to the user, plan mode should remain as verbose as needed to achieve good results and unambiguity.
 - Use up-to-date documentation for implementations
-- Write functional code - the code checkers enforce functional style programming
+- Write functional code - the code checkers enforce functional-style programming
 
 ## Core Design Principle
 

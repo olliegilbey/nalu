@@ -35,7 +35,7 @@ function validFramework(): Framework {
   return {
     tiers,
     estimatedStartingTier: 2,
-    baselineScopeTiers: [1, 2, 3].slice(0, FRAMEWORK.minTiers),
+    baselineScopeTiers: tiers.map((t) => t.number).slice(0, FRAMEWORK.maxBaselineScopeSize),
   } as Framework;
 }
 

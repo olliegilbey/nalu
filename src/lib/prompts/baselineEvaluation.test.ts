@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { BASELINE, FRAMEWORK } from "@/lib/config/tuning";
 import { buildBaselinePrompt, type BaselineAssessment } from "./baseline";
 import {
+  FREETEXT_ESCAPE_PREFIX,
   buildBaselineEvaluationPrompt,
   baselineEvaluationSchema,
   type BaselineEvaluationItem,
@@ -21,7 +22,7 @@ function validFramework(): Framework {
   return {
     tiers,
     estimatedStartingTier: 2,
-    baselineScopeTiers: [1, 2, 3].slice(0, FRAMEWORK.minTiers),
+    baselineScopeTiers: tiers.map((t) => t.number).slice(0, FRAMEWORK.maxBaselineScopeSize),
   } as Framework;
 }
 
@@ -129,10 +130,10 @@ describe("buildBaselineEvaluationPrompt", () => {
       items: [item("b1", { learnerProse: "not sure", viaEscape: true })],
     });
     const text = String(messages[7]?.content);
-    expect(text).toContain(BASELINE.freetextEscapePrefix);
+    expect(text).toContain(FREETEXT_ESCAPE_PREFIX);
     // Prefix lives inside the sanitised envelope, not adjacent to it.
     const tagIdx = text.indexOf("<user_message>");
-    const prefixIdx = text.indexOf(BASELINE.freetextEscapePrefix);
+    const prefixIdx = text.indexOf(FREETEXT_ESCAPE_PREFIX);
     expect(prefixIdx).toBeGreaterThan(tagIdx);
   });
 

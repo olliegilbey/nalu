@@ -7,6 +7,16 @@ import { buildBaselinePrompt, type BaselineAssessment } from "./baseline";
 import type { ClarificationExchange, Framework } from "./framework";
 
 /**
+ * P-AC-03: when an MC question is answered via the freetext-escape hatch,
+ * the grader prompt prepends this sentence to the learner's prose inside
+ * the sanitised `<user_message>` block. Lives here (not in `tuning.ts`)
+ * because it is prompt text — `src/lib/prompts/` is the single source of
+ * truth for every literal the model reads.
+ */
+export const FREETEXT_ESCAPE_PREFIX =
+  "The learner did not select a multiple-choice option. They wrote the following instead:";
+
+/**
  * Static instruction block for the baseline-grading turn (PRD §4.1 step 3,
  * grading half). Appended as a user message onto the growing scoping
  * conversation; the role/security block was established by the
@@ -66,7 +76,7 @@ export interface BaselineEvaluationItem {
   readonly learnerProse: string;
   /**
    * True if the learner reached this grader via the freetext-escape
-   * affordance on an MC question. Triggers the `BASELINE.freetextEscapePrefix`
+   * affordance on an MC question. Triggers the {@link FREETEXT_ESCAPE_PREFIX}
    * prepend inside the rendered item (P-AC-03).
    */
   readonly viaEscape: boolean;
@@ -101,13 +111,13 @@ export function buildBaselineAssistantMessage(baseline: BaselineAssessment): Llm
  * question, and rubric are trusted (our own prior output) and so embed
  * verbatim; learner prose goes through `sanitiseUserInput` so it sits
  * inside `<user_message>` and cannot inject directives. On freetext-
- * escape items the `BASELINE.freetextEscapePrefix` sentence is prepended
+ * escape items the {@link FREETEXT_ESCAPE_PREFIX} sentence is prepended
  * to the prose INSIDE the sanitised block — the full text, prefix and
  * prose, is treated as data (P-AC-03, P-SEC-01).
  */
 function formatItem(item: BaselineEvaluationItem): string {
   const prose = item.viaEscape
-    ? `${BASELINE.freetextEscapePrefix} ${item.learnerProse}`
+    ? `${FREETEXT_ESCAPE_PREFIX} ${item.learnerProse}`
     : item.learnerProse;
   return [
     `questionId: ${item.questionId}`,

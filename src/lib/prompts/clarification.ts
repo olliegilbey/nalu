@@ -3,24 +3,22 @@ import { sanitiseUserInput } from "@/lib/security/sanitiseUserInput";
 import type { LlmMessage } from "@/lib/types/llm";
 
 /**
- * Static system block for the topic-clarification turn. Declared at module
- * scope (not rebuilt per call) so the exact same string is sent every time
- * — this is the prefix that will hit prompt caches once a supporting
- * provider lands. Do not interpolate per-request data here.
- *
- * Lifecycle: this prompt is used only during the scoping phase
- * (clarification + baseline assessment). Once the learner's answers are
- * collected, a fresh course-start system prompt is constructed that
- * embeds those answers as semi-static context; this scoping prompt is
- * discarded and is not layered onto subsequent course turns.
- */
-/**
  * The scoping conversation's single system prompt. Only the clarification
  * turn emits a `role: "system"` message; every subsequent scoping turn
  * (framework generation, baseline generation, baseline grading) is
  * appended as additional user/assistant messages on the growing history
  * initiated by this block. Exported so those downstream modules can
  * reconstruct the same history.
+ *
+ * Declared at module scope (not rebuilt per call) so the exact same string
+ * is sent every time — this is the prefix that will hit prompt caches once
+ * a supporting provider lands. Do not interpolate per-request data here.
+ *
+ * Lifecycle: used only during the scoping phase (clarification + framework
+ * + baseline). Once the learner's answers are collected, a fresh
+ * course-start system prompt is constructed that embeds those answers as
+ * semi-static context; this scoping prompt is discarded and is not layered
+ * onto subsequent course turns.
  */
 export const CLARIFICATION_SYSTEM_PROMPT = `<scoping_role>
 You are Nalu, an AI tutor scoping a new course.

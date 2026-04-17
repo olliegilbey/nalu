@@ -28,6 +28,7 @@ export {
 } from "./baseline";
 
 export {
+  FREETEXT_ESCAPE_PREFIX,
   baselineEvaluationSchema,
   buildBaselineAssistantMessage,
   buildBaselineEvaluationPrompt,

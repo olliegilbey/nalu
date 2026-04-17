@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { BASELINE, PROGRESSION, FRAMEWORK } from "@/lib/config/tuning";
+import { FREETEXT_ESCAPE_PREFIX } from "@/lib/prompts";
 import type { BaselineAssessment, BaselineQuestion, Framework } from "@/lib/prompts";
 
 // Mock the AI SDK so no network call fires. The LLM batch path is exercised
@@ -164,7 +165,7 @@ describe("gradeBaseline — LLM batch path", () => {
     expect(call.schema).toBe(baselineEvaluationSchema);
     const gradingTask = String(call.messages[call.messages.length - 1]?.content);
     expect(gradingTask).toContain("viaEscape: false");
-    expect(gradingTask).not.toContain(BASELINE.freetextEscapePrefix);
+    expect(gradingTask).not.toContain(FREETEXT_ESCAPE_PREFIX);
 
     expect(result.gradings[0]?.quality).toBe(4);
     expect(result.gradings[0]?.isCorrect).toBe(true);
@@ -203,7 +204,7 @@ describe("gradeBaseline — LLM batch path", () => {
     };
     const gradingTask = String(call.messages[call.messages.length - 1]?.content);
     expect(gradingTask).toContain("viaEscape: true");
-    expect(gradingTask).toContain(BASELINE.freetextEscapePrefix);
+    expect(gradingTask).toContain(FREETEXT_ESCAPE_PREFIX);
   });
 
   it("partitions a mixed batch: MC clicks mechanical, free-text + escape go to the LLM", async () => {

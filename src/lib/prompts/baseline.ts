@@ -3,6 +3,22 @@ import { BASELINE } from "@/lib/config/tuning";
 import type { LlmMessage } from "@/lib/types/llm";
 import { buildFrameworkPrompt, type ClarificationExchange, type Framework } from "./framework";
 
+/** Concrete letter keys for MC options (also the `correct` domain). */
+export const MC_OPTION_KEYS = ["A", "B", "C", "D"] as const;
+export type McOptionKey = (typeof MC_OPTION_KEYS)[number];
+
+/**
+ * Runtime guard: the prompt text, the `options` object shape, and
+ * `BASELINE.mcOptionCount` all have to stay in lock-step. `MC_OPTION_KEYS`
+ * is the single source of truth; the length assertion fails loudly at
+ * module load if someone ever bumps `mcOptionCount` without adding keys.
+ */
+if (MC_OPTION_KEYS.length !== BASELINE.mcOptionCount) {
+  throw new Error(
+    `MC_OPTION_KEYS length (${MC_OPTION_KEYS.length}) must equal BASELINE.mcOptionCount (${BASELINE.mcOptionCount})`,
+  );
+}
+
 /**
  * Static instruction block for the baseline-generation turn
  * (PRD §4.1 step 3). Appended as a user message onto the growing scoping
@@ -28,7 +44,7 @@ const BASELINE_TURN_INSTRUCTIONS = `<question_rules>
 - Distribute questions across tiers exactly as specified — every tier in scope gets its share.
 - Every question is STANDALONE: it must not reference any other question ("the snippet above", "in the previous question", "as we saw"). Each card must stand alone.
 - Mix \`multiple_choice\` and \`free_text\` types. Use MC when a misconception can be cleanly framed as a tempting wrong option; use free-text when articulation quality is the signal.
-- Multiple-choice questions have exactly ${BASELINE.mcOptionCount} options keyed A/B/C/D. Do NOT include a "Not sure" / "None of the above" / "I don't know" option. The learner interface offers a freetext escape; MC options must be real candidate answers.
+- Multiple-choice questions have exactly ${MC_OPTION_KEYS.length} options keyed ${MC_OPTION_KEYS.join("/")}. Do NOT include a "Not sure" / "None of the above" / "I don't know" option. The learner interface offers a freetext escape; MC options must be real candidate answers.
 - Every question — MC and free-text — carries a \`freetextRubric\`. The rubric describes what a good free-text answer would contain so the grader can score consistently if the learner uses the freetext-escape on an MC question.
 - Each question has a \`conceptName\` (short, canonical) and a \`tier\` field naming the tier it probes. Use question IDs \`b1\`, \`b2\`, … in order.
 </question_rules>
@@ -92,10 +108,6 @@ export function buildBaselinePrompt(params: BaselinePromptParams): readonly LlmM
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
-
-/** Concrete letter keys for MC options (also the `correct` domain). */
-export const MC_OPTION_KEYS = ["A", "B", "C", "D"] as const;
-export type McOptionKey = (typeof MC_OPTION_KEYS)[number];
 
 const mcOptionStringSchema = z.string().min(1).max(BASELINE.optionMaxChars);
 
