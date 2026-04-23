@@ -4,15 +4,15 @@ AI-powered learning platform. "Duolingo for anything." Full spec in `docs/PRD.md
 
 ## Nomenclature
 
-- **LLM** — stateless. Rebuilds its context from DB each HTTP call.
-- **User** — the learner.
-- **Harness** — this repo.
-- **Router** (`src/server/routers/`) — interceptor between User and LLM. Parses structure in/out, persists. No logic.
-- **Step** (`src/lib/course/*.ts`) — one file = one LLM call wrapped. Routers sequence steps.
+Full glossary: `docs/UBIQUITOUS_LANGUAGE.md`. Mistake-prevention essentials:
+
+- **LLM** is stateless. Harness loads the current **Context** (append-only message list) from DB and sends as-is — never rebuilt from components per turn.
+- **Router** (`src/server/routers/`) = tRPC transport. **Step** (`src/lib/course/*.ts`) = per-turn heuristic logic. Pure algorithms (SM-2, XP, tier) live in `src/lib/{scoring,spaced-repetition,progression}/`.
+- **Wave** = fixed-length teaching unit (`WAVE_TURN_COUNT` turns, default 10). Harness-enforced, not model-decided. Called a "lesson" in LLM-facing prompts.
 
 ## Turn principle
 
-Each turn is a ping-pong: User → Router → LLM → Router → User. The Router intercepts structure in both directions; the LLM is stateless and rebuilds its context from DB each call. Scoping is one append-only conversation (only `clarification.ts` emits `role: system`; later scoping prompts append user/assistant messages onto the growing, cache-stable prefix). The teaching session starts fresh, seeded from DB.
+Each turn: User → Router → LLM → Router → User. Scoping = one Context. Teaching = one Context per Wave. Every turn the Harness appends `<turns_remaining>N</turns_remaining>`; on a Wave's final turn it also appends `<due_for_review>…</due_for_review>` and requests the next Wave's blueprint (topic, outline, opening text) in the same structured response.
 
 ## Commands
 
@@ -40,7 +40,7 @@ Next.js 16.2 (App Router, Turbopack), TypeScript strict, tRPC v11, Zod, Tailwind
 | Prompts         | `src/lib/prompts/` only. Pure template functions → strings.                                                          |
 | LLM calls       | `src/lib/llm/` only (`provider.ts` + `generate.ts`). No direct `ai` SDK imports elsewhere.                           |
 | DB access       | `src/db/queries/` only. No raw SQL in routers or components.                                                         |
-| Routers         | `src/server/routers/`. Interceptor between User and LLM. Parse in/out, persist. Thin.                                |
+| Routers         | `src/server/routers/`. tRPC transport: auth, Zod in/out, persist. Heuristic logic belongs in Steps, not here.        |
 | Components      | `src/components/`. Thin render layer. Call tRPC hooks for data.                                                      |
 | Tuning          | `src/lib/config/tuning.ts` only. All algorithm knobs (SM-2, XP, progression). Zero magic numbers in algorithm files. |
 | Types vs config | `src/lib/types/` holds types + Zod schemas only. Runtime constants live in `src/lib/config/`.                        |
@@ -76,11 +76,7 @@ The LLM generates content and evaluates answers. **Deterministic code** controls
 
 ## Prompt Structure (cache-efficient ordering)
 
-1. **Static** (top, rarely changes): role instructions, course topic, scope, proficiency framework
-2. **Semi-static** (changes between sessions): current tier, custom instructions, progress summary
-3. **Dynamic** (rebuilt each turn, appended last): output format definitions, review injection
-
-Review injection is stripped and rebuilt fresh every turn from DB state. Assessed concepts are excluded. If no concepts are due, omit the block entirely.
+Static at the top (set once per phase, byte-stable for cache): role, topic, scope, framework, tier, `startingContext` or current Wave blueprint, output-format definitions. Dynamic appended per turn: `<turns_remaining>N</turns_remaining>`; on a Wave's final turn also `<due_for_review>…</due_for_review>` plus the instruction to emit the next Wave's blueprint. Phase = scoping OR one Wave; the static block is refreshed only at phase boundaries.
 
 ## Security
 
@@ -91,8 +87,8 @@ Review injection is stripped and rebuilt fresh every turn from DB state. Assesse
 ## Key Flows
 
 1. **New course (scoping)**: topic → clarify (Q's) → answers → framework (user may edit) → baseline questions → answers → grade + `startingContext` handoff → starting tier set.
-2. **Session**: fresh system prompt seeded from DB (framework, tier, summary, due reviews, `startingContext`). Nalu opens. Conversation loop (teach, assess via cards or inferred comprehension, SM-2 update, XP award). Session summary on end.
-3. **Spaced repetition**: SM-2 pure function. Scheduler queries due concepts. Injection appended per-turn. Resolved concepts removed on next turn.
+2. **Teaching**: sequence of Waves. Wave 1 seeded from scoping (`startingContext` + initial SM-2 due). Each subsequent Wave starts from the blueprint drafted at the prior Wave's final turn. Within a Wave: teach, assess (cards or inferred comprehension), SM-2 update, XP award, Harness injects turn countdown. Final turn: SM-2 due concepts injected; LLM emits close-out response and next-Wave blueprint in one structured payload.
+3. **Spaced repetition**: SM-2 pure function. Scheduler queries due concepts at each Wave's final turn; injection appended only then, feeding the next Wave's blueprint. Concepts assessed within the current Wave are excluded from the next injection.
 
 ## Design
 

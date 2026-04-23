@@ -17,7 +17,7 @@
 4. **MC questions are 4 options; freetext is always available as an escape hatch.** There is no dedicated "Not sure" button, and the model shouldn't give a "not sure" as an option in the MC. If the learner doesn't know, they type into the freetext box — including literally "not sure". The harness forwards it to the model with context: _"user did not select a multiple-choice answer; they wrote the following instead: …"_. The model infers understanding (or lack of it) from the prose. This turns every non-engagement into a valuable signal the model can reason about, and score on quality, rather than a flat opt-out - also opens up the case of the user saying something like: "it's probably B or C because of x and y" which will be a better response than an incorrect guess.
 5. **Assessment UI cards can contain multiple questions. Or just one question.** The model decides batch size per beat. The same card component is used for clarification test, baseline test, and in-session assessments.
 6. **Custom instructions are verbatim.** `I have ADHD, so consider this in your teaching style` is passed through as-is. The model infers pacing from its own understanding of the term. We do not pre-expand into explicit directives — that belongs to the model's inherent inference, not prompt engineering on our side.
-7. **Tier adjustment is bidirectional.** `progression.ts` can demote as well as promote, triggered by sustained low quality on current-tier concepts. The user sees a gentle signal ("let's revisit Wave 1 for a beat"), not a rank drop.
+7. **Tier adjustment is bidirectional.** `progression.ts` can demote as well as promote, triggered by sustained low quality on current-tier concepts. The user sees a gentle signal ("let's revisit Tier 1 for a beat"), not a rank drop.
 
 ---
 
@@ -149,7 +149,7 @@ NB: It is likely we will add a WebSearch tool at this point so that the model ca
 >
 > Shaped for: Python background → embedded systems
 >
-> 🌊 **5 waves**
+> 🌊 **5 tiers**
 >
 > 1. The Ownership Mental Model
 > 2. Borrowing Basics
@@ -418,8 +418,8 @@ Total XP earned: 61
 
 ### 🌊 Baseline done
 
-> **Let's start at Wave 2: Borrowing Basics**
-> Wave 1 is solid — Copy vs Move and Drop are fuzzy on naming but the intuition is there; we'll brush past them in passing. Wave 2 is where the friction lives, which matches what you said at the start. Wave 3 is ahead of where you are now; we'll pick it up naturally as we go.
+> **Let's start at Tier 2: Borrowing Basics**
+> Tier 1 is solid — Copy vs Move and Drop are fuzzy on naming but the intuition is there; we'll brush past them in passing. Tier 2 is where the friction lives, which matches what you said at the start. Tier 3 is ahead of where you are now; we'll pick it up naturally as we go.
 >
 > Session XP: **+61 🌊**
 >
@@ -472,7 +472,7 @@ Note: `<custom_instructions>I have ADHD, so consider this in your teaching style
 <opening>
 Welcome in. Quick recap of where the baseline landed us, then we dive.
 
-You crushed Wave 1's core idea — moves vs references. The spot where things bent was the borrowing rule itself, so that's where we're starting (Wave 2). I want to get one mental model locked in before anything else, because if you have it, 80% of borrow-checker fights go away.
+You crushed Tier 1's core idea — moves vs references. The spot where things bent was the borrowing rule itself, so that's where we're starting (Tier 2). I want to get one mental model locked in before anything else, because if you have it, 80% of borrow-checker fights go away.
 
 Here's the whole rule, in Python terms first:
 
@@ -534,7 +534,7 @@ v.push(4);      // now allowed: no live & borrows
 
 Modern Rust is even smarter — it ends borrows at the **last use**, not the end of the scope (this is called NLL, non-lexical lifetimes). So often you can just… stop using the reader, and the compiler silently lets you mutate.
 
-Small sharper question — and this is the one I actually care about for Wave 2. What's the _shape_ of the fix for code like this?
+Small sharper question — and this is the one I actually care about for Tier 2. What's the _shape_ of the fix for code like this?
 
 ```rust
 let mut scores = vec![10, 20, 30];
@@ -684,7 +684,7 @@ Everything below is the accumulated intent from this simulation and from `docs/T
 
 **P-XP-03 — Concept prowess is the only state we track per concept.** We do NOT track "has this been taught yet?" separately. SM-2 plus `last_quality` plus `times_correct/incorrect` are enough. If a review surfaces a concept the learner still can't answer, the model naturally re-teaches it inside that same conversational turn. Adding a `taught_recently` boolean is redundant state — because these are added to the SM-2 anyway, which is the "taught" tracking. (There may however be scope for building an untaught concepts array which would be appended to at baseline assessment time, and over a longer teaching time as the model reasons on sections that need to be taught but haven't yet)
 
-**P-XP-04 — Tier advancement AND reduction.** `progression.ts` is bidirectional. Promotion: 80% of current-tier concepts at `last_quality ≥ 3`, minimum 5 assessed concepts. Demotion: sustained low quality on current-tier concepts, or repeated low-quality signals on lower-tier concepts, trigger a soft demotion. UX presents it as "let's revisit Wave N for a beat", never as a rank drop or shame moment. This as a teaching style needs to be considered deeply against what works with teaching, so that the SM-2 recall works correctly in this scenario - as SM-2 will continually surface topics from other tiers whenever the time runs out and the SM-2 information gets appended to the prompt as a suggestion, eg: "lifetimes are due for a review, when appropriate, weave them into conversation or pivot the conversation when sensible" - would be prompted by the harness to the LLM when the SM-2 time window reaches zero for a concept (lifetimes in this example).
+**P-XP-04 — Tier advancement AND reduction.** `progression.ts` is bidirectional. Promotion: 80% of current-tier concepts at `last_quality ≥ 3`, minimum 5 assessed concepts. Demotion: sustained low quality on current-tier concepts, or repeated low-quality signals on lower-tier concepts, trigger a soft demotion. UX presents it as "let's revisit Tier N for a beat", never as a rank drop or shame moment. This as a teaching style needs to be considered deeply against what works with teaching, so that SM-2 recall works correctly in this scenario: SM-2 continually surfaces concepts from other tiers, but injection is **Wave-boundary** — due concepts are embedded in the Wave's fresh system prompt at Wave start, and re-injected on the Wave's final turn (`turns_remaining == 0`) so the LLM can design the next Wave's blueprint around them. Within a Wave the Context is append-only; the review block is not rebuilt every turn. Eg: "lifetimes are due for a review, when appropriate, weave them into the Wave or pivot when sensible" — appended by the harness at the Wave boundaries.
 
 ### 10.4 Conversation & teaching turns
 
@@ -702,9 +702,9 @@ Everything below is the accumulated intent from this simulation and from `docs/T
 
 **P-PR-01 — All prompt text lives in `src/lib/prompts/`.** No prompt strings anywhere else. Pure template functions: typed params in, string out, zero logic.
 
-**P-PR-02 — Static content first, dynamic content last, per the cache-efficiency ordering in PRD §5.1.** - per turn, we need to append the valuable dynamic information, such as SM-2 concepts that come up for review.
+**P-PR-02 — Static content first, dynamic content last, per the cache-efficiency ordering in PRD §5.1.** The static block is set once per phase (scoping, or a single Wave) and kept byte-stable so the prompt cache stays warm. Dynamic tail is appended each turn: `<turns_remaining>N</turns_remaining>` every turn, plus `<due_for_review>…</due_for_review>` and the next-Wave blueprint instruction on the Wave's final turn only.
 
-**P-PR-03 — Review injection is rebuilt every turn and appended last.** Not part of conversation history. Stripped and rebuilt from fresh DB state each turn. Assessed-this-session concepts are excluded. If nothing is due, the block is omitted entirely (no empty tags). Make sure this is done cache-efficiently.
+**P-PR-03 — Review injection is Wave-boundary, not per-turn.** Due concepts are embedded in the Wave's fresh system prompt at Wave start (so they seed the opening teaching), and re-injected on the Wave's final turn as part of the dynamic tail so the LLM can design the next Wave's blueprint around them. Between those two points the Context is append-only; the review block is not rebuilt every turn. Concepts assessed within the current Wave are excluded from the final-turn injection. If nothing is due, the block is omitted entirely (no empty tags).
 
 **P-PR-04 — Custom instructions pass through verbatim.** `<custom_instructions>I have ADHD, so consider this in your teaching style</custom_instructions>` is literally what goes in the prompt.
 
@@ -741,3 +741,18 @@ Everything below is the accumulated intent from this simulation and from `docs/T
 - **Multi-question card UX** — tabbed vs. stacked vs. progressive-reveal when a card has multiple questions. Likely progressive-reveal.
 - **Concept deduplication across baseline → teaching turns** — when the model emits a new concept name that's a near-synonym of an existing concept, who reconciles? (Probably the harness, with a post-MVP fuzzy-match pass.) Ideally, the model won't create duplicates if it is able to see the topic list.
 - **Cache hot-path** — verifying static-block stability across turns so that, on a cacheable provider, the static prefix actually stays byte-identical.
+
+---
+
+## 11. If this course continued…
+
+This simulation cuts off mid-Wave. In the target flow, the first teaching Wave runs for `WAVE_TURN_COUNT` turns (default 10, in `src/lib/config/tuning.ts`) with `<turns_remaining>N</turns_remaining>` appended to the Context each turn so the model can pace its teaching and land a closing quiz in the wrap-up window.
+
+On the final turn (`turns_remaining == 0`) the Harness injects `<due_for_review>…</due_for_review>` with any SM-2 concepts now due, and instructs the LLM to emit, in one structured response:
+
+1. The closing exchange for the current Wave (quiz / summary).
+2. The **next Wave's blueprint** — topic, outline, and the opening user-facing text the next Wave will greet the User with.
+
+The blueprint is persisted on the course row. When the User returns (immediately or after a break), a fresh Context is crystallised from that blueprint plus up-to-date SM-2 state, and the User sees the pre-drafted opening text rather than a blank chat. The prior Wave's Context stays in the UI history but is never replayed into the LLM — the blueprint is the whole handoff.
+
+Internally: **Wave** = one such 5-7 minute teaching unit (append-only Context, byte-stable prefix, fixed turn count). **Tier** = rung of the proficiency framework (e.g. "Tier 2: Borrowing Basics"). In LLM-facing prompt text the Wave is called a **lesson**; "tier" stays as "tier". Everywhere else — code, DB, docs, and user-facing chat copy — the canonical terms are Wave and Tier.
