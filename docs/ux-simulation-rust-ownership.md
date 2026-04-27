@@ -455,7 +455,7 @@ First session. Baseline results:
 
 <!-- DYNAMIC -->
 <output_formats>[...assessment / comprehension_signal / curriculum_note tag specs per PRD §5.1...]</output_formats>
-<!-- No <review_due> block: first session, nothing due yet. -->
+<!-- No <due_for_review> block: first session, nothing due yet. -->
 ```
 
 Note: `<custom_instructions>I have ADHD, so consider this in your teaching style</custom_instructions>` is passed through verbatim. The model's inherent inference handles pacing — the harness does not pre-expand into explicit directives.

@@ -325,12 +325,12 @@ Between those two points the Context is append-only and the review block is not 
 Format (same at both injection points):
 
 ```xml
-<review_due>
+<due_for_review>
 These concepts are due for review. Weave 1-2 naturally into the Wave.
 Do not re-assess a concept already assessed this Wave.
 Vary the question format from previous assessments of the same concept.
 - {concept_name} (tier {n}): last scored {score}/5, {days} days ago
-</review_due>
+</due_for_review>
 ```
 
 When no concepts are due: omit the block entirely.
@@ -419,11 +419,11 @@ Tier {n}: {tier_name} - {tier_description}
 </wave_seed>
 
 <!-- Wave-boundary review injection: embedded once at Wave start, not rebuilt per turn -->
-<review_due>
+<due_for_review>
 These concepts are due for review. Weave 1-2 naturally into this Wave.
 - {concept_name} (tier {n}): last scored {score}/5, {days} days ago
-</review_due>
-{omit the <review_due> block entirely if nothing is due}
+</due_for_review>
+{omit the <due_for_review> block entirely if nothing is due}
 
 <output_formats>
 Assessment card (for deliberate testing):
@@ -463,7 +463,7 @@ Emit the closing exchange for this Wave AND a <next_wave_blueprint> covering
 topic, outline, and opening_user_text for the next Wave in the same response.
 ```
 
-Concepts assessed earlier in this Wave are excluded from the final-turn `<due_for_review>` injection (the Wave-start `<review_due>` block is not modified mid-Wave — to keep the prefix byte-stable — but the scheduler filters assessed concepts out of the final-turn tail).
+Concepts assessed earlier in this Wave are excluded from the final-turn `<due_for_review>` injection. The Wave-start `<due_for_review>` block (the static one in the system prompt) is **not** modified mid-Wave — that keeps the prefix byte-stable for the cache — but the scheduler filters assessed concepts out of the final-turn tail.
 
 ### 5.2 Quality Score Mapping
 
