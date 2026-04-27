@@ -253,10 +253,11 @@ User types a topic
     -> Generate 7-9 questions spanning tiers in baseline scope
     -> Render as assessment cards
     -> User answers each
-  -> tRPC: course.submitBaseline
-    -> Router grades MC mechanically (string compare, no LLM)
-    -> Single batched LLM call: grades free-text + emits `startingContext`
-       (handoff string for the fresh teaching session)
+  -> tRPC: course.submitBaseline (router orchestrates; grading lives in src/lib)
+    -> Router calls lib baseline-grading flow:
+       - mechanical MC grading (string compare, no LLM)
+       - single batched LLM call for free-text + `startingContext`
+         (handoff string for the fresh teaching session)
     -> determineStartingTier (pure): per-tier aggregate → starting tier
     -> Bulk-insert concepts + assessments, seed SM-2, award XP
     -> UPDATE courses SET current_tier, baseline (+startingContext), total_xp

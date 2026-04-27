@@ -88,7 +88,7 @@ Static at the top (set once per phase, byte-stable for cache): role, topic, scop
 
 1. **New course (scoping)**: topic → clarify (Q's) → answers → framework (user may edit) → baseline questions → answers → grade + `startingContext` handoff → starting tier set.
 2. **Teaching**: sequence of Waves. Wave 1 seeded from scoping (`startingContext` + initial SM-2 due). Each subsequent Wave starts from the blueprint drafted at the prior Wave's final turn. Within a Wave: teach, assess (cards or inferred comprehension), SM-2 update, XP award, Harness injects turn countdown. Final turn: SM-2 due concepts injected; LLM emits close-out response and next-Wave blueprint in one structured payload.
-3. **Spaced repetition**: SM-2 pure function. Scheduler queries due concepts at each Wave's final turn; injection appended only then, feeding the next Wave's blueprint. Concepts assessed within the current Wave are excluded from the next injection.
+3. **Spaced repetition**: SM-2 pure function. Scheduler injects due concepts at Wave **boundaries**: embedded in the static system prompt at Wave start (seeds the current Wave) and re-injected on the Wave's final turn (feeds the next Wave's blueprint). Within a Wave the Context is append-only — the review block is not rebuilt per turn. Concepts assessed within the current Wave are excluded from the final-turn injection.
 
 ## Design
 
