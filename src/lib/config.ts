@@ -16,6 +16,9 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((v) => v === "true"),
+  DATABASE_URL: z.url(), // pooled, used by app at runtime
+  DIRECT_URL: z.url(), // direct, used by drizzle-kit migrate
+  DEV_USER_ID: z.uuid(), // seed user id; refs auth.users when auth lands
 });
 
 /** Validated environment config. Throws on first access if env vars are missing/invalid. */
