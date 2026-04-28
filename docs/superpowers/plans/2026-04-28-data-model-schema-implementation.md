@@ -113,7 +113,6 @@ git commit -m "feat(config): add DATABASE_URL, DIRECT_URL, DEV_USER_ID to env"
 - [ ] **Step 1: Write the config**
 
 ```ts
-import "dotenv/config";
 import { defineConfig } from "drizzle-kit";
 
 /**
@@ -125,6 +124,10 @@ import { defineConfig } from "drizzle-kit";
  * src/db/CLAUDE.md). The one allowed bootstrap edit — prepending
  * `CREATE EXTENSION IF NOT EXISTS pgcrypto;` to 0000_init.sql — is
  * documented inline in that migration.
+ *
+ * Environment loading: justfile sets `dotenv-filename := ".env.local"`
+ * so `just db-*` recipes auto-load .env.local before invoking
+ * drizzle-kit. Run drizzle-kit only via `just db-*` recipes.
  */
 export default defineConfig({
   schema: "./src/db/schema",
@@ -163,7 +166,19 @@ git commit -m "chore(db): add drizzle-kit config"
 
 - Modify: `justfile`
 
-- [ ] **Step 1: Append DB recipes**
+- [ ] **Step 1: Add `dotenv-filename` directive at top of file**
+
+Insert as the first non-comment line (before the `dev:` recipe):
+
+```
+# Auto-load .env.local for every recipe so drizzle-kit / seed scripts /
+# any other recipe that reads process.env sees the same values the
+# Next.js app does. Required because drizzle.config.ts and seed.ts
+# read DIRECT_URL / DEV_USER_ID directly from process.env.
+set dotenv-filename := ".env.local"
+```
+
+- [ ] **Step 2: Append DB recipes**
 
 Add at the end of the file:
 
@@ -193,7 +208,7 @@ db-check:
     bunx drizzle-kit check
 ```
 
-- [ ] **Step 2: Smoke test**
+- [ ] **Step 3: Smoke test**
 
 ```bash
 just --list | grep db-
@@ -201,7 +216,7 @@ just --list | grep db-
 
 Expected: five `db-*` recipes listed.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add justfile
