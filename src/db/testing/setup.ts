@@ -9,8 +9,8 @@ import * as schema from "@/db/schema";
  * Single Postgres container per integration test run.
  *
  * Migrations apply once; each test resets state via `withTestDb` (truncate
- * all tables in FK-safe order). Booted via singleFork in vitest.integration.ts
- * so we never spawn parallel containers.
+ * all tables in FK-safe order). Serialised via `fileParallelism: false`
+ * in vitest.integration.config.ts so we never spawn parallel containers.
  */
 let container: StartedPostgreSqlContainer | undefined; // eslint-disable-line functional/no-let
 let url: string | undefined; // eslint-disable-line functional/no-let
