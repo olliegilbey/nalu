@@ -225,18 +225,21 @@ git commit -m "chore(db): add justfile recipes for migrations and seed"
 
 ---
 
-### Task A5: Vitest workspace — split unit and integration projects
+### Task A5: Vitest projects — split unit and integration
 
 **Files:**
 
-- Modify: `vitest.config.ts`
-- Create: `vitest.workspace.ts`
+- Modify: `vitest.config.ts` (becomes a thin projects-list config)
+- Create: `vitest.unit.ts`
+- Create: `vitest.integration.ts`
 - Modify: `package.json` (test scripts)
 - Modify: `justfile` (test recipes)
 
-- [ ] **Step 1: Replace `vitest.config.ts` with two project configs**
+> Note: Vitest 4 removed the standalone `vitest.workspace.ts` file. Project configs are now referenced from `test.projects` inside the main `vitest.config.ts` (string paths or inline configs both work). We keep separate files for readability since each project has distinct settings.
 
-Rename current `vitest.config.ts` to `vitest.unit.ts` and add an integration variant.
+- [ ] **Step 1: Create `vitest.unit.ts`**
+
+Move the current `vitest.config.ts` body into `vitest.unit.ts` and tighten the include/exclude:
 
 `vitest.unit.ts`:
 
@@ -281,10 +284,21 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 2: Add `vitest.workspace.ts`**
+- [ ] **Step 2: Replace `vitest.config.ts` with a projects-list config**
 
 ```ts
-export default ["./vitest.unit.ts", "./vitest.integration.ts"];
+import { defineConfig } from "vitest/config";
+
+/**
+ * Top-level Vitest config. Vitest 4 removed `vitest.workspace.ts`;
+ * projects now live in `test.projects`. Each project file owns its
+ * own environment, includes/excludes, and pool settings.
+ */
+export default defineConfig({
+  test: {
+    projects: ["./vitest.unit.ts", "./vitest.integration.ts"],
+  },
+});
 ```
 
 - [ ] **Step 3: Update `package.json` scripts**
@@ -323,8 +337,7 @@ Expected: PASS, no integration tests run.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add vitest.unit.ts vitest.integration.ts vitest.workspace.ts package.json justfile
-git rm vitest.config.ts
+git add vitest.config.ts vitest.unit.ts vitest.integration.ts package.json justfile
 git commit -m "test: split vitest into unit + integration projects"
 ```
 
