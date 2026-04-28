@@ -230,18 +230,18 @@ git commit -m "chore(db): add justfile recipes for migrations and seed"
 **Files:**
 
 - Modify: `vitest.config.ts` (becomes a thin projects-list config)
-- Create: `vitest.unit.ts`
-- Create: `vitest.integration.ts`
+- Create: `vitest.unit.config.ts`
+- Create: `vitest.integration.config.ts`
 - Modify: `package.json` (test scripts)
 - Modify: `justfile` (test recipes)
 
 > Note: Vitest 4 removed the standalone `vitest.workspace.ts` file. Project configs are now referenced from `test.projects` inside the main `vitest.config.ts` (string paths or inline configs both work). We keep separate files for readability since each project has distinct settings.
 
-- [ ] **Step 1: Create `vitest.unit.ts`**
+- [ ] **Step 1: Create `vitest.unit.config.ts`**
 
-Move the current `vitest.config.ts` body into `vitest.unit.ts` and tighten the include/exclude:
+Move the current `vitest.config.ts` body into `vitest.unit.config.ts` and tighten the include/exclude. (Vitest 4 requires project config filenames to match `(vitest|vite).*.config.*`.)
 
-`vitest.unit.ts`:
+`vitest.unit.config.ts`:
 
 ```ts
 import { defineConfig } from "vitest/config";
@@ -261,7 +261,7 @@ export default defineConfig({
 });
 ```
 
-`vitest.integration.ts`:
+`vitest.integration.config.ts`:
 
 ```ts
 import { defineConfig } from "vitest/config";
@@ -274,9 +274,12 @@ export default defineConfig({
     environment: "node",
     include: ["src/db/**/*.integration.test.ts"],
     alias: { "@": path.resolve(__dirname, "./src") },
-    // Testcontainers boots a Postgres per worker; serialise to one container.
+    // Testcontainers boots a Postgres per worker; serialise execution to a
+    // single fork so all integration tests share one container.
+    // Vitest 4 removed `poolOptions.forks.singleFork` — `fileParallelism: false`
+    // is the supported equivalent (forces test files to run sequentially).
     pool: "forks",
-    poolOptions: { forks: { singleFork: true } },
+    fileParallelism: false,
     testTimeout: 30_000,
     hookTimeout: 60_000,
     setupFiles: ["src/db/testing/setup.ts"],
@@ -296,7 +299,7 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
-    projects: ["./vitest.unit.ts", "./vitest.integration.ts"],
+    projects: ["./vitest.unit.config.ts", "./vitest.integration.config.ts"],
   },
 });
 ```
@@ -337,7 +340,7 @@ Expected: PASS, no integration tests run.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add vitest.config.ts vitest.unit.ts vitest.integration.ts package.json justfile
+git add vitest.config.ts vitest.unit.config.ts vitest.integration.config.ts package.json justfile
 git commit -m "test: split vitest into unit + integration projects"
 ```
 
