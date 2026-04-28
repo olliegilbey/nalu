@@ -179,6 +179,7 @@ CREATE TABLE courses (
   topic TEXT NOT NULL,
   topic_clarification TEXT,                     -- user's answers to clarifying questions
   framework JSONB NOT NULL,                     -- mutable proficiency tiers
+  baseline JSONB,                               -- scoping output: gradings + startingContext handoff (set by submitBaseline)
   current_tier INTEGER NOT NULL DEFAULT 1,
   total_xp INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active',
