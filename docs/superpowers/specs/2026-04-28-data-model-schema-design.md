@@ -41,13 +41,13 @@ Every `context_messages` row, every `assessment` row, every `concepts` SM-2 upda
 
 Every `harness_*` row's `content` is natural-language English wrapped in an XML tag, written for the model to read and act on. Bare data like `<turns_remaining>3</turns_remaining>` is wrong. Correct shape:
 
-```
+```xml
 <turns_remaining>You have 3 turns left in this lesson. Pace your teaching so you can land a clean wrap-up in the final turn.</turns_remaining>
 ```
 
 Final turn:
 
-```
+```xml
 <turns_remaining>This is the final turn of the lesson. Close the current thread and emit two required blocks in the same response: (a) `<next_lesson_blueprint>` covering the topic to teach next, an outline, and the opening text the next lesson will greet the learner with; (b) `<course_summary_update>` integrating this lesson's events with the prior summary in ≤150 words. Do not begin teaching new material in this turn.</turns_remaining>
 <due_for_review>The following concepts are due for review and should shape the next lesson's blueprint: ...natural-language list with names + last-quality summaries...</due_for_review>
 ```
@@ -64,12 +64,12 @@ Every assistant response is a multi-tag envelope. The harness defines the envelo
 
 The teaching-turn envelope:
 
-```
+```xml
 <response>...natural-language teaching, markdown, code blocks; this is what the user sees in chat...</response>
 
 <comprehension_signal>
-{ "concept_name": "...", "demonstrated_quality": 0-5, "evidence": "..." }
-</comprehension_signal>      [optional, multiple allowed per turn — see §6.5 for the two flavours]
+{ "concept_name": "...", "tier": 1-5, "demonstrated_quality": 0-5, "evidence": "..." }
+</comprehension_signal>      [optional, multiple allowed per turn — see §6.5 for the two flavours; tier required so first-seen concepts can be seeded]
 
 <assessment>
 { "questions": [ {...}, {...} ] }
@@ -88,7 +88,7 @@ The teaching-turn envelope:
 
 The baseline-evaluation envelope (one-shot call from `submitBaseline`, not a Wave turn):
 
-```
+```xml
 <batch_evaluation>
 { "evaluations": [ { "question_id": "...", "concept_name": "...", "quality_score": 0-5, "is_correct": bool, "rationale": "..." }, ... ] }
 </batch_evaluation>          [REQUIRED — one entry per non-mechanically-graded question]
@@ -350,15 +350,15 @@ The complete set of XML-tagged blocks crossing the harness ↔ model boundary. P
 
 ### Model → harness (model emits, harness extracts)
 
-| Tag                       | Required when                              | Schema (TS)                                                                                                                  | Persisted as                                                                                                             | Side effects                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<response>`              | Every teaching turn                        | `string` (markdown)                                                                                                          | Part of `assistant_response` row                                                                                         | Rendered to user; rest of envelope stripped from view                                                                                                                                                                                                                                                                                                      |
-| `<comprehension_signal>`  | Optional, ≥0 per turn                      | `{ concept_name, demonstrated_quality: 0-5, evidence }`                                                                      | Within `assistant_response` row; triggers `assessments` row                                                              | Concept upsert; SM-2 update; XP award. Two flavours: (i) **graded** — fired in response to a `<card_answers>` request from the harness, scoring a free-text or freetext-escape card answer; (ii) **inferred** — model's read of the user's free-form prose. Schema identical; harness routes by whether a `<card_answers>` row appeared in the prior turn. |
-| `<assessment>`            | Optional, ≤1 per turn                      | `{ questions: [{ question_id, concept_name, tier, type, question, options?, correct?, freetextRubric?, explanation? }, …] }` | Within `assistant_response` row; concepts upserted on parse                                                              | Card rendered to user; `assessments` rows wait for answers in next turn                                                                                                                                                                                                                                                                                    |
-| `<next_lesson_blueprint>` | REQUIRED on Wave's final turn              | `{ topic, outline: string[], openingText }`                                                                                  | `waves.blueprint_emitted`; embedded into next Wave's `seed_source`                                                       | Closes Wave; seeds Wave N+1                                                                                                                                                                                                                                                                                                                                |
-| `<course_summary_update>` | REQUIRED on Wave's final turn              | `{ summary }` (≤150 words)                                                                                                   | `courses.summary` (overwrites); `courses.summary_updated_at`                                                             | Replaces cumulative summary                                                                                                                                                                                                                                                                                                                                |
-| `<batch_evaluation>`      | REQUIRED in `submitBaseline` response only | `{ evaluations: [{ question_id, concept_name, quality_score, is_correct, rationale }, …] }`                                  | `courses.baseline` (raw JSONB) + per-concept `concepts` upsert with seeded SM-2. NO `assessments` rows (see note below). | Drives starting-tier determination; SM-2 seeding                                                                                                                                                                                                                                                                                                           |
-| `<course_summary>`        | REQUIRED in `submitBaseline` response only | `{ summary }` (≤200 words)                                                                                                   | `courses.summary` (initial seed)                                                                                         | Initial cumulative summary                                                                                                                                                                                                                                                                                                                                 |
+| Tag                       | Required when                              | Schema (TS)                                                                                                                  | Persisted as                                                                                                             | Side effects                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<response>`              | Every teaching turn                        | `string` (markdown)                                                                                                          | Part of `assistant_response` row                                                                                         | Rendered to user; rest of envelope stripped from view                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `<comprehension_signal>`  | Optional, ≥0 per turn                      | `{ concept_name, tier: 1-5, demonstrated_quality: 0-5, evidence }`                                                           | Within `assistant_response` row; triggers `assessments` row                                                              | Concept upsert; SM-2 update; XP award. Two flavours: (i) **graded** — fired in response to a `<card_answers>` request from the harness, scoring a free-text or freetext-escape card answer; (ii) **inferred** — model's read of the user's free-form prose. Schema identical; harness routes by whether a `<card_answers>` row appeared in the prior turn. `tier` is required so an inferred signal on a previously unseen concept can seed `concepts.tier` (which is `NOT NULL`). For known concepts the existing tier is preserved (immutable post-first-sight per §3 decisions); the field still must be present and is ignored. |
+| `<assessment>`            | Optional, ≤1 per turn                      | `{ questions: [{ question_id, concept_name, tier, type, question, options?, correct?, freetextRubric?, explanation? }, …] }` | Within `assistant_response` row; concepts upserted on parse                                                              | Card rendered to user; `assessments` rows wait for answers in next turn                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `<next_lesson_blueprint>` | REQUIRED on Wave's final turn              | `{ topic, outline: string[], openingText }`                                                                                  | `waves.blueprint_emitted`; embedded into next Wave's `seed_source`                                                       | Closes Wave; seeds Wave N+1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `<course_summary_update>` | REQUIRED on Wave's final turn              | `{ summary }` (≤150 words)                                                                                                   | `courses.summary` (overwrites); `courses.summary_updated_at`                                                             | Replaces cumulative summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `<batch_evaluation>`      | REQUIRED in `submitBaseline` response only | `{ evaluations: [{ question_id, concept_name, quality_score, is_correct, rationale }, …] }`                                  | `courses.baseline` (raw JSONB) + per-concept `concepts` upsert with seeded SM-2. NO `assessments` rows (see note below). | Drives starting-tier determination; SM-2 seeding                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `<course_summary>`        | REQUIRED in `submitBaseline` response only | `{ summary }` (≤200 words)                                                                                                   | `courses.summary` (initial seed)                                                                                         | Initial cumulative summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 **Note on baseline `assessments` rows:** baseline gradings are stored as `concepts` rows (SM-2 seeded) + raw `courses.baseline` JSONB. They do NOT generate `assessments` table rows — that table is exclusively for in-Wave probes (per §3 decisions). The `concepts.times_correct` / `times_incorrect` counters are bumped at `submitBaseline` from the gradings.
 
@@ -384,7 +384,7 @@ The static `<output_formats>` block in the Wave system prompt enumerates the fiv
 
 ### File structure
 
-```
+```text
 src/db/
 ├── schema/
 │   ├── index.ts             # re-exports all tables + relations
@@ -478,7 +478,7 @@ One file per domain. Each file exports typed functions; raw Drizzle calls do not
 
 ### Files and their surfaces
 
-```
+```text
 src/db/queries/
 ├── userProfiles.ts
 │   getUserById(id) → UserProfile
@@ -644,7 +644,7 @@ Validation gates: the response is "valid" iff `<response>` is present (every tur
 
 Sequence the tRPC procedure in the next milestone implements. Two turn variants — prose turn and card-answer turn — diverge only at step 2.
 
-```
+```text
  1. Read Wave row, all context_messages for this wave_id.
  2a. Prose turn (input is user prose):
      Sanitize incoming user input; render <user_message>...</user_message>;
@@ -674,7 +674,14 @@ Sequence the tRPC procedure in the next milestone implements. Two turn variants 
 11. Return user-facing response text + assessment card (if any) + any XP toasts to the caller.
 ```
 
-Steps 2b (mechanical pre-grading + card_answer row write), 9, and 10 all run inside one Drizzle transaction. The pre-graded XP toasts from step 2b are emitted to the client as part of the same response payload — they are not a separate side channel.
+**Transaction boundaries (two separate Drizzle transactions, not one):**
+
+- **Pre-LLM transaction** wraps step 2 only (2a's `user_message` row insert, OR 2b's mechanical pre-grading + `assessments` rows + concept SM-2 updates + XP increments + `card_answer` row insert). Steps 3-6 are pure in-memory work (no DB writes) and can run between transactions.
+- **Post-LLM transaction** wraps steps 9 (persist `assistant_response` or fallback row) and 10 (parse-derived writes: concept upserts, `assessments` from `<comprehension_signal>`, SM-2 + XP updates, blueprint and summary writes on final turn, tier-advancement check).
+- **Step 7 (LLM call) and step 8 (validation/retry) run OUTSIDE any transaction.** Holding a transaction open across network latency would tie up Supabase's PgBouncer-pooled connections (`prepare: false` setup in §7) for seconds per turn and serialise concurrent users behind one another. The retry policy already permits a second LLM call before commit, which would compound the hold.
+- **Atomicity gap is acceptable:** if the process crashes between commits, the worst case is a `user_message`/`card_answer` row persisted with no `assistant_response` follow-up. The harness loop on the next request reads all rows for the wave and finds the orphaned input — it can either rerun the LLM call (idempotent against the same input) or surface a "previous turn was interrupted" message. Acceptable given the alternative is connection exhaustion under load.
+
+The pre-graded XP toasts from step 2b are emitted to the client as part of the same response payload — they are not a separate side channel.
 
 ---
 
@@ -700,15 +707,15 @@ Steps 2b (mechanical pre-grading + card_answer row write), 9, and 10 all run ins
 
 ### Migration order (single `0000_init.sql`)
 
-1. `user_profiles`
-2. `courses`
-3. `scoping_passes`
-4. `waves`
-5. `concepts`
-6. `context_messages`
-7. `assessments`
-8. All indexes (composite uniques, partials, hot-path indexes)
-9. `CREATE EXTENSION IF NOT EXISTS pgcrypto` if `gen_random_uuid()` not already available
+1. `CREATE EXTENSION IF NOT EXISTS pgcrypto` — must run first; every table below defaults its primary key to `gen_random_uuid()`. On a fresh Postgres without pgcrypto pre-enabled (clean CI/dev databases) the first table creation would fail otherwise.
+2. `user_profiles`
+3. `courses`
+4. `scoping_passes`
+5. `waves`
+6. `concepts`
+7. `context_messages`
+8. `assessments`
+9. All indexes (composite uniques, partials, hot-path indexes)
 
 ### Validation gates before this milestone closes
 
