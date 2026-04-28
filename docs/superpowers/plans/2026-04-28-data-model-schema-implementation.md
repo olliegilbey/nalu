@@ -84,7 +84,7 @@ Append (keep alphabetised within their section):
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres?pgbouncer=true
 DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres
 # Dev user UUID — used by seed.ts and tRPC procedures until auth lands
-DEV_USER_ID=00000000-0000-0000-0000-000000000001
+DEV_USER_ID=a0000000-0000-4000-8000-000000000001
 ```
 
 - [ ] **Step 3: Verify typecheck**
@@ -1440,7 +1440,7 @@ describe("jsonb trust-boundary schemas", () => {
     expect(
       dueConceptsSnapshotSchema.parse([
         {
-          conceptId: "00000000-0000-0000-0000-000000000001",
+          conceptId: "a0000000-0000-4000-8000-000000000001",
           name: "x",
           tier: 1,
           lastQuality: null,
@@ -1459,7 +1459,7 @@ describe("jsonb trust-boundary schemas", () => {
     expect(
       seedSourceSchema.parse({
         kind: "prior_blueprint",
-        priorWaveId: "00000000-0000-0000-0000-000000000002",
+        priorWaveId: "a0000000-0000-4000-8000-000000000002",
         blueprint: { topic: "x", outline: ["a", "b"], openingText: "hi" },
       }),
     ).toBeDefined();
@@ -3363,7 +3363,7 @@ const FIXTURE: WaveSeedInputs = {
   courseSummary: "Tier 1 solid. Tier 2 starting point.",
   dueConcepts: [
     {
-      conceptId: "00000000-0000-0000-0000-000000000001",
+      conceptId: "a0000000-0000-4000-8000-000000000001",
       name: "aliasing XOR mutability",
       tier: 2,
       lastQuality: 1,
@@ -3603,7 +3603,7 @@ const SEED: WaveSeedInputs = {
 };
 
 const baseRow: Omit<ContextMessage, "id" | "createdAt"> = {
-  waveId: "00000000-0000-0000-0000-000000000001",
+  waveId: "a0000000-0000-4000-8000-000000000001",
   scopingPassId: null,
   turnIndex: 0,
   seq: 0,
@@ -3718,7 +3718,7 @@ describe("renderContext", () => {
     const r = renderContext({ kind: "scoping", topic: "Rust ownership" }, [
       mkRow({
         waveId: null,
-        scopingPassId: "00000000-0000-0000-0000-000000000002",
+        scopingPassId: "a0000000-0000-4000-8000-000000000002",
         turnIndex: 0,
         seq: 0,
         content: "ask clarifying questions",
