@@ -368,16 +368,18 @@ import * as schema from "@/db/schema";
  * Single Postgres container per integration test run.
  *
  * Migrations apply once; each test resets state via `withTestDb` (truncate
- * all tables in FK-safe order). Booted via singleFork in vitest.integration.ts
- * so we never spawn parallel containers.
+ * all tables in FK-safe order). Serialised via `fileParallelism: false`
+ * in vitest.integration.config.ts so we never spawn parallel containers.
  */
 let container: StartedPostgreSqlContainer | undefined; // eslint-disable-line functional/no-let
 let url: string | undefined; // eslint-disable-line functional/no-let
 
 beforeAll(async () => {
-  container = await new PostgreSqlContainer("postgres:16-alpine")
-    .withExtensions(["pgcrypto"]) // mirror prod — pgcrypto for gen_random_uuid()
-    .start();
+  // postgres:16-alpine ships postgresql-contrib, so pgcrypto is already
+  // present — the C1 migration only needs `CREATE EXTENSION IF NOT EXISTS
+  // pgcrypto;` to enable it. (`@testcontainers/postgresql` 11.x has no
+  // `withExtensions()` API.)
+  container = await new PostgreSqlContainer("postgres:16-alpine").start();
   url = container.getConnectionUri();
   process.env.DATABASE_URL = url;
   process.env.DIRECT_URL = url;
