@@ -16,14 +16,18 @@ export const userProfiles = pgTable("user_profiles", {
   id: uuid("id").primaryKey(),
   displayName: text("display_name").notNull(),
   totalXp: integer("total_xp").notNull().default(0),
+  // Optional — most users will leave this null. Carried into prompts when present.
   customInstructions: text("custom_instructions"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** Full row returned from DB queries. */
+/** Use in query-layer return signatures so callers never import drizzle internals. */
 export type UserProfile = InferSelectModel<typeof userProfiles>;
 
-/** Shape for INSERT statements (id and createdAt are optional with defaults). */
+/**
+ * Shape for INSERT statements. `createdAt` and `totalXp` are optional (both
+ * have defaults); `id` is required — caller supplies the auth.users UUID.
+ */
 export type UserProfileInsert = InferInsertModel<typeof userProfiles>;
 
 /** Zod schema for validating insert payloads at trust boundaries (e.g. API input). */
