@@ -10,6 +10,8 @@
 
 **Tech Stack:** Drizzle ORM, drizzle-kit, drizzle-zod, postgres-js, pg, Zod v4, Vitest workspace (unit + integration), `@testcontainers/postgresql` for ephemeral Postgres in tests, Supabase local for end-to-end dev runs.
 
+**Note (refreshed):** Plan code samples updated for drizzle-orm 0.45 / drizzle-kit 0.31 / drizzle-zod 0.8.
+
 **Out of scope (deferred to next milestone):** tRPC procedures, the harness loop orchestration described in spec §9.3, refactoring existing scoping `src/lib/course/*.ts` to use Contexts, auth + RLS.
 
 **Logical PR boundary:** end of Phase D (after the query layer is green). Phases E–G can ship as a second PR.
@@ -28,8 +30,8 @@
 - [ ] **Step 1: Install runtime + dev deps via bun**
 
 ```bash
-bun add drizzle-orm@^0.36 postgres@^3.4 drizzle-zod@^0.5
-bun add -d drizzle-kit@^0.28 @testcontainers/postgresql@^10 testcontainers@^10
+bun add drizzle-orm@^0.45 postgres@^3.4 drizzle-zod@^0.8
+bun add -d drizzle-kit@^0.31 @testcontainers/postgresql@^10 testcontainers@^10
 ```
 
 Expected: lockfile updates, no install errors.
