@@ -35,6 +35,9 @@ jobs:
       - name: Test
         run: bun run test
 
+      - name: Integration tests
+        run: bun run test:integration
+
       - name: Dead code
         run: bun run deadcode
 
