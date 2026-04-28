@@ -14,9 +14,13 @@ dev:
 build:
     bun run build
 
-# Run unit tests
+# Unit tests (fast; no DB)
 test:
     bun run test
+
+# Integration tests (boots Postgres testcontainer; slower)
+test-int:
+    bun run test:integration
 
 # Run unit tests in watch mode
 test-watch:
@@ -42,9 +46,9 @@ format-check:
 deadcode:
     bun x knip
 
-# Run all checks (format + lint + typecheck + test + deadcode).
+# Run all checks (format + lint + typecheck + unit + integration + deadcode).
 # Matches CI; green locally means green on PR.
-check: format-check lint typecheck test deadcode
+check: format-check lint typecheck test test-int deadcode
 
 # Start production server
 start:
