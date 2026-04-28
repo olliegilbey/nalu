@@ -330,7 +330,7 @@ Format (same at both injection points):
 These concepts are due for review. Weave 1-2 naturally into the Wave.
 Do not re-assess a concept already assessed this Wave.
 Vary the question format from previous assessments of the same concept.
-- {concept_name} (tier {n}): last scored {score}/5, {days} days ago
+- {conceptName} (tier {n}): last scored {score}/5, {days} days ago
 </due_for_review>
 ```
 
@@ -422,19 +422,28 @@ Tier {n}: {tier_name} - {tier_description}
 <!-- Wave-boundary review injection: embedded once at Wave start, not rebuilt per turn -->
 <due_for_review>
 These concepts are due for review. Weave 1-2 naturally into this Wave.
-- {concept_name} (tier {n}): last scored {score}/5, {days} days ago
+- {conceptName} (tier {n}): last scored {score}/5, {days} days ago
 </due_for_review>
 {omit the <due_for_review> block entirely if nothing is due}
 
 <output_formats>
-Assessment card (for deliberate testing):
+Assessment card (for deliberate testing). Field shape mirrors `baselineSchema` (`src/lib/prompts/baseline.ts`) so the same UI card component renders both baseline and teaching-time cards. Discriminated on `type`:
+
+Multiple choice:
 <assessment>
-{"concept_name":"...","question":"...","type":"multiple_choice"|"free_text","options":[...]|null,"correct_answer":"...","explanation":"...","tier":N}
+{"conceptName":"...","tier":N,"type":"multiple_choice","question":"...","options":{"A":"...","B":"...","C":"...","D":"..."},"correct":"A"|"B"|"C"|"D","freetextRubric":"...","explanation":"..."}
 </assessment>
+
+Free text:
+<assessment>
+{"conceptName":"...","tier":N,"type":"free_text","question":"...","freetextRubric":"...","explanation":"..."}
+</assessment>
+
+`freetextRubric` calibrates the grader on freetext-escape (and free-text) answers; `explanation` is the post-answer educational follow-up shown to the learner.
 
 Comprehension signal (when inferring understanding from dialogue):
 <comprehension_signal>
-{"concept_name":"...","demonstrated_quality":0-5,"evidence":"..."}
+{"conceptName":"...","demonstratedQuality":0-5,"evidence":"..."}
 </comprehension_signal>
 
 Curriculum suggestion (when identifying a gap or adjustment):
@@ -457,7 +466,7 @@ Next-Wave blueprint (final turn only, turns_remaining == 0):
 
 <!-- Appended ONLY on the Wave's final turn (turns_remaining == 0) -->
 <due_for_review>
-- {concept_name} (tier {n}): last scored {score}/5, {days} days ago
+- {conceptName} (tier {n}): last scored {score}/5, {days} days ago
 </due_for_review>
 
 Emit the closing exchange for this Wave AND a <next_wave_blueprint> covering
