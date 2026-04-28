@@ -23,8 +23,11 @@ beforeAll(async () => {
   // the module-level `url` variable.
   const startedUrl = container.getConnectionUri();
   url = startedUrl;
-  process.env.DATABASE_URL = url;
-  process.env.DIRECT_URL = url;
+  // Mutate process.env so any module that reads the URL (config loader,
+  // Drizzle client created inside withTestDb) sees the testcontainer
+  // address. This is the one legitimate place we touch process.env.
+  process.env.DATABASE_URL = url; // eslint-disable-line functional/immutable-data
+  process.env.DIRECT_URL = url; // eslint-disable-line functional/immutable-data
 
   const sql = postgres(url, { max: 1 });
   const db = drizzle(sql, { schema });
