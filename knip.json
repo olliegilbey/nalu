@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/db/seed.ts", "src/lib/types/jsonb.ts"],
+  "entry": ["src/db/seed.ts", "src/lib/types/jsonb.ts", "src/lib/llm/tagVocabulary.ts"],
   "ignore": ["src/db/client.ts"],
   "ignoreExportsUsedInFile": true,
   "ignoreBinaries": []
