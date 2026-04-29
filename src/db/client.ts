@@ -32,7 +32,13 @@ function getDb(): ReturnType<typeof drizzle<typeof schema>> {
 
 export const db = new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
   get(_target, prop: string | symbol) {
-    return getDb()[prop as keyof ReturnType<typeof drizzle<typeof schema>>];
+    const inner = getDb();
+    const value = inner[prop as keyof typeof inner];
+    // Bind so Drizzle's internal `this`-access points at the real client,
+    // not the proxy (avoids repeated getDb() trips and matches non-lazy semantics).
+    return typeof value === "function"
+      ? (value as (...a: unknown[]) => unknown).bind(inner)
+      : value;
   },
 });
 

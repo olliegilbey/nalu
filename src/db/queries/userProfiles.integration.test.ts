@@ -9,14 +9,15 @@ const ID = "11111111-1111-1111-1111-111111111111";
 describe("userProfiles queries", () => {
   it("ensureDevUser is idempotent", async () => {
     await withTestDb(async (db) => {
-      await db.insert(userProfiles).values({ id: ID, displayName: "Dev User" });
-      await db
-        .insert(userProfiles)
-        .values({ id: ID, displayName: "Other" })
-        .onConflictDoNothing({ target: userProfiles.id });
+      const { ensureDevUser } = await import("./userProfiles");
+      const first = await ensureDevUser(ID, "Dev User");
+      const second = await ensureDevUser(ID, "Other");
+      expect(first.id).toBe(ID);
+      expect(first.displayName).toBe("Dev User");
+      // Second call must not overwrite — first-write-wins via onConflictDoNothing.
+      expect(second.displayName).toBe("Dev User");
       const rows = await db.select().from(userProfiles).where(eq(userProfiles.id, ID));
       expect(rows).toHaveLength(1);
-      expect(rows[0]?.displayName).toBe("Dev User");
     });
   });
 
