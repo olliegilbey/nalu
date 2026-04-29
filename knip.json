@@ -6,7 +6,8 @@
     "src/lib/llm/tagVocabulary.ts",
     "src/db/client.ts",
     "src/db/queries/userProfiles.ts",
-    "src/db/queries/courses.ts"
+    "src/db/queries/courses.ts",
+    "src/db/queries/scopingPasses.ts"
   ],
   "ignore": [],
   "ignoreExportsUsedInFile": true,
