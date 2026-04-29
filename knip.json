@@ -10,7 +10,8 @@
     "src/db/queries/scopingPasses.ts",
     "src/db/queries/waves.ts",
     "src/db/queries/contextMessages.ts",
-    "src/db/queries/concepts.ts"
+    "src/db/queries/concepts.ts",
+    "src/db/queries/assessments.ts"
   ],
   "ignore": [],
   "ignoreExportsUsedInFile": true,
