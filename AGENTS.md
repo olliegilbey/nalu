@@ -72,4 +72,5 @@ Full detail in `docs/PRD.md`.
 5. Be concise in messages; plan mode can be verbose for unambiguity.
 
 - Note any TODOs in TODO.md when they arise for future agents to work on.
+- Use TDD frequently when appropriate
 - Comment code extensively - more than usual.
