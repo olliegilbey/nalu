@@ -61,8 +61,8 @@ export type Course = InferSelectModel<typeof courses>;
  */
 export type CourseInsert = InferInsertModel<typeof courses>;
 
-/** Validate insert payloads at trust boundaries (e.g. API input). */
+/** Zod schema for validating insert payloads at trust boundaries (e.g. API input). */
 export const coursesInsertSchema = createInsertSchema(courses);
 
-/** Validate rows read from the DB. */
+/** Zod schema for validating rows read from the DB. */
 export const coursesSelectSchema = createSelectSchema(courses);
