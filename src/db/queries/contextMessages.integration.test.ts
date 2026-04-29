@@ -194,4 +194,48 @@ describe("contextMessages queries", () => {
       expect(card?.questions[0]?.type).toBe("multiple_choice");
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Test 6: getLastAssessmentCard — null when wave has no assistant_response rows
+  // -------------------------------------------------------------------------
+  it("getLastAssessmentCard returns null when wave has only user_message rows", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      // Only a user message — no assistant_response rows exist for this wave.
+      await appendMessage({
+        parent: { kind: "wave", id: WAVE },
+        turnIndex: 0,
+        seq: 0,
+        kind: "user_message",
+        role: "user",
+        content: "<user_message>hello</user_message>",
+      });
+
+      const card = await getLastAssessmentCard(WAVE);
+      expect(card).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 7: getLastAssessmentCard — null when assistant_response has no <assessment> tag
+  // -------------------------------------------------------------------------
+  it("getLastAssessmentCard returns null when assistant_response contains no <assessment> tag", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      // An assistant response with no <assessment> block — teaching turn only.
+      await appendMessage({
+        parent: { kind: "wave", id: WAVE },
+        turnIndex: 0,
+        seq: 0,
+        kind: "assistant_response",
+        role: "assistant",
+        content: "<response>hi</response>",
+      });
+
+      const card = await getLastAssessmentCard(WAVE);
+      expect(card).toBeNull();
+    });
+  });
 });
