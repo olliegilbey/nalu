@@ -29,6 +29,17 @@ beforeAll(async () => {
   process.env.DATABASE_URL = url; // eslint-disable-line functional/immutable-data
   process.env.DIRECT_URL = url; // eslint-disable-line functional/immutable-data
 
+  // Stub non-DB env vars so `getEnv()` (required by src/db/client.ts) passes
+  // Zod validation in tests. Query-layer integration tests never actually call
+  // Supabase or the LLM; these values are intentionally fake.
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??= "https://stub.supabase.co"; // eslint-disable-line functional/immutable-data
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??= "stub-anon-key"; // eslint-disable-line functional/immutable-data
+  process.env.SUPABASE_SERVICE_ROLE_KEY ??= "stub-service-role-key"; // eslint-disable-line functional/immutable-data
+  process.env.LLM_BASE_URL ??= "https://stub.llm.invalid/v1"; // eslint-disable-line functional/immutable-data
+  process.env.LLM_API_KEY ??= "stub-llm-key"; // eslint-disable-line functional/immutable-data
+  process.env.LLM_MODEL ??= "stub-model"; // eslint-disable-line functional/immutable-data
+  process.env.DEV_USER_ID ??= "a0000000-0000-4000-8000-000000000001"; // eslint-disable-line functional/immutable-data
+
   const sql = postgres(url, { max: 1 });
   const db = drizzle(sql, { schema });
   await migrate(db, { migrationsFolder: "./src/db/migrations" });
