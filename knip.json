@@ -7,7 +7,8 @@
     "src/db/client.ts",
     "src/db/queries/userProfiles.ts",
     "src/db/queries/courses.ts",
-    "src/db/queries/scopingPasses.ts"
+    "src/db/queries/scopingPasses.ts",
+    "src/db/queries/waves.ts"
   ],
   "ignore": [],
   "ignoreExportsUsedInFile": true,
