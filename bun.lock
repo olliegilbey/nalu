@@ -40,7 +40,6 @@
         "postcss": "^8.5.9",
         "prettier": "^3.8.2",
         "tailwindcss": "^4",
-        "testcontainers": "^11.14.0",
         "typescript": "^5",
         "vitest": "^4.1.4",
       },
