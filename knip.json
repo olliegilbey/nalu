@@ -8,7 +8,8 @@
     "src/db/queries/userProfiles.ts",
     "src/db/queries/courses.ts",
     "src/db/queries/scopingPasses.ts",
-    "src/db/queries/waves.ts"
+    "src/db/queries/waves.ts",
+    "src/db/queries/contextMessages.ts"
   ],
   "ignore": [],
   "ignoreExportsUsedInFile": true,
