@@ -3,6 +3,7 @@
   "entry": [
     "src/db/seed.ts",
     "src/lib/types/jsonb.ts",
+    "src/lib/types/context.ts",
     "src/lib/llm/tagVocabulary.ts",
     "src/db/client.ts",
     "src/db/queries/index.ts",
