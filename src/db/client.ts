@@ -30,6 +30,15 @@ function getDb(): ReturnType<typeof drizzle<typeof schema>> {
   return _db;
 }
 
+/**
+ * Singleton Drizzle client for the application. Connects via the pooled
+ * `DATABASE_URL` (PgBouncer in transaction mode). The underlying postgres-js
+ * connection is created lazily on first access; to close it call
+ * `(db as unknown as { $client: { end(): Promise<void> } }).$client.end()`.
+ * Callers must NOT create their own postgres-js pool — a second pool against
+ * the same PgBouncer URL wastes connections and breaks prepared-statement
+ * semantics. For migration use cases, `DIRECT_URL` is wired in `drizzle.config.ts`.
+ */
 export const db = new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
   get(_target, prop: string | symbol) {
     const inner = getDb();

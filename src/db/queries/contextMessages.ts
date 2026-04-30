@@ -130,10 +130,16 @@ export async function getMessagesForScopingPass(
 }
 
 /**
- * Return `max(turn_index) + 1` for the given parent, or `0` if no rows exist.
+ * Return the next monotonically-increasing turn_index for a context parent.
  *
- * Callers use this to determine the `turnIndex` for the next message to append.
- * Returns 0 rather than null so the first turn is always index 0 (0-based spec).
+ * Read-then-insert race precondition: two concurrent callers will compute
+ * the same next index and the second insert will violate the partial unique
+ * index on (parent, turn_index, seq). The MVP harness loop is single-user-
+ * per-Wave, so concurrent writers cannot happen in practice. If the harness
+ * ever gains parallel write paths, this function must move to a SERIALIZABLE
+ * transaction or be replaced by a Postgres sequence per parent.
+ *
+ * See docs/TODO.md → "getNextTurnIndex race".
  */
 export async function getNextTurnIndex(parent: ContextParent): Promise<number> {
   // Build the WHERE clause from the discriminated union.

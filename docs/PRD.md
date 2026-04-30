@@ -350,7 +350,7 @@ User opens course
          the LLM call; free-text answers ride into the next turn for the LLM to grade via
          `<comprehension_signal>`. The user-side row is `card_answer`, not `user_message`.)
         -> Sanitise input (strip XML-like tags, encode special characters)
-        -> Append <user_message> OR <card_answers> row to Context
+        -> Append <user_message> OR <card_answer> row to Context
         -> Harness appends per-turn dynamic tail:
             <turns_remaining>N</turns_remaining>             (every turn, pacing signal)
             <due_for_review>…</due_for_review>                (final turn only)
