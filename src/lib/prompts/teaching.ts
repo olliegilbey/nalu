@@ -1,3 +1,5 @@
+import { escapeXmlText } from "@/lib/security/escapeXmlText";
+import { sanitiseUserInput } from "@/lib/security/sanitiseUserInput";
 import type { WaveSeedInputs } from "@/lib/types/context";
 
 /**
@@ -28,7 +30,9 @@ export function renderTeachingSystem(inputs: WaveSeedInputs): string {
       ? `<due_for_review>\nThese concepts are due for review. Weave 1-2 naturally into this lesson.\n${inputs.dueConcepts
           .map(
             (c) =>
-              `- ${c.name} (tier ${c.tier})${c.lastQuality === null ? "" : `: last scored ${c.lastQuality}/5`}`,
+              // Escape concept names — they originate from LLM output but may
+              // contain characters that could break the XML envelope.
+              `- ${escapeXmlText(c.name)} (tier ${c.tier})${c.lastQuality === null ? "" : `: last scored ${c.lastQuality}/5`}`,
           )
           .join("\n")}\n</due_for_review>`
       : "";
@@ -37,14 +41,22 @@ export function renderTeachingSystem(inputs: WaveSeedInputs): string {
 
   return [
     `<role>\n${ROLE_BLOCK}\n</role>`,
-    `<course_topic>${inputs.courseTopic}</course_topic>`,
-    `<topic_scope>${inputs.topicScope}</topic_scope>`,
-    `<proficiency_framework>\n${JSON.stringify(inputs.framework, null, 2)}\n</proficiency_framework>`,
+    // courseTopic and topicScope come from user-supplied scoping inputs; escape
+    // so injected closing tags cannot break the XML envelope.
+    `<course_topic>${escapeXmlText(inputs.courseTopic)}</course_topic>`,
+    `<topic_scope>${escapeXmlText(inputs.topicScope)}</topic_scope>`,
+    // Escape the serialised framework JSON — strings inside (topic, tier names)
+    // may contain `<`/`>` that would otherwise land raw in the XML envelope.
+    `<proficiency_framework>\n${escapeXmlText(JSON.stringify(inputs.framework, null, 2))}\n</proficiency_framework>`,
     `<learner_level>\n${tierLine}\n</learner_level>`,
+    // customInstructions is user-typed text: sanitiseUserInput encodes AND wraps
+    // in <user_message> so the model treats contents as data, not directives.
     inputs.customInstructions
-      ? `<custom_instructions>\n${inputs.customInstructions}\n</custom_instructions>`
+      ? `<custom_instructions>\n${sanitiseUserInput(inputs.customInstructions)}\n</custom_instructions>`
       : "",
-    `<progress_summary>\n${inputs.courseSummary ?? ""}\n</progress_summary>`,
+    // courseSummary is LLM-generated but may contain angle brackets; escape to
+    // keep the envelope intact.
+    `<progress_summary>\n${escapeXmlText(inputs.courseSummary ?? "")}\n</progress_summary>`,
     `<lesson_seed>\n${seedBlock}\n</lesson_seed>`,
     dueBlock,
     `<output_formats>\n${OUTPUT_FORMATS_BLOCK}\n</output_formats>`,
@@ -57,7 +69,9 @@ function renderSeedSource(seed: WaveSeedInputs["seedSource"]): string {
   if (seed.kind === "scoping_handoff") {
     return "First lesson — open from the progress summary above.";
   }
-  return JSON.stringify(seed.blueprint, null, 2);
+  // Blueprint is LLM-generated but its string fields (topic, outline items,
+  // openingText) may contain angle brackets; escape the serialised form.
+  return escapeXmlText(JSON.stringify(seed.blueprint, null, 2));
 }
 
 /**

@@ -1,18 +1,18 @@
+import { escapeXmlText } from "./escapeXmlText";
+
 /**
  * Sanitise user-supplied text before it enters an LLM prompt.
  *
  * Two-step defence:
- *   1. HTML-encode `&`, `<`, `>` so no tag boundaries survive in the payload.
+ *   1. HTML-encode `&`, `<`, `>` via `escapeXmlText` so no tag boundaries
+ *      survive in the payload.
  *   2. Wrap the encoded payload in `<user_message>…</user_message>` so the
  *      system prompt can instruct the model to treat contents as data.
  *
- * Ampersand is encoded FIRST — otherwise encoding `<` to `&lt;` and then
- * encoding `&` would double-escape and a later decoding pass could
- * resurrect a raw bracket.
- *
- * This is the sole choke point for untrusted text entering a prompt.
+ * This is the sole choke point for untrusted USER text entering a prompt.
+ * For non-user text that still needs XML escaping (course topic, framework
+ * JSON, etc.) use `escapeXmlText` directly without the wrapper.
  */
 export function sanitiseUserInput(raw: string): string {
-  const encoded = raw.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-  return `<user_message>${encoded}</user_message>`;
+  return `<user_message>${escapeXmlText(raw)}</user_message>`;
 }

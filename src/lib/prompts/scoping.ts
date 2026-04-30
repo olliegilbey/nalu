@@ -1,3 +1,4 @@
+import { escapeXmlText } from "@/lib/security/escapeXmlText";
 import type { ScopingSeedInputs } from "@/lib/types/context";
 
 /**
@@ -24,5 +25,5 @@ You will be asked, in sequence, to:
 Each request is a structured tool call with its own response schema. Stay terse, never produce free-form prose outside the requested structure.
 </role>
 
-<scoping_topic>${inputs.topic}</scoping_topic>`;
+<scoping_topic>${escapeXmlText(inputs.topic)}</scoping_topic>`;
 }
