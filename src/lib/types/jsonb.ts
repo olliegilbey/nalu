@@ -14,13 +14,40 @@ import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
 
 // --- courses.clarification -------------------------------------------------
 
-/** A single question emitted by the LLM during the scoping clarification step. */
-export const clarificationQuestionSchema = z.object({
-  id: z.string(),
-  text: z.string(),
-  type: z.enum(["single_select", "free_text"]),
-  options: z.array(z.string()).optional(),
-});
+/**
+ * A single question emitted by the LLM during the scoping clarification step.
+ *
+ * Discriminated union so:
+ *   - `single_select` requires ≥2 options (a radio group needs a choice)
+ *   - `free_text` explicitly forbids an `options` field (Zod's discriminator
+ *     strips unknown keys, so any accidental `options` is silently dropped —
+ *     the important thing is we no longer allow it through unvalidated)
+ *
+ * WHY discriminated union over a plain object with optional `options`?
+ * The old schema allowed `{type:"single_select"}` with no options, and
+ * allowed `{type:"free_text", options:[...]}` — both are nonsensical at the
+ * domain level. CodeRabbit Major finding requested tighter enforcement.
+ */
+export const clarificationQuestionSchema = z.discriminatedUnion("type", [
+  z.object({
+    id: z.string(),
+    text: z.string(),
+    type: z.literal("single_select"),
+    // single_select needs ≥2 options to present a meaningful radio group.
+    options: z.array(z.string()).min(2),
+  }),
+  // `.strict()` makes Zod error if the LLM smuggles an `options` array into
+  // a free_text question. Without `.strict()`, Zod silently strips unknown keys
+  // and the invariant is unenforced. CodeRabbit Major: tighten JSONB schemas.
+  z
+    .object({
+      id: z.string(),
+      text: z.string(),
+      type: z.literal("free_text"),
+      // Explicitly NO options field — free_text renders an open input box.
+    })
+    .strict(),
+]);
 
 /** The learner's answer to one clarification question. */
 export const clarificationAnswerSchema = z.object({

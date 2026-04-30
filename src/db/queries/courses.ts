@@ -149,6 +149,22 @@ export async function updateCourseScopingState(
   id: string,
   patch: ScopingStatePatch,
 ): Promise<Course> {
+  // Parse-before-persist: validate every JSONB field against its schema BEFORE
+  // touching the DB. This surface is a trust boundary (scoping router hands
+  // arbitrary objects from LLM-parsed responses); we want ZodErrors to surface
+  // here rather than as opaque DB failures or silent corruption on read.
+  // WHY here and not only on read? Because invalid data that reaches Postgres
+  // would corrupt the scoping context that seeds the first Wave blueprint.
+  if (patch.clarification !== undefined) {
+    clarificationJsonbSchema.parse(patch.clarification);
+  }
+  if (patch.framework !== undefined) {
+    frameworkJsonbSchema.parse(patch.framework);
+  }
+  if (patch.baseline !== undefined) {
+    baselineJsonbSchema.parse(patch.baseline);
+  }
+
   // Build the SET fragment list functionally (no push — immutable-data rule).
   // Spread concat to accumulate only the columns present in the patch.
   // `updated_at = NOW()` is always appended.

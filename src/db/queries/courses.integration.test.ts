@@ -230,4 +230,31 @@ describe("courses queries", () => {
       ).rejects.toThrow(/expected 'scoping'/);
     });
   });
+
+  // -----------------------------------------------------------------------
+  // updateCourseScopingState rejects malformed JSONB (parse-before-persist)
+  // -----------------------------------------------------------------------
+  it("updateCourseScopingState throws ZodError for malformed framework payload", async () => {
+    await seedUserAndRun(async () => {
+      const course = await createCourse({ userId: USER, topic: "Invalid framework test" });
+
+      // A framework payload missing the required `tiers` array must throw a
+      // ZodError BEFORE the DB is touched (parse-before-persist boundary).
+      await expect(
+        updateCourseScopingState(course.id, {
+          framework: {
+            topic: "x",
+            scope_summary: "y",
+            estimated_starting_tier: 1,
+            baseline_scope_tiers: [1],
+            // `tiers` is required by frameworkJsonbSchema — omitting it must throw.
+          },
+        }),
+      ).rejects.toThrow();
+
+      // Confirm the framework column was NOT written (parse threw before UPDATE).
+      const fetched = await getCourseById(course.id);
+      expect(fetched.framework).toBeNull();
+    });
+  });
 });

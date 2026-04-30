@@ -43,7 +43,8 @@ describe("parseAssistantResponse", () => {
           tier: 1,
           type: "multiple_choice",
           question: "?",
-          options: { A: "a", B: "b" },
+          // PRD mandates exactly 4 options; updated fixture to match tightened schema.
+          options: { A: "a", B: "b", C: "c", D: "d" },
           correct: "A",
         },
       ],

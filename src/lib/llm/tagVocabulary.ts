@@ -26,17 +26,27 @@ export const comprehensionSignalSchema = z.object({
 export type ComprehensionSignal = z.infer<typeof comprehensionSignalSchema>;
 
 export const assessmentQuestionSchema = z.discriminatedUnion("type", [
-  z.object({
-    question_id: z.string(),
-    concept_name: z.string(),
-    tier: z.number().int().min(1).max(5),
-    type: z.literal("multiple_choice"),
-    question: z.string(),
-    options: z.record(z.string(), z.string()),
-    correct: z.string(),
-    freetextRubric: z.string().optional(),
-    explanation: z.string().optional(),
-  }),
+  z
+    .object({
+      question_id: z.string(),
+      concept_name: z.string(),
+      tier: z.number().int().min(1).max(5),
+      type: z.literal("multiple_choice"),
+      question: z.string(),
+      // PRD mandates exactly 4 options (A/B/C/D). Free `record` previously allowed
+      // any number of keys; the refine ensures A/B/C/D are always present for a
+      // well-formed radio group. CodeRabbit Major: tighten MC branch.
+      options: z.record(z.string(), z.string()).refine((o) => Object.keys(o).length === 4, {
+        message: "multiple_choice questions must have exactly 4 options",
+      }),
+      correct: z.string(),
+      freetextRubric: z.string().optional(),
+      explanation: z.string().optional(),
+    })
+    .refine((q) => q.correct in q.options, {
+      message: "correct must reference one of the option keys",
+      path: ["correct"],
+    }),
   z.object({
     question_id: z.string(),
     concept_name: z.string(),

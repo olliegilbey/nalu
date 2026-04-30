@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { sql } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
-import { userProfiles, courses } from "@/db/schema";
+import { userProfiles, courses, concepts as conceptsTable } from "@/db/schema";
 import {
   upsertConcept,
   getConceptById,
@@ -115,6 +116,40 @@ describe("concepts queries", () => {
       const row = await getConceptById(c.id);
       expect(row.timesCorrect).toBe(2);
       expect(row.timesIncorrect).toBe(1);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Test 5: upsertConcept DO NOTHING — same name different case = one row
+  //
+  // Verifies the switch from `DO UPDATE SET name = EXCLUDED.name` to `DO NOTHING`.
+  // Both inserts must return the same row id, and only one physical row should
+  // exist in the DB (checked via a raw COUNT query).
+  // ---------------------------------------------------------------------------
+  it("upsertConcept DO NOTHING: same-name-different-case inserts exactly one row", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      // First insert creates the row.
+      const first = await upsertConcept({ courseId: COURSE, name: "Pythagoras", tier: 2 });
+      // Second insert with a different casing — must hit the conflict path and
+      // return the original row unchanged (id and tier are preserved).
+      const second = await upsertConcept({ courseId: COURSE, name: "PYTHAGORAS", tier: 99 });
+
+      // Both calls return the same row.
+      expect(second.id).toBe(first.id);
+      // Tier from the second call must NOT overwrite the original tier=2.
+      expect(second.tier).toBe(2);
+
+      // Verify at the DB level: only one row for this name in the course.
+      // This is the definitive check that DO NOTHING did not insert a second row.
+      const [countRow] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(conceptsTable)
+        .where(
+          sql`lower(${conceptsTable.name}) = lower('Pythagoras') AND ${conceptsTable.courseId} = ${COURSE}`,
+        );
+      expect(countRow?.count).toBe(1);
     });
   });
 });

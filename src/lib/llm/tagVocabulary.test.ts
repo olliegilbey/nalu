@@ -30,7 +30,9 @@ describe("tag vocabulary", () => {
     ).toThrow();
   });
 
-  it("validates an assessment with one MC question", () => {
+  it("validates an assessment with one MC question (exactly 4 options)", () => {
+    // PRD mandates A/B/C/D — exactly 4 options. Updated from the prior 2-option
+    // fixture to match the tightened schema (CodeRabbit Major).
     expect(
       assessmentSchema.parse({
         questions: [
@@ -40,12 +42,50 @@ describe("tag vocabulary", () => {
             tier: 1,
             type: "multiple_choice",
             question: "?",
-            options: { A: "a", B: "b" },
+            options: { A: "a", B: "b", C: "c", D: "d" },
             correct: "A",
           },
         ],
       }),
     ).toBeDefined();
+  });
+
+  it("rejects MC question with 3 options", () => {
+    // Exactly 4 options required (A/B/C/D per PRD). 3 options must throw.
+    expect(() =>
+      assessmentSchema.parse({
+        questions: [
+          {
+            question_id: "q2",
+            concept_name: "c",
+            tier: 1,
+            type: "multiple_choice",
+            question: "?",
+            options: { A: "a", B: "b", C: "c" },
+            correct: "A",
+          },
+        ],
+      }),
+    ).toThrow(/exactly 4 options/);
+  });
+
+  it("rejects MC question whose 'correct' is not an option key", () => {
+    // `correct` must reference one of the option keys — "Z" is not in A/B/C/D.
+    expect(() =>
+      assessmentSchema.parse({
+        questions: [
+          {
+            question_id: "q3",
+            concept_name: "c",
+            tier: 1,
+            type: "multiple_choice",
+            question: "?",
+            options: { A: "a", B: "b", C: "c", D: "d" },
+            correct: "Z",
+          },
+        ],
+      }),
+    ).toThrow(/correct must reference/);
   });
 
   it("validates a next_lesson_blueprint", () => {

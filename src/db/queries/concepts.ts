@@ -125,13 +125,17 @@ export async function getDueConceptsByCourse(
 // ---------------------------------------------------------------------------
 
 /**
- * Insert a concept, or return the existing row on case-insensitive name clash.
+ * Insert a concept, or silently skip if one already exists with the same
+ * case-insensitive name in the same course.
+ *
+ * Switched from `DO UPDATE SET name = EXCLUDED.name` to `DO NOTHING` (Codex
+ * review). The previous no-op SET still acquired a row-level lock on conflict;
+ * `DO NOTHING` avoids that lock entirely — important for Wave-start bulk upserts
+ * where many previously-seen concept names are re-submitted.
  *
  * The ON CONFLICT target mirrors the functional unique index
  * `concepts_course_name_lower_unique` on `(course_id, lower(name))`.
- * On conflict the no-op SET (`name = EXCLUDED.name`) preserves the existing
- * row untouched — `tier` immutability is guaranteed because we never reference
- * `EXCLUDED.tier`.
+ * `tier` immutability is preserved because we never touch the existing row.
  *
  * Uses raw SQL for the insert because Drizzle's
  * `onConflictDoUpdate({ target: sql\`...\` })` only accepts column references
@@ -142,10 +146,10 @@ export async function getDueConceptsByCourse(
  * @throws {Error} if the re-fetch returns no row (should never happen).
  */
 export async function upsertConcept(params: UpsertConceptParams): Promise<Concept> {
-  // Raw INSERT … ON CONFLICT: functional index target `(course_id, lower(name))`
-  // cannot be passed to Drizzle's insert builder in this version.
-  // `DO UPDATE SET name = EXCLUDED.name` is a minimal no-op — keeps the
-  // existing row (tier, SM-2 fields, counters) fully intact.
+  // Raw INSERT … ON CONFLICT DO NOTHING: functional index target
+  // `(course_id, lower(name))` cannot be passed to Drizzle's insert builder
+  // in this version. DO NOTHING skips the write without locking the existing
+  // row — cheaper than the prior `DO UPDATE SET name = EXCLUDED.name` no-op.
   await db.execute(sql`
     INSERT INTO concepts (course_id, name, description, tier)
     VALUES (
@@ -155,7 +159,7 @@ export async function upsertConcept(params: UpsertConceptParams): Promise<Concep
       ${params.tier}
     )
     ON CONFLICT (course_id, lower(name))
-    DO UPDATE SET name = EXCLUDED.name
+    DO NOTHING
   `);
 
   // Re-fetch via typed Drizzle select on the natural key so the returned row

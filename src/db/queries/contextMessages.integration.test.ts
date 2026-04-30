@@ -162,6 +162,7 @@ describe("contextMessages queries", () => {
       await seedFixtures(db);
 
       // Minimal valid AssessmentCard payload (multiple_choice variant).
+      // PRD mandates exactly 4 options; updated fixture to match tightened schema.
       const assessmentPayload = {
         questions: [
           {
@@ -170,7 +171,7 @@ describe("contextMessages queries", () => {
             tier: 1,
             type: "multiple_choice",
             question: "?",
-            options: { A: "a", B: "b" },
+            options: { A: "a", B: "b", C: "c", D: "d" },
             correct: "A",
           },
         ],
