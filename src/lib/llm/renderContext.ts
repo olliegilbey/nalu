@@ -12,10 +12,20 @@ import { renderScopingSystem } from "@/lib/prompts/scoping";
  * Cache-prefix invariant: appending a row at the end never changes the
  * rendered prefix for prior rows. Tests assert both invariants.
  *
- * Consecutive same-role rows are concatenated into one LLM message —
- * a `user_message` row immediately followed by a `harness_turn_counter`
- * row (both role=user) collapses into a single user-role API message.
- * Cleanest for cache keys against most providers; flat over the row list.
+ * Same-role coalescing — IMPORTANT PRECONDITION: this function concatenates
+ * consecutive same-role rows into one LLM message (e.g. a `user_message`
+ * row immediately followed by a `harness_turn_counter` row collapses into
+ * one user-role API message). This is a deliberate cache-key optimisation
+ * for OpenAI-compatible providers; flat over the row list.
+ *
+ * The cache-prefix invariant only holds when role transitions are stable
+ * across appends: an append that introduces a NEW user row immediately
+ * after the prior user row will *change* what the prior turn rendered to
+ * (the two rows now coalesce). The harness loop guarantees strict
+ * user↔assistant alternation per turn, so cross-turn coalescing cannot
+ * occur in practice. If a future caller produces non-alternating sequences,
+ * either they accept the coalescing (within-turn injection) or they must
+ * insert a delimiter row.
  */
 export interface LlmRenderedMessage {
   readonly role: "system" | "user" | "assistant" | "tool";

@@ -136,6 +136,41 @@ describe("renderContext", () => {
     expect(r.messages[0]?.content).toBe("A\nB");
   });
 
+  it("coalesces two consecutive user rows then emits the assistant row separately", () => {
+    // Documents within-turn coalescing — locked so refactors must update both
+    // the test and the TSDoc together (see renderContext.ts precondition block).
+    const messages: readonly ContextMessage[] = [
+      mkRow({
+        turnIndex: 0,
+        seq: 0,
+        kind: "user_message",
+        role: "user",
+        content: "<user_message>hi</user_message>",
+      }),
+      mkRow({
+        turnIndex: 0,
+        seq: 1,
+        kind: "harness_turn_counter",
+        role: "user",
+        content: "<turns_remaining>9</turns_remaining>",
+      }),
+      mkRow({
+        turnIndex: 0,
+        seq: 2,
+        kind: "assistant_response",
+        role: "assistant",
+        content: "<response>welcome</response>",
+      }),
+    ];
+    const out = renderContext(SEED, messages);
+    expect(out.messages).toHaveLength(2);
+    expect(out.messages[0]?.role).toBe("user");
+    expect(out.messages[0]?.content).toBe(
+      "<user_message>hi</user_message>\n<turns_remaining>9</turns_remaining>",
+    );
+    expect(out.messages[1]?.role).toBe("assistant");
+  });
+
   it("handles a scoping seed and its messages", () => {
     const r = renderContext({ kind: "scoping", topic: "Rust ownership" }, [
       mkRow({
