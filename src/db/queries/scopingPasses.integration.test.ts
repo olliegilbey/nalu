@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles, courses } from "@/db/schema";
+import { NotFoundError } from "./errors";
 import { openScopingPass, getOpenScopingPassByCourse, closeScopingPass } from "./scopingPasses";
 
 /** Fixed UUID for the test user. */
@@ -51,5 +52,33 @@ describe("scopingPasses queries", () => {
     const courseId = await makeCourse();
     await openScopingPass(courseId);
     await expect(openScopingPass(courseId)).rejects.toThrow();
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 4: closeScopingPass is idempotent — closed_at sticks on second call
+  // -------------------------------------------------------------------------
+  it("closeScopingPass is idempotent (closed_at sticks across repeat calls)", async () => {
+    const courseId = await makeCourse();
+    const pass = await openScopingPass(courseId);
+
+    const first = await closeScopingPass(pass.id);
+    const second = await closeScopingPass(pass.id);
+
+    // Both calls must return the same closed_at timestamp — COALESCE prevents
+    // re-stamping. Status should be 'closed' on both returns.
+    expect(first.closedAt).toEqual(second.closedAt);
+    expect(first.status).toBe("closed");
+    expect(second.status).toBe("closed");
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 5: closeScopingPass throws NotFoundError for unknown id
+  // -------------------------------------------------------------------------
+  it("closeScopingPass throws NotFoundError for unknown id", async () => {
+    await withTestDb(async () => {
+      await expect(closeScopingPass("00000000-0000-0000-0000-000000000000")).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
   });
 });

@@ -39,4 +39,13 @@ describe("userProfiles queries", () => {
       expect(row?.totalXp).toBe(35);
     });
   });
+
+  it("incrementUserXp throws NotFoundError on unknown id", async () => {
+    await withTestDb(async () => {
+      const { incrementUserXp } = await import("./userProfiles");
+      await expect(
+        incrementUserXp("00000000-0000-0000-0000-000000000000", 10),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
 });

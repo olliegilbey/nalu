@@ -188,12 +188,18 @@ export async function updateCourseScopingState(
  * Also sets `current_tier` — it starts equal to `starting_tier` but may
  * diverge as the learner moves through Waves.
  *
+ * The `WHERE status = 'scoping'` scope makes the UPDATE a no-op if the course
+ * is in any other status. `getCourseById` throws `NotFoundError` if the id is
+ * unknown; the explicit status check surfaces the lifecycle mismatch clearly.
+ *
  * Re-fetches after update to get Drizzle's camelCase-mapped row.
  */
 export async function setCourseStartingState(
   id: string,
   patch: StartingStatePatch,
 ): Promise<Course> {
+  // Scope to 'scoping' status so a concurrent call or re-play can never
+  // accidentally overwrite starting_tier on an already-active course.
   await db.execute(sql`
     UPDATE courses
     SET status = 'active',
@@ -203,8 +209,18 @@ export async function setCourseStartingState(
         current_tier = ${patch.currentTier},
         updated_at = NOW()
     WHERE id = ${id}
+      AND status = 'scoping'
   `);
-  return getCourseById(id);
+  // getCourseById throws NotFoundError if the id is unknown.
+  // If the id existed but was not in 'scoping' status, the row is unchanged
+  // and we surface that as a domain-level error.
+  const row = await getCourseById(id);
+  if (row.status !== "active") {
+    throw new Error(
+      `setCourseStartingState: course ${id} was in status='${row.status}', expected 'scoping'`,
+    );
+  }
+  return row;
 }
 
 /**
@@ -212,16 +228,22 @@ export async function setCourseStartingState(
  *
  * Called after every Wave close when the LLM emits `<course_summary_update>`.
  * `summary_updated_at` is stamped so callers can detect staleness.
+ * Throws `NotFoundError` explicitly at the UPDATE site (rather than only via
+ * the re-fetch) so the failure is visible at the mutation rather than the read.
  * Re-fetches after update to get Drizzle's camelCase-mapped row.
  */
 export async function updateCourseSummary(id: string, summary: string): Promise<Course> {
-  await db.execute(sql`
+  const result = await db.execute(sql`
     UPDATE courses
     SET summary = ${summary},
         summary_updated_at = NOW(),
         updated_at = NOW()
     WHERE id = ${id}
   `);
+  // postgres-js exposes affected-row count on `result.count` (not `rowCount`).
+  if ((result as { count?: number | null }).count === 0) {
+    throw new NotFoundError("course", id);
+  }
   return getCourseById(id);
 }
 
@@ -230,15 +252,20 @@ export async function updateCourseSummary(id: string, summary: string): Promise<
  *
  * Deterministic progression code in `src/lib/progression/` decides the new
  * tier; this function just persists the decision.
+ * Throws `NotFoundError` explicitly at the UPDATE site for clarity.
  * Re-fetches after update to get Drizzle's camelCase-mapped row.
  */
 export async function updateCourseTier(id: string, newTier: number): Promise<Course> {
-  await db.execute(sql`
+  const result = await db.execute(sql`
     UPDATE courses
     SET current_tier = ${newTier},
         updated_at = NOW()
     WHERE id = ${id}
   `);
+  // postgres-js exposes affected-row count on `result.count` (not `rowCount`).
+  if ((result as { count?: number | null }).count === 0) {
+    throw new NotFoundError("course", id);
+  }
   return getCourseById(id);
 }
 
@@ -247,15 +274,20 @@ export async function updateCourseTier(id: string, newTier: number): Promise<Cou
  *
  * SQL expression `total_xp + amount` avoids lost-update races when multiple
  * assessment completions arrive concurrently (same reason as `incrementUserXp`).
+ * Throws `NotFoundError` explicitly at the UPDATE site for clarity.
  * Re-fetches after update to get Drizzle's camelCase-mapped row.
  */
 export async function incrementCourseXp(id: string, amount: number): Promise<Course> {
-  await db.execute(sql`
+  const result = await db.execute(sql`
     UPDATE courses
     SET total_xp = total_xp + ${amount},
         updated_at = NOW()
     WHERE id = ${id}
   `);
+  // postgres-js exposes affected-row count on `result.count` (not `rowCount`).
+  if ((result as { count?: number | null }).count === 0) {
+    throw new NotFoundError("course", id);
+  }
   return getCourseById(id);
 }
 
@@ -265,14 +297,20 @@ export async function incrementCourseXp(id: string, amount: number): Promise<Cou
  * Archived courses are hidden from the learner's active dashboard but kept
  * for history and potential resumption. No return value — callers don't need
  * the updated row for this terminal transition.
+ *
+ * @throws {NotFoundError} if `id` does not match any row.
  */
 export async function archiveCourse(id: string): Promise<void> {
-  await db.execute(sql`
+  const result = await db.execute(sql`
     UPDATE courses
     SET status = 'archived',
         updated_at = NOW()
     WHERE id = ${id}
   `);
+  // postgres-js exposes affected-row count on `result.count` (not `rowCount`).
+  if ((result as { count?: number | null }).count === 0) {
+    throw new NotFoundError("course", id);
+  }
 }
 
 // ---------------------------------------------------------------------------

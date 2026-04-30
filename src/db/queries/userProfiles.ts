@@ -51,7 +51,15 @@ export async function ensureDevUser(id: string, displayName = "Dev User"): Promi
  * Raw SQL workaround: `db.update().set()` crashes `eslint-plugin-functional/
  * immutable-data` (requires typed-linting parserOptions, not configured).
  * `db.execute(sql\`...\`)` produces identical SQL and avoids the plugin issue.
+ *
+ * @throws {NotFoundError} if `id` does not match any row.
  */
 export async function incrementUserXp(id: string, amount: number): Promise<void> {
-  await db.execute(sql`UPDATE user_profiles SET total_xp = total_xp + ${amount} WHERE id = ${id}`);
+  const result = await db.execute(
+    sql`UPDATE user_profiles SET total_xp = total_xp + ${amount} WHERE id = ${id}`,
+  );
+  // postgres-js exposes affected-row count on `result.count` (not `rowCount`).
+  if ((result as { count?: number | null }).count === 0) {
+    throw new NotFoundError("user_profile", id);
+  }
 }

@@ -218,4 +218,34 @@ describe("waves queries", () => {
       ).rejects.toBeInstanceOf(NotFoundError);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Test 7: closeWave is idempotent — closed_at sticks on second call
+  // -------------------------------------------------------------------------
+  it("closeWave is idempotent (closed_at sticks across repeat calls)", async () => {
+    await seedAndRun(async () => {
+      const wave = await openWave({
+        courseId: COURSE_ID,
+        waveNumber: 1,
+        tier: 1,
+        frameworkSnapshot: FRAMEWORK_SNAPSHOT,
+        customInstructionsSnapshot: null,
+        dueConceptsSnapshot: DUE_CONCEPTS_SNAPSHOT,
+        seedSource: SEED_SOURCE_WAVE1,
+        turnBudget: 10,
+      });
+
+      const first = await closeWave(wave.id, { summary: "first", blueprintEmitted: BLUEPRINT });
+      const second = await closeWave(wave.id, { summary: "second", blueprintEmitted: BLUEPRINT });
+
+      // COALESCE keeps closed_at sticky — second call must not re-stamp.
+      expect(first.closedAt).toEqual(second.closedAt);
+      // Status is 'closed' on both returns.
+      expect(first.status).toBe("closed");
+      expect(second.status).toBe("closed");
+      // The summary is NOT updated on the second call because the WHERE status='open'
+      // clause makes the UPDATE a no-op — we verify the original value persists.
+      expect(second.summary).toBe("first");
+    });
+  });
 });

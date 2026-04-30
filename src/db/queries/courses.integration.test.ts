@@ -168,4 +168,66 @@ describe("courses queries", () => {
       );
     });
   });
+
+  // -----------------------------------------------------------------------
+  // archiveCourse throws NotFoundError on unknown id
+  // -----------------------------------------------------------------------
+  it("archiveCourse throws NotFoundError on unknown id", async () => {
+    await withTestDb(async () => {
+      await expect(archiveCourse("00000000-0000-0000-0000-000000000000")).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // incrementCourseXp throws NotFoundError on unknown id
+  // -----------------------------------------------------------------------
+  it("incrementCourseXp throws NotFoundError on unknown id", async () => {
+    await withTestDb(async () => {
+      await expect(
+        incrementCourseXp("00000000-0000-0000-0000-000000000000", 10),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // updateCourseTier throws NotFoundError on unknown id
+  // -----------------------------------------------------------------------
+  it("updateCourseTier throws NotFoundError on unknown id", async () => {
+    await withTestDb(async () => {
+      await expect(
+        updateCourseTier("00000000-0000-0000-0000-000000000000", 2),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // updateCourseSummary throws NotFoundError on unknown id
+  // -----------------------------------------------------------------------
+  it("updateCourseSummary throws NotFoundError on unknown id", async () => {
+    await withTestDb(async () => {
+      await expect(
+        updateCourseSummary("00000000-0000-0000-0000-000000000000", "ghost"),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // setCourseStartingState rejects courses not in 'scoping' status
+  // -----------------------------------------------------------------------
+  it("setCourseStartingState rejects courses not in 'scoping' status", async () => {
+    await seedUserAndRun(async () => {
+      const course = await createCourse({ userId: USER, topic: "Archived topic" });
+      // Archive the course so its status is 'archived', not 'scoping'.
+      await archiveCourse(course.id);
+      await expect(
+        setCourseStartingState(course.id, {
+          initialSummary: "x",
+          startingTier: 1,
+          currentTier: 1,
+        }),
+      ).rejects.toThrow(/expected 'scoping'/);
+    });
+  });
 });

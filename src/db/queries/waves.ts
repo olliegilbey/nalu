@@ -184,27 +184,34 @@ export async function openWave(params: OpenWaveParams): Promise<Wave> {
  * Close an open Wave: sets `status = 'closed'`, records the summary and
  * blueprint, stamps `closed_at`.
  *
- * Uses raw SQL UPDATE to avoid `eslint-plugin-functional/immutable-data`
- * crash on `db.update().set()`. Re-fetches via `getWaveById` so the return
- * value goes through Drizzle's camelCase mapping and JSONB validation.
+ * Idempotent: `COALESCE(closed_at, NOW())` means the timestamp never
+ * re-stamps on a second call. `WHERE status = 'open'` scope prevents
+ * accidentally re-writing a row that another path already closed.
  *
- * @throws {NotFoundError} if `id` does not match any row.
+ * `blueprintEmitted` is Zod-validated before the write (parse-before-persist
+ * boundary) so a malformed blueprint never reaches the DB.
+ *
+ * @throws {NotFoundError} if `id` does not match any row (via `getWaveById`).
  */
 export async function closeWave(id: string, params: CloseWaveParams): Promise<Wave> {
-  // Raw SQL UPDATE — mirrors the pattern from courses.ts and scopingPasses.ts.
+  // Validate JSONB BEFORE the write — never trust caller-supplied JSONB shape.
+  const validatedBlueprint = blueprintEmittedSchema.parse(params.blueprintEmitted);
+
   // `::jsonb` cast ensures Postgres stores the value in the jsonb column type
-  // even when the driver sends it as a string.
+  // even when the driver sends it as a string. COALESCE keeps closed_at
+  // sticky across idempotent re-calls. Status scope prevents silent no-op on
+  // already-closed waves (getWaveById below still returns the existing row).
   await db.execute(sql`
     UPDATE waves
     SET status = 'closed',
         summary = ${params.summary},
-        blueprint_emitted = ${JSON.stringify(params.blueprintEmitted)}::jsonb,
-        closed_at = NOW()
+        blueprint_emitted = ${JSON.stringify(validatedBlueprint)}::jsonb,
+        closed_at = COALESCE(closed_at, NOW())
     WHERE id = ${id}
+      AND status = 'open'
   `);
 
-  // Re-fetch via typed Drizzle select for camelCase mapping and JSONB validation.
-  // getWaveById throws NotFoundError if the row doesn't exist (id unknown or
-  // DELETE raced the UPDATE — not realistic in tests but correct semantics).
+  // getWaveById throws NotFoundError if the row does not exist; idempotent
+  // for already-closed Waves (returns the existing row unchanged).
   return getWaveById(id);
 }

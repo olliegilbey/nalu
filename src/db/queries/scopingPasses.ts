@@ -53,18 +53,29 @@ export async function openScopingPass(courseId: string): Promise<ScopingPass> {
 /**
  * Flip a scoping pass to `status = 'closed'` and stamp `closed_at`.
  *
- * Uses raw SQL to avoid `immutable-data` lint crash on `db.update().set()`.
- * Re-fetches via typed Drizzle select so the returned row has correct
- * camelCase mapping (raw `RETURNING *` gives snake_case from the driver).
+ * Idempotent: `COALESCE(closed_at, NOW())` means a second call returns the
+ * same `closed_at` as the first — the timestamp never re-stamps. The
+ * `status = 'open'` scope prevents accidentally updating a row that another
+ * path already closed via a different status value.
  *
- * @throws {NotFoundError} if `id` does not match any row.
+ * 0-row UPDATE is ambiguous (id unknown vs already closed), so we re-fetch
+ * unconditionally to distinguish. If the row exists in any status, return it.
+ *
+ * @throws {NotFoundError} if `id` does not match any row at all.
  */
 export async function closeScopingPass(id: string): Promise<ScopingPass> {
-  // Raw SQL UPDATE — mirrors the D4 pattern exactly.
+  // COALESCE makes closed_at sticky — calling closeScopingPass twice returns
+  // the same closed_at both times. Status-scope prevents accidentally
+  // re-stamping a row that some other path closed.
   await db.execute(
-    sql`UPDATE scoping_passes SET status = 'closed', closed_at = NOW() WHERE id = ${id}`,
+    sql`UPDATE scoping_passes
+        SET status = 'closed',
+            closed_at = COALESCE(closed_at, NOW())
+        WHERE id = ${id}
+          AND status = 'open'`,
   );
-  // Re-fetch for camelCase mapping via Drizzle's typed select.
+  // 0-row UPDATE is ambiguous: id unknown OR already closed. Re-fetch to
+  // distinguish. If the row exists at all, return it (idempotent close).
   const [row] = await db.select().from(scopingPasses).where(eq(scopingPasses.id, id));
   if (!row) throw new NotFoundError("scoping_pass", id);
   return row;
