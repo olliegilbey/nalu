@@ -1,5 +1,19 @@
 # TODOs
 
-- **Data-model rewrite for Waves + per-message Context rows.** PRD §3.4 currently specifies a `sessions` table with `messages JSONB`. The Wave model in PRD §4.2 / §5.1 and the glossary require (a) a `waves` table — one row per Wave, storing the crystallised system prompt inputs (topic, framework snapshot, tier, `startingContext` or blueprint, initial SM-2 due list, turn budget, status, next-Wave blueprint emitted at close, summary) and (b) a `context_messages` table — row-per-message (wave_id, turn_index, role, content, dynamic-tail markers) so the Context is append-only and byte-stable within a Wave. Replace the JSONB blob before building Phase 2 tRPC procedures; otherwise `wave.turn` has nowhere clean to append and the cache-stable prefix invariant is unverifiable. Design the `wave_seed` and `due_for_review` payloads as durable columns so Wave N+1 can be reconstructed exactly from DB state.
+- **Zod bound-violation retry for scoping `generateStructured` calls.** When scoping `generateStructured` calls (e.g. framework generation, where `<max_topics>` / `<min_units>` are enforced post-parse) fail schema validation, do one automated retry feeding the validation error back to the model as corrective context. Currently the transport-level `LLM.maxRetries` covers network/transport only; schema-drift retries are a separate concern. Scoped to scoping for now; generalise to all `generateStructured` callers if/when teaching-session schemas hit the same failure mode. Subsumed by spec §9.2's retry policy — implementation lives in the next-milestone harness loop.
 
-- **Zod bound-violation retry for scoping `generateStructured` calls.** When scoping `generateStructured` calls (e.g. framework generation, where `<max_topics>` / `<min_units>` are enforced post-parse) fail schema validation, do one automated retry feeding the validation error back to the model as corrective context. Currently the transport-level `LLM.maxRetries` covers network/transport only; schema-drift retries are a separate concern. Scoped to scoping for now; generalise to all `generateStructured` callers if/when teaching-session schemas hit the same failure mode.
+- **Tier-reduction thresholds in `tuning.ts`.** Define when sustained low-quality answers should drop the learner a tier; currently advancement is one-way.
+
+- **Mechanical-MC quality-score mapping confirmed in `tuning.ts`.** Lock the integer-to-SM-2-quality mapping for server-graded multiple-choice answers (correct/incorrect → 5/2 today, but the boundary cases need spec-level sign-off).
+
+- **`llm_call_logs` audit table (post-MVP).** Per-call row capturing prompt hash, token usage, latency, model id — for prompt-cache hit-rate tracking and regression diagnosis.
+
+- **`<curriculum_note>` + `curriculum_notes` table (post-MVP).** When framework editing earns its keep, design the tag schema, persistence table, and consumer (auto-edit vs user-surfaced suggestion) together.
+
+- **`tier_changes` history (post-MVP).** Audit trail of tier advancements/reductions per course (timestamp, from/to tier, trigger). Useful for UI history and progression diagnostics.
+
+- **Auth wiring milestone (its own spec).** Replace dev-user stub with real Supabase Auth + RLS. Spec covers session handling, RLS policies on every table, and migration of dev rows.
+
+- **Cache hot-path verification against Cerebras / OpenAI-compatible.** Confirm prompt-cache hit-rates on production providers; if Cerebras's cache window or hash semantics diverge from OpenAI's, the byte-stable prefix invariant may need adjustment.
+
+- **`turns_remaining` exact attachment point.** Decide whether `<turns_remaining>` rides as its own `harness_turn_counter` row prepended to each user turn, or is inlined into the user message — affects render and replay semantics.
