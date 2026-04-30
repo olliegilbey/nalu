@@ -313,16 +313,17 @@ User types a topic
   -> tRPC: course.submitBaseline (router orchestrates; grading lives in src/lib)
     -> Router calls lib baseline-grading flow:
        - mechanical MC grading (string compare, no LLM)
-       - single batched LLM call for free-text + `startingContext`
-         (handoff string for the fresh teaching session)
+       - single batched LLM call for free-text + cumulative-summary seed
+         (the LLM emits a prose summary that becomes courses.summary —
+         the seed for Wave 1's <progress_summary> block)
     -> determineStartingTier (pure): per-tier aggregate → starting tier
     -> Bulk-insert concepts + assessments, seed SM-2, award XP
-    -> UPDATE courses SET current_tier, baseline (+startingContext), total_xp
+    -> UPDATE courses SET current_tier, starting_tier, baseline, summary, total_xp
     -> Return { startingTier, xpEarned, gradings }
   -> Transition to first Wave
 ```
 
-**Scoping vs. teaching prompts.** Scoping is one append-only conversation: only `clarification.ts` emits a `role: system` message; each subsequent scoping prompt appends user/assistant messages to keep the cache prefix byte-stable, making the extra LLM round trips cheap. Once scoping completes, the scoping prompts and history are discarded. The first Wave assembles a _fresh_ course-start system prompt (Section 5.1) seeded from DB state: topic, `<topic_scope>` from clarification answers, framework, starting tier, `startingContext` handoff, and the initial SM-2 due concepts. Scoping instructions never leak into ongoing Wave turns.
+**Scoping vs. teaching prompts.** Scoping is one append-only conversation: only `clarification.ts` emits a `role: system` message; each subsequent scoping prompt appends user/assistant messages to keep the cache prefix byte-stable, making the extra LLM round trips cheap. Once scoping completes, the scoping prompts and history are discarded. The first Wave assembles a _fresh_ course-start system prompt (Section 5.1) seeded from DB state: topic, `<topic_scope>` from clarification answers, framework, starting tier, `courses.summary` (the baseline-derived seed that becomes Wave 1's `<progress_summary>` block), and the initial SM-2 due concepts. Scoping instructions never leak into ongoing Wave turns.
 
 ### 4.2 Learning Session Flow
 
@@ -330,12 +331,12 @@ A teaching session is a sequence of **Waves** — fixed-length teaching units (`
 
 ```text
 User opens course
-  -> Load: course, framework, summary, custom_instructions, startingContext
+  -> Load: course, framework, summary, custom_instructions
   -> Load: full chat history from last Wave (render in UI)
 
   -> If no Wave in progress (first visit or prior Wave closed):
       -> Assemble fresh Wave system prompt (Section 5):
-          - Wave 1: seeded from startingContext + initial SM-2 due concepts
+          - Wave 1: seeded from courses.summary (baseline-derived) + initial SM-2 due concepts
           - Subsequent Waves: seeded from the prior Wave's blueprint
             (topic, outline, opening user-facing text) + fresh SM-2 due concepts
       -> Render the pre-drafted opening user-facing text.
@@ -477,11 +478,11 @@ Tier {n}: {tier_name} - {tier_description}
 {accumulated summary of prior learning}
 </progress_summary>
 
-<!-- Wave-specific seed: the blueprint for this Wave, or startingContext for Wave 1 -->
-<wave_seed>
-{Wave 1: startingContext from submitBaseline}
-{Wave N>1: { topic, outline, opening_user_text } from the prior Wave's blueprint}
-</wave_seed>
+<!-- Wave-specific seed: discriminated by waves.seed_source -->
+<lesson_seed>
+{Wave 1: { kind: "scoping_handoff" } — system prompt seeds the opening from courses.summary + framework + starting tier}
+{Wave N>1: { kind: "prior_blueprint", priorWaveId, blueprint: { topic, outline, openingText } } from the prior Wave's final turn}
+</lesson_seed>
 
 <!-- Wave-boundary review injection: embedded once at Wave start, not rebuilt per turn -->
 <due_for_review>
@@ -756,8 +757,8 @@ Each phase is independently testable. Agents should create a TODO list at the st
 6. Build tRPC: `course.clarify` (clarification questions for new topic)
 7. Build tRPC: `course.generateFramework` (create course + framework, user may edit before continuing)
 8. Build tRPC: `course.generateBaseline` (baseline questions scoped by estimated starting tier)
-9. Build tRPC: `course.submitBaseline` (mechanical MC grading + single batched LLM call for free-text + `startingContext` handoff)
-10. Build tRPC: `wave.start` (open a new Wave: crystallise the Wave's system prompt from `startingContext` + initial SM-2 due concepts for Wave 1, or from the prior Wave's blueprint + fresh SM-2 state thereafter; return the pre-drafted opening user-facing text)
+9. Build tRPC: `course.submitBaseline` (mechanical MC grading + single batched LLM call for free-text; the LLM-emitted prose summary lands on `courses.summary` as the seed for Wave 1's `<progress_summary>`)
+10. Build tRPC: `wave.start` (open a new Wave: crystallise the Wave's system prompt from `courses.summary` + framework + starting tier + initial SM-2 due concepts for Wave 1, or from the prior Wave's blueprint + fresh SM-2 state thereafter; return the pre-drafted opening user-facing text)
 11. Build tRPC: `wave.turn` (append `<user_message>` to the Wave's Context, inject `<turns_remaining>`, on the final turn also inject `<due_for_review>` and the blueprint-emission instruction; call LLM; parse `<assessment>` / `<comprehension_signal>` / `<next_lesson_blueprint>` / `<course_summary_update>`; SM-2 + XP update; persist Context row)
 12. Build tRPC: `wave.close` (on the final turn, persist the `<next_lesson_blueprint>` payload, rewrite `courses.summary` from `<course_summary_update>`, and archive the Context for history without replaying it)
 13. Build spaced repetition scheduler (query due concepts; embed in the Wave's system prompt at Wave start; append to the dynamic tail on the Wave's final turn; exclude concepts already assessed within the current Wave)
