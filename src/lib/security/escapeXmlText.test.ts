@@ -18,6 +18,9 @@ describe("escapeXmlText", () => {
   });
 
   it("encodes every angle bracket and ampersand, nothing else", () => {
+    // Multi-occurrence input — proves we replace all instances, not just the
+    // first match. The earlier "ampersand first" test only covers one of each.
+    expect(escapeXmlText("&& <<x>>")).toBe("&amp;&amp; &lt;&lt;x&gt;&gt;");
     expect(escapeXmlText("'\"unicode→arrow")).toBe("'\"unicode→arrow");
   });
 });

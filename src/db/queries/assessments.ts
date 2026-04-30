@@ -95,6 +95,14 @@ export async function recordAssessment(params: RecordAssessmentParams): Promise<
   // Equal turn_index is allowed (multiple concepts assessed on the same turn).
   // WHY: out-of-order writes would corrupt the assessment timeline used by the
   // SM-2 scheduler and XP summation logic downstream.
+  //
+  // CONCURRENCY: SELECT MAX + INSERT is not atomic — two parallel writers can
+  // both observe the same `currentMax` and both insert. Safe today because the
+  // harness loop guarantees a single writer per Wave (single-user-per-Wave
+  // invariant; same shape as `getNextTurnIndex` in `contextMessages.ts`). If
+  // parallel write paths are ever added (sub-agent harness, multi-device
+  // replay), wrap this read+insert in a SERIALIZABLE transaction or take an
+  // advisory lock keyed by `waveId`. Tracked in `docs/TODO.md`.
   const [maxRow] = await db
     .select({ maxTurn: max(assessments.turnIndex) })
     .from(assessments)

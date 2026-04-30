@@ -22,6 +22,8 @@
 
 - **`getNextTurnIndex` read-then-insert race (post-MVP).** The current implementation is safe under the single-user-per-Wave harness loop — concurrent writers cannot occur. If parallel write paths are ever added (e.g. sub-agent harness, multi-device replay), wrap the SELECT MAX + INSERT in a SERIALIZABLE transaction or convert to a per-parent Postgres sequence. See `src/db/queries/contextMessages.ts` for the inline note.
 
+- **`recordAssessment` monotonic-turn race (post-MVP).** Same shape as the `getNextTurnIndex` race above: the SELECT MAX + INSERT in `src/db/queries/assessments.ts` is safe under the single-user-per-Wave invariant, but two concurrent writers could both observe the same `currentMax` and break monotonicity. Hardening (SERIALIZABLE transaction or `pg_advisory_xact_lock` keyed by `waveId`) is deferred until parallel write paths exist; flagged by CodeRabbit on PR #8 and acknowledged inline.
+
 - **File-size cleanup pass (post-merge).** `src/db/queries/courses.ts`, `src/db/migrations/schema.integration.test.ts`, and `src/db/queries/contextMessages.integration.test.ts` exceed the 200-LOC guideline. Splits were intentionally deferred from PR #8 to keep the review-fix diff focused. Suggested splits: courses.ts → courses-reads.ts + courses-writes.ts + courses-utils.ts; integration tests → one file per table.
 
 - **Optional `closed_at >= opened_at` invariant (post-MVP).** Considered for `scoping_passes` and `waves` during Phase B but deferred — adds a CHECK that uses two columns and would have a nontrivial cost on bulk insert. Add when we have a concrete bug or audit requirement that would benefit.

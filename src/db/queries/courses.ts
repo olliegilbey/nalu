@@ -294,6 +294,14 @@ export async function updateCourseTier(id: string, newTier: number): Promise<Cou
  * Re-fetches after update to get Drizzle's camelCase-mapped row.
  */
 export async function incrementCourseXp(id: string, amount: number): Promise<Course> {
+  // App-layer guard: XP awards are monotonically non-negative (a "0 XP" outcome
+  // is permitted for a wrong answer; "negative XP" is never a valid outcome).
+  // The DB CHECK `courses_total_xp_nonneg` is a backstop, not the primary line
+  // of defense — surface a typed error here so call sites get a clear message.
+  if (!Number.isInteger(amount) || amount < 0) {
+    throw new Error(`incrementCourseXp: amount must be a non-negative integer (got ${amount})`);
+  }
+
   const result = await db.execute(sql`
     UPDATE courses
     SET total_xp = total_xp + ${amount},

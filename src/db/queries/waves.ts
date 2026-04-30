@@ -161,17 +161,25 @@ export async function getLatestWaveNumberByCourse(courseId: string): Promise<num
  * must close the current Wave before opening the next.
  */
 export async function openWave(params: OpenWaveParams): Promise<Wave> {
+  // Parse-before-persist boundary: each JSONB column is Zod-validated BEFORE
+  // the insert so a malformed payload throws here rather than landing a bad
+  // row that only fails on the next read via `waveRowGuard`. Mirrors the
+  // pattern used in `closeWave` for `blueprintEmitted`.
+  const validatedFramework = frameworkJsonbSchema.parse(params.frameworkSnapshot);
+  const validatedDue = dueConceptsSnapshotSchema.parse(params.dueConceptsSnapshot);
+  const validatedSeed = seedSourceSchema.parse(params.seedSource);
+
   const [row] = await db
     .insert(waves)
     .values({
       courseId: params.courseId,
       waveNumber: params.waveNumber,
       tier: params.tier,
-      // Cast unknown → JSON string for Drizzle insert; DB stores as jsonb.
-      frameworkSnapshot: params.frameworkSnapshot as Wave["frameworkSnapshot"],
+      // Cast validated payloads → Drizzle JSONB column types.
+      frameworkSnapshot: validatedFramework as Wave["frameworkSnapshot"],
       customInstructionsSnapshot: params.customInstructionsSnapshot,
-      dueConceptsSnapshot: params.dueConceptsSnapshot as Wave["dueConceptsSnapshot"],
-      seedSource: params.seedSource as Wave["seedSource"],
+      dueConceptsSnapshot: validatedDue as Wave["dueConceptsSnapshot"],
+      seedSource: validatedSeed as Wave["seedSource"],
       turnBudget: params.turnBudget,
     })
     .returning();

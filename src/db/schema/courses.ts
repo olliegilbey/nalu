@@ -44,6 +44,18 @@ export const courses = pgTable(
   (t) => [
     // Restrict status to known lifecycle values — DB-level guard against bad writes.
     check("courses_status_check", sql`${t.status} IN ('scoping','active','archived')`),
+    // Tier values are 1-indexed (matches `framework.tiers` ordinals); zero/negative
+    // values would break `progression.ts` math and `due-concepts` SM-2 reads.
+    check("courses_current_tier_positive", sql`${t.currentTier} > 0`),
+    // Pre-scoping rows have NULL `starting_tier`; once set it must follow the same
+    // 1-indexed convention as `current_tier`.
+    check(
+      "courses_starting_tier_positive_or_null",
+      sql`${t.startingTier} IS NULL OR ${t.startingTier} > 0`,
+    ),
+    // XP totals are monotonic (assessments only ever award positive XP); a
+    // negative `total_xp` would indicate corruption or a buggy mutator.
+    check("courses_total_xp_nonneg", sql`${t.totalXp} >= 0`),
     // Most queries filter by userId; index prevents seq-scans on large tables.
     index("courses_user_id_idx").on(t.userId),
   ],

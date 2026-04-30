@@ -55,6 +55,12 @@ export async function ensureDevUser(id: string, displayName = "Dev User"): Promi
  * @throws {NotFoundError} if `id` does not match any row.
  */
 export async function incrementUserXp(id: string, amount: number): Promise<void> {
+  // App-layer guard: XP awards are monotonically non-negative integers. A
+  // negative or fractional `amount` would indicate a buggy caller; reject up
+  // front with a typed error rather than letting a bad UPDATE land.
+  if (!Number.isInteger(amount) || amount < 0) {
+    throw new Error(`incrementUserXp: amount must be a non-negative integer (got ${amount})`);
+  }
   const result = await db.execute(
     sql`UPDATE user_profiles SET total_xp = total_xp + ${amount} WHERE id = ${id}`,
   );

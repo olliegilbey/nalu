@@ -1,4 +1,4 @@
-import { and, eq, lte, sql } from "drizzle-orm";
+import { and, asc, eq, lte, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { concepts, type Concept } from "@/db/schema";
 import type { QualityScore, SM2CardState } from "@/lib/types/spaced-repetition";
@@ -106,18 +106,26 @@ export async function getDueConceptsByCourse(
   courseId: string,
   now: Date,
 ): Promise<readonly Concept[]> {
-  return db
-    .select()
-    .from(concepts)
-    .where(
-      and(
-        eq(concepts.courseId, courseId),
-        // Belt-and-suspenders: IS NOT NULL makes index use explicit; lte
-        // already returns false for NULL but the planner benefits from the hint.
-        sql`${concepts.nextReviewAt} IS NOT NULL`,
-        lte(concepts.nextReviewAt, now),
-      ),
-    );
+  return (
+    db
+      .select()
+      .from(concepts)
+      .where(
+        and(
+          eq(concepts.courseId, courseId),
+          // Belt-and-suspenders: IS NOT NULL makes index use explicit; lte
+          // already returns false for NULL but the planner benefits from the hint.
+          sql`${concepts.nextReviewAt} IS NOT NULL`,
+          lte(concepts.nextReviewAt, now),
+        ),
+      )
+      // Deterministic ordering: nextReviewAt ASC means oldest-due first (matches
+      // SM-2's "review what's most overdue" semantics); id ASC is a stable
+      // tie-breaker for rows due at the exact same instant. WHY this matters:
+      // these rows feed the Wave-start prompt, and the rendered byte sequence
+      // must be stable across calls or the OpenAI-compatible prompt cache misses.
+      .orderBy(asc(concepts.nextReviewAt), asc(concepts.id))
+  );
 }
 
 // ---------------------------------------------------------------------------

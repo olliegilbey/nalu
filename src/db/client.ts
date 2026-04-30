@@ -51,4 +51,5 @@ export const db = new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
   },
 });
 
+/** Inferred type of the exported `db` proxy — re-export for query-layer signatures. */
 export type DB = typeof db;

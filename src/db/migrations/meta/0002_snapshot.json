@@ -1,0 +1,993 @@
+{
+  "id": "b20b2966-5758-42b4-b345-b3ad2b7fea9f",
+  "prevId": "8611c060-859d-478d-941b-4a4e53c00d44",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.assessments": {
+      "name": "assessments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "wave_id": {
+          "name": "wave_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "concept_id": {
+          "name": "concept_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "turn_index": {
+          "name": "turn_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "question": {
+          "name": "question",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_answer": {
+          "name": "user_answer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_correct": {
+          "name": "is_correct",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quality_score": {
+          "name": "quality_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "assessment_kind": {
+          "name": "assessment_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "xp_awarded": {
+          "name": "xp_awarded",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "assessed_at": {
+          "name": "assessed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "assessments_wave_id_idx": {
+          "name": "assessments_wave_id_idx",
+          "columns": [
+            {
+              "expression": "wave_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "assessments_concept_assessed_idx": {
+          "name": "assessments_concept_assessed_idx",
+          "columns": [
+            {
+              "expression": "concept_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "assessed_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "assessments_wave_id_waves_id_fk": {
+          "name": "assessments_wave_id_waves_id_fk",
+          "tableFrom": "assessments",
+          "tableTo": "waves",
+          "columnsFrom": ["wave_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "assessments_concept_id_concepts_id_fk": {
+          "name": "assessments_concept_id_concepts_id_fk",
+          "tableFrom": "assessments",
+          "tableTo": "concepts",
+          "columnsFrom": ["concept_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "assessments_kind_check": {
+          "name": "assessments_kind_check",
+          "value": "\"assessments\".\"assessment_kind\" IN ('card_mc','card_freetext','inferred')"
+        },
+        "assessments_question_required_for_card_kinds": {
+          "name": "assessments_question_required_for_card_kinds",
+          "value": "\"assessments\".\"assessment_kind\" = 'inferred' OR \"assessments\".\"question\" IS NOT NULL"
+        },
+        "assessments_turn_index_nonneg": {
+          "name": "assessments_turn_index_nonneg",
+          "value": "\"assessments\".\"turn_index\" >= 0"
+        },
+        "assessments_quality_score_range": {
+          "name": "assessments_quality_score_range",
+          "value": "\"assessments\".\"quality_score\" >= 0 AND \"assessments\".\"quality_score\" <= 5"
+        },
+        "assessments_xp_awarded_nonneg": {
+          "name": "assessments_xp_awarded_nonneg",
+          "value": "\"assessments\".\"xp_awarded\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.concepts": {
+      "name": "concepts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "course_id": {
+          "name": "course_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tier": {
+          "name": "tier",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "easiness_factor": {
+          "name": "easiness_factor",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 2.5
+        },
+        "interval_days": {
+          "name": "interval_days",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "repetition_count": {
+          "name": "repetition_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "last_quality_score": {
+          "name": "last_quality_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_reviewed_at": {
+          "name": "last_reviewed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_review_at": {
+          "name": "next_review_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "times_correct": {
+          "name": "times_correct",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "times_incorrect": {
+          "name": "times_incorrect",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "concepts_course_name_lower_unique": {
+          "name": "concepts_course_name_lower_unique",
+          "columns": [
+            {
+              "expression": "course_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lower(\"name\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "concepts_due_idx": {
+          "name": "concepts_due_idx",
+          "columns": [
+            {
+              "expression": "course_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_review_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"concepts\".\"next_review_at\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "concepts_course_tier_idx": {
+          "name": "concepts_course_tier_idx",
+          "columns": [
+            {
+              "expression": "course_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "tier",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "concepts_course_id_courses_id_fk": {
+          "name": "concepts_course_id_courses_id_fk",
+          "tableFrom": "concepts",
+          "tableTo": "courses",
+          "columnsFrom": ["course_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "concepts_tier_positive": {
+          "name": "concepts_tier_positive",
+          "value": "\"concepts\".\"tier\" > 0"
+        },
+        "concepts_interval_days_nonneg": {
+          "name": "concepts_interval_days_nonneg",
+          "value": "\"concepts\".\"interval_days\" >= 0"
+        },
+        "concepts_repetition_count_nonneg": {
+          "name": "concepts_repetition_count_nonneg",
+          "value": "\"concepts\".\"repetition_count\" >= 0"
+        },
+        "concepts_easiness_factor_min": {
+          "name": "concepts_easiness_factor_min",
+          "value": "\"concepts\".\"easiness_factor\" >= 1.3"
+        },
+        "concepts_last_quality_score_range": {
+          "name": "concepts_last_quality_score_range",
+          "value": "\"concepts\".\"last_quality_score\" IS NULL OR (\"concepts\".\"last_quality_score\" >= 0 AND \"concepts\".\"last_quality_score\" <= 5)"
+        },
+        "concepts_times_correct_nonneg": {
+          "name": "concepts_times_correct_nonneg",
+          "value": "\"concepts\".\"times_correct\" >= 0"
+        },
+        "concepts_times_incorrect_nonneg": {
+          "name": "concepts_times_incorrect_nonneg",
+          "value": "\"concepts\".\"times_incorrect\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.context_messages": {
+      "name": "context_messages",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "wave_id": {
+          "name": "wave_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scoping_pass_id": {
+          "name": "scoping_pass_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "turn_index": {
+          "name": "turn_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seq": {
+          "name": "seq",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "context_messages_wave_order": {
+          "name": "context_messages_wave_order",
+          "columns": [
+            {
+              "expression": "wave_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "turn_index",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"context_messages\".\"wave_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "context_messages_scoping_order": {
+          "name": "context_messages_scoping_order",
+          "columns": [
+            {
+              "expression": "scoping_pass_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "turn_index",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"context_messages\".\"scoping_pass_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "context_messages_wave_id_waves_id_fk": {
+          "name": "context_messages_wave_id_waves_id_fk",
+          "tableFrom": "context_messages",
+          "tableTo": "waves",
+          "columnsFrom": ["wave_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "context_messages_scoping_pass_id_scoping_passes_id_fk": {
+          "name": "context_messages_scoping_pass_id_scoping_passes_id_fk",
+          "tableFrom": "context_messages",
+          "tableTo": "scoping_passes",
+          "columnsFrom": ["scoping_pass_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "context_messages_kind_check": {
+          "name": "context_messages_kind_check",
+          "value": "\"context_messages\".\"kind\" IN ('user_message','card_answer','assistant_response','harness_turn_counter','harness_review_block')"
+        },
+        "context_messages_role_check": {
+          "name": "context_messages_role_check",
+          "value": "\"context_messages\".\"role\" IN ('user','assistant','tool')"
+        },
+        "context_messages_one_parent": {
+          "name": "context_messages_one_parent",
+          "value": "(\"context_messages\".\"wave_id\" IS NOT NULL) <> (\"context_messages\".\"scoping_pass_id\" IS NOT NULL)"
+        },
+        "context_messages_turn_index_nonneg": {
+          "name": "context_messages_turn_index_nonneg",
+          "value": "\"context_messages\".\"turn_index\" >= 0"
+        },
+        "context_messages_seq_nonneg": {
+          "name": "context_messages_seq_nonneg",
+          "value": "\"context_messages\".\"seq\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.courses": {
+      "name": "courses",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "topic": {
+          "name": "topic",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "clarification": {
+          "name": "clarification",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "framework": {
+          "name": "framework",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "baseline": {
+          "name": "baseline",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "starting_tier": {
+          "name": "starting_tier",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "current_tier": {
+          "name": "current_tier",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "total_xp": {
+          "name": "total_xp",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'scoping'"
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "summary_updated_at": {
+          "name": "summary_updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "courses_user_id_idx": {
+          "name": "courses_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "courses_user_id_user_profiles_id_fk": {
+          "name": "courses_user_id_user_profiles_id_fk",
+          "tableFrom": "courses",
+          "tableTo": "user_profiles",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "courses_status_check": {
+          "name": "courses_status_check",
+          "value": "\"courses\".\"status\" IN ('scoping','active','archived')"
+        },
+        "courses_current_tier_positive": {
+          "name": "courses_current_tier_positive",
+          "value": "\"courses\".\"current_tier\" > 0"
+        },
+        "courses_starting_tier_positive_or_null": {
+          "name": "courses_starting_tier_positive_or_null",
+          "value": "\"courses\".\"starting_tier\" IS NULL OR \"courses\".\"starting_tier\" > 0"
+        },
+        "courses_total_xp_nonneg": {
+          "name": "courses_total_xp_nonneg",
+          "value": "\"courses\".\"total_xp\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.user_profiles": {
+      "name": "user_profiles",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total_xp": {
+          "name": "total_xp",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "custom_instructions": {
+          "name": "custom_instructions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.scoping_passes": {
+      "name": "scoping_passes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "course_id": {
+          "name": "course_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "opened_at": {
+          "name": "opened_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "scoping_passes_course_id_unique": {
+          "name": "scoping_passes_course_id_unique",
+          "columns": [
+            {
+              "expression": "course_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "scoping_passes_course_id_courses_id_fk": {
+          "name": "scoping_passes_course_id_courses_id_fk",
+          "tableFrom": "scoping_passes",
+          "tableTo": "courses",
+          "columnsFrom": ["course_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "scoping_passes_status_check": {
+          "name": "scoping_passes_status_check",
+          "value": "\"scoping_passes\".\"status\" IN ('open','closed')"
+        },
+        "scoping_passes_closed_at_consistency": {
+          "name": "scoping_passes_closed_at_consistency",
+          "value": "(\"scoping_passes\".\"status\" = 'closed') = (\"scoping_passes\".\"closed_at\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.waves": {
+      "name": "waves",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "course_id": {
+          "name": "course_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "wave_number": {
+          "name": "wave_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tier": {
+          "name": "tier",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "framework_snapshot": {
+          "name": "framework_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "custom_instructions_snapshot": {
+          "name": "custom_instructions_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "due_concepts_snapshot": {
+          "name": "due_concepts_snapshot",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seed_source": {
+          "name": "seed_source",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "turn_budget": {
+          "name": "turn_budget",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blueprint_emitted": {
+          "name": "blueprint_emitted",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "opened_at": {
+          "name": "opened_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "waves_course_wave_number_unique": {
+          "name": "waves_course_wave_number_unique",
+          "columns": [
+            {
+              "expression": "course_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "wave_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "waves_one_open_per_course": {
+          "name": "waves_one_open_per_course",
+          "columns": [
+            {
+              "expression": "course_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"waves\".\"status\" = 'open'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "waves_course_id_courses_id_fk": {
+          "name": "waves_course_id_courses_id_fk",
+          "tableFrom": "waves",
+          "tableTo": "courses",
+          "columnsFrom": ["course_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "waves_status_check": {
+          "name": "waves_status_check",
+          "value": "\"waves\".\"status\" IN ('open','closed')"
+        },
+        "waves_wave_number_positive": {
+          "name": "waves_wave_number_positive",
+          "value": "\"waves\".\"wave_number\" > 0"
+        },
+        "waves_tier_positive": {
+          "name": "waves_tier_positive",
+          "value": "\"waves\".\"tier\" > 0"
+        },
+        "waves_turn_budget_positive": {
+          "name": "waves_turn_budget_positive",
+          "value": "\"waves\".\"turn_budget\" > 0"
+        },
+        "waves_closed_at_consistency": {
+          "name": "waves_closed_at_consistency",
+          "value": "(\"waves\".\"status\" = 'closed') = (\"waves\".\"closed_at\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
