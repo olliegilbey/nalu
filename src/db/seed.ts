@@ -22,18 +22,23 @@ import { getEnv } from "@/lib/config";
 async function main(): Promise<void> {
   const env = getEnv();
   const client = postgres(env.DIRECT_URL, { max: 1 });
-  const db = drizzle(client, { schema });
+  // Without this finally block, `bun run seed` hangs on error waiting for
+  // the open connection — postgres-js keeps the socket open until end() is called.
+  try {
+    const db = drizzle(client, { schema });
 
-  await db
-    .insert(userProfiles)
-    .values({
-      id: env.DEV_USER_ID,
-      displayName: "Dev User",
-    })
-    .onConflictDoNothing({ target: userProfiles.id });
+    await db
+      .insert(userProfiles)
+      .values({
+        id: env.DEV_USER_ID,
+        displayName: "Dev User",
+      })
+      .onConflictDoNothing({ target: userProfiles.id });
 
-  await client.end();
-  console.warn(`seeded dev user ${env.DEV_USER_ID}`);
+    console.warn(`seeded dev user ${env.DEV_USER_ID}`);
+  } finally {
+    await client.end();
+  }
 }
 
 main().catch((err: unknown) => {

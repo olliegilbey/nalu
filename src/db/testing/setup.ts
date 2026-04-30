@@ -3,6 +3,7 @@ import { afterAll, beforeAll } from "vitest";
 import postgres from "postgres";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { drizzle } from "drizzle-orm/postgres-js";
+import { sql } from "drizzle-orm";
 import * as schema from "@/db/schema";
 
 /**
@@ -40,10 +41,26 @@ beforeAll(async () => {
   process.env.LLM_MODEL ??= "stub-model"; // eslint-disable-line functional/immutable-data
   process.env.DEV_USER_ID ??= "a0000000-0000-4000-8000-000000000001"; // eslint-disable-line functional/immutable-data
 
-  const sql = postgres(url, { max: 1 });
-  const db = drizzle(sql, { schema });
+  const pgClient = postgres(url, { max: 1 });
+  const db = drizzle(pgClient, { schema });
   await migrate(db, { migrationsFolder: "./src/db/migrations" });
-  await sql.end();
+
+  // Schema-drift guard: confirm that the invariant CHECK added in Phase B
+  // actually landed in the live schema. If a hand-edited migration drops or
+  // renames this constraint, integration tests would still pass without this
+  // check — catching drift here surfaces the problem immediately.
+  const result = await db.execute<{ exists: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.check_constraints
+      WHERE constraint_name = 'waves_tier_positive'
+    ) AS exists
+  `);
+  const row = result[0];
+  if (!row?.exists) {
+    throw new Error("withTestDb: invariant CHECK 'waves_tier_positive' missing — schema drift?");
+  }
+
+  await pgClient.end();
 });
 
 afterAll(async () => {
