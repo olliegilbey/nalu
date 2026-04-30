@@ -84,6 +84,23 @@ describe("waves constraints", () => {
     turnBudget: 10,
   });
 
+  it("rejects a wave with non-positive tier (CHECK enforces invariant)", async () => {
+    await withTestDb(async (db) => {
+      const courseId = await seedCourse(db);
+      await expect(
+        db.insert(waves).values({
+          courseId,
+          waveNumber: 1,
+          tier: 0, // violates waves_tier_positive
+          frameworkSnapshot: {} as never,
+          dueConceptsSnapshot: [] as never,
+          seedSource: { kind: "scoping_handoff" } as never,
+          turnBudget: 10,
+        }),
+      ).rejects.toMatchObject({ cause: { code: "23514" } });
+    });
+  });
+
   it("rejects duplicate (course_id, wave_number)", async () => {
     await withTestDb(async (db) => {
       const courseId = await seedCourse(db);
@@ -112,7 +129,10 @@ describe("waves constraints", () => {
       // Raw SQL avoids drizzle's update().set() — `.set()` trips eslint-plugin-functional's
       // immutable-data rule, which lacks parserOptions for typed linting in this repo.
       // The actual DB write is identical.
-      await db.execute(sql`UPDATE waves SET status = 'closed' WHERE id = ${first.id}`);
+      // Must set closed_at alongside status='closed' to satisfy waves_closed_at_consistency.
+      await db.execute(
+        sql`UPDATE waves SET status = 'closed', closed_at = now() WHERE id = ${first.id}`,
+      );
       // Second open wave is now permissible — partial filter only sees one open row.
       await db.insert(waves).values(waveBase(courseId, 2));
       const open = await db.select().from(waves).where(eq(waves.status, "open"));

@@ -64,6 +64,15 @@ export const assessments = pgTable(
     index("assessments_wave_id_idx").on(t.waveId),
     // Supports per-concept timeline reads (last-N assessments for a concept).
     index("assessments_concept_assessed_idx").on(t.conceptId, t.assessedAt),
+    // turn_index is a logical position — negative values are nonsense.
+    check("assessments_turn_index_nonneg", sql`${t.turnIndex} >= 0`),
+    // Quality score follows the SM-2 scale 0–5 exactly.
+    check(
+      "assessments_quality_score_range",
+      sql`${t.qualityScore} >= 0 AND ${t.qualityScore} <= 5`,
+    ),
+    // XP can be zero (e.g. incorrect answer) but never negative.
+    check("assessments_xp_awarded_nonneg", sql`${t.xpAwarded} >= 0`),
   ],
 );
 

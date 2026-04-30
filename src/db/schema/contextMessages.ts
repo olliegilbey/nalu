@@ -76,6 +76,9 @@ export const contextMessages = pgTable(
     uniqueIndex("context_messages_scoping_order")
       .on(t.scopingPassId, t.turnIndex, t.seq)
       .where(sql`${t.scopingPassId} IS NOT NULL`),
+    // turn_index and seq are logical positions — negative values are nonsense.
+    check("context_messages_turn_index_nonneg", sql`${t.turnIndex} >= 0`),
+    check("context_messages_seq_nonneg", sql`${t.seq} >= 0`),
   ],
 );
 

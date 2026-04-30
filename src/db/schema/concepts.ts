@@ -7,6 +7,7 @@ import {
   timestamp,
   uniqueIndex,
   index,
+  check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
@@ -64,6 +65,20 @@ export const concepts = pgTable(
       .where(sql`${t.nextReviewAt} IS NOT NULL`),
     // Supports tier-scoped reads when the framework asks for concepts at a given tier.
     index("concepts_course_tier_idx").on(t.courseId, t.tier),
+    // Tier 0 is not a valid tier — tiers start at 1.
+    check("concepts_tier_positive", sql`${t.tier} > 0`),
+    // SM-2 counters — all are non-negative by definition.
+    check("concepts_interval_days_nonneg", sql`${t.intervalDays} >= 0`),
+    check("concepts_repetition_count_nonneg", sql`${t.repetitionCount} >= 0`),
+    // SM-2 floor — Anki uses 1.3, all references converge on it.
+    check("concepts_easiness_factor_min", sql`${t.easinessFactor} >= 1.3`),
+    // last_quality_score is nullable (never-reviewed concepts have NULL).
+    check(
+      "concepts_last_quality_score_range",
+      sql`${t.lastQualityScore} IS NULL OR (${t.lastQualityScore} >= 0 AND ${t.lastQualityScore} <= 5)`,
+    ),
+    check("concepts_times_correct_nonneg", sql`${t.timesCorrect} >= 0`),
+    check("concepts_times_incorrect_nonneg", sql`${t.timesIncorrect} >= 0`),
   ],
 );
 

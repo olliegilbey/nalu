@@ -59,6 +59,15 @@ export const waves = pgTable(
     uniqueIndex("waves_one_open_per_course")
       .on(t.courseId)
       .where(sql`${t.status} = 'open'`),
+    // Positive ordinal invariants — wave 0 or tier 0 are never valid; turn budget of 0 is nonsense.
+    check("waves_wave_number_positive", sql`${t.waveNumber} > 0`),
+    check("waves_tier_positive", sql`${t.tier} > 0`),
+    check("waves_turn_budget_positive", sql`${t.turnBudget} > 0`),
+    // closed_at MUST be set iff status='closed'. Mirrors scoping_passes_closed_at_consistency.
+    check(
+      "waves_closed_at_consistency",
+      sql`(${t.status} = 'closed') = (${t.closedAt} IS NOT NULL)`,
+    ),
   ],
 );
 

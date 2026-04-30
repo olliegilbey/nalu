@@ -28,6 +28,12 @@ export const scopingPasses = pgTable(
   (t) => [
     // Restrict status to known lifecycle values — DB-level guard against bad writes.
     check("scoping_passes_status_check", sql`${t.status} IN ('open','closed')`),
+    // closed_at MUST be set iff status='closed'. Catches partial closes from
+    // any future writer that bypasses closeScopingPass().
+    check(
+      "scoping_passes_closed_at_consistency",
+      sql`(${t.status} = 'closed') = (${t.closedAt} IS NOT NULL)`,
+    ),
     // One scoping pass per course (MVP) — uniqueness enforced at DB level, not app layer.
     uniqueIndex("scoping_passes_course_id_unique").on(t.courseId),
   ],
