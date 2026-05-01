@@ -15,7 +15,7 @@ import { NotFoundError } from "./errors";
  * compose correctly without read-modify-write races.
  */
 
-// Re-export so callers only need one import site.
+/** Re-exported domain error for missing query targets — single import site for callers. */
 export { NotFoundError } from "./errors";
 
 /** Fetch a user profile by primary key; throws `NotFoundError` if absent. */

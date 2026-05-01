@@ -1,0 +1,1 @@
+ALTER TABLE "user_profiles" ADD CONSTRAINT "user_profiles_total_xp_nonneg" CHECK ("user_profiles"."total_xp" >= 0);

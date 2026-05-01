@@ -68,8 +68,8 @@ export interface OpenWaveParams {
   /**
    * Snapshot of the course framework at Wave open time.
    * Frozen so mid-Wave edits to the course framework don't drift the prompt.
-   * Caller is responsible for passing a valid FrameworkJsonb shape; waveRowGuard
-   * validates on read (mirrors how courses.ts handles insert payloads).
+   * Validated at write-time inside `openWave` (parse-before-persist) and again
+   * on read via `waveRowGuard` — mirrors how `closeWave` handles `blueprintEmitted`.
    */
   readonly frameworkSnapshot: unknown;
   /** Optional custom instructions snapshot; null if none set. */
@@ -86,8 +86,13 @@ export interface OpenWaveParams {
 export interface CloseWaveParams {
   /** LLM-generated summary of what was covered in this Wave. */
   readonly summary: string;
-  /** Blueprint for the next Wave, emitted on the final turn. */
-  readonly blueprintEmitted: Blueprint;
+  /**
+   * Blueprint for the next Wave, emitted on the final turn. Nullable because
+   * `blueprintEmittedSchema` is `blueprintSchema.nullable()` — a Wave can close
+   * without emitting a blueprint (e.g. course-end Waves), and the JSONB column
+   * is nullable in the schema.
+   */
+  readonly blueprintEmitted: Blueprint | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,11 +214,15 @@ export async function closeWave(id: string, params: CloseWaveParams): Promise<Wa
   // even when the driver sends it as a string. COALESCE keeps closed_at
   // sticky across idempotent re-calls. Status scope prevents silent no-op on
   // already-closed waves (getWaveById below still returns the existing row).
+  // When the blueprint is null (e.g. course-end Waves), persist SQL NULL —
+  // distinguishing "no blueprint emitted" from a JSON `null` value cleanly.
+  const blueprintSql =
+    validatedBlueprint === null ? sql`NULL` : sql`${JSON.stringify(validatedBlueprint)}::jsonb`;
   await db.execute(sql`
     UPDATE waves
     SET status = 'closed',
         summary = ${params.summary},
-        blueprint_emitted = ${JSON.stringify(validatedBlueprint)}::jsonb,
+        blueprint_emitted = ${blueprintSql},
         closed_at = COALESCE(closed_at, NOW())
     WHERE id = ${id}
       AND status = 'open'

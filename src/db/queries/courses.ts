@@ -214,6 +214,22 @@ export async function setCourseStartingState(
   id: string,
   patch: StartingStatePatch,
 ): Promise<Course> {
+  // App-layer activation invariant: at the moment scoping closes, current_tier
+  // must equal starting_tier (divergence only happens later via updateCourseTier).
+  // Tiers are 1-indexed (matches `framework.tiers` ordinals); the DB CHECKs
+  // `courses_current_tier_positive` / `courses_starting_tier_positive_or_null`
+  // would also catch a non-positive value, but a typed error here surfaces the
+  // bug at the call site rather than as a generic constraint violation.
+  if (!Number.isInteger(patch.startingTier) || patch.startingTier < 1) {
+    throw new Error(
+      `setCourseStartingState: startingTier must be a positive integer (got ${patch.startingTier})`,
+    );
+  }
+  if (patch.currentTier !== patch.startingTier) {
+    throw new Error(
+      `setCourseStartingState: currentTier (${patch.currentTier}) must equal startingTier (${patch.startingTier}) at activation`,
+    );
+  }
   // Scope to 'scoping' status so a concurrent call or re-play can never
   // accidentally overwrite starting_tier on an already-active course.
   await db.execute(sql`
