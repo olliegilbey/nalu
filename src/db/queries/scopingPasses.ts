@@ -11,7 +11,7 @@ import { NotFoundError } from "./errors";
  * confirmed pattern from D3/D4.
  */
 
-// Re-export so callers have one import site for the error class.
+/** Re-exported domain error for missing query targets — single import site for callers. */
 export { NotFoundError } from "./errors";
 
 // ---------------------------------------------------------------------------

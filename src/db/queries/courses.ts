@@ -20,7 +20,7 @@ import { NotFoundError } from "./errors";
  * a known lint-config gap confirmed in D3. The generated SQL is identical.
  */
 
-// Re-export so callers have one import site for the error class.
+/** Re-exported domain error for missing query targets — single import site for callers. */
 export { NotFoundError } from "./errors";
 
 // ---------------------------------------------------------------------------

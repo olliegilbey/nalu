@@ -21,10 +21,10 @@ import { NotFoundError } from "./errors";
  * so Drizzle's camelCase mapping applies (mirrors the `closeWave` pattern).
  */
 
-// Re-export so callers have one import site for the error class.
+/** Re-exported domain error for missing query targets — single import site for callers. */
 export { NotFoundError } from "./errors";
 
-// Re-export SM2CardState for callers that step SM-2 directly from a row.
+/** Re-exported SM-2 card-state shape for callers that step SM-2 directly from a row. */
 export type { SM2CardState };
 
 // ---------------------------------------------------------------------------

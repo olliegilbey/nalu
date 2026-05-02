@@ -25,7 +25,7 @@ import { NotFoundError } from "./errors";
  * mapping — `RETURNING *` would give snake_case rows from the driver.
  */
 
-// Re-export so callers have one import site for the error class.
+/** Re-exported domain error for missing query targets — single import site for callers. */
 export { NotFoundError } from "./errors";
 
 // ---------------------------------------------------------------------------

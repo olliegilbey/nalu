@@ -4,7 +4,7 @@ import { assessments, type Assessment } from "@/db/schema";
 import type { QualityScore } from "@/lib/types/spaced-repetition";
 import { NotFoundError } from "./errors";
 
-// Re-export so callers have one import site for the error class.
+/** Re-exported domain error for missing query targets — single import site for callers. */
 export { NotFoundError } from "./errors";
 
 /**
