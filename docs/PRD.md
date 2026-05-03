@@ -165,69 +165,125 @@ nalu/
 ### 3.4 Data Model
 
 ```sql
+-- user_profiles
 CREATE TABLE user_profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id),
-  display_name TEXT NOT NULL,
-  total_xp INTEGER NOT NULL DEFAULT 0,
-  custom_instructions TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                  uuid PRIMARY KEY,            -- = auth.users(id) when auth wired; dev stub for now
+  display_name        text NOT NULL,
+  total_xp            integer NOT NULL DEFAULT 0,  -- cached aggregate; reconciled from courses
+  custom_instructions text,                        -- pass-through verbatim; snapshotted onto waves at Wave start
+  created_at          timestamptz NOT NULL DEFAULT now()
 );
 
+-- courses
 CREATE TABLE courses (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES user_profiles(id),
-  topic TEXT NOT NULL,
-  topic_clarification TEXT,                     -- user's answers to clarifying questions
-  framework JSONB NOT NULL,                     -- mutable proficiency tiers
-  baseline JSONB,                               -- scoping output: gradings + startingContext handoff (set by submitBaseline)
-  current_tier INTEGER NOT NULL DEFAULT 1,
-  total_xp INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'active',
-  summary TEXT,
-  summary_updated_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id            uuid NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  topic              text NOT NULL,
+  -- scoping outputs (immutable post-scoping):
+  clarification      jsonb,                          -- { questions: [...], answers: [...] }
+  framework          jsonb,                          -- { topic, scope_summary, tiers: [...] }; null until scoping emits
+  baseline           jsonb,                          -- { questions, answers, gradings }; raw audit
+  starting_tier      integer,                        -- determined from baseline; immutable post-scoping
+  -- live state:
+  current_tier       integer NOT NULL DEFAULT 1,     -- mutable; promotion/demotion via progression.ts
+  total_xp           integer NOT NULL DEFAULT 0,     -- cached aggregate from assessments
+  status             text NOT NULL DEFAULT 'scoping' -- 'scoping' | 'active' | 'archived'
+                       CHECK (status IN ('scoping','active','archived')),
+  summary            text,                           -- LLM-rewritten cumulative summary; seeded from baseline at scoping close, then rewritten on each Wave close via <course_summary_update>
+  summary_updated_at timestamptz,
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  updated_at         timestamptz NOT NULL DEFAULT now()
 );
 
+-- scoping_passes — one per course; parents all scoping context_messages
+CREATE TABLE scoping_passes (
+  id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id uuid NOT NULL UNIQUE REFERENCES courses(id) ON DELETE CASCADE,
+  status    text NOT NULL DEFAULT 'open'
+              CHECK (status IN ('open','closed')),
+  opened_at timestamptz NOT NULL DEFAULT now(),
+  closed_at timestamptz
+);
+
+-- waves — one Wave row per teaching unit; carries the frozen seed inputs for byte-stable rendering
+CREATE TABLE waves (
+  id                           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id                    uuid NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  wave_number                  integer NOT NULL,    -- 1-indexed within course
+  tier                         integer NOT NULL,    -- snapshot at Wave start
+  framework_snapshot           jsonb NOT NULL,      -- frozen from courses.framework at start
+  custom_instructions_snapshot text,                -- frozen from user_profiles at start
+  due_concepts_snapshot        jsonb NOT NULL,      -- frozen SM-2 due list at start
+  seed_source                  jsonb NOT NULL,      -- discriminated union: { kind:'scoping_handoff' } | { kind:'prior_blueprint', priorWaveId, blueprint }
+  turn_budget                  integer NOT NULL,    -- from config.WAVE_TURN_COUNT at Wave start
+  status                       text NOT NULL DEFAULT 'open'
+                                 CHECK (status IN ('open','closed')),
+  summary                      text,                -- emitted on close
+  blueprint_emitted            jsonb,               -- the next-Wave handoff JSON; null for an open Wave
+  opened_at                    timestamptz NOT NULL DEFAULT now(),
+  closed_at                    timestamptz,
+  UNIQUE (course_id, wave_number)
+);
+-- Partial unique index enforces "at most one open Wave per course":
+--   CREATE UNIQUE INDEX waves_one_open_per_course ON waves(course_id) WHERE status = 'open';
+
+-- context_messages — append-only conversation rows. Polymorphic parent: exactly one of (wave_id, scoping_pass_id) is set.
+CREATE TABLE context_messages (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  wave_id         uuid REFERENCES waves(id) ON DELETE CASCADE,
+  scoping_pass_id uuid REFERENCES scoping_passes(id) ON DELETE CASCADE,
+  turn_index      integer NOT NULL,                -- 0-based within parent (per-turn, not per-LLM-call)
+  seq             smallint NOT NULL,               -- ordering within a turn
+  kind            text NOT NULL
+                    CHECK (kind IN (
+                      'user_message','card_answer','assistant_response',
+                      'harness_turn_counter','harness_review_block'
+                    )),
+  role            text NOT NULL                    -- 'system' is intentionally excluded — system content is rendered from seed columns, never persisted as a row
+                    CHECK (role IN ('user','assistant','tool')),
+  content         text NOT NULL,                   -- exact bytes
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT context_messages_one_parent
+    CHECK ((wave_id IS NOT NULL) <> (scoping_pass_id IS NOT NULL))
+);
+
+-- concepts — case-insensitive unique on (course_id, lower(name)) via functional index
 CREATE TABLE concepts (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  description TEXT,
-  tier INTEGER NOT NULL,
-  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  last_reviewed_at TIMESTAMPTZ,
-  next_review_at TIMESTAMPTZ,
-  easiness_factor REAL NOT NULL DEFAULT 2.5,
-  interval_days INTEGER NOT NULL DEFAULT 0,
-  repetition_count INTEGER NOT NULL DEFAULT 0,
-  last_quality_score INTEGER,
-  times_correct INTEGER NOT NULL DEFAULT 0,
-  times_incorrect INTEGER NOT NULL DEFAULT 0
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id          uuid NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  name               text NOT NULL,                -- canonical
+  description        text,
+  tier               integer NOT NULL,             -- set at first sighting; immutable thereafter
+  -- SM-2 state:
+  easiness_factor    real NOT NULL DEFAULT 2.5,
+  interval_days      integer NOT NULL DEFAULT 0,
+  repetition_count   integer NOT NULL DEFAULT 0,
+  last_quality_score integer,                      -- 0-5; nullable until first assessment
+  last_reviewed_at   timestamptz,
+  next_review_at     timestamptz,
+  -- counters:
+  times_correct      integer NOT NULL DEFAULT 0,
+  times_incorrect    integer NOT NULL DEFAULT 0,
+  first_seen_at      timestamptz NOT NULL DEFAULT now()
 );
+-- CREATE UNIQUE INDEX concepts_course_name_ci ON concepts(course_id, lower(name));
 
-CREATE TABLE sessions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
-  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  ended_at TIMESTAMPTZ,
-  xp_earned INTEGER NOT NULL DEFAULT 0,
-  messages JSONB NOT NULL DEFAULT '[]',
-  token_count_estimate INTEGER NOT NULL DEFAULT 0,
-  concepts_covered UUID[] DEFAULT '{}'
-);
-
+-- assessments — in-Wave probes that earn XP. Baseline grades live on courses.baseline (JSONB), not here.
 CREATE TABLE assessments (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  concept_id UUID NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
-  question TEXT NOT NULL,
-  user_answer TEXT NOT NULL,
-  is_correct BOOLEAN NOT NULL,
-  quality_score INTEGER NOT NULL,
-  assessment_type TEXT NOT NULL,                 -- 'card_mc' | 'card_freetext' | 'inferred'
-  xp_awarded INTEGER NOT NULL DEFAULT 0,
-  assessed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  wave_id         uuid NOT NULL REFERENCES waves(id) ON DELETE CASCADE,
+  concept_id      uuid NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+  turn_index      integer NOT NULL,                -- which Wave turn produced this
+  question        text,                            -- nullable for 'inferred' rows
+  user_answer     text NOT NULL,                   -- for 'inferred', the prior user message that produced the signal
+  is_correct      boolean NOT NULL,
+  quality_score   integer NOT NULL,                -- 0-5
+  assessment_kind text NOT NULL
+                    CHECK (assessment_kind IN ('card_mc','card_freetext','inferred')),
+  xp_awarded      integer NOT NULL DEFAULT 0,
+  assessed_at     timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT assessments_question_required_for_card_kinds
+    CHECK (assessment_kind = 'inferred' OR question IS NOT NULL)
 );
 ```
 
@@ -257,16 +313,17 @@ User types a topic
   -> tRPC: course.submitBaseline (router orchestrates; grading lives in src/lib)
     -> Router calls lib baseline-grading flow:
        - mechanical MC grading (string compare, no LLM)
-       - single batched LLM call for free-text + `startingContext`
-         (handoff string for the fresh teaching session)
+       - single batched LLM call for free-text + cumulative-summary seed
+         (the LLM emits a prose summary that becomes courses.summary —
+         the seed for Wave 1's <progress_summary> block)
     -> determineStartingTier (pure): per-tier aggregate → starting tier
     -> Bulk-insert concepts + assessments, seed SM-2, award XP
-    -> UPDATE courses SET current_tier, baseline (+startingContext), total_xp
+    -> UPDATE courses SET current_tier, starting_tier, baseline, summary, total_xp
     -> Return { startingTier, xpEarned, gradings }
   -> Transition to first Wave
 ```
 
-**Scoping vs. teaching prompts.** Scoping is one append-only conversation: only `clarification.ts` emits a `role: system` message; each subsequent scoping prompt appends user/assistant messages to keep the cache prefix byte-stable, making the extra LLM round trips cheap. Once scoping completes, the scoping prompts and history are discarded. The first Wave assembles a _fresh_ course-start system prompt (Section 5.1) seeded from DB state: topic, `<topic_scope>` from clarification answers, framework, starting tier, `startingContext` handoff, and the initial SM-2 due concepts. Scoping instructions never leak into ongoing Wave turns.
+**Scoping vs. teaching prompts.** Scoping is one append-only conversation: only `clarification.ts` emits a `role: system` message; each subsequent scoping prompt appends user/assistant messages to keep the cache prefix byte-stable, making the extra LLM round trips cheap. Once scoping completes, the scoping prompts and history are discarded. The first Wave assembles a _fresh_ course-start system prompt (Section 5.1) seeded from DB state: topic, `<topic_scope>` from clarification answers, framework, starting tier, `courses.summary` (the baseline-derived seed that becomes Wave 1's `<progress_summary>` block), and the initial SM-2 due concepts. Scoping instructions never leak into ongoing Wave turns.
 
 ### 4.2 Learning Session Flow
 
@@ -274,12 +331,12 @@ A teaching session is a sequence of **Waves** — fixed-length teaching units (`
 
 ```text
 User opens course
-  -> Load: course, framework, summary, custom_instructions, startingContext
+  -> Load: course, framework, summary, custom_instructions
   -> Load: full chat history from last Wave (render in UI)
 
   -> If no Wave in progress (first visit or prior Wave closed):
       -> Assemble fresh Wave system prompt (Section 5):
-          - Wave 1: seeded from startingContext + initial SM-2 due concepts
+          - Wave 1: seeded from courses.summary (baseline-derived) + initial SM-2 due concepts
           - Subsequent Waves: seeded from the prior Wave's blueprint
             (topic, outline, opening user-facing text) + fresh SM-2 due concepts
       -> Render the pre-drafted opening user-facing text.
@@ -287,27 +344,35 @@ User opens course
          text drafted at the prior Wave's final turn.)
 
   -> Conversation loop (Context is append-only; system prompt is NOT rebuilt per turn):
-      User sends message
+      User sends message OR submits a card answer
+        (Card-answer turn variant: when an `<assessment>` is in flight, the chat input is
+         replaced by the card UI. Mechanical multiple-choice is graded server-side BEFORE
+         the LLM call; free-text answers ride into the next turn for the LLM to grade via
+         `<comprehension_signal>`. The user-side row is `card_answer`, not `user_message`.)
         -> Sanitise input (strip XML-like tags, encode special characters)
-        -> Append <user_message> to Context
+        -> Append <user_message> OR <card_answer> row to Context
         -> Harness appends per-turn dynamic tail:
             <turns_remaining>N</turns_remaining>             (every turn, pacing signal)
             <due_for_review>…</due_for_review>                (final turn only)
-            instruction to emit next-Wave blueprint           (final turn only)
+            instruction to emit next-lesson blueprint         (final turn only)
         -> Call LLM with the full Context
         -> Parse response for tagged blocks:
-            <assessment>           -> render as interactive card
-            <comprehension_signal> -> silent: update concept, run SM-2, show XP toast
-            <curriculum_note>      -> model suggests framework adjustment or blindspot
-            <next_wave_blueprint>  -> (final turn only) persist topic/outline/opening text
-        -> Remaining text          -> render as chat message
+            <assessment>             -> render as interactive card
+            <comprehension_signal>   -> silent: update concept, run SM-2, show XP toast
+            <curriculum_note>        -> (post-MVP) model suggests framework adjustment
+            <next_lesson_blueprint>  -> (final turn only) persist topic/outline/opening text
+            <course_summary_update>  -> (final turn only) rewrite courses.summary end-to-end
+        -> Remaining text            -> render as chat message
         -> Track token usage
 
   -> On final turn of a Wave (turns_remaining == 0):
-      -> LLM emits closing exchange (quiz/summary) AND next-Wave blueprint in one response
-      -> Persist blueprint to DB (consumed by next Wave's fresh system prompt)
+      -> LLM emits closing exchange (quiz/summary) AND <next_lesson_blueprint>
+         AND <course_summary_update> in one response
+      -> Persist blueprint to waves.blueprint_emitted (consumed by next Wave's fresh system prompt)
+      -> Rewrite courses.summary end-to-end from <course_summary_update>
+         (NOT appended — the model is responsible for compressing earlier-Wave material;
+         the prompt contract caps it at ≤150 words)
       -> Current Wave's Context is archived for UI history but never replayed
-      -> Call LLM for 2-3 sentence session summary, append to course.summary
 
   -> User returns (immediately or after a break):
       -> New Wave begins with a fresh Context built from the stored blueprint.
@@ -413,11 +478,11 @@ Tier {n}: {tier_name} - {tier_description}
 {accumulated summary of prior learning}
 </progress_summary>
 
-<!-- Wave-specific seed: the blueprint for this Wave, or startingContext for Wave 1 -->
-<wave_seed>
-{Wave 1: startingContext from submitBaseline}
-{Wave N>1: { topic, outline, opening_user_text } from the prior Wave's blueprint}
-</wave_seed>
+<!-- Wave-specific seed: discriminated by waves.seed_source -->
+<lesson_seed>
+{Wave 1: { kind: "scoping_handoff" } — system prompt seeds the opening from courses.summary + framework + starting tier}
+{Wave N>1: { kind: "prior_blueprint", priorWaveId, blueprint: { topic, outline, openingText } } from the prior Wave's final turn}
+</lesson_seed>
 
 <!-- Wave-boundary review injection: embedded once at Wave start, not rebuilt per turn -->
 <due_for_review>
@@ -451,10 +516,15 @@ Curriculum suggestion (when identifying a gap or adjustment):
 {"suggestion":"...","reason":"..."}
 </curriculum_note>
 
-Next-Wave blueprint (final turn only, turns_remaining == 0):
-<next_wave_blueprint>
-{"topic":"...","outline":["...","..."],"opening_user_text":"..."}
-</next_wave_blueprint>
+Next-lesson blueprint (final turn only, turns_remaining == 0; REQUIRED on the final turn):
+<next_lesson_blueprint>
+{"topic":"...","outline":["...","..."],"openingText":"..."}
+</next_lesson_blueprint>
+
+Course summary update (final turn only, turns_remaining == 0; REQUIRED on the final turn):
+<course_summary_update>
+{"summary":"≤150 words rewriting the cumulative course summary end-to-end (NOT appended)"}
+</course_summary_update>
 </output_formats>
 ```
 
@@ -469,8 +539,9 @@ Next-Wave blueprint (final turn only, turns_remaining == 0):
 - {conceptName} (tier {n}): last scored {score}/5, {days} days ago
 </due_for_review>
 
-Emit the closing exchange for this Wave AND a <next_wave_blueprint> covering
-topic, outline, and opening_user_text for the next Wave in the same response.
+Emit the closing exchange for this Wave AND a <next_lesson_blueprint> covering
+topic, outline, and openingText for the next Wave AND a <course_summary_update>
+rewriting the cumulative course summary — all three in the same response.
 ```
 
 Concepts assessed earlier in this Wave are excluded from the final-turn `<due_for_review>` injection. The Wave-start `<due_for_review>` block (the static one in the system prompt) is **not** modified mid-Wave — that keeps the prefix byte-stable for the cache — but the scheduler filters assessed concepts out of the final-turn tail.
@@ -686,10 +757,10 @@ Each phase is independently testable. Agents should create a TODO list at the st
 6. Build tRPC: `course.clarify` (clarification questions for new topic)
 7. Build tRPC: `course.generateFramework` (create course + framework, user may edit before continuing)
 8. Build tRPC: `course.generateBaseline` (baseline questions scoped by estimated starting tier)
-9. Build tRPC: `course.submitBaseline` (mechanical MC grading + single batched LLM call for free-text + `startingContext` handoff)
-10. Build tRPC: `wave.start` (open a new Wave: crystallise the Wave's system prompt from `startingContext` + initial SM-2 due concepts for Wave 1, or from the prior Wave's blueprint + fresh SM-2 state thereafter; return the pre-drafted opening user-facing text)
-11. Build tRPC: `wave.turn` (append `<user_message>` to the Wave's Context, inject `<turns_remaining>`, on the final turn also inject `<due_for_review>` and the blueprint-emission instruction; call LLM; parse `<assessment>` / `<comprehension_signal>` / `<curriculum_note>` / `<next_wave_blueprint>`; SM-2 + XP update; persist Context row)
-12. Build tRPC: `wave.close` (on the final turn, persist the `<next_wave_blueprint>` payload and the Wave summary; archive the Context for history without replaying it)
+9. Build tRPC: `course.submitBaseline` (mechanical MC grading + single batched LLM call for free-text; the LLM-emitted prose summary lands on `courses.summary` as the seed for Wave 1's `<progress_summary>`)
+10. Build tRPC: `wave.start` (open a new Wave: crystallise the Wave's system prompt from `courses.summary` + framework + starting tier + initial SM-2 due concepts for Wave 1, or from the prior Wave's blueprint + fresh SM-2 state thereafter; return the pre-drafted opening user-facing text)
+11. Build tRPC: `wave.turn` (append `<user_message>` to the Wave's Context, inject `<turns_remaining>`, on the final turn also inject `<due_for_review>` and the blueprint-emission instruction; call LLM; parse `<assessment>` / `<comprehension_signal>` / `<next_lesson_blueprint>` / `<course_summary_update>`; SM-2 + XP update; persist Context row)
+12. Build tRPC: `wave.close` (on the final turn, persist the `<next_lesson_blueprint>` payload, rewrite `courses.summary` from `<course_summary_update>`, and archive the Context for history without replaying it)
 13. Build spaced repetition scheduler (query due concepts; embed in the Wave's system prompt at Wave start; append to the dynamic tail on the Wave's final turn; exclude concepts already assessed within the current Wave)
 14. Integration tests for all procedures with mock LLM
 

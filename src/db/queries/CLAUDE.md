@@ -1,7 +1,32 @@
 # src/db/queries
 
-Only place SQL or Supabase client calls exist in the codebase.
+Only place SQL leaves `src/db/`. Callers (tRPC procedures, scripts) import
+from `@/db/queries` (the barrel) — never reach into individual files.
 
-- One file per domain: `courses.ts`, `concepts.ts`, `sessions.ts`, `assessments.ts`, `users.ts`
-- Typed params in, Zod-validated readonly results out
-- Parameterised queries only. Never interpolate user input into SQL.
+Modules (one per domain): `userProfiles.ts`, `courses.ts`, `scopingPasses.ts`,
+`waves.ts`, `contextMessages.ts`, `concepts.ts`, `assessments.ts`. Shared
+`NotFoundError` lives in `errors.ts`.
+
+Conventions:
+
+- Typed param objects in; `readonly` Drizzle row types out.
+- Single-row reads that can miss throw `NotFoundError(entity, id)`.
+- JSONB columns are re-validated on read via Zod row-guards
+  (e.g. `waveRowGuard`, `courseRowGuard`) — never trust the DB shape.
+- Parameterised SQL only — interpolate values via `${value}` inside
+  `` sql`...` ``; never string-concatenate user input.
+
+Drizzle gotchas (codified after hitting them):
+
+- `db.update().set()` is BANNED — `eslint-plugin-functional/immutable-data`
+  crashes the build on it. Use raw ``db.execute(sql`UPDATE ...`)`` with
+  parameterised values, then re-fetch via a typed `.select()` so Drizzle's
+  camelCase mapping applies. Do not use `RETURNING *` — it returns
+  snake_case keys that don't match the inferred row type.
+- `db.insert().onConflictDoUpdate` rejects a SQL-expression `target` in
+  this Drizzle version (`escapeName` only accepts column references). For
+  functional-index targets (e.g. `lower(name)`), use raw
+  `INSERT ... ON CONFLICT (...) DO UPDATE` plus a Drizzle re-fetch on the
+  natural key.
+- `Date` values in raw SQL: pass `.toISOString()`.
+- Atomic counter bumps: raw `SET col = col + 1` (avoids read-modify-write).

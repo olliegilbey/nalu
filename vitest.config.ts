@@ -1,15 +1,12 @@
 import { defineConfig } from "vitest/config";
-import react from "@vitejs/plugin-react";
-import path from "path";
 
+/**
+ * Top-level Vitest config. Vitest 4 removed `vitest.workspace.ts`;
+ * projects now live in `test.projects`. Each project file owns its
+ * own environment, includes/excludes, and pool settings.
+ */
 export default defineConfig({
-  plugins: [react()],
   test: {
-    globals: true,
-    environment: "node",
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
+    projects: ["./vitest.unit.config.ts", "./vitest.integration.config.ts"],
   },
 });

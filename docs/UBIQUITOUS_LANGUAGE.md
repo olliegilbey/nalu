@@ -10,6 +10,18 @@ An LLM wrapped in a loop that appends messages each turn. The loop: send message
 
 Nalu is a **heuristically structured** variant of this pattern. The loop exists but is distributed across HTTP turns; the DB is the agent's memory. On each turn the Harness injects signals the model didn't ask for — the turn countdown within the current Wave, and on the final turn of a Wave the SM-2 concepts due for review plus an instruction to draft the next Wave's blueprint. The LLM stays stateless; the Harness loads the Context from DB, appends injections plus the user's message, and sends. That injection layer is what makes Nalu a harness and not a passthrough.
 
+## Blueprint
+
+The `{topic, outline, openingText}` payload the LLM emits inside `<next_lesson_blueprint>` on a Wave's final turn. Persisted on `waves.blueprint_emitted` and consumed as the seed for the next Wave (where it lands on `waves.seed_source` as `{kind: "prior_blueprint", priorWaveId, blueprint}`).
+
+## Card answer
+
+A `context_messages` row of kind `card_answer` — what the User submits when the chat input is replaced by the assessment-card UI. Mutually exclusive with `user_message` for a given turn (the chat input becomes the card; the model grades free-text via `<comprehension_signal>` on the next turn after server-side mechanical MC pre-grading).
+
+## Cumulative summary
+
+The text on `courses.summary`. Rewritten end-to-end on every Wave close via the model's `<course_summary_update>` block — never appended. Capped at ≤150 words by the prompt contract; the model is responsible for compressing earlier-Wave material as the course grows.
+
 ## Baseline
 
 The 7-9 assessment questions generated after the framework is confirmed. Mix of multiple choice (graded mechanically by the Router) and free-text (graded by a single batched LLM call inside `submitBaseline`). Determines the learner's starting tier.
@@ -28,6 +40,14 @@ Nalu has distinct phases, each with its own Context:
 - **Wave context** — a fresh Context per Wave. The first Wave's system prompt is built from DB state (topic, framework, starting tier, `startingContext`, initial SM-2 due concepts). Each subsequent Wave's system prompt is built from the _blueprint_ drafted by the LLM on the previous Wave's final turn plus fresh SM-2 state.
 
 Within a phase the prefix is byte-stable (keeps prompt cache warm). At phase boundaries the closing Context is archived for history/UI but never replayed into future prompts. The DB stores Contexts as a row-per-message table; no prompt-from-components reassembly happens per turn.
+
+## Harness injection
+
+A `context_messages` row authored by the Harness (not the User, not the LLM) — kinds `harness_turn_counter` (every turn's `<turns_remaining>`) and `harness_review_block` (final-turn `<due_for_review>`). Content is natural-language English wrapped in an XML tag, so the model reads it the same way it reads any other turn (P4: harness injections are visible in the Context, not hidden side-channel state).
+
+## LLM-facing terminology
+
+User-facing copy, code, DB columns, and internal docs all say **Wave**. LLM prompts say **lesson** — the model has strong "lesson" priors and zero training-data signal for "Wave." Translation lives entirely in `src/lib/prompts/`; nothing else needs to know about the split.
 
 ## Framework
 
@@ -48,6 +68,14 @@ The stateless text model (currently Cerebras' `llama-4-scout-17b-16e-instruct` v
 ## Scoping
 
 The first set of turns when a User starts a new course: clarify → framework → baseline → grade. One append-only conversation — only `clarification.ts` emits `role: system`; later scoping prompts append user/assistant messages onto the growing, byte-stable prefix (keeps the prompt cache warm, so extra round trips are cheap). Scoping prompts are discarded once scoping completes; they never leak into teaching.
+
+## Scoping pass
+
+One row in `scoping_passes`, created when a User starts a course. Parents all scoping `context_messages` rows (clarification turns, framework turns, baseline turns) and stores the resulting clarification/framework/baseline JSONB as it crystallises. After scoping closes, the message history is discarded — only the structured outputs persist on `courses` (P-ON-05).
+
+## Seed source
+
+The discriminated-union JSONB on `waves.seed_source`. Either `{kind: "scoping_handoff"}` (Wave 1 — seeded directly from the course's framework + `startingContext`) or `{kind: "prior_blueprint", priorWaveId, blueprint}` (Wave N>1 — seeded from the prior Wave's emitted blueprint). Read by `renderTeachingSystem` to render the `<lesson_seed>` block.
 
 ## startingContext
 

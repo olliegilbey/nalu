@@ -6,3 +6,5 @@ node_modules/
 bun.lock
 package-lock.json
 tsconfig.tsbuildinfo
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

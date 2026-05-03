@@ -20,6 +20,12 @@ describe("getLlmModel", () => {
     vi.stubEnv("LLM_BASE_URL", "https://api.cerebras.ai/v1");
     vi.stubEnv("LLM_API_KEY", "test-key");
     vi.stubEnv("LLM_MODEL", "llama-3.3-70b");
+    vi.stubEnv(
+      "DATABASE_URL",
+      "postgresql://postgres:postgres@127.0.0.1:54322/postgres?pgbouncer=true",
+    );
+    vi.stubEnv("DIRECT_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres");
+    vi.stubEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000");
   });
 
   afterEach(() => {

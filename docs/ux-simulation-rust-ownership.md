@@ -698,6 +698,8 @@ Everything below is the accumulated intent from this simulation and from `docs/T
 
 **P-CV-05 — Curriculum notes surface gaps but don't auto-mutate the framework.** The model can emit `<curriculum_note>` suggesting a new micro-concept or tier tweak. Post-MVP: could trigger framework edit proposals. This could feed the untaught concept queue idea mentioned earlier. This would need to be considered on the implementation as to whether the heuristics would work for the harness to act on the notes which requires consistently perfect structure passed to the harness - this may even be done as a tool call - which are currently not considered.
 
+Post-MVP: `<curriculum_note>` is intentionally NOT in the MVP envelope — when framework editing earns its keep, the tag schema, persistence table, and consumer (auto-edit vs user-surfaced suggestion) will be designed together. `<curriculum_note>` is reserved as a post-MVP tag; see the matching TODO entry in `docs/TODO.md` (`<curriculum_note>` + `curriculum_notes` table).
+
 ### 10.5 Prompt assembly
 
 **P-PR-01 — All prompt text lives in `src/lib/prompts/`.** No prompt strings anywhere else. Pure template functions: typed params in, string out, zero logic.

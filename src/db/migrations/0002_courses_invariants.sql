@@ -1,0 +1,3 @@
+ALTER TABLE "courses" ADD CONSTRAINT "courses_current_tier_positive" CHECK ("courses"."current_tier" > 0);--> statement-breakpoint
+ALTER TABLE "courses" ADD CONSTRAINT "courses_starting_tier_positive_or_null" CHECK ("courses"."starting_tier" IS NULL OR "courses"."starting_tier" > 0);--> statement-breakpoint
+ALTER TABLE "courses" ADD CONSTRAINT "courses_total_xp_nonneg" CHECK ("courses"."total_xp" >= 0);
