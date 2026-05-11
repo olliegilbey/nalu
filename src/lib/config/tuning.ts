@@ -104,6 +104,28 @@ export const PROGRESSION = {
  * outputs internally — no separate budget.
  */
 /**
+ * Scoping flow tunables. Bounds for input validation and retry policy
+ * during the clarify → framework → baseline pipeline.
+ *
+ * `maxParseRetries` is the number of *retry* attempts after the first
+ * attempt fails — total attempts = maxParseRetries + 1. Default 2 → 3
+ * total. Set deliberately low: with well-authored ValidationGateFailure
+ * messages, recovery should land on attempt 2 or fail fast.
+ *
+ * `maxTopicLength` mirrors the upper bound a Postgres `text` column will
+ * happily store; the practical reason for capping is to stop pathological
+ * pastes from blowing out the system prompt prefix that becomes the cache key.
+ *
+ * `maxClarifyAnswers` must equal `clarifyingQuestionsSchema.max()` (4) so
+ * a learner can answer every question the LLM emitted.
+ */
+export const SCOPING = {
+  maxParseRetries: 2,
+  maxTopicLength: 500,
+  maxClarifyAnswers: 4,
+} as const;
+
+/**
  * Proficiency-framework generation bounds. Consumed by
  * `src/lib/prompts/framework.ts` (prompt instructions + Zod schema) so the
  * two never drift. Tier counts are PRD-sourced; per-item character caps are
