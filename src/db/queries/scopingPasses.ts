@@ -51,6 +51,22 @@ export async function openScopingPass(courseId: string): Promise<ScopingPass> {
 }
 
 /**
+ * Return the open scoping pass for `courseId`, opening one if absent.
+ *
+ * Idempotent under the single-writer invariant: a re-entrant call returns
+ * the same row. The DB UNIQUE constraint on `course_id` is the backstop
+ * if two writers ever raced — the second `openScopingPass` would throw,
+ * not silently dup. This helper is the canonical entry point for callers
+ * (e.g. `executeTurn`) that need "the open pass" without caring whether
+ * they're the one creating it.
+ */
+export async function ensureOpenScopingPass(courseId: string): Promise<ScopingPass> {
+  const existing = await getOpenScopingPassByCourse(courseId);
+  if (existing) return existing;
+  return openScopingPass(courseId);
+}
+
+/**
  * Flip a scoping pass to `status = 'closed'` and stamp `closed_at`.
  *
  * Idempotent: `COALESCE(closed_at, NOW())` means a second call returns the

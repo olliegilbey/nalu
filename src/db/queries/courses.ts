@@ -107,10 +107,21 @@ export async function createCourse(params: CreateCourseParams): Promise<Course> 
   return courseRowGuard(row);
 }
 
-/** Fetch a course by primary key; throws `NotFoundError` if absent. */
-export async function getCourseById(id: string): Promise<Course> {
+/**
+ * Fetch a course by primary key; throws `NotFoundError` if absent.
+ *
+ * When `userId` is supplied, scopes ownership: a row owned by a different
+ * user is reported as `NotFoundError` (not `Forbidden`) — info-leak-safe,
+ * indistinguishable to a caller from "id does not exist". This prevents
+ * an attacker from probing for the existence of other users' course IDs.
+ */
+export async function getCourseById(id: string, userId?: string): Promise<Course> {
   const [row] = await db.select().from(courses).where(eq(courses.id, id));
   if (!row) throw new NotFoundError("course", id);
+  // Ownership mismatch is reported as NotFound to avoid leaking existence.
+  if (userId !== undefined && row.userId !== userId) {
+    throw new NotFoundError("course", id);
+  }
   return courseRowGuard(row);
 }
 
