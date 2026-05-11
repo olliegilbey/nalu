@@ -4,6 +4,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles, courses, scopingPasses, waves } from "@/db/schema";
 import {
   appendMessage,
+  appendMessages,
   getMessagesForWave,
   getMessagesForScopingPass,
   getNextTurnIndex,
@@ -237,6 +238,106 @@ describe("contextMessages queries", () => {
 
       const card = await getLastAssessmentCard(WAVE);
       expect(card).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 8: appendMessages — atomic batch insert preserving order
+  // -------------------------------------------------------------------------
+  // A single multi-VALUES INSERT writes all rows atomically; ordering on read
+  // is by (turn_index ASC, seq ASC), so the seq values drive the result order.
+  it("appendMessages inserts a batch atomically, preserving order", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+      await appendMessages([
+        {
+          parent: { kind: "scoping", id: SCOPING },
+          turnIndex: 0,
+          seq: 0,
+          kind: "user_message",
+          role: "user",
+          content: "<user_message>Rust</user_message>",
+        },
+        {
+          parent: { kind: "scoping", id: SCOPING },
+          turnIndex: 0,
+          seq: 1,
+          kind: "failed_assistant_response",
+          role: "assistant",
+          content: "bad",
+        },
+        {
+          parent: { kind: "scoping", id: SCOPING },
+          turnIndex: 0,
+          seq: 2,
+          kind: "harness_retry_directive",
+          role: "user",
+          content: "fix this",
+        },
+        {
+          parent: { kind: "scoping", id: SCOPING },
+          turnIndex: 0,
+          seq: 3,
+          kind: "assistant_response",
+          role: "assistant",
+          content: '<response>ok</response><questions>["a","b"]</questions>',
+        },
+      ]);
+      const rows = await getMessagesForScopingPass(SCOPING);
+      expect(rows).toHaveLength(4);
+      expect(rows.map((r) => r.kind)).toEqual([
+        "user_message",
+        "failed_assistant_response",
+        "harness_retry_directive",
+        "assistant_response",
+      ]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 9: appendMessages — whole-batch rollback on constraint violation
+  // -------------------------------------------------------------------------
+  // Postgres's single-statement INSERT atomicity: if any row violates a
+  // constraint (here, the partial unique index on (parent, turn_index, seq)
+  // collides with the pre-existing seed row), the entire statement rolls back
+  // and no rows from the batch are persisted.
+  it("appendMessages rolls back the whole batch if any row violates a constraint", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+      // Seed a single row that the second item of the batch below will collide
+      // with on (scoping_pass_id, turn_index=0, seq=0).
+      await appendMessage({
+        parent: { kind: "scoping", id: SCOPING },
+        turnIndex: 0,
+        seq: 0,
+        kind: "user_message",
+        role: "user",
+        content: "x",
+      });
+      await expect(
+        appendMessages([
+          {
+            parent: { kind: "scoping", id: SCOPING },
+            turnIndex: 0,
+            seq: 1,
+            kind: "assistant_response",
+            role: "assistant",
+            content: "y",
+          },
+          {
+            parent: { kind: "scoping", id: SCOPING },
+            turnIndex: 0,
+            seq: 0,
+            kind: "user_message",
+            role: "user",
+            content: "z",
+          },
+        ]),
+      ).rejects.toThrow();
+      // Only the pre-existing seed row remains; the batch (including the
+      // non-conflicting row at seq=1) was rolled back as a whole.
+      const rows = await getMessagesForScopingPass(SCOPING);
+      expect(rows).toHaveLength(1);
     });
   });
 });
