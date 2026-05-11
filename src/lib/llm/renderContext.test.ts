@@ -184,4 +184,141 @@ describe("renderContext", () => {
     expect(r.system).toContain("<scoping_topic>Rust ownership</scoping_topic>");
     expect(r.messages).toHaveLength(1);
   });
+
+  it("drops failed_assistant_response + harness_retry_directive when their turn ended in assistant_response", () => {
+    const messages: readonly ContextMessage[] = [
+      mkRow({ turnIndex: 0, seq: 0, content: "u" }),
+      mkRow({
+        turnIndex: 0,
+        seq: 1,
+        kind: "failed_assistant_response",
+        role: "assistant",
+        content: "bad",
+      }),
+      mkRow({
+        turnIndex: 0,
+        seq: 2,
+        kind: "harness_retry_directive",
+        role: "user",
+        content: "directive",
+      }),
+      mkRow({
+        turnIndex: 0,
+        seq: 3,
+        kind: "assistant_response",
+        role: "assistant",
+        content: "good",
+      }),
+    ];
+    const r = renderContext(SEED, messages);
+    expect(r.messages).toHaveLength(2);
+    expect(r.messages[0]?.role).toBe("user");
+    expect(r.messages[0]?.content).toBe("u");
+    expect(r.messages[1]?.role).toBe("assistant");
+    expect(r.messages[1]?.content).toBe("good");
+  });
+
+  it("keeps every row in a terminal-exhaust turn (no assistant_response)", () => {
+    const messages: readonly ContextMessage[] = [
+      mkRow({ turnIndex: 0, seq: 0, content: "u" }),
+      mkRow({
+        turnIndex: 0,
+        seq: 1,
+        kind: "failed_assistant_response",
+        role: "assistant",
+        content: "fail-1",
+      }),
+      mkRow({
+        turnIndex: 0,
+        seq: 2,
+        kind: "harness_retry_directive",
+        role: "user",
+        content: "directive-1",
+      }),
+      mkRow({
+        turnIndex: 0,
+        seq: 3,
+        kind: "failed_assistant_response",
+        role: "assistant",
+        content: "fail-2",
+      }),
+    ];
+    const r = renderContext(SEED, messages);
+    // Roles alternate: user, assistant, user, assistant — no coalesce collapse.
+    expect(r.messages).toHaveLength(4);
+    expect(r.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+  });
+
+  it("filter is per-turn: a recovered turn's filter does not affect a terminal-exhaust turn before it", () => {
+    const messages: readonly ContextMessage[] = [
+      // Turn 0: terminal exhaust — must be retained verbatim.
+      mkRow({ turnIndex: 0, seq: 0, content: "u0" }),
+      mkRow({
+        turnIndex: 0,
+        seq: 1,
+        kind: "failed_assistant_response",
+        role: "assistant",
+        content: "f0",
+      }),
+      mkRow({ turnIndex: 0, seq: 2, kind: "harness_retry_directive", role: "user", content: "d0" }),
+      // Turn 1: retry-then-success — filtered.
+      mkRow({ turnIndex: 1, seq: 0, content: "u1" }),
+      mkRow({
+        turnIndex: 1,
+        seq: 1,
+        kind: "failed_assistant_response",
+        role: "assistant",
+        content: "f1",
+      }),
+      mkRow({ turnIndex: 1, seq: 2, kind: "harness_retry_directive", role: "user", content: "d1" }),
+      mkRow({ turnIndex: 1, seq: 3, kind: "assistant_response", role: "assistant", content: "ok" }),
+    ];
+    const r = renderContext(SEED, messages);
+    // Turn 0 retained: u0(user), f0(asst), d0(user).
+    // Turn 1 filtered: u1(user), ok(asst).
+    // Row order after filter: u0, f0, d0, u1, ok.
+    // Coalesce: d0+u1 → single user message with "\n" separator.
+    expect(r.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
+    expect(r.messages[0]?.content).toBe("u0");
+    expect(r.messages[1]?.content).toBe("f0");
+    expect(r.messages[2]?.content).toBe("d0\nu1");
+    expect(r.messages[3]?.content).toBe("ok");
+  });
+
+  it("cache-prefix stability: appending a turn after a recovered retry leaves prior turns byte-identical", () => {
+    const turn0Only: readonly ContextMessage[] = [
+      mkRow({ turnIndex: 0, seq: 0, content: "u0" }),
+      mkRow({
+        turnIndex: 0,
+        seq: 1,
+        kind: "failed_assistant_response",
+        role: "assistant",
+        content: "f0",
+      }),
+      mkRow({ turnIndex: 0, seq: 2, kind: "harness_retry_directive", role: "user", content: "d0" }),
+      mkRow({
+        turnIndex: 0,
+        seq: 3,
+        kind: "assistant_response",
+        role: "assistant",
+        content: "ok0",
+      }),
+    ];
+    const turn0AndTurn1: readonly ContextMessage[] = [
+      ...turn0Only,
+      mkRow({ turnIndex: 1, seq: 0, content: "u1" }),
+      mkRow({
+        turnIndex: 1,
+        seq: 1,
+        kind: "assistant_response",
+        role: "assistant",
+        content: "ok1",
+      }),
+    ];
+    const a = renderContext(SEED, turn0Only);
+    const b = renderContext(SEED, turn0AndTurn1);
+    expect(b.system).toBe(a.system);
+    expect(b.messages[0]).toEqual(a.messages[0]);
+    expect(b.messages[1]).toEqual(a.messages[1]);
+  });
 });

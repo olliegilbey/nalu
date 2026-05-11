@@ -26,6 +26,16 @@ import { renderScopingSystem } from "@/lib/prompts/scoping";
  * occur in practice. If a future caller produces non-alternating sequences,
  * either they accept the coalescing (within-turn injection) or they must
  * insert a delimiter row.
+ *
+ * Per-turn retry filter — IMPORTANT: rows are grouped by `turn_index`
+ * before coalescing. Within each group: if any row is `assistant_response`,
+ * `failed_assistant_response` + `harness_retry_directive` rows in that
+ * group are dropped (they were intermediate retry exhaust; the LLM doesn't
+ * need to see them once the turn recovered). Terminal-exhaust groups
+ * (no `assistant_response`) keep every row so the model can see the
+ * failure context on re-attempt. This filter preserves cache-prefix
+ * stability across successful turns: a recovered turn always renders to
+ * the same bytes as a non-retry turn would have.
  */
 export interface LlmRenderedMessage {
   readonly role: "system" | "user" | "assistant" | "tool";
@@ -43,9 +53,33 @@ export function renderContext(
 ): RenderedContext {
   const system = seed.kind === "wave" ? renderTeachingSystem(seed) : renderScopingSystem(seed);
 
-  // Coalesce consecutive same-role rows into one LLM message via a fold,
-  // so the result builds immutably (no array mutation in the loop body).
-  const out = messages.reduce<readonly LlmRenderedMessage[]>((acc, row) => {
+  // Per-turn bucketing filter (spec §4.3):
+  //   group rows by turn_index; if a group contains assistant_response,
+  //   drop failed_assistant_response + harness_retry_directive within
+  //   that group. Terminal-exhaust groups keep everything.
+  //
+  // First-pass: collect the ordered list of turn_indexes as they're first
+  // seen. Rows are pre-sorted by (turn_index, seq) at the query layer, so
+  // de-duplicated insertion order equals the natural turn order.
+  const turnIndexesInOrder: readonly number[] = messages.reduce<readonly number[]>(
+    (acc, row) => (acc.includes(row.turnIndex) ? acc : [...acc, row.turnIndex]),
+    [],
+  );
+
+  // Second-pass: for each turn_index, slice out its rows and apply the
+  // per-group filter. Using filter() keeps the fold pure and avoids
+  // mutating a Map (which would trip functional/immutable-data).
+  const filtered: readonly ContextMessage[] = turnIndexesInOrder.flatMap((turnIndex) => {
+    const group = messages.filter((r) => r.turnIndex === turnIndex);
+    const hasSuccess = group.some((r) => r.kind === "assistant_response");
+    if (!hasSuccess) return group;
+    return group.filter(
+      (r) => r.kind !== "failed_assistant_response" && r.kind !== "harness_retry_directive",
+    );
+  });
+
+  // Same-role coalescing fold (unchanged from prior version).
+  const out = filtered.reduce<readonly LlmRenderedMessage[]>((acc, row) => {
     // Defensive: schema CHECK already excludes 'system'. If somehow seen, skip.
     if (row.role === "system") return acc;
     const last = acc[acc.length - 1];
