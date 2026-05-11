@@ -29,6 +29,13 @@
       "when": 1777635465729,
       "tag": "0003_user_xp_invariant",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778519720468,
+      "tag": "0004_add_retry_kinds",
+      "breakpoints": true
     }
   ]
 }

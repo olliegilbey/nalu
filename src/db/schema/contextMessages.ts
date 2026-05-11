@@ -35,7 +35,14 @@ import { scopingPasses } from "./scopingPasses";
  * `kind` is the discriminator driving parsing/rendering; full
  * row→tag mapping is in spec §6.5:
  *   user_message, card_answer, assistant_response,
- *   harness_turn_counter, harness_review_block.
+ *   harness_turn_counter, harness_review_block,
+ *   failed_assistant_response, harness_retry_directive.
+ * The last two are persisted by executeTurn's per-turn retry loop when the
+ * model emits an unparseable response (failed_assistant_response = raw output
+ * that failed parsing; harness_retry_directive = synthesised user-role nudge
+ * to retry). They share (parent, turn_index) with the original attempt and
+ * are filtered out of successful turns by renderContext, but retained in DB
+ * so the LLM sees them during a retry and terminal failures keep an audit trail.
  *
  * Two partial unique indexes enforce (turn_index, seq) ordering uniqueness
  * scoped to each parent type without conflicting across the XOR.
@@ -59,7 +66,11 @@ export const contextMessages = pgTable(
     // Restrict kind to known discriminator values — guards against unrecognised message types.
     check(
       "context_messages_kind_check",
-      sql`${t.kind} IN ('user_message','card_answer','assistant_response','harness_turn_counter','harness_review_block')`,
+      sql`${t.kind} IN (
+        'user_message','card_answer','assistant_response',
+        'harness_turn_counter','harness_review_block',
+        'failed_assistant_response','harness_retry_directive'
+      )`,
     ),
     // Restrict role to known LLM roles — 'system' excluded; system content is never persisted (P3).
     check("context_messages_role_check", sql`${t.role} IN ('user','assistant','tool')`),
