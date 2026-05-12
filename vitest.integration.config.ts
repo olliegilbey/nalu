@@ -6,7 +6,7 @@ export default defineConfig({
     name: "integration",
     globals: true,
     environment: "node",
-    include: ["src/db/**/*.integration.test.ts"],
+    include: ["src/**/*.integration.test.ts"],
     alias: { "@": path.resolve(__dirname, "./src") },
     // Testcontainers boots a Postgres per worker; serialise execution to a
     // single fork so all integration tests share one container.
