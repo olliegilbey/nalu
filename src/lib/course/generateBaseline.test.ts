@@ -164,17 +164,8 @@ describe("generateBaseline", () => {
 
   // Case 2: idempotency — if baseline already stored, return it without calling LLM.
   it("idempotency: returns re-parsed baseline when already stored, does not call executeTurn", async () => {
-    // Need >=7 questions to pass baselineSchema.parse (BASELINE.minQuestions = 7).
     const storedBaseline: BaselineJsonb = {
-      questions: [
-        mcQuestion("b1", 1),
-        mcQuestion("b2", 2),
-        mcQuestion("b3", 1),
-        mcQuestion("b4", 2),
-        mcQuestion("b5", 1),
-        mcQuestion("b6", 2),
-        mcQuestion("b7", 1),
-      ],
+      questions: VALID_BASELINE.questions,
       answers: [],
       gradings: [],
     };

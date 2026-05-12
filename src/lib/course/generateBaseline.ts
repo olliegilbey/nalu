@@ -60,10 +60,13 @@ export async function generateBaseline(
     });
   }
 
-  // Idempotency: if baseline already stored, re-parse and return it without re-prompting.
-  // WHY re-parse instead of cast: `baselineJsonbSchema` stores questions as `z.unknown[]`
-  // (intentionally opaque after grading). A bare cast to `BaselineAssessment` would be
-  // unsafe; `baselineSchema.parse` recovers the typed shape from the raw stored questions.
+  // Idempotency: if baseline already stored, recover typed BaselineAssessment
+  // and return without re-prompting. `courseRowGuard` (called inside `getCourseById`)
+  // has already validated the payload against `baselineJsonbSchema`, so the data
+  // is safe. A bare cast to `BaselineAssessment` is still unsound at the TS level
+  // because `baselineJsonbSchema` types `questions` as `unknown[]` (intentionally
+  // opaque after grading); `baselineSchema.parse` re-narrows to the discriminated
+  // question union without re-prompting the LLM.
   if (course.baseline !== null) {
     const stored = course.baseline as BaselineJsonb;
     const baseline = baselineSchema.parse({ questions: stored.questions });
