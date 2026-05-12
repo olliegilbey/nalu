@@ -19,6 +19,7 @@ import { generateFramework } from "./generateFramework";
 import { executeTurn } from "@/lib/turn/executeTurn";
 import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
+import { SCOPING } from "@/lib/config/tuning";
 import type { Course } from "@/db/schema";
 import type { FrameworkJsonb } from "@/lib/types/jsonb";
 
@@ -39,6 +40,9 @@ const CLARIFICATION = {
     { questionId: "q2", answer: "C++ background." },
   ],
 };
+
+/** Learner answers (one per question in CLARIFICATION). */
+const ANSWERS: readonly string[] = ["Build systems software.", "C++ background."];
 
 /** Scoping-status course with clarification populated (happy-path input). */
 const SCOPING_COURSE = {
@@ -104,6 +108,7 @@ describe("generateFramework", () => {
     const result = await generateFramework({
       courseId: COURSE_ID,
       userId: USER_ID,
+      answers: ANSWERS,
     });
 
     // nextStage advances to baseline
@@ -142,7 +147,11 @@ describe("generateFramework", () => {
     } as unknown as Course;
     vi.mocked(getCourseById).mockResolvedValue(courseWithFramework);
 
-    const result = await generateFramework({ courseId: COURSE_ID, userId: USER_ID });
+    const result = await generateFramework({
+      courseId: COURSE_ID,
+      userId: USER_ID,
+      answers: ANSWERS,
+    });
 
     expect(result.framework).toEqual(storedFramework);
     expect(result.nextStage).toBe("baseline");
@@ -154,9 +163,9 @@ describe("generateFramework", () => {
     const activeCourse = { ...SCOPING_COURSE, status: "active" } as unknown as Course;
     vi.mocked(getCourseById).mockResolvedValue(activeCourse);
 
-    await expect(generateFramework({ courseId: COURSE_ID, userId: USER_ID })).rejects.toMatchObject(
-      { code: "PRECONDITION_FAILED" },
-    );
+    await expect(
+      generateFramework({ courseId: COURSE_ID, userId: USER_ID, answers: ANSWERS }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     expect(executeTurn).not.toHaveBeenCalled();
   });
 
@@ -164,20 +173,26 @@ describe("generateFramework", () => {
     const noClarification = { ...SCOPING_COURSE, clarification: null } as unknown as Course;
     vi.mocked(getCourseById).mockResolvedValue(noClarification);
 
-    await expect(generateFramework({ courseId: COURSE_ID, userId: USER_ID })).rejects.toMatchObject(
-      { code: "PRECONDITION_FAILED" },
-    );
+    await expect(
+      generateFramework({ courseId: COURSE_ID, userId: USER_ID, answers: ANSWERS }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     expect(executeTurn).not.toHaveBeenCalled();
   });
 
-  it("answer sanitisation: clarification answers pass through escapeXmlText in the prompt", async () => {
-    // We verify by inspecting the userMessageContent arg passed to executeTurn
-    // after clarification answers containing XML special chars are present.
+  // Case 5 (rewritten): caller-supplied answers are XML-escaped in the prompt.
+  // Pass XML chars via params.answers (not clarification.answers) to verify
+  // the builder uses caller-supplied values, not the stored (empty) answers.
+  it("answer sanitisation: caller-supplied answers pass through escapeXmlText in the prompt", async () => {
+    // Course has two questions; we supply two answers, first containing XML chars.
     const xssCourse = {
       ...SCOPING_COURSE,
       clarification: {
-        questions: [{ id: "q1", text: "Goal?", type: "free_text" as const }],
-        answers: [{ questionId: "q1", answer: "<script>alert(1)</script>" }],
+        questions: [
+          { id: "q1", text: "Goal?", type: "free_text" as const },
+          { id: "q2", text: "Background?", type: "free_text" as const },
+        ],
+        // answers intentionally empty — answers come from params
+        answers: [],
       },
     } as unknown as Course;
     vi.mocked(getCourseById).mockResolvedValue(xssCourse);
@@ -188,10 +203,52 @@ describe("generateFramework", () => {
     });
     vi.mocked(updateCourseScopingState).mockResolvedValue(xssCourse);
 
-    await generateFramework({ courseId: COURSE_ID, userId: USER_ID });
+    await generateFramework({
+      courseId: COURSE_ID,
+      userId: USER_ID,
+      answers: ["<bad>", "ok"],
+    });
 
     const callArgs = vi.mocked(executeTurn).mock.calls[0]?.[0];
-    expect(callArgs?.userMessageContent).toContain("&lt;script&gt;");
-    expect(callArgs?.userMessageContent).not.toContain("<script>");
+    // XML chars in first answer must be escaped
+    expect(callArgs?.userMessageContent).toContain("&lt;bad&gt;");
+    expect(callArgs?.userMessageContent).not.toContain("<bad>");
+    // Second answer passes through unchanged
+    expect(callArgs?.userMessageContent).toContain("ok");
+  });
+
+  // Case 6: empty answers array throws BAD_REQUEST immediately (before DB).
+  it("throws BAD_REQUEST when answers is empty", async () => {
+    // getCourseById should not even be called — guard fires first.
+    // However the current spec fires the guard after fetching the course.
+    // Mock the course so the guard ordering doesn't matter for the assertion.
+    vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
+
+    await expect(
+      generateFramework({ courseId: COURSE_ID, userId: USER_ID, answers: [] }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "answers cannot be empty" });
+    expect(executeTurn).not.toHaveBeenCalled();
+  });
+
+  // Case 7: too many answers throws BAD_REQUEST.
+  it("throws BAD_REQUEST when answers exceed maxClarifyAnswers", async () => {
+    vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
+    const tooMany = Array.from({ length: SCOPING.maxClarifyAnswers + 1 }, (_, i) => `a${i}`);
+
+    await expect(
+      generateFramework({ courseId: COURSE_ID, userId: USER_ID, answers: tooMany }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(executeTurn).not.toHaveBeenCalled();
+  });
+
+  // Case 8: answers length doesn't match questions length — strict mismatch guard.
+  it("throws BAD_REQUEST when answers.length does not match questions.length", async () => {
+    // SCOPING_COURSE has 2 questions; supply only 1 answer.
+    vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
+
+    await expect(
+      generateFramework({ courseId: COURSE_ID, userId: USER_ID, answers: ["only one"] }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(executeTurn).not.toHaveBeenCalled();
   });
 });

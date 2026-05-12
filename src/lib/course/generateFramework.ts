@@ -3,6 +3,7 @@ import { escapeXmlText } from "@/lib/security/escapeXmlText";
 import { executeTurn } from "@/lib/turn/executeTurn";
 import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
+import { SCOPING } from "@/lib/config/tuning";
 import { parseFrameworkResponse } from "./parsers";
 import type { ClarificationJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 import type { Framework } from "@/lib/prompts/framework";
@@ -13,6 +14,13 @@ export interface GenerateFrameworkParams {
   readonly courseId: string;
   /** Must match `course.userId` — scoped to prevent cross-user access. */
   readonly userId: string;
+  /**
+   * The learner's clarification answers, one per question (by position).
+   * Supplied by the router from the client request — NOT read from the DB
+   * (clarify stores answers as `[]` pending this step). Each answer is
+   * sanitised via `escapeXmlText` before being embedded in the LLM prompt.
+   */
+  readonly answers: readonly string[];
 }
 
 /**
@@ -42,6 +50,17 @@ export interface GenerateFrameworkResult {
 export async function generateFramework(
   params: GenerateFrameworkParams,
 ): Promise<GenerateFrameworkResult> {
+  // Input guards — checked before any DB call to fail fast on bad input.
+  if (params.answers.length === 0) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "answers cannot be empty" });
+  }
+  if (params.answers.length > SCOPING.maxClarifyAnswers) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `at most ${SCOPING.maxClarifyAnswers} answers allowed`,
+    });
+  }
+
   const course = await getCourseById(params.courseId, params.userId);
 
   // Precondition: only valid during scoping phase.
@@ -60,6 +79,18 @@ export async function generateFramework(
     });
   }
 
+  const clarification = course.clarification as ClarificationJsonb;
+
+  // Strict length-match: one answer per question, no more, no less.
+  // Mismatches indicate a client/router bug, not a user input error, so
+  // BAD_REQUEST surfaces it immediately rather than silently padding/truncating.
+  if (params.answers.length !== clarification.questions.length) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `answers length (${params.answers.length}) must match questions length (${clarification.questions.length})`,
+    });
+  }
+
   // Idempotency: if framework already stored, return it without re-prompting.
   // Drizzle infers `jsonb` columns as `unknown`; `courseRowGuard` (called inside
   // `getCourseById`) has already validated the payload against `frameworkJsonbSchema`,
@@ -72,10 +103,9 @@ export async function generateFramework(
   }
 
   // Build the user message content from Q&A pairs.
-  // Answers are user-supplied (untrusted) — escape XML special characters.
-  // Questions are our own LLM output (trusted) — no escaping needed.
-  const clarification = course.clarification as ClarificationJsonb;
-  const qaContent = buildFrameworkUserContent(clarification, course.topic);
+  // Answers come from params (caller-supplied, untrusted) — escape XML chars.
+  // Questions come from stored clarification (LLM output, trusted) — no escaping.
+  const qaContent = buildFrameworkUserContent(clarification, params.answers, course.topic);
 
   const pass = await ensureOpenScopingPass(course.id);
   const { parsed } = await executeTurn({
@@ -96,19 +126,22 @@ export async function generateFramework(
 /**
  * Build the user message content for the framework turn.
  *
- * Reconstructs the Q&A context so the model has enough history to produce
- * a grounded framework. Answers are XML-escaped (user-supplied text destined
- * for an XML envelope); questions are our own LLM output and go through verbatim.
+ * Zips stored questions (trusted LLM output) with caller-supplied answers
+ * (untrusted) by position. Answers are XML-escaped before embedding;
+ * questions go through verbatim.
+ *
+ * @param clarification - Stored clarification JSONB (contains questions).
+ * @param answers - Caller-supplied answers, one per question (by index).
+ * @param topic - Course topic; escaped for the XML envelope header.
  */
-function buildFrameworkUserContent(clarification: ClarificationJsonb, topic: string): string {
-  // Map question ids to their text for lookup.
-  const questionById = Object.fromEntries(clarification.questions.map((q) => [q.id, q.text]));
-
-  const qa = clarification.answers
-    .map(({ questionId, answer }) => {
-      const questionText = questionById[questionId] ?? questionId;
-      return `Q: ${questionText}\nA: ${escapeXmlText(answer)}`;
-    })
+function buildFrameworkUserContent(
+  clarification: ClarificationJsonb,
+  answers: readonly string[],
+  topic: string,
+): string {
+  // Zip questions[i].text with answers[i] — caller has already verified lengths match.
+  const qa = clarification.questions
+    .map((q, i) => `Q: ${q.text}\nA: ${escapeXmlText(answers[i] ?? "")}`)
     .join("\n\n");
 
   return (
