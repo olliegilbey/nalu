@@ -1,86 +1,109 @@
-import { generateStructured } from "@/lib/llm/generate";
-import {
-  baselineSchema,
-  buildBaselinePrompt,
-  type BaselineQuestion,
-  type ClarificationExchange,
-  type Framework,
-} from "@/lib/prompts";
-import type { LlmUsage } from "@/lib/types/llm";
+import { TRPCError } from "@trpc/server";
+import { executeTurn } from "@/lib/turn/executeTurn";
+import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
+import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
+import { parseBaselineResponse } from "./parsers";
+import { baselineSchema } from "@/lib/prompts/baseline";
+import type { FrameworkJsonb, BaselineJsonb } from "@/lib/types/jsonb";
+import type { BaselineAssessment } from "@/lib/prompts/baseline";
 
-/** Params for {@link generateBaseline}. Mirrors `buildBaselinePrompt` inputs. */
+/** Parameters for {@link generateBaseline}. Object shape keeps callers future-proof. */
 export interface GenerateBaselineParams {
-  /** Raw, untrusted topic. Sanitised inside the prompt builder. */
-  readonly topic: string;
-  /** Q&A from the clarification turn. Answers sanitised downstream. */
-  readonly clarifications: readonly ClarificationExchange[];
-  /** Trusted framework from the framework-generation turn. */
-  readonly framework: Framework;
+  /** Course primary key. */
+  readonly courseId: string;
+  /** Must match `course.userId` — scoped to prevent cross-user access. */
+  readonly userId: string;
 }
 
 /**
- * Result of a baseline-generation turn. `scopeTiers` and
- * `estimatedStartingTier` are surfaced as first-class fields (even though
- * they're already on `framework`) because downstream consumers
- * (`gradeBaseline`, `determineStartingTier`, UI progress bar) need them
- * without re-reading the full framework.
+ * Result of a baseline-generation turn.
+ *
+ * `nextStage: "answering"` signals the router to move the learner into
+ * the answer-collection phase (spec §4.1 step 3).
  */
 export interface GenerateBaselineResult {
-  readonly questions: readonly BaselineQuestion[];
-  readonly scopeTiers: readonly number[];
-  readonly estimatedStartingTier: number;
-  readonly usage: LlmUsage;
+  readonly baseline: BaselineAssessment;
+  readonly nextStage: "answering";
 }
 
 /**
- * Drive the baseline-generation turn (PRD §4.1 step 3).
+ * Drive the baseline-generation step of scoping (PRD §4.1 step 3).
  *
- * Thin orchestrator over the continuation-history prompt builder:
- * `buildBaselinePrompt` reconstructs the scoping conversation up through
- * the new baseline-task user message, hands it to `generateStructured`
- * with `baselineSchema`, then we assert two orchestrator-level
- * invariants the Zod schema can't express on its own:
- *
- * 1. Every question's `tier` is one of `framework.baselineScopeTiers`.
- *    P-ON-02 at runtime: the schema enforces a tier is a positive int,
- *    but not that it sits inside the scope the prompt specified.
- * 2. Question IDs are unique within the batch. Duplicate IDs would
- *    break the mechanical/LLM grader split downstream.
- *
- * Invariant failures are hard errors — surfaced, not patched — because
- * they indicate an LLM that stopped obeying the prompt contract.
+ * Pattern mirrors `generateFramework`:
+ *   fetch course (with ownership guard)
+ *   → precondition checks (status='scoping', clarification + framework present)
+ *   → idempotency: return stored baseline (re-parsed) if already populated
+ *   → open/reuse scoping pass
+ *   → executeTurn(seed=scoping, parser=parseBaselineResponse with scopeTiers)
+ *   → translate BaselineAssessment → BaselineJsonb (adds empty answers/gradings) and persist
+ *   → return { baseline, nextStage: "answering" }
  */
 export async function generateBaseline(
   params: GenerateBaselineParams,
 ): Promise<GenerateBaselineResult> {
-  const messages = buildBaselinePrompt({
-    topic: params.topic,
-    clarifications: params.clarifications,
-    framework: params.framework,
+  const course = await getCourseById(params.courseId, params.userId);
+
+  // Precondition: only valid during scoping phase.
+  if (course.status !== "scoping") {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `generateBaseline: course ${course.id} is in status '${course.status}', expected 'scoping'`,
+    });
+  }
+
+  // Precondition: both clarification and framework must exist — baseline generation
+  // follows both steps. A single condition mirrors the plan's §12 guard.
+  if (course.clarification === null || course.framework === null) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `generateBaseline: course ${course.id} requires both clarification and framework — run clarify and generateFramework first`,
+    });
+  }
+
+  // Idempotency: if baseline already stored, re-parse and return it without re-prompting.
+  // WHY re-parse instead of cast: `baselineJsonbSchema` stores questions as `z.unknown[]`
+  // (intentionally opaque after grading). A bare cast to `BaselineAssessment` would be
+  // unsafe; `baselineSchema.parse` recovers the typed shape from the raw stored questions.
+  if (course.baseline !== null) {
+    const stored = course.baseline as BaselineJsonb;
+    const baseline = baselineSchema.parse({ questions: stored.questions });
+    return { baseline, nextStage: "answering" };
+  }
+
+  // Read baseline_scope_tiers from the stored FrameworkJsonb (snake_case storage shape).
+  // The plan skeleton incorrectly used camelCase `framework.baselineScopeTiers` — wrong.
+  const framework = course.framework as FrameworkJsonb;
+  const scopeTiers = framework.baseline_scope_tiers;
+
+  const pass = await ensureOpenScopingPass(course.id);
+  const { parsed } = await executeTurn({
+    parent: { kind: "scoping", id: pass.id },
+    seed: { kind: "scoping", topic: course.topic },
+    // Per spec §3.4, the user message is a simple stage request — stage instructions
+    // live in the system prompt rendered by `renderScopingSystem` (Task 15 wires that).
+    userMessageContent: "<request>generate baseline</request>",
+    // Bind scopeTiers into the parser closure so the parser can enforce the invariant
+    // that every question's tier is within the framework's baseline scope.
+    parser: (raw: string) => parseBaselineResponse(raw, { scopeTiers }),
   });
-  const { object, usage } = await generateStructured(baselineSchema, messages);
 
-  const outOfScope = object.questions.filter(
-    (q: BaselineQuestion) => !params.framework.baselineScopeTiers.includes(q.tier),
-  );
-  if (outOfScope.length > 0) {
-    const ids = outOfScope.map((q) => `${q.id}(tier=${q.tier})`).join(", ");
-    throw new Error(`baseline questions outside baselineScopeTiers: ${ids}`);
-  }
+  // Persist via translator: BaselineAssessment has only `questions`; the JSONB storage
+  // shape requires `answers` and `gradings` initialised to [] (populated in later steps).
+  // `updateCourseScopingState` validates against `baselineJsonbSchema` before writing.
+  await updateCourseScopingState(course.id, {
+    baseline: toBaselineJsonb(parsed.baseline),
+  });
 
-  // Functional duplicate scan: indexOf's first-occurrence semantics means
-  // any id whose later index differs from its first is a duplicate. Avoids
-  // the mutable-Set pattern `functional/immutable-data` flags.
-  const allIds = object.questions.map((q) => q.id);
-  const duplicates = allIds.filter((id, i) => allIds.indexOf(id) !== i);
-  if (duplicates.length > 0) {
-    throw new Error(`baseline question ids are not unique: ${duplicates.join(", ")}`);
-  }
+  return { baseline: parsed.baseline, nextStage: "answering" };
+}
 
-  return {
-    questions: object.questions,
-    scopeTiers: params.framework.baselineScopeTiers,
-    estimatedStartingTier: params.framework.estimatedStartingTier,
-    usage,
-  };
+/**
+ * Translate parser output (`BaselineAssessment`) to `courses.baseline` JSONB shape.
+ *
+ * The parser only emits questions; `answers` and `gradings` are populated in
+ * subsequent scoping steps (answering and grading). Initialise both to `[]`
+ * so `baselineJsonbSchema.parse` inside `updateCourseScopingState` accepts the payload.
+ */
+function toBaselineJsonb(b: BaselineAssessment): BaselineJsonb {
+  return { questions: b.questions, answers: [], gradings: [] };
 }
