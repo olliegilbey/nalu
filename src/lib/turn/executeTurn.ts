@@ -1,0 +1,206 @@
+import {
+  appendMessages,
+  getMessagesForScopingPass,
+  getMessagesForWave,
+  getNextTurnIndex,
+  type AppendMessageParams,
+  type ContextParent,
+} from "@/db/queries/contextMessages";
+import type { ContextMessage } from "@/db/schema";
+import { generateChat } from "@/lib/llm/generate";
+import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { renderContext } from "@/lib/llm/renderContext";
+import { SCOPING } from "@/lib/config/tuning";
+import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
+import type { SeedInputs } from "@/lib/types/context";
+
+/**
+ * Parameters for one invocation of `executeTurn`.
+ *
+ * `parser` is the caller-supplied per-stage validator. It either returns a
+ * parsed value or throws `ValidationGateFailure` with a model-readable
+ * `detail` string. Anything else thrown is treated as a transport error
+ * and propagates untouched.
+ *
+ * `retryDirective` defaults to `(err) => err.detail` because per-stage
+ * parsers in `src/lib/course/parsers.ts` already author model-readable
+ * messages — no extra indirection needed unless a caller wants different
+ * directive content per attempt index.
+ */
+export interface ExecuteTurnParams<T> {
+  readonly parent: ContextParent;
+  readonly seed: SeedInputs;
+  readonly userMessageContent: string;
+  readonly parser: (raw: string) => T;
+  readonly retryDirective?: (err: ValidationGateFailure, attempt: number) => string;
+}
+
+/** Result of a successful turn: parsed value + token usage from the winning LLM call. */
+export interface ExecuteTurnResult<T> {
+  readonly parsed: T;
+  readonly usage: LlmUsage;
+}
+
+/**
+ * Stage-agnostic per-turn lifecycle (spec §3.3).
+ *
+ * One call = one atomic write batch:
+ *   1. Load prior rows for this parent (Wave or scoping pass).
+ *   2. Render context (prior rows + the in-memory batch we're building this
+ *      turn) → LLM messages.
+ *   3. Call `generateChat`.
+ *   4. Run the caller's `parser` on the raw text.
+ *   5. On parse success: append `[user_message, ..., assistant_response]`
+ *      as one batch via `appendMessages` and return.
+ *   6. On `ValidationGateFailure`: append a `failed_assistant_response`
+ *      + `harness_retry_directive` to the in-memory batch and re-attempt
+ *      up to `SCOPING.maxParseRetries` more times.
+ *   7. Terminal exhaust: persist `[user, failed, directive, ..., failed]`
+ *      (drop trailing directive — the caller's next turn IS the recovery
+ *      context) and re-throw the `ValidationGateFailure`.
+ *   8. Transport errors: propagate untouched. Nothing persisted.
+ *
+ * Atomicity boundary: a turn only commits rows to the DB when the batch
+ * is finalised (success or terminal exhaust). Partial state never leaks.
+ */
+export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<ExecuteTurnResult<T>> {
+  // Reserve a turn_index up front — all rows persisted by this call share it.
+  const turnIndex = await getNextTurnIndex(params.parent);
+  // Prior rows are needed for context rendering; the polymorphic parent dictates the read query.
+  const priorRows =
+    params.parent.kind === "wave"
+      ? await getMessagesForWave(params.parent.id)
+      : await getMessagesForScopingPass(params.parent.id);
+
+  // The user's message is always the first row of the batch (seq 0).
+  const userRow: AppendMessageParams = {
+    parent: params.parent,
+    turnIndex,
+    seq: 0,
+    kind: "user_message",
+    role: "user",
+    content: params.userMessageContent,
+  };
+  // maxParseRetries=2 → up to 3 LLM attempts per turn under MVP config.
+  const totalAttempts = SCOPING.maxParseRetries + 1;
+  // Default directive surfaces the parser's authored detail verbatim.
+  const directiveFn = params.retryDirective ?? ((err) => err.detail);
+
+  /**
+   * Recursive attempt loop — functional alternative to mutable loop state.
+   * Threads the growing in-memory `batch` through each frame.
+   * Bounded by `totalAttempts` (3 under MVP config) so stack depth is trivial.
+   */
+  async function attempt(
+    i: number,
+    batch: readonly AppendMessageParams[],
+  ): Promise<ExecuteTurnResult<T>> {
+    // Synthesise a renderable row list from prior DB rows + the in-memory batch.
+    // The in-memory batch (including any failed/directive rows from earlier attempts
+    // *this turn*) is part of the context so the model sees its previous mistakes.
+    const renderable = synthesiseRows(priorRows, batch);
+    const rendered = renderContext(params.seed, renderable);
+    // Flatten system prompt + rendered messages into the SDK's flat message list.
+    // `LlmMessage` (= `ModelMessage`) is a discriminated union where 'tool' role
+    // demands array `ToolContent` rather than a plain string. The DB's
+    // `context_messages.role` CHECK constraint allows 'tool', but no row kind
+    // currently emits it — system/tool branches are unreachable in practice today.
+    // Branching here keeps the type union narrow per arm so the call site compiles
+    // without an unsafe cast over the whole array.
+    const llmMessages: readonly LlmMessage[] = [
+      { role: "system", content: rendered.system } satisfies LlmMessage,
+      ...rendered.messages.map((m): LlmMessage => {
+        // Narrow each role to the matching ModelMessage variant. 'tool' would
+        // require ToolContent; if a future row kind emits role 'tool' we'll need
+        // a separate code path (and a richer content shape).
+        if (m.role === "assistant") return { role: "assistant", content: m.content };
+        if (m.role === "system") return { role: "system", content: m.content };
+        if (m.role === "tool") {
+          throw new Error("executeTurn: tool-role rendered message is not supported");
+        }
+        return { role: "user", content: m.content };
+      }),
+    ];
+    const result = await generateChat(llmMessages);
+    try {
+      // Parser success path: append assistant_response and commit the whole batch.
+      const parsed = params.parser(result.text);
+      const successRow: AppendMessageParams = {
+        parent: params.parent,
+        turnIndex,
+        seq: batch.length,
+        kind: "assistant_response",
+        role: "assistant",
+        content: result.text,
+      };
+      await appendMessages([...batch, successRow]);
+      return { parsed, usage: result.usage };
+    } catch (err) {
+      // Anything other than a validation gate failure is treated as a transport-class
+      // error and propagates without persisting — the batch never commits.
+      if (!(err instanceof ValidationGateFailure)) throw err;
+      const failedRow: AppendMessageParams = {
+        parent: params.parent,
+        turnIndex,
+        seq: batch.length,
+        kind: "failed_assistant_response",
+        role: "assistant",
+        content: result.text,
+      };
+      if (i + 1 >= totalAttempts) {
+        // Terminal exhaust: persist failure trail without trailing directive.
+        // The caller's next user_message becomes the recovery context, so
+        // appending a directive here would be redundant noise.
+        await appendMessages([...batch, failedRow]);
+        throw err;
+      }
+      // Retry path: append failed row + directive and recurse with i+1.
+      const directiveRow: AppendMessageParams = {
+        parent: params.parent,
+        turnIndex,
+        seq: batch.length + 1,
+        kind: "harness_retry_directive",
+        role: "user",
+        content: directiveFn(err, i + 1),
+      };
+      return attempt(i + 1, [...batch, failedRow, directiveRow]);
+    }
+  }
+
+  return attempt(0, [userRow]);
+}
+
+/**
+ * Build a renderable row list from prior DB rows + the in-memory batch.
+ *
+ * `renderContext` only reads `turnIndex`, `seq`, `kind`, `role`, `content`
+ * from each row — other `ContextMessage` fields are filled with inert
+ * placeholders. These synthetic rows are never persisted; they exist only
+ * for the duration of one `renderContext` call within an attempt.
+ *
+ * Including the in-memory batch is deliberate: during a retry the model
+ * needs to see the failed attempt and the directive it produced. The
+ * per-turn bucketing filter in `renderContext` drops those rows once the
+ * turn ends in `assistant_response`, preserving cache-prefix stability
+ * for successful turns.
+ */
+function synthesiseRows(
+  prior: readonly ContextMessage[],
+  batch: readonly AppendMessageParams[],
+): readonly ContextMessage[] {
+  const batchAsRows: readonly ContextMessage[] = batch.map((b, i) => ({
+    // Synthetic id — never read by renderContext; any non-empty string suffices.
+    id: `synthetic-${i}`,
+    // XOR FK fields mirror the persistence layer's discriminated-union mapping.
+    waveId: b.parent.kind === "wave" ? b.parent.id : null,
+    scopingPassId: b.parent.kind === "scoping" ? b.parent.id : null,
+    turnIndex: b.turnIndex,
+    seq: b.seq,
+    kind: b.kind,
+    role: b.role,
+    content: b.content,
+    // Inert timestamp — renderContext doesn't read createdAt.
+    createdAt: new Date(0),
+  }));
+  return [...prior, ...batchAsRows];
+}
