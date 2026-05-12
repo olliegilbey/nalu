@@ -179,10 +179,10 @@ describe("generateFramework", () => {
     expect(executeTurn).not.toHaveBeenCalled();
   });
 
-  // Case 5 (rewritten): caller-supplied answers are XML-escaped in the prompt.
-  // Pass XML chars via params.answers (not clarification.answers) to verify
-  // the builder uses caller-supplied values, not the stored (empty) answers.
-  it("answer sanitisation: caller-supplied answers pass through escapeXmlText in the prompt", async () => {
+  // Case 5: answers are XML-escaped and wrapped in the bare <answers> envelope
+  // per spec §3.4 — questions are already in the conversation history, so we
+  // only send the answers array; no Topic/Q:/A: reconstruction.
+  it("answer sanitisation: userMessageContent is bare <answers> JSON with XML-escaped values", async () => {
     // Course has two questions; we supply two answers, first containing XML chars.
     const xssCourse = {
       ...SCOPING_COURSE,
@@ -191,7 +191,7 @@ describe("generateFramework", () => {
           { id: "q1", text: "Goal?", type: "free_text" as const },
           { id: "q2", text: "Background?", type: "free_text" as const },
         ],
-        // answers intentionally empty — answers come from params
+        // stored answers left empty — caller-supplied params.answers are used
         answers: [],
       },
     } as unknown as Course;
@@ -210,18 +210,15 @@ describe("generateFramework", () => {
     });
 
     const callArgs = vi.mocked(executeTurn).mock.calls[0]?.[0];
-    // XML chars in first answer must be escaped
-    expect(callArgs?.userMessageContent).toContain("&lt;bad&gt;");
+    // Exact shape: <answers>["&lt;bad&gt;","ok"]</answers>
+    expect(callArgs?.userMessageContent).toBe(`<answers>["&lt;bad&gt;","ok"]</answers>`);
+    // XML chars must be escaped — no raw < in the message
     expect(callArgs?.userMessageContent).not.toContain("<bad>");
-    // Second answer passes through unchanged
-    expect(callArgs?.userMessageContent).toContain("ok");
   });
 
   // Case 6: empty answers array throws BAD_REQUEST immediately (before DB).
   it("throws BAD_REQUEST when answers is empty", async () => {
-    // getCourseById should not even be called — guard fires first.
-    // However the current spec fires the guard after fetching the course.
-    // Mock the course so the guard ordering doesn't matter for the assertion.
+    // Guard fires before any DB call — mock kept for consistency with other tests.
     vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
 
     await expect(

@@ -71,7 +71,8 @@ export async function generateFramework(
     });
   }
 
-  // Precondition: clarification must exist so we can reconstruct Q&A context.
+  // Precondition: clarification must exist — we need its questions.length for
+  // the strict-length guard below.
   if (course.clarification === null) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
@@ -102,16 +103,20 @@ export async function generateFramework(
     };
   }
 
-  // Build the user message content from Q&A pairs.
-  // Answers come from params (caller-supplied, untrusted) — escape XML chars.
-  // Questions come from stored clarification (LLM output, trusted) — no escaping.
-  const qaContent = buildFrameworkUserContent(clarification, params.answers, course.topic);
+  // Per spec §3.4, the user message in the framework turn is the bare <answers>
+  // array — questions are already in the conversation history from the prior
+  // clarify turn, and stage instructions live in the system prompt rendered by
+  // `renderScopingSystem`. Topic duplication is also unnecessary (already in the
+  // seed's <scoping_topic> tag). Answers are XML-escaped before embedding since
+  // they are untrusted caller input.
+  const sanitisedAnswers = params.answers.map((a) => escapeXmlText(a));
+  const userContent = `<answers>${JSON.stringify(sanitisedAnswers)}</answers>`;
 
   const pass = await ensureOpenScopingPass(course.id);
   const { parsed } = await executeTurn({
     parent: { kind: "scoping", id: pass.id },
     seed: { kind: "scoping", topic: course.topic },
-    userMessageContent: qaContent,
+    userMessageContent: userContent,
     parser: parseFrameworkResponse,
   });
 
@@ -121,35 +126,6 @@ export async function generateFramework(
   await updateCourseScopingState(course.id, { framework: jsonb });
 
   return { framework: jsonb, nextStage: "baseline" };
-}
-
-/**
- * Build the user message content for the framework turn.
- *
- * Zips stored questions (trusted LLM output) with caller-supplied answers
- * (untrusted) by position. Answers are XML-escaped before embedding;
- * questions go through verbatim.
- *
- * @param clarification - Stored clarification JSONB (contains questions).
- * @param answers - Caller-supplied answers, one per question (by index).
- * @param topic - Course topic; escaped for the XML envelope header.
- */
-function buildFrameworkUserContent(
-  clarification: ClarificationJsonb,
-  answers: readonly string[],
-  topic: string,
-): string {
-  // Zip questions[i].text with answers[i] — caller has already verified lengths match.
-  const qa = clarification.questions
-    .map((q, i) => `Q: ${q.text}\nA: ${escapeXmlText(answers[i] ?? "")}`)
-    .join("\n\n");
-
-  return (
-    `Topic: ${escapeXmlText(topic)}\n\n` +
-    `The learner answered those clarifying questions:\n\n${qa}\n\n` +
-    `Using the topic and these answers, produce the proficiency framework. ` +
-    `Reply with JSON inside <framework>...</framework>.`
-  );
 }
 
 /**
