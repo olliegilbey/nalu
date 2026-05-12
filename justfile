@@ -22,6 +22,12 @@ test:
 test-int:
     bun run test:integration
 
+# Live Cerebras smoke test — opt-in only. Calls real Cerebras + real Postgres.
+# Never runs in `just check` or CI. Gated by CEREBRAS_LIVE=1 at the describe
+# level too; also requires LLM_API_KEY to be set in the environment.
+smoke:
+    CEREBRAS_LIVE=1 bun run test:live
+
 # Run unit tests in watch mode
 test-watch:
     bun run test:watch
