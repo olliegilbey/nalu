@@ -18,7 +18,7 @@ import { buildClarificationPrompt } from "./clarification";
  * Numeric bounds come from `tuning.FRAMEWORK` so prompt text and Zod
  * schema can never drift.
  */
-const FRAMEWORK_TURN_INSTRUCTIONS = `<framework_rules>
+export const FRAMEWORK_TURN_INSTRUCTIONS = `<framework_rules>
 - Produce between ${FRAMEWORK.minTiers} and ${FRAMEWORK.maxTiers} tiers, ordered from foundational (tier 1) to most advanced.
 - Each tier needs: a unique tier number starting at 1 and incrementing by 1, a short human-readable name, a one-to-two-sentence description, and ${FRAMEWORK.minExampleConceptsPerTier} to ${FRAMEWORK.maxExampleConceptsPerTier} concrete example concepts a learner at that tier would study.
 - Tiers must progress monotonically: each tier should presuppose the prior one.

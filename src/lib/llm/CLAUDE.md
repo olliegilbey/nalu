@@ -23,3 +23,4 @@ Single LLM integration point for the entire application. Built on the Vercel AI 
   of the turn proceeds. `raw` is preserved verbatim for persistence.
 - The retry policy described in spec §9.2 lives in the harness loop
   (next milestone) and uses the gate exposed here.
+- `renderContext` applies a per-turn retry filter: rows are grouped by `turn_index`; within a group containing an `assistant_response`, any `failed_assistant_response` + `harness_retry_directive` rows are dropped (they were intermediate retry exhaust). Terminal-exhaust groups (no `assistant_response`) keep every row so the model can see the failure context. This preserves cache-prefix stability — a recovered turn renders to the same bytes as a non-retry turn.

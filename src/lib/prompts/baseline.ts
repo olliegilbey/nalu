@@ -39,7 +39,7 @@ if (MC_OPTION_KEYS.length !== BASELINE.mcOptionCount) {
  *   question also carries `freetextRubric` so freetext-escape answers to
  *   MC questions have a grading target.
  */
-const BASELINE_TURN_INSTRUCTIONS = `<question_rules>
+export const BASELINE_TURN_INSTRUCTIONS = `<question_rules>
 - Generate ${BASELINE.questionsPerTier} questions per tier in scope, for a total between ${BASELINE.minQuestions} and ${BASELINE.maxQuestions}.
 - Distribute questions across tiers exactly as specified — every tier in scope gets its share.
 - Every question is STANDALONE: it must not reference any other question ("the snippet above", "in the previous question", "as we saw"). Each card must stand alone.
