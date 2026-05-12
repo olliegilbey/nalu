@@ -22,9 +22,10 @@ import { BASELINE_TURN_INSTRUCTIONS } from "./baseline";
  * single cached prefix covers all three scoping stages.
  *
  * Ordering mirrors the conversation sequence the model will encounter:
- *   1. Clarification rules (already inside the role block)
- *   2. FRAMEWORK_TURN_INSTRUCTIONS
- *   3. BASELINE_TURN_INSTRUCTIONS
+ *   1. Clarification role block (inline in the template below — no
+ *      separate constant; the rules are short enough to live in `<role>`)
+ *   2. FRAMEWORK_TURN_INSTRUCTIONS (imported from `./framework`)
+ *   3. BASELINE_TURN_INSTRUCTIONS (imported from `./baseline`)
  *
  * Pure function. Same input → same string, byte-identical.
  */
