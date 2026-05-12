@@ -37,6 +37,9 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
   // belt-and-braces guard against future replays.)
   if (course.clarification !== null) {
     // D1 option B: stored shape uses discriminated union questions; extract .text for callers.
+    // Drizzle infers `jsonb` columns as `unknown`; `courseRowGuard` in `createCourse`
+    // has already validated the payload against `clarificationJsonbSchema`, so the
+    // cast narrows a runtime-guaranteed shape to its TS type without re-parsing.
     const cached = course.clarification as ClarificationJsonb;
     return {
       courseId: course.id,

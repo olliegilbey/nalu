@@ -8,7 +8,6 @@ vi.mock("@/db/queries/courses", async () => {
   return {
     ...actual,
     createCourse: vi.fn(),
-    getCourseById: vi.fn(),
     updateCourseScopingState: vi.fn(),
   };
 });
@@ -17,7 +16,7 @@ vi.mock("@/db/queries/scopingPasses", () => ({
 }));
 
 import { executeTurn } from "@/lib/turn/executeTurn";
-import { createCourse, getCourseById, updateCourseScopingState } from "@/db/queries/courses";
+import { createCourse, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import type { Course } from "@/db/schema";
 
@@ -28,7 +27,6 @@ const COURSE = { id: "c1", userId: USER, topic: "Rust", clarification: null } as
 beforeEach(() => {
   vi.mocked(executeTurn).mockReset();
   vi.mocked(createCourse).mockReset();
-  vi.mocked(getCourseById).mockReset();
   vi.mocked(updateCourseScopingState).mockReset();
   vi.mocked(ensureOpenScopingPass).mockReset();
 });
