@@ -82,6 +82,11 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
     content: params.userMessageContent,
   };
   // maxParseRetries=2 → up to 3 LLM attempts per turn under MVP config.
+  // Sourced from SCOPING for now: scoping is the only stage live today, and
+  // teaching has no reason to want a different budget at MVP. When teaching
+  // lands we'll either share this value or promote it to a stage-neutral
+  // namespace (e.g. `TURN`) — not worth the rename ripple before there's a
+  // second caller.
   const totalAttempts = SCOPING.maxParseRetries + 1;
   // Default directive surfaces the parser's authored detail verbatim.
   const directiveFn = params.retryDirective ?? ((err) => err.detail);

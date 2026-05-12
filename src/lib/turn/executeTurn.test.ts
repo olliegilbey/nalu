@@ -11,11 +11,17 @@ vi.mock("@/db/queries/contextMessages", () => ({
   getMessagesForScopingPass: vi.fn(),
   getNextTurnIndex: vi.fn(),
 }));
+// `renderContext` is exercised by its own tests; stub here so wave-seed
+// fixtures don't need to be fully populated to verify dispatch logic.
+vi.mock("@/lib/llm/renderContext", () => ({
+  renderContext: vi.fn(() => ({ system: "SYS", messages: [] })),
+}));
 
 import { generateChat } from "@/lib/llm/generate";
 import {
   appendMessages,
   getMessagesForScopingPass,
+  getMessagesForWave,
   getNextTurnIndex,
 } from "@/db/queries/contextMessages";
 
@@ -34,8 +40,10 @@ beforeEach(() => {
   vi.mocked(generateChat).mockReset();
   vi.mocked(appendMessages).mockReset();
   vi.mocked(getMessagesForScopingPass).mockReset();
+  vi.mocked(getMessagesForWave).mockReset();
   vi.mocked(getNextTurnIndex).mockReset();
   vi.mocked(getMessagesForScopingPass).mockResolvedValue([]);
+  vi.mocked(getMessagesForWave).mockResolvedValue([]);
   vi.mocked(getNextTurnIndex).mockResolvedValue(0);
   vi.mocked(appendMessages).mockResolvedValue([]);
 });
@@ -110,6 +118,23 @@ describe("executeTurn", () => {
       "harness_retry_directive",
       "failed_assistant_response",
     ]);
+  });
+
+  it("wave parent: dispatches to getMessagesForWave (not scoping)", async () => {
+    // `renderContext` is mocked → wave seed fields are not inspected; this
+    // test verifies only the parent-kind dispatch in executeTurn.
+    const WAVE_ID = "00000000-0000-0000-0000-000000000701";
+    const WAVE_SEED = { kind: "wave" } as unknown as Parameters<typeof executeTurn>[0]["seed"];
+    vi.mocked(generateChat).mockResolvedValueOnce({ text: "OK", usage: FAKE_USAGE });
+    const parser = vi.fn((raw: string) => raw);
+    await executeTurn({
+      parent: { kind: "wave", id: WAVE_ID },
+      seed: WAVE_SEED,
+      userMessageContent: "hi",
+      parser,
+    });
+    expect(getMessagesForWave).toHaveBeenCalledWith(WAVE_ID);
+    expect(getMessagesForScopingPass).not.toHaveBeenCalled();
   });
 
   it("transport error mid-loop: propagates without persisting", async () => {
