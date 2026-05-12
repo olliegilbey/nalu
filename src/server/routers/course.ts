@@ -6,9 +6,11 @@ import { generateBaseline } from "@/lib/course/generateBaseline";
 import { SCOPING } from "@/lib/config/tuning";
 
 /**
- * Course router — thin transport layer for scoping procedures.
- * Validates input with Zod, delegates all logic to `src/lib/course/` steps.
- * No business logic lives here (see `src/server/routers/CLAUDE.md`).
+ * Scoping flow (spec §3.2).
+ *
+ * Three procedures called in sequence by the client; each return value's
+ * `nextStage` field tells the client which procedure to call next. The
+ * server never sends raw LLM output — every payload is typed.
  */
 export const courseRouter = router({
   /** Initiate scoping for a new topic: creates a course and returns clarifying questions. */
