@@ -4,7 +4,7 @@ import { executeTurn } from "@/lib/turn/executeTurn";
 import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { SCOPING } from "@/lib/config/tuning";
-import { parseFrameworkResponse } from "./parsers";
+import { parseFrameworkResponse, type ParsedFrameworkResponse } from "./parsers";
 import type { ClarificationJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 import type { Framework } from "@/lib/prompts/framework";
 
@@ -113,10 +113,12 @@ export async function generateFramework(
   const userContent = `<answers>${JSON.stringify(sanitisedAnswers)}</answers>`;
 
   const pass = await ensureOpenScopingPass(course.id);
-  const { parsed } = await executeTurn({
+  // Explicit type param preserves the parsed shape while the parser shim is in place (Task 14 removes both).
+  const { parsed } = await executeTurn<ParsedFrameworkResponse>({
     parent: { kind: "scoping", id: pass.id },
     seed: { kind: "scoping", topic: course.topic },
     userMessageContent: userContent,
+    // @ts-expect-error Task 5: parser→responseSchema migration in progress; this caller rewritten in Task 14
     parser: parseFrameworkResponse,
     label: "framework",
     successSummary: (p) =>

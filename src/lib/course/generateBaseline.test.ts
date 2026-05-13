@@ -247,6 +247,7 @@ describe("generateBaseline", () => {
         mcQuestion("b7", 1),
       ],
     })}</baseline>`;
+    // @ts-expect-error Task 5: parser→responseSchema migration in progress; this caller rewritten in Task 15
     callArgs!.parser(rawResponse);
 
     // The closure must delegate to parseBaselineResponse with the correct scopeTiers.

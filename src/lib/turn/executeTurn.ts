@@ -13,6 +13,7 @@ import { renderContext } from "@/lib/llm/renderContext";
 import { SCOPING } from "@/lib/config/tuning";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 import type { SeedInputs } from "@/lib/types/context";
+import type { z } from "zod/v4";
 import {
   formatHeader,
   formatParseFailure,
@@ -27,21 +28,31 @@ import { diagnoseFailure } from "./diagnoseFailure";
 /**
  * Parameters for one invocation of `executeTurn`.
  *
- * `parser` is the caller-supplied per-stage validator. It either returns a
- * parsed value or throws `ValidationGateFailure` with a model-readable
- * `detail` string. Anything else thrown is treated as a transport error
- * and propagates untouched.
+ * The harness does JSON-parse + Zod-validate using `responseSchema`.
+ * Refine `.message` strings from failed Zod parses become the retry
+ * directive verbatim, so schema refine messages must be model-readable.
  *
- * `retryDirective` defaults to `(err) => err.detail` because per-stage
- * parsers in `src/lib/course/parsers.ts` already author model-readable
- * messages — no extra indirection needed unless a caller wants different
- * directive content per attempt index.
+ * `retryDirective` defaults to `(err) => err.detail` — the detail string
+ * is the Zod issue list from `parseAndValidate`. Override only if the
+ * caller needs different wording per attempt index.
  */
 export interface ExecuteTurnParams<T> {
   readonly parent: ContextParent;
   readonly seed: SeedInputs;
   readonly userMessageContent: string;
-  readonly parser: (raw: string) => T;
+  /**
+   * Zod schema describing the strict JSON shape the model must return.
+   * Used twice per turn: (1) at decode time via `generateChat` →
+   * `toCerebrasJsonSchema` → Cerebras `response_format: { type: "json_schema",
+   * strict: true }`, so invalid JSON is unreachable for the decoder;
+   * (2) post-decode via `schema.safeParse(JSON.parse(text))`, which
+   * enforces business invariants (`.refine`/`.superRefine` rules that
+   * Cerebras strict mode can't express, e.g. tier-scope, count bounds).
+   * Refine `.message` text flows verbatim into the retry directive.
+   */
+  readonly responseSchema: z.ZodType<T>;
+  /** Optional `name` field on the wire JSON schema (defaults to `seed.kind`). */
+  readonly responseSchemaName?: string;
   readonly retryDirective?: (err: ValidationGateFailure, attempt: number) => string;
   /**
    * Optional human label for live-smoke observability (`CEREBRAS_LIVE=1`).
@@ -71,7 +82,7 @@ export interface ExecuteTurnResult<T> {
  *   2. Render context (prior rows + the in-memory batch we're building this
  *      turn) → LLM messages.
  *   3. Call `generateChat`.
- *   4. Run the caller's `parser` on the raw text.
+ *   4. JSON-parse the raw text and Zod-validate via `parseAndValidate`.
  *   5. On parse success: append `[user_message, ..., assistant_response]`
  *      as one batch via `appendMessages` and return.
  *   6. On `ValidationGateFailure`: append a `failed_assistant_response`
@@ -176,7 +187,10 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
     }
 
     const t0 = Date.now();
-    const result = await generateChat(llmMessages);
+    const result = await generateChat(llmMessages, {
+      responseSchema: params.responseSchema,
+      responseSchemaName: params.responseSchemaName ?? params.seed.kind,
+    });
     const dt = Date.now() - t0;
 
     // Verbose mode: response printed inline. Quiet mode: suppressed for now;
@@ -185,8 +199,8 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       process.stderr.write(formatResponseBlock(result.text, dt, result.usage));
     }
     try {
-      // Parser success path: append assistant_response and commit the whole batch.
-      const parsed = params.parser(result.text);
+      // JSON-parse + Zod-validate. Throws ValidationGateFailure on either failure.
+      const parsed = parseAndValidate(result.text, params.responseSchema);
       if (live) {
         const summary = params.successSummary
           ? params.successSummary(parsed)
@@ -247,6 +261,35 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   }
 
   return attempt(0, [userRow]);
+}
+
+/**
+ * JSON-parse the model output then Zod-validate it against `schema`.
+ * Throws `ValidationGateFailure` with a model-readable directive on either
+ * failure mode. Generic directive on JSON shape failures (rare under
+ * strict-mode constrained decoding but possible if the provider returns
+ * text outside the JSON envelope); refine `.message` verbatim on
+ * business-invariant failures.
+ */
+function parseAndValidate<T>(raw: string, schema: z.ZodType<T>): T {
+  // JSON.parse failure is wrapped so callers see a uniform ValidationGateFailure.
+  const parsed: unknown = (() => {
+    try {
+      return JSON.parse(raw) as unknown;
+    } catch {
+      throw new ValidationGateFailure(
+        "missing_response",
+        "Your previous response did not parse as JSON. Reply with a single JSON object matching the schema attached to this turn.",
+      );
+    }
+  })();
+  const safe = schema.safeParse(parsed);
+  if (!safe.success) {
+    // Surface Zod's full issue list — refine `.message` strings include
+    // field paths and the violated rule. The model needs the specifics.
+    throw new ValidationGateFailure("missing_response", safe.error.message);
+  }
+  return safe.data;
 }
 
 /**

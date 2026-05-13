@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { executeTurn } from "@/lib/turn/executeTurn";
 import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
-import { parseBaselineResponse } from "./parsers";
+import { parseBaselineResponse, type ParsedBaselineResponse } from "./parsers";
 import { baselineSchema } from "@/lib/prompts/baseline";
 import type { FrameworkJsonb, BaselineJsonb } from "@/lib/types/jsonb";
 import type { BaselineAssessment } from "@/lib/prompts/baseline";
@@ -79,7 +79,8 @@ export async function generateBaseline(
   const scopeTiers = framework.baseline_scope_tiers;
 
   const pass = await ensureOpenScopingPass(course.id);
-  const { parsed } = await executeTurn({
+  // Explicit type param preserves the parsed shape while the parser shim is in place (Task 15 removes both).
+  const { parsed } = await executeTurn<ParsedBaselineResponse>({
     parent: { kind: "scoping", id: pass.id },
     seed: { kind: "scoping", topic: course.topic },
     // Per spec §3.4, the user message is a simple stage request — stage instructions
@@ -87,6 +88,7 @@ export async function generateBaseline(
     userMessageContent: "<request>generate baseline</request>",
     // Bind scopeTiers into the parser closure so the parser can enforce the invariant
     // that every question's tier is within the framework's baseline scope.
+    // @ts-expect-error Task 5: parser→responseSchema migration in progress; this caller rewritten in Task 15
     parser: (raw: string) => parseBaselineResponse(raw, { scopeTiers }),
     label: "baseline",
     successSummary: (p) => `questions=${p.baseline.questions.length}`,

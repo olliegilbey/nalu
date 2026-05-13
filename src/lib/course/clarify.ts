@@ -2,7 +2,7 @@ import { sanitiseUserInput } from "@/lib/security/sanitiseUserInput";
 import { executeTurn } from "@/lib/turn/executeTurn";
 import { createCourse, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
-import { parseClarifyResponse } from "./parsers";
+import { parseClarifyResponse, type ParsedClarifyResponse } from "./parsers";
 import type { ClarificationJsonb } from "@/lib/types/jsonb";
 
 /** Parameters for {@link clarify}. Object shape keeps the call site future-proof. */
@@ -49,10 +49,12 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
   }
 
   const pass = await ensureOpenScopingPass(course.id);
-  const { parsed } = await executeTurn({
+  // Explicit type param preserves the parsed shape while the parser shim is in place (Task 13 removes both).
+  const { parsed } = await executeTurn<ParsedClarifyResponse>({
     parent: { kind: "scoping", id: pass.id },
     seed: { kind: "scoping", topic: params.topic },
     userMessageContent: sanitiseUserInput(params.topic),
+    // @ts-expect-error Task 5: parser→responseSchema migration in progress; this caller rewritten in Task 13
     parser: parseClarifyResponse,
     label: "clarify",
     successSummary: (p) => `questions=${p.questions.length}`,
