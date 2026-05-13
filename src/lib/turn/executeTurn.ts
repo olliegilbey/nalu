@@ -48,7 +48,9 @@ export interface ExecuteTurnParams<T> {
    * (2) post-decode via `schema.safeParse(JSON.parse(text))`, which
    * enforces business invariants (`.refine`/`.superRefine` rules that
    * Cerebras strict mode can't express, e.g. tier-scope, count bounds).
-   * Refine `.message` text flows verbatim into the retry directive.
+   * Refine `.message` text appears inside Zod's full issue-list JSON, which
+   * becomes the retry directive — the model sees field paths, codes, and the
+   * verbatim refine message together.
    */
   readonly responseSchema: z.ZodType<T>;
   /** Optional `name` field on the wire JSON schema (defaults to `seed.kind`). */
@@ -121,7 +123,8 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   // namespace (e.g. `TURN`) — not worth the rename ripple before there's a
   // second caller.
   const totalAttempts = SCOPING.maxParseRetries + 1;
-  // Default directive surfaces the parser's authored detail verbatim.
+  // Default directive surfaces Zod's error.message verbatim (the harness
+  // authors it inside parseAndValidate; .retryDirective lets callers override).
   const directiveFn = params.retryDirective ?? ((err) => err.detail);
 
   // Live-smoke observability (CEREBRAS_LIVE=1). All emit decisions
