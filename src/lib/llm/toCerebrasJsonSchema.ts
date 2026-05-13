@@ -4,8 +4,12 @@ import { z } from "zod/v4";
  * Keywords Cerebras strict-mode `response_format` rejects (per its docs).
  * Stripped from the JSON Schema before sending. The Zod side still
  * enforces them at parse-time; this only trims the wire payload.
+ *
+ * `$schema` is also stripped: it's top-level metadata Cerebras doesn't need,
+ * and removing it saves wire chars.
  */
 const FORBIDDEN_KEYWORDS = [
+  "$schema",
   "minItems",
   "maxItems",
   "pattern",
@@ -19,7 +23,7 @@ const FORBIDDEN_KEYWORDS = [
   "$ref",
 ] as const;
 
-/** Cerebras documented strict-mode budget: 5000 char wire schema, depth ≤ 10. */
+/** Cerebras documented strict-mode budget: 5000 char wire schema, object-depth ≤ 10. */
 const MAX_CHARS = 5000;
 const MAX_DEPTH = 10;
 
@@ -48,7 +52,17 @@ export function toCerebrasJsonSchema<T>(
   opts: CerebrasJsonSchemaOptions,
 ): CerebrasResponseFormat {
   const raw = z.toJSONSchema(schema, { target: "draft-7" }) as Record<string, unknown>;
-  const stripped = stripForbidden(raw, 0);
+
+  // Pre-pass: measure structural depth before stripping (avoids conflating
+  // call-stack depth with schema object depth).
+  const actual = schemaObjectDepth(raw);
+  if (actual > MAX_DEPTH) {
+    throw new Error(
+      `toCerebrasJsonSchema(${opts.name}): schema depth ${actual} exceeds Cerebras ${MAX_DEPTH} strict-mode budget`,
+    );
+  }
+
+  const stripped = stripForbidden(raw);
   const serialised = JSON.stringify(stripped);
   if (serialised.length > MAX_CHARS) {
     throw new Error(
@@ -59,32 +73,72 @@ export function toCerebrasJsonSchema<T>(
     type: "json",
     name: opts.name,
     description: opts.description,
-    schema: stripped,
+    // Cast is safe: `raw` is always an object, so `stripForbidden(raw)` is too.
+    schema: stripped as Record<string, unknown>,
   };
 }
 
 /**
- * Recursively walk the schema, deleting forbidden keywords and asserting
- * the depth budget. Pure function — returns a new object, mutates nothing.
+ * Compute the JSON Schema *structural* depth of a node.
+ *
+ * Only increments when entering a new schema "level" — i.e. descending into
+ * the value of a `properties` key or into an `items` schema. Lateral key
+ * traversal (e.g. walking `type`, `description`, …) does **not** increment.
+ *
+ * This matches Cerebras's documented depth constraint, which is about
+ * `type: "object"` nesting depth, not arbitrary key count.
  */
-function stripForbidden(node: unknown, depth: number): Record<string, unknown> {
-  if (depth > MAX_DEPTH) {
-    throw new Error(`toCerebrasJsonSchema: schema depth exceeds ${MAX_DEPTH}`);
-  }
-  if (typeof node !== "object" || node === null) {
-    return node as Record<string, unknown>;
-  }
+function schemaObjectDepth(node: unknown, depth = 0): number {
+  if (typeof node !== "object" || node === null) return depth;
   if (Array.isArray(node)) {
-    return node.map((item) => stripForbidden(item, depth + 1)) as unknown as Record<
-      string,
-      unknown
-    >;
+    // e.g. `anyOf` / `oneOf` arrays — recurse into each branch, keep max
+    return Math.max(...node.map((item) => schemaObjectDepth(item, depth)));
   }
-  // Object: shallow-copy without forbidden keys; recurse into each value.
+
+  const obj = node as Record<string, unknown>;
+
+  // Structural descent via `properties` values: each value is a sibling
+  // sub-schema at the *same* depth-increment as its parent object.
+  const fromProps =
+    obj["properties"] != null && typeof obj["properties"] === "object"
+      ? Math.max(
+          ...Object.values(obj["properties"] as Record<string, unknown>).map((v) =>
+            schemaObjectDepth(v, depth + 1),
+          ),
+        )
+      : depth;
+
+  // Structural descent via `items` (array element schema).
+  const fromItems = obj["items"] != null ? schemaObjectDepth(obj["items"], depth + 1) : depth;
+
+  // Structural descent via schema-combination keywords (anyOf / oneOf / allOf).
+  const fromCombinators = (["anyOf", "oneOf", "allOf"] as const).reduce(
+    (max, key) =>
+      Array.isArray(obj[key])
+        ? Math.max(
+            max,
+            ...((obj[key] as unknown[]).map((v) => schemaObjectDepth(v, depth)) as number[]),
+          )
+        : max,
+    depth,
+  );
+
+  return Math.max(fromProps, fromItems, fromCombinators);
+}
+
+/**
+ * Recursively walk the schema, deleting forbidden keywords.
+ * Pure function — returns a new value, mutates nothing.
+ * Returns `unknown` because leaf nodes may be primitives.
+ */
+function stripForbidden(node: unknown): unknown {
+  if (typeof node !== "object" || node === null) return node;
+  if (Array.isArray(node)) return node.map(stripForbidden);
+
   const obj = node as Record<string, unknown>;
   return Object.fromEntries(
     Object.entries(obj)
       .filter(([k]) => !FORBIDDEN_KEYWORDS.includes(k as (typeof FORBIDDEN_KEYWORDS)[number]))
-      .map(([k, v]) => [k, stripForbidden(v, depth + 1)]),
+      .map(([k, v]) => [k, stripForbidden(v)]),
   );
 }
