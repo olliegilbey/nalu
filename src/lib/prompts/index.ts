@@ -36,3 +36,25 @@ export {
   type BaselineEvaluationItem,
   type BaselineEvaluationPromptParams,
 } from "./baselineEvaluation";
+
+/**
+ * New JSON-everywhere surface — legacy block above is kept until Task 18 deletes the migration's
+ * source files. Tasks 13-16 will migrate consumers off the legacy block.
+ */
+
+export {
+  questionSchema,
+  questionnaireSchema,
+  responseSchema,
+  responsesSchema,
+  type Question,
+  type Questionnaire,
+  type Response,
+  type Responses,
+} from "./questionnaire";
+
+export { clarifySchema, type ClarifyTurn } from "./clarify";
+
+export { makeBaselineSchema, type BaselineTurn, type MakeBaselineSchemaParams } from "./baseline";
+
+export { renderScopingSystem, renderStageEnvelope } from "./scoping";
