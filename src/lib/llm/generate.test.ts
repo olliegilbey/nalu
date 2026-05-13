@@ -74,4 +74,35 @@ describe("generateChat", () => {
       }),
     );
   });
+
+  it("passes responseSchema through as responseFormat with type json", async () => {
+    // Verify that when responseSchema is supplied, generateText receives
+    // responseFormat: { type: "json", name, schema } from toCerebrasJsonSchema.
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+    generateTextMock.mockResolvedValueOnce({ text: '{"x":"hi"}', usage });
+
+    const schema = z.object({ x: z.string() });
+    await generateChat([{ role: "user", content: "hi" }], {
+      responseSchema: schema,
+      responseSchemaName: "test",
+    });
+
+    // at(-1) avoids an index-possibly-undefined error without non-null assertions.
+    const capturedArgs = generateTextMock.mock.calls.at(-1)?.[0];
+    // Must carry a responseFormat that satisfies the Cerebras wire shape.
+    expect(capturedArgs.responseFormat).toMatchObject({ type: "json", name: "test" });
+    expect(capturedArgs.responseFormat.schema).toBeDefined();
+  });
+
+  it("omits responseFormat when no responseSchema supplied", async () => {
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+    generateTextMock.mockResolvedValueOnce({ text: "plain text", usage });
+
+    await generateChat([{ role: "user", content: "hi" }]);
+
+    // at(-1) avoids an index-possibly-undefined error without non-null assertions.
+    const capturedArgs = generateTextMock.mock.calls.at(-1)?.[0];
+    // responseFormat must NOT be present when no schema given.
+    expect(capturedArgs.responseFormat).toBeUndefined();
+  });
 });

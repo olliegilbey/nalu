@@ -2,6 +2,7 @@ import { generateObject, generateText } from "ai";
 import type { z } from "zod/v4";
 import { LLM } from "@/lib/config/tuning";
 import { getLlmModel } from "./provider";
+import { toCerebrasJsonSchema } from "./toCerebrasJsonSchema";
 import type { LlmMessage, LlmModel, LlmUsage } from "@/lib/types/llm";
 
 /**
@@ -19,6 +20,17 @@ export interface GenerateOptions {
 }
 
 /**
+ * Chat-call extension: when `responseSchema` is provided, the call uses
+ * Cerebras strict-mode constrained decoding — the model can only emit JSON
+ * matching the schema. `responseSchemaName` is the JSON Schema `name`
+ * field on the wire (defaults to "response").
+ */
+export interface ChatOptions extends GenerateOptions {
+  readonly responseSchema?: z.ZodType<unknown>;
+  readonly responseSchemaName?: string;
+}
+
+/**
  * Successful structured-output result.
  *
  * @typeParam T - The Zod-inferred shape returned by the caller's schema.
@@ -32,12 +44,12 @@ export interface StructuredResult<T> {
 }
 
 /**
- * Successful free-form chat result. Text is raw model output — callers
- * extract embedded XML blocks via `extractTag` and Zod-validate the
- * payload at that boundary.
+ * Successful chat result. When `responseSchema` is supplied the `text`
+ * field is a JSON string guaranteed to match the schema; otherwise it is
+ * raw model output and callers extract embedded XML via `extractTag`.
  */
 export interface ChatResult {
-  /** Raw model output. May be empty on abnormal completions. */
+  /** Raw model output (JSON string or prose). */
   readonly text: string;
   /** Provider-reported token usage for this call. */
   readonly usage: LlmUsage;
@@ -50,6 +62,9 @@ export interface ChatResult {
  *
  * `maxRetries` bounds transport-level retries (timeouts, 5xx). The
  * SDK's internal JSON-parse repair is a separate, automatic pass.
+ *
+ * @deprecated Slated for deletion in Task 14 once `gradeBaseline` migrates
+ * to `executeTurn` + `responseSchema`. New code MUST NOT call this.
  */
 export async function generateStructured<T>(
   schema: z.ZodType<T>,
@@ -67,19 +82,33 @@ export async function generateStructured<T>(
 }
 
 /**
- * Free-form chat call. Used for PRD §5 conversational turns that mix
- * prose with embedded structured XML blocks (`<assessment>`, etc.).
- * Callers extract blocks via `extractTag` and Zod-validate the payload.
+ * Chat call. When `responseSchema` is supplied, Cerebras constrained decoding
+ * guarantees the output parses as JSON matching the schema (modulo business
+ * invariants — those still run Zod-side in the caller). Without
+ * `responseSchema`, the call is unconstrained and the output is raw prose
+ * that callers extract embedded XML from via `extractTag`.
  */
 export async function generateChat(
   messages: readonly LlmMessage[],
-  opts: GenerateOptions = {},
+  opts: ChatOptions = {},
 ): Promise<ChatResult> {
+  // Build the responseFormat only when a schema is explicitly provided.
+  // Spreading undefined keys into generateText args would send them as
+  // `responseFormat: undefined` which some SDK versions treat as an error.
+  const responseFormat =
+    opts.responseSchema !== undefined
+      ? toCerebrasJsonSchema(opts.responseSchema, {
+          name: opts.responseSchemaName ?? "response",
+        })
+      : undefined;
+
   const result = await generateText({
     model: opts.model ?? getLlmModel(),
     messages: [...messages],
     temperature: opts.temperature ?? LLM.defaultTemperature,
     maxRetries: opts.maxRetries ?? LLM.maxRetries,
+    // Conditionally spread so the key is absent (not undefined) when unused.
+    ...(responseFormat !== undefined ? { responseFormat } : {}),
   });
   return { text: result.text, usage: result.usage };
 }
