@@ -8,13 +8,11 @@ const SEED: WaveSeedInputs = {
   courseTopic: "Rust ownership",
   topicScope: "Python → embedded",
   framework: {
-    topic: "Rust ownership",
-    scope_summary: "x",
-    estimated_starting_tier: 2,
-    baseline_scope_tiers: [1, 2, 3],
+    estimatedStartingTier: 2,
+    baselineScopeTiers: [1, 2, 3],
     tiers: [
-      { number: 1, name: "Mental Model", description: "...", example_concepts: ["move"] },
-      { number: 2, name: "Borrowing", description: "...", example_concepts: ["&T"] },
+      { number: 1, name: "Mental Model", description: "...", exampleConcepts: ["move"] },
+      { number: 2, name: "Borrowing", description: "...", exampleConcepts: ["&T"] },
     ],
   },
   currentTier: 2,

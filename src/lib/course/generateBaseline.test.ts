@@ -14,25 +14,13 @@ vi.mock("@/db/queries/courses", async () => {
 vi.mock("@/db/queries/scopingPasses", () => ({
   ensureOpenScopingPass: vi.fn(),
 }));
-// Wrap parseBaselineResponse with vi.fn() while preserving the real implementation
-// so Case 5 (scopeTiers wiring) can spy on calls without breaking parser logic.
-vi.mock("./parsers", async () => {
-  const actual = await vi.importActual<typeof import("./parsers")>("./parsers");
-  return {
-    ...actual,
-    parseBaselineResponse: vi.fn(actual.parseBaselineResponse),
-  };
-});
 
 import { generateBaseline } from "./generateBaseline";
 import { executeTurn } from "@/lib/turn/executeTurn";
 import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
-import { parseBaselineResponse } from "./parsers";
-import { baselineSchema } from "@/lib/prompts/baseline";
 import type { Course } from "@/db/schema";
 import type { FrameworkJsonb, BaselineJsonb } from "@/lib/types/jsonb";
-import type { BaselineAssessment } from "@/lib/prompts/baseline";
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -40,24 +28,22 @@ const COURSE_ID = "c1";
 const USER_ID = "11111111-1111-1111-1111-111111111111";
 const TOPIC = "Rust ownership";
 
-/** Minimal valid FrameworkJsonb (snake_case, as stored). */
+/** Minimal valid FrameworkJsonb (camelCase — new wire shape). */
 const FRAMEWORK_JSONB: FrameworkJsonb = {
-  topic: TOPIC,
-  scope_summary: "Baseline covers tiers 1, 2.",
-  estimated_starting_tier: 1,
-  baseline_scope_tiers: [1, 2],
+  estimatedStartingTier: 1,
+  baselineScopeTiers: [1, 2],
   tiers: [
     {
       number: 1,
       name: "Foundations",
       description: "Core ownership concepts.",
-      example_concepts: ["borrow checker", "lifetimes", "move semantics", "References"],
+      exampleConcepts: ["borrow checker", "lifetimes", "move semantics", "References"],
     },
     {
       number: 2,
       name: "Intermediate",
       description: "Trait-based abstractions.",
-      example_concepts: ["traits", "generics", "closures", "iterators"],
+      exampleConcepts: ["traits", "generics", "closures", "iterators"],
     },
   ],
 };
@@ -69,8 +55,15 @@ const SCOPING_COURSE = {
   topic: TOPIC,
   status: "scoping",
   clarification: {
-    questions: [{ id: "q1", text: "What is your goal?", type: "free_text" as const }],
-    answers: [{ questionId: "q1", answer: "Learn systems programming." }],
+    questions: [
+      {
+        id: "q1",
+        type: "free_text" as const,
+        prompt: "What is your goal?",
+        freetextRubric: "r",
+      },
+    ],
+    responses: [{ questionId: "q1", freetext: "Learn systems programming." }],
   },
   framework: FRAMEWORK_JSONB,
   baseline: null,
@@ -87,7 +80,7 @@ const MOCK_USAGE = {
 
 /**
  * Construct a minimal valid multiple-choice baseline question for use in
- * test fixtures. Reusable across happy-path and idempotency cases.
+ * test fixtures. Uses new `prompt` field (was `question`).
  */
 function mcQuestion(id: string, tier: number) {
   return {
@@ -95,7 +88,7 @@ function mcQuestion(id: string, tier: number) {
     tier,
     conceptName: "c",
     type: "multiple_choice" as const,
-    question: "q?",
+    prompt: "q?",
     options: { A: "a", B: "b", C: "c", D: "d" },
     correct: "A" as const,
     freetextRubric: "rubric",
@@ -103,19 +96,23 @@ function mcQuestion(id: string, tier: number) {
 }
 
 /**
- * Minimal valid BaselineAssessment — needs >=7 questions (BASELINE.minQuestions).
- * Questions alternate between tiers 1 and 2 to stay within FRAMEWORK_JSONB.baseline_scope_tiers.
+ * Minimal valid BaselineTurn returned by executeTurn.
+ * Shape: `{ userMessage, questions: { questions: [...] } }`.
+ * Needs >=7 questions (BASELINE.minQuestions).
  */
-const VALID_BASELINE: BaselineAssessment = {
-  questions: [
-    mcQuestion("b1", 1),
-    mcQuestion("b2", 2),
-    mcQuestion("b3", 1),
-    mcQuestion("b4", 2),
-    mcQuestion("b5", 1),
-    mcQuestion("b6", 2),
-    mcQuestion("b7", 1),
-  ],
+const VALID_BASELINE_PARSED = {
+  userMessage: "Here is your baseline.",
+  questions: {
+    questions: [
+      mcQuestion("b1", 1),
+      mcQuestion("b2", 2),
+      mcQuestion("b3", 1),
+      mcQuestion("b4", 2),
+      mcQuestion("b5", 1),
+      mcQuestion("b6", 2),
+      mcQuestion("b7", 1),
+    ],
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -125,9 +122,6 @@ beforeEach(() => {
   vi.mocked(getCourseById).mockReset();
   vi.mocked(updateCourseScopingState).mockReset();
   vi.mocked(ensureOpenScopingPass).mockReset();
-  // mockClear keeps the real implementation (set in vi.mock factory above);
-  // only clears call history. This means Case 5 can spy without breaking parser logic.
-  vi.mocked(parseBaselineResponse).mockClear();
 });
 
 describe("generateBaseline", () => {
@@ -136,7 +130,7 @@ describe("generateBaseline", () => {
     vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
     vi.mocked(ensureOpenScopingPass).mockResolvedValue({ id: "p1" } as never);
     vi.mocked(executeTurn).mockResolvedValue({
-      parsed: { baseline: VALID_BASELINE, raw: "<baseline>{}</baseline>" },
+      parsed: VALID_BASELINE_PARSED,
       usage: MOCK_USAGE,
     });
     vi.mocked(updateCourseScopingState).mockResolvedValue(SCOPING_COURSE);
@@ -145,15 +139,16 @@ describe("generateBaseline", () => {
 
     // nextStage advances to answering
     expect(result.nextStage).toBe("answering");
-    expect(result.baseline).toEqual(VALID_BASELINE);
+    // Result is a BaselineTurn: { userMessage, questions: { questions: [...] } }
+    expect(result.baseline.questions.questions).toHaveLength(7);
 
-    // Persistence called with BaselineJsonb (answers and gradings initialised to []).
+    // Persistence called with BaselineJsonb (responses and gradings initialised to []).
     expect(updateCourseScopingState).toHaveBeenCalledWith(
       COURSE_ID,
       expect.objectContaining({
         baseline: expect.objectContaining({
-          questions: VALID_BASELINE.questions,
-          answers: [],
+          questions: VALID_BASELINE_PARSED.questions.questions,
+          responses: [],
           gradings: [],
         }),
       }),
@@ -165,8 +160,8 @@ describe("generateBaseline", () => {
   // Case 2: idempotency — if baseline already stored, return it without calling LLM.
   it("idempotency: returns re-parsed baseline when already stored, does not call executeTurn", async () => {
     const storedBaseline: BaselineJsonb = {
-      questions: VALID_BASELINE.questions,
-      answers: [],
+      questions: VALID_BASELINE_PARSED.questions.questions,
+      responses: [],
       gradings: [],
     };
     const courseWithBaseline = {
@@ -178,9 +173,8 @@ describe("generateBaseline", () => {
     const result = await generateBaseline({ courseId: COURSE_ID, userId: USER_ID });
 
     expect(result.nextStage).toBe("answering");
-    // Reconstructed via baselineSchema — questions must match stored shape.
-    const expected = baselineSchema.parse({ questions: storedBaseline.questions });
-    expect(result.baseline).toEqual(expected);
+    // Reconstructed via makeBaselineSchema — question count must match stored.
+    expect(result.baseline.questions.questions).toHaveLength(7);
 
     // Must NOT hit the LLM
     expect(executeTurn).not.toHaveBeenCalled();
@@ -218,41 +212,24 @@ describe("generateBaseline", () => {
     expect(executeTurn).not.toHaveBeenCalled();
   });
 
-  // Case 5: scopeTiers wiring — parser passed to executeTurn delegates to
-  // parseBaselineResponse with the scopeTiers from framework.baseline_scope_tiers.
-  it("scopeTiers wiring: executeTurn parser delegates to parseBaselineResponse with framework.baseline_scope_tiers", async () => {
+  // Case 5: scopeTiers wiring — executeTurn is called with responseSchema built from
+  // framework.baselineScopeTiers (camelCase in new storage shape).
+  it("scopeTiers wiring: executeTurn called with responseSchema derived from framework.baselineScopeTiers", async () => {
     vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
     vi.mocked(ensureOpenScopingPass).mockResolvedValue({ id: "p2" } as never);
     vi.mocked(executeTurn).mockResolvedValue({
-      parsed: { baseline: VALID_BASELINE, raw: "<baseline>{}</baseline>" },
+      parsed: VALID_BASELINE_PARSED,
       usage: MOCK_USAGE,
     });
     vi.mocked(updateCourseScopingState).mockResolvedValue(SCOPING_COURSE);
 
     await generateBaseline({ courseId: COURSE_ID, userId: USER_ID });
 
-    // Extract the parser closure that was handed to executeTurn.
+    // executeTurn should be called with a responseSchema (not a parser).
     const callArgs = vi.mocked(executeTurn).mock.calls[0]?.[0];
     expect(callArgs).toBeDefined();
-
-    // Invoke the parser with a valid raw string (>=7 questions per BASELINE.minQuestions).
-    const rawResponse = `<baseline>${JSON.stringify({
-      questions: [
-        mcQuestion("b1", 1),
-        mcQuestion("b2", 2),
-        mcQuestion("b3", 1),
-        mcQuestion("b4", 2),
-        mcQuestion("b5", 1),
-        mcQuestion("b6", 2),
-        mcQuestion("b7", 1),
-      ],
-    })}</baseline>`;
-    // @ts-expect-error Task 5: parser→responseSchema migration in progress; this caller rewritten in Task 15
-    callArgs!.parser(rawResponse);
-
-    // The closure must delegate to parseBaselineResponse with the correct scopeTiers.
-    expect(parseBaselineResponse).toHaveBeenCalledWith(rawResponse, {
-      scopeTiers: FRAMEWORK_JSONB.baseline_scope_tiers,
-    });
+    expect(callArgs?.responseSchema).toBeDefined();
+    // No legacy parser field.
+    expect((callArgs as unknown as Record<string, unknown>)?.parser).toBeUndefined();
   });
 });

@@ -21,49 +21,51 @@ import {
 // Fixtures
 // ---------------------------------------------------------------------------
 
-/** Minimal valid three-tier framework. */
+/** Minimal valid three-tier framework (camelCase — new wire shape). */
 function validFramework(): FrameworkJsonb {
   return {
-    topic: "Rust",
-    scope_summary: "Covers tiers 1 and 2.",
-    estimated_starting_tier: 1,
-    baseline_scope_tiers: [1, 2],
+    estimatedStartingTier: 1,
+    baselineScopeTiers: [1, 2],
     tiers: [
       {
         number: 1,
         name: "Foundations",
         description: "Core ownership.",
-        example_concepts: ["borrow checker", "lifetimes"],
+        exampleConcepts: ["borrow checker", "lifetimes"],
       },
       {
         number: 2,
         name: "Intermediate",
         description: "Traits.",
-        example_concepts: ["traits", "generics"],
+        exampleConcepts: ["traits", "generics"],
       },
       {
         number: 3,
         name: "Advanced",
         description: "Unsafe patterns.",
-        example_concepts: ["unsafe", "FFI"],
+        exampleConcepts: ["unsafe", "FFI"],
       },
     ],
   };
 }
 
-/** Minimal valid baseline assessment (7 questions, tiers 1 and 2). */
-function validBaseline(): { readonly questions: readonly unknown[] } {
+/**
+ * Minimal valid baseline (new BaselineTurn shape):
+ * `{ questions: { questions: [...] } }`.
+ * 7 questions, tiers 1 and 2.
+ */
+function validBaseline(): { readonly questions: { readonly questions: readonly unknown[] } } {
   const questions = Array.from({ length: 7 }, (_, i) => ({
     id: `b${i + 1}`,
     tier: (i % 2) + 1, // alternates 1, 2, 1, 2, ...
     conceptName: `concept-${i + 1}`,
     type: "multiple_choice" as const,
-    question: `What is concept ${i + 1}?`,
+    prompt: `What is concept ${i + 1}?`,
     options: { A: "opt-a", B: "opt-b", C: "opt-c", D: "opt-d" },
     correct: "A" as const,
     freetextRubric: `A good answer explains concept ${i + 1}.`,
   }));
-  return { questions };
+  return { questions: { questions } };
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +90,7 @@ describe("assertFrameworkStructural", () => {
       number: n,
       name: `Tier ${n}`,
       description: "desc",
-      example_concepts: ["x"],
+      exampleConcepts: ["x"],
     }));
     const fw: FrameworkJsonb = {
       ...validFramework(),
@@ -120,23 +122,23 @@ describe("assertFrameworkStructural", () => {
     const [t1, t2, t3] = validFramework().tiers;
     const fw: FrameworkJsonb = {
       ...validFramework(),
-      tiers: [{ ...t1!, example_concepts: [] }, t2!, t3!],
+      tiers: [{ ...t1!, exampleConcepts: [] }, t2!, t3!],
     };
     expect(() => assertFrameworkStructural(fw)).toThrow();
   });
 
-  it("throws when baseline_scope_tiers is empty", () => {
-    const fw: FrameworkJsonb = { ...validFramework(), baseline_scope_tiers: [] };
+  it("throws when baselineScopeTiers is empty", () => {
+    const fw: FrameworkJsonb = { ...validFramework(), baselineScopeTiers: [] };
     expect(() => assertFrameworkStructural(fw)).toThrow();
   });
 
-  it("throws when baseline_scope_tiers contains a non-existent tier number", () => {
-    const fw: FrameworkJsonb = { ...validFramework(), baseline_scope_tiers: [99] };
+  it("throws when baselineScopeTiers contains a non-existent tier number", () => {
+    const fw: FrameworkJsonb = { ...validFramework(), baselineScopeTiers: [99] };
     expect(() => assertFrameworkStructural(fw)).toThrow();
   });
 
-  it("throws when estimated_starting_tier is not a real tier number", () => {
-    const fw: FrameworkJsonb = { ...validFramework(), estimated_starting_tier: 99 };
+  it("throws when estimatedStartingTier is not a real tier number", () => {
+    const fw: FrameworkJsonb = { ...validFramework(), estimatedStartingTier: 99 };
     expect(() => assertFrameworkStructural(fw)).toThrow();
   });
 });
@@ -152,23 +154,29 @@ describe("assertBaselineStructural", () => {
 
   it("throws when questions < minQuestions (7)", () => {
     // Slice to 6 questions — below the minimum.
-    const fewer = { questions: validBaseline().questions.slice(0, 6) };
+    const fewer = {
+      questions: { questions: validBaseline().questions.questions.slice(0, 6) },
+    };
     expect(() => assertBaselineStructural(fewer, validFramework())).toThrow();
   });
 
-  it("throws when a question has a tier outside baseline_scope_tiers", () => {
-    // Tier 3 is not in baseline_scope_tiers [1, 2].
-    const mutated = validBaseline().questions.map((q, i) =>
+  it("throws when a question has a tier outside baselineScopeTiers", () => {
+    // Tier 3 is not in baselineScopeTiers [1, 2].
+    const mutated = validBaseline().questions.questions.map((q, i) =>
       i === 0 ? { ...(q as Record<string, unknown>), tier: 3 } : q,
     );
-    expect(() => assertBaselineStructural({ questions: mutated }, validFramework())).toThrow();
+    expect(() =>
+      assertBaselineStructural({ questions: { questions: mutated } }, validFramework()),
+    ).toThrow();
   });
 
   it("throws when question IDs are not unique", () => {
     // Duplicate the first question ID onto the second question.
-    const qs = validBaseline().questions as ReadonlyArray<Record<string, unknown>>;
+    const qs = validBaseline().questions.questions as ReadonlyArray<Record<string, unknown>>;
     const mutated = qs.map((q, i) => (i === 1 ? { ...q, id: "b1" } : q));
-    expect(() => assertBaselineStructural({ questions: mutated }, validFramework())).toThrow();
+    expect(() =>
+      assertBaselineStructural({ questions: { questions: mutated } }, validFramework()),
+    ).toThrow();
   });
 });
 

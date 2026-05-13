@@ -29,20 +29,36 @@ const COURSE_ID = "c1";
 const USER_ID = "11111111-1111-1111-1111-111111111111";
 const TOPIC = "Rust ownership";
 
-/** Minimal valid ClarificationJsonb — discriminated union requires this shape. */
+/** Minimal valid ClarificationJsonb — new camelCase/prompt shape. */
 const CLARIFICATION = {
   questions: [
-    { id: "q1", text: "What is your goal?", type: "free_text" as const },
-    { id: "q2", text: "Background?", type: "free_text" as const },
+    {
+      id: "q1",
+      type: "free_text" as const,
+      prompt: "What is your goal?",
+      freetextRubric: "r",
+    },
+    {
+      id: "q2",
+      type: "free_text" as const,
+      prompt: "Background?",
+      freetextRubric: "r",
+    },
   ],
-  answers: [
-    { questionId: "q1", answer: "Build systems software." },
-    { questionId: "q2", answer: "C++ background." },
+  responses: [
+    { questionId: "q1", freetext: "Build systems software." },
+    { questionId: "q2", freetext: "C++ background." },
   ],
 };
 
-/** Learner answers (one per question in CLARIFICATION). */
-const ANSWERS: readonly string[] = ["Build systems software.", "C++ background."];
+/**
+ * Learner responses using new { questionId, freetext } shape.
+ * (Replaces the old flat `answers: string[]`.)
+ */
+const RESPONSES: readonly { readonly questionId: string; readonly freetext: string }[] = [
+  { questionId: "q1", freetext: "Build systems software." },
+  { questionId: "q2", freetext: "C++ background." },
+];
 
 /** Scoping-status course with clarification populated (happy-path input). */
 const SCOPING_COURSE = {
@@ -55,10 +71,11 @@ const SCOPING_COURSE = {
 } as unknown as Course;
 
 /**
- * Minimal valid `Framework` (camelCase, as `parseFrameworkResponse` emits).
+ * Minimal valid Framework (camelCase, as frameworkSchema emits).
  * One tier, estimatedStartingTier in tier set, baselineScopeTiers includes it.
  */
 const PARSED_FRAMEWORK = {
+  userMessage: "Here is the framework.",
   tiers: [
     {
       number: 1,
@@ -100,7 +117,7 @@ describe("generateFramework", () => {
     vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
     vi.mocked(ensureOpenScopingPass).mockResolvedValue({ id: "p1" } as never);
     vi.mocked(executeTurn).mockResolvedValue({
-      parsed: { framework: PARSED_FRAMEWORK, raw: "<framework>{}</framework>" },
+      parsed: PARSED_FRAMEWORK,
       usage: MOCK_USAGE,
     });
     vi.mocked(updateCourseScopingState).mockResolvedValue(SCOPING_COURSE);
@@ -108,36 +125,35 @@ describe("generateFramework", () => {
     const result = await generateFramework({
       courseId: COURSE_ID,
       userId: USER_ID,
-      answers: ANSWERS,
+      responses: RESPONSES,
     });
 
     // nextStage advances to baseline
     expect(result.nextStage).toBe("baseline");
-    // framework is returned as FrameworkJsonb (snake_case)
-    expect(result.framework.estimated_starting_tier).toBe(1);
-    expect(result.framework.topic).toBe(TOPIC);
-    expect(result.framework.tiers[0]?.example_concepts).toBeDefined();
+    // framework is returned as FrameworkJsonb (camelCase — new shape)
+    expect(result.framework.estimatedStartingTier).toBe(1);
+    expect(result.framework.tiers[0]?.exampleConcepts).toBeDefined();
     // persistence called with the jsonb shape
     expect(updateCourseScopingState).toHaveBeenCalledWith(
       COURSE_ID,
-      expect.objectContaining({ framework: expect.objectContaining({ topic: TOPIC }) }),
+      expect.objectContaining({
+        framework: expect.objectContaining({ estimatedStartingTier: 1 }),
+      }),
     );
-    // executeTurn was called with framework parser
+    // executeTurn was called once
     expect(executeTurn).toHaveBeenCalledTimes(1);
   });
 
   it("idempotency: returns cached FrameworkJsonb when framework already populated", async () => {
     const storedFramework: FrameworkJsonb = {
-      topic: TOPIC,
-      scope_summary: "Baseline covers tiers 1, 2.",
-      estimated_starting_tier: 1,
-      baseline_scope_tiers: [1, 2],
+      estimatedStartingTier: 1,
+      baselineScopeTiers: [1, 2],
       tiers: [
         {
           number: 1,
           name: "Foundations",
           description: "desc",
-          example_concepts: ["x"],
+          exampleConcepts: ["x"],
         },
       ],
     };
@@ -150,7 +166,7 @@ describe("generateFramework", () => {
     const result = await generateFramework({
       courseId: COURSE_ID,
       userId: USER_ID,
-      answers: ANSWERS,
+      responses: RESPONSES,
     });
 
     expect(result.framework).toEqual(storedFramework);
@@ -164,7 +180,7 @@ describe("generateFramework", () => {
     vi.mocked(getCourseById).mockResolvedValue(activeCourse);
 
     await expect(
-      generateFramework({ courseId: COURSE_ID, userId: USER_ID, answers: ANSWERS }),
+      generateFramework({ courseId: COURSE_ID, userId: USER_ID, responses: RESPONSES }),
     ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     expect(executeTurn).not.toHaveBeenCalled();
   });
@@ -174,31 +190,38 @@ describe("generateFramework", () => {
     vi.mocked(getCourseById).mockResolvedValue(noClarification);
 
     await expect(
-      generateFramework({ courseId: COURSE_ID, userId: USER_ID, answers: ANSWERS }),
+      generateFramework({ courseId: COURSE_ID, userId: USER_ID, responses: RESPONSES }),
     ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     expect(executeTurn).not.toHaveBeenCalled();
   });
 
-  // Case 5: answers are XML-escaped and wrapped in the bare <answers> envelope
-  // per spec §3.4 — questions are already in the conversation history, so we
-  // only send the answers array; no Topic/Q:/A: reconstruction.
-  it("answer sanitisation: userMessageContent is bare <answers> JSON with XML-escaped values", async () => {
-    // Course has two questions; we supply two answers, first containing XML chars.
+  // Case 5: responses are rendered as Q/A pairs in the envelope.
+  it("userMessageContent contains Q/A pairs from stored questions and supplied responses", async () => {
     const xssCourse = {
       ...SCOPING_COURSE,
       clarification: {
         questions: [
-          { id: "q1", text: "Goal?", type: "free_text" as const },
-          { id: "q2", text: "Background?", type: "free_text" as const },
+          {
+            id: "q1",
+            type: "free_text" as const,
+            prompt: "Goal?",
+            freetextRubric: "r",
+          },
+          {
+            id: "q2",
+            type: "free_text" as const,
+            prompt: "Background?",
+            freetextRubric: "r",
+          },
         ],
-        // stored answers left empty — caller-supplied params.answers are used
-        answers: [],
+        // stored responses are empty — generateFramework uses params.responses
+        responses: [],
       },
     } as unknown as Course;
     vi.mocked(getCourseById).mockResolvedValue(xssCourse);
     vi.mocked(ensureOpenScopingPass).mockResolvedValue({ id: "p2" } as never);
     vi.mocked(executeTurn).mockResolvedValue({
-      parsed: { framework: PARSED_FRAMEWORK, raw: "<framework>{}</framework>" },
+      parsed: PARSED_FRAMEWORK,
       usage: MOCK_USAGE,
     });
     vi.mocked(updateCourseScopingState).mockResolvedValue(xssCourse);
@@ -206,45 +229,53 @@ describe("generateFramework", () => {
     await generateFramework({
       courseId: COURSE_ID,
       userId: USER_ID,
-      answers: ["<bad>", "ok"],
+      responses: [
+        { questionId: "q1", freetext: "learn Rust" },
+        { questionId: "q2", freetext: "ok" },
+      ],
     });
 
     const callArgs = vi.mocked(executeTurn).mock.calls[0]?.[0];
-    // Exact shape: <answers>["&lt;bad&gt;","ok"]</answers>
-    expect(callArgs?.userMessageContent).toBe(`<answers>["&lt;bad&gt;","ok"]</answers>`);
-    // XML chars must be escaped — no raw < in the message
-    expect(callArgs?.userMessageContent).not.toContain("<bad>");
+    // The envelope wraps the Q/A pairs.
+    expect(callArgs?.userMessageContent).toContain("Q: Goal?");
+    expect(callArgs?.userMessageContent).toContain("A: learn Rust");
   });
 
-  // Case 6: empty answers array throws BAD_REQUEST immediately (before DB).
-  it("throws BAD_REQUEST when answers is empty", async () => {
-    // Guard fires before any DB call — mock kept for consistency with other tests.
+  // Case 6: empty responses array throws BAD_REQUEST immediately (before DB).
+  it("throws BAD_REQUEST when responses is empty", async () => {
     vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
 
     await expect(
-      generateFramework({ courseId: COURSE_ID, userId: USER_ID, answers: [] }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "answers cannot be empty" });
+      generateFramework({ courseId: COURSE_ID, userId: USER_ID, responses: [] }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "responses cannot be empty" });
     expect(executeTurn).not.toHaveBeenCalled();
   });
 
-  // Case 7: too many answers throws BAD_REQUEST.
-  it("throws BAD_REQUEST when answers exceed maxClarifyAnswers", async () => {
+  // Case 7: too many responses throws BAD_REQUEST.
+  it("throws BAD_REQUEST when responses exceed maxClarifyAnswers", async () => {
     vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
-    const tooMany = Array.from({ length: SCOPING.maxClarifyAnswers + 1 }, (_, i) => `a${i}`);
+    const tooMany = Array.from({ length: SCOPING.maxClarifyAnswers + 1 }, (_, i) => ({
+      questionId: `q${i}`,
+      freetext: `a${i}`,
+    }));
 
     await expect(
-      generateFramework({ courseId: COURSE_ID, userId: USER_ID, answers: tooMany }),
+      generateFramework({ courseId: COURSE_ID, userId: USER_ID, responses: tooMany }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(executeTurn).not.toHaveBeenCalled();
   });
 
-  // Case 8: answers length doesn't match questions length — strict mismatch guard.
-  it("throws BAD_REQUEST when answers.length does not match questions.length", async () => {
-    // SCOPING_COURSE has 2 questions; supply only 1 answer.
+  // Case 8: responses length doesn't match questions length — strict mismatch guard.
+  it("throws BAD_REQUEST when responses.length does not match questions.length", async () => {
+    // SCOPING_COURSE has 2 questions; supply only 1 response.
     vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
 
     await expect(
-      generateFramework({ courseId: COURSE_ID, userId: USER_ID, answers: ["only one"] }),
+      generateFramework({
+        courseId: COURSE_ID,
+        userId: USER_ID,
+        responses: [{ questionId: "q1", freetext: "only one" }],
+      }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(executeTurn).not.toHaveBeenCalled();
   });

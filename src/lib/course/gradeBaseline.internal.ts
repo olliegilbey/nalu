@@ -1,13 +1,17 @@
 import { BASELINE, PROGRESSION } from "@/lib/config/tuning";
-import type { BaselineEvaluationItem, BaselineQuestion, McOptionKey } from "@/lib/prompts";
+import type { BaselineEvaluationItem, McOptionKey } from "@/lib/prompts";
 import type { LlmUsage } from "@/lib/types/llm";
-import type { QualityScore } from "@/lib/types/spaced-repetition";
-import type { BaselineAnswer, QuestionGrading } from "./gradeBaseline";
+import type { z } from "zod";
+import type { baselineGradingSchema } from "@/lib/types/jsonb";
+import type { BaselineAnswer } from "./gradeBaseline";
+
+/** The new unified grading shape (camelCase, matches baselineGradingSchema). */
+export type GradingEntry = z.infer<typeof baselineGradingSchema>;
 
 /** Quality score for a correct MC click (from `tuning.BASELINE`). */
-export const MC_CORRECT_QUALITY: QualityScore = BASELINE.mcCorrectQuality;
+export const MC_CORRECT_QUALITY = BASELINE.mcCorrectQuality;
 /** Quality score for an incorrect MC click. */
-export const MC_INCORRECT_QUALITY: QualityScore = BASELINE.mcIncorrectQuality;
+export const MC_INCORRECT_QUALITY = BASELINE.mcIncorrectQuality;
 
 /**
  * `LlmUsage` (= AI SDK `LanguageModelUsage`) requires detail sub-objects
@@ -31,34 +35,51 @@ export const ZERO_USAGE: LlmUsage = {
 };
 
 /**
+ * The shape of a baseline question as stored in the JSONB. We reference
+ * this inline rather than importing the v4 schema types, to stay in v3-land.
+ */
+interface StoredQuestion {
+  readonly id: string;
+  readonly type: "multiple_choice" | "free_text";
+  readonly prompt: string;
+  readonly freetextRubric: string;
+  readonly conceptName?: string;
+  readonly tier?: number;
+  /** Only on multiple_choice. */
+  readonly options?: { A: string; B: string; C: string; D: string };
+  readonly correct?: McOptionKey;
+}
+
+/**
  * One question's split decision: either mechanical MC grading (no LLM
  * needed) or an LLM-batch item. `qid` keeps the subsequent merge loop
  * from having to narrow the union at every access.
  */
 export type QuestionSplit =
-  | { readonly kind: "mechanical"; readonly qid: string; readonly grading: QuestionGrading }
+  | { readonly kind: "mechanical"; readonly qid: string; readonly grading: GradingEntry }
   | { readonly kind: "llm"; readonly qid: string; readonly item: BaselineEvaluationItem };
 
 /**
  * Deterministic MC grading (P-AC-04). A correct click maps to
  * `BASELINE.mcCorrectQuality`; an incorrect click to
- * `BASELINE.mcIncorrectQuality`. `isCorrect` follows from
- * `quality ≥ PROGRESSION.passingQualityScore`, which keeps the boundary
- * consistent with tier-advancement logic.
+ * `BASELINE.mcIncorrectQuality`. `verdict` follows from
+ * `quality >= PROGRESSION.passingQualityScore`, consistent with
+ * tier-advancement logic. No "partial" verdict for mechanical MC.
  */
-export function gradeMc(question: BaselineQuestion, selected: McOptionKey): QuestionGrading {
+export function gradeMc(question: StoredQuestion, selected: McOptionKey): GradingEntry {
   if (question.type !== "multiple_choice") {
     throw new Error(`gradeMc called with free_text question ${question.id}`);
   }
-  const correct = selected === question.correct;
-  const quality: QualityScore = correct ? MC_CORRECT_QUALITY : MC_INCORRECT_QUALITY;
+  const isCorrect = selected === question.correct;
+  const qualityScore = isCorrect ? MC_CORRECT_QUALITY : MC_INCORRECT_QUALITY;
+  const verdict: GradingEntry["verdict"] =
+    qualityScore >= PROGRESSION.passingQualityScore ? "correct" : "incorrect";
   return {
     questionId: question.id,
-    conceptName: question.conceptName,
-    tier: question.tier,
-    quality,
-    isCorrect: quality >= PROGRESSION.passingQualityScore,
-    rationale: correct
+    conceptName: question.conceptName ?? question.id,
+    verdict,
+    qualityScore,
+    rationale: isCorrect
       ? "Selected the correct option."
       : `Selected ${selected}; correct option was ${question.correct}.`,
   };
@@ -66,15 +87,15 @@ export function gradeMc(question: BaselineQuestion, selected: McOptionKey): Ques
 
 /** Build the grader's input item from a free-text answer (native or escape). */
 export function toEvaluationItem(
-  question: BaselineQuestion,
+  question: StoredQuestion,
   text: string,
   viaEscape: boolean,
 ): BaselineEvaluationItem {
   return {
     questionId: question.id,
-    conceptName: question.conceptName,
-    tier: question.tier,
-    question: question.question,
+    conceptName: question.conceptName ?? question.id,
+    tier: question.tier ?? 0,
+    question: question.prompt,
     rubric: question.freetextRubric,
     learnerProse: text,
     viaEscape,
@@ -87,10 +108,10 @@ export function toEvaluationItem(
  * MC question). A mismatch — an `mc` answer submitted against a
  * `free_text` question — is a UI bug and fails loud here.
  */
-export function splitOne(question: BaselineQuestion, answer: BaselineAnswer): QuestionSplit {
+export function splitOne(question: StoredQuestion, answer: BaselineAnswer): QuestionSplit {
   if (answer.kind === "mc") {
     if (question.type !== "multiple_choice") {
-      throw new Error(`mc answer submitted for free_text question ${question.id}`);
+      throw new Error(`mc answer submitted for free_text question ${answer.id}`);
     }
     return {
       kind: "mechanical",

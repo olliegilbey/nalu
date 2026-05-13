@@ -68,8 +68,9 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           // ---------------------------------------------------------------
           const clarifyResult = await caller.course.clarify({ topic: topic.topic });
 
-          // `clarify` returns `{ courseId, questions, nextStage }`.
-          const { courseId, questions: clarifyingQuestions } = clarifyResult;
+          // `clarify` returns `{ courseId, clarification, nextStage }`.
+          const { courseId } = clarifyResult;
+          const clarifyingQuestions = clarifyResult.clarification.questions.questions;
 
           expect(clarifyingQuestions.length, "clarify: question count ≥ 2").toBeGreaterThanOrEqual(
             2,
@@ -79,13 +80,13 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           // ---------------------------------------------------------------
           // 2. generateFramework
           // ---------------------------------------------------------------
-          // Cycle the answer pool by index — doesn't need to be semantically
-          // perfect, just non-empty coherent text so the LLM can proceed.
-          const answers = clarifyingQuestions.map(
-            (_, i) => topic.answerPool[i % topic.answerPool.length]!,
-          );
+          // Build responses from the clarifying questions — cycle the answer pool.
+          const responses = clarifyingQuestions.map((q: { id: string }, i: number) => ({
+            questionId: q.id,
+            freetext: topic.answerPool[i % topic.answerPool.length]!,
+          }));
 
-          const { framework } = await caller.course.generateFramework({ courseId, answers });
+          const { framework } = await caller.course.generateFramework({ courseId, responses });
 
           assertFrameworkStructural(framework);
 

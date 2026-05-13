@@ -1,10 +1,17 @@
 import { PROGRESSION } from "@/lib/config/tuning";
-import type { QuestionGrading } from "./gradeBaseline";
+import type { z } from "zod";
+import type { baselineGradingSchema } from "@/lib/types/jsonb";
+
+/** A single grading entry — subset of baselineGradingSchema with `tier` from question. */
+interface GradingWithTier {
+  readonly qualityScore: z.infer<typeof baselineGradingSchema>["qualityScore"];
+  readonly tier: number;
+}
 
 /** Parameters for {@link determineStartingTier}. */
 export interface DetermineStartingTierParams {
-  /** Graded baseline answers — one per baseline question. */
-  readonly gradings: readonly QuestionGrading[];
+  /** Graded baseline answers — one per baseline question (with tier from the question). */
+  readonly gradings: readonly GradingWithTier[];
   /** `framework.estimatedStartingTier`, the fallback for the all-unreached case. */
   readonly estimatedStartingTier: number;
   /** `framework.baselineScopeTiers`. Defines the placement search space. */
@@ -56,7 +63,7 @@ export function determineStartingTier(params: DetermineStartingTierParams): numb
     .filter((g) => scopeTiers.includes(g.tier))
     .reduce<Readonly<Record<number, TierAggregate>>>((acc, g) => {
       const prev = acc[g.tier] ?? { sum: 0, n: 0 };
-      return { ...acc, [g.tier]: { sum: prev.sum + g.quality, n: prev.n + 1 } };
+      return { ...acc, [g.tier]: { sum: prev.sum + g.qualityScore, n: prev.n + 1 } };
     }, {});
 
   // Rule 1: all unreached → fallback to estimated tier.

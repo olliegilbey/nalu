@@ -51,7 +51,7 @@ const FAKE_USAGE = {
 
 /**
  * Valid clarify LLM response. Two questions so it satisfies the 2–4 constraint.
- * Tag: <questions>[...]</questions> (parseClarifyResponse reads this tag).
+ * Shape matches clarifySchema: { userMessage, questions: { questions: [...] } }.
  */
 function validClarifyText(): string {
   return `<response>Let me ask you a couple of questions.</response><questions>["What is your goal with Rust?","What is your current programming background?"]</questions>`;
@@ -101,7 +101,8 @@ function mcQuestion(id: string, tier: 1 | 2) {
     tier,
     conceptName: "test-concept",
     type: "multiple_choice" as const,
-    question: "Which of the following best describes X?",
+    // v3 shape: `prompt` replaces `question`.
+    prompt: "Which of the following best describes X?",
     options: { A: "opt-a", B: "opt-b", C: "opt-c", D: "opt-d" },
     correct: "A" as const,
     freetextRubric: "A good answer explains X clearly.",
@@ -172,11 +173,8 @@ describe("course.clarify", () => {
       const caller = appRouter.createCaller({ userId: USER });
       const result = await caller.course.clarify({ topic: "Rust" });
 
-      // Router return value.
-      expect(result.questions).toEqual([
-        "What is your goal with Rust?",
-        "What is your current programming background?",
-      ]);
+      // Router return value — clarification is { userMessage, questions: { questions: [...] } }.
+      expect(result.clarification.questions.questions).toHaveLength(2);
       expect(result.nextStage).toBe("framework");
       expect(result.courseId).toBeTruthy();
 
@@ -217,7 +215,7 @@ describe("course.clarify", () => {
       const caller = appRouter.createCaller({ userId: USER });
       const result = await caller.course.clarify({ topic: "Rust" });
 
-      expect(result.questions).toHaveLength(2);
+      expect(result.clarification.questions.questions).toHaveLength(2);
 
       // DB: 4 rows — user, failed, directive, assistant.
       const rows = await db
@@ -316,13 +314,15 @@ describe("course.generateFramework", () => {
 
       const result = await caller.course.generateFramework({
         courseId: clarifyResult.courseId,
-        answers: CLARIFY_ANSWERS,
+        responses: [
+          { questionId: "q1", freetext: CLARIFY_ANSWERS[0]! },
+          { questionId: "q2", freetext: CLARIFY_ANSWERS[1]! },
+        ],
       });
 
-      // Router return value.
+      // Router return value — camelCase FrameworkJsonb.
       expect(result.nextStage).toBe("baseline");
-      expect(result.framework.topic).toBe("Rust");
-      expect(result.framework.estimated_starting_tier).toBe(1);
+      expect(result.framework.estimatedStartingTier).toBe(1);
       expect(result.framework.tiers).toHaveLength(3);
 
       // DB: courses.framework is populated and valid.
@@ -351,28 +351,26 @@ describe("course.generateFramework", () => {
 
       // Pre-populate the framework directly — simulates a prior successful call.
       const storedFramework = {
-        topic: "Rust",
-        scope_summary: "Baseline covers tiers 1, 2.",
-        estimated_starting_tier: 1,
-        baseline_scope_tiers: [1, 2],
+        estimatedStartingTier: 1,
+        baselineScopeTiers: [1, 2],
         tiers: [
           {
             number: 1,
             name: "Foundations",
             description: "Core.",
-            example_concepts: ["borrow checker", "lifetimes", "move semantics", "references"],
+            exampleConcepts: ["borrow checker", "lifetimes", "move semantics", "references"],
           },
           {
             number: 2,
             name: "Intermediate",
             description: "Traits.",
-            example_concepts: ["traits", "generics", "closures", "iterators"],
+            exampleConcepts: ["traits", "generics", "closures", "iterators"],
           },
           {
             number: 3,
             name: "Advanced",
             description: "Advanced.",
-            example_concepts: ["unsafe", "FFI", "macros", "async"],
+            exampleConcepts: ["unsafe", "FFI", "macros", "async"],
           },
         ],
       };
@@ -383,11 +381,14 @@ describe("course.generateFramework", () => {
 
       const result = await caller.course.generateFramework({
         courseId: clarifyResult.courseId,
-        answers: CLARIFY_ANSWERS,
+        responses: [
+          { questionId: "q1", freetext: CLARIFY_ANSWERS[0]! },
+          { questionId: "q2", freetext: CLARIFY_ANSWERS[1]! },
+        ],
       });
 
       // Returns the pre-populated framework unchanged.
-      expect(result.framework).toMatchObject({ estimated_starting_tier: 1 });
+      expect(result.framework).toMatchObject({ estimatedStartingTier: 1 });
       expect(result.nextStage).toBe("baseline");
       // LLM must NOT be called.
       expect(generateChat).not.toHaveBeenCalled();
@@ -408,7 +409,10 @@ describe("course.generateFramework", () => {
       await expect(
         caller.course.generateFramework({
           courseId: course.id,
-          answers: ["answer one", "answer two"],
+          responses: [
+            { questionId: "q1", freetext: "answer one" },
+            { questionId: "q2", freetext: "answer two" },
+          ],
         }),
       ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
       expect(generateChat).not.toHaveBeenCalled();
@@ -441,7 +445,10 @@ describe("course.generateFramework", () => {
       await expect(
         callerB.course.generateFramework({
           courseId: clarifyResult.courseId,
-          answers: CLARIFY_ANSWERS,
+          responses: [
+            { questionId: "q1", freetext: CLARIFY_ANSWERS[0]! },
+            { questionId: "q2", freetext: CLARIFY_ANSWERS[1]! },
+          ],
         }),
       ).rejects.toThrow(/course not found/i);
     });
@@ -462,41 +469,44 @@ describe("course.generateBaseline", () => {
   ): Promise<string> {
     await seedUser(db);
     const course = await createCourse({ userId: USER, topic: "Rust" });
-    // Populate clarification (discriminated union shape required by schema).
+    // Populate clarification — camelCase v3 shape.
     await updateCourseScopingState(course.id, {
       clarification: {
         questions: [
-          { id: "q1", text: "What is your goal?", type: "free_text" as const },
-          { id: "q2", text: "Your background?", type: "free_text" as const },
+          {
+            id: "q1",
+            prompt: "What is your goal?",
+            type: "free_text" as const,
+            freetextRubric: "r",
+          },
+          { id: "q2", prompt: "Your background?", type: "free_text" as const, freetextRubric: "r" },
         ],
-        answers: [],
+        responses: [],
       },
     });
-    // Populate framework.
+    // Populate framework — camelCase FrameworkJsonb.
     await updateCourseScopingState(course.id, {
       framework: {
-        topic: "Rust",
-        scope_summary: "Baseline covers tiers 1, 2.",
-        estimated_starting_tier: 1,
-        baseline_scope_tiers: [1, 2],
+        estimatedStartingTier: 1,
+        baselineScopeTiers: [1, 2],
         tiers: [
           {
             number: 1,
             name: "Foundations",
             description: "Core.",
-            example_concepts: ["borrow checker", "lifetimes", "move semantics", "references"],
+            exampleConcepts: ["borrow checker", "lifetimes", "move semantics", "references"],
           },
           {
             number: 2,
             name: "Intermediate",
             description: "Traits.",
-            example_concepts: ["traits", "generics", "closures", "iterators"],
+            exampleConcepts: ["traits", "generics", "closures", "iterators"],
           },
           {
             number: 3,
             name: "Advanced",
             description: "Advanced.",
-            example_concepts: ["unsafe", "FFI", "macros", "async"],
+            exampleConcepts: ["unsafe", "FFI", "macros", "async"],
           },
         ],
       },
@@ -520,17 +530,17 @@ describe("course.generateBaseline", () => {
       const caller = appRouter.createCaller({ userId: USER });
       const result = await caller.course.generateBaseline({ courseId });
 
-      // Router return value.
+      // Router return value — baseline is BaselineTurn: { userMessage, questions: { questions: [...] } }.
       expect(result.nextStage).toBe("answering");
-      expect(result.baseline.questions.length).toBeGreaterThanOrEqual(7);
+      expect(result.baseline.questions.questions.length).toBeGreaterThanOrEqual(7);
 
       // DB: courses.baseline is populated and valid.
       const course = await getCourseById(courseId);
       expect(course.baseline).not.toBeNull();
       const parsed = baselineJsonbSchema.safeParse(course.baseline);
       expect(parsed.success).toBe(true);
-      // answers and gradings initialised to [].
-      expect((course.baseline as { answers: unknown[] }).answers).toEqual([]);
+      // responses and gradings initialised to [].
+      expect((course.baseline as { responses: unknown[] }).responses).toEqual([]);
       expect((course.baseline as { gradings: unknown[] }).gradings).toEqual([]);
     });
   });
@@ -542,7 +552,7 @@ describe("course.generateBaseline", () => {
     await withTestDb(async (db) => {
       const courseId = await seedCourseWithFramework(db);
 
-      // Pre-populate baseline directly.
+      // Pre-populate baseline directly — camelCase BaselineJsonb.
       const storedBaseline = {
         questions: [
           mcQuestion("b1", 1),
@@ -553,7 +563,7 @@ describe("course.generateBaseline", () => {
           mcQuestion("b6", 2),
           mcQuestion("b7", 1),
         ],
-        answers: [],
+        responses: [],
         gradings: [],
       };
       await updateCourseScopingState(courseId, { baseline: storedBaseline });
@@ -564,7 +574,8 @@ describe("course.generateBaseline", () => {
       const result = await caller.course.generateBaseline({ courseId });
 
       expect(result.nextStage).toBe("answering");
-      expect(result.baseline.questions).toHaveLength(7);
+      // baseline is BaselineTurn: { userMessage, questions: { questions: [...] } }
+      expect(result.baseline.questions.questions).toHaveLength(7);
       // LLM must NOT be called.
       expect(generateChat).not.toHaveBeenCalled();
     });
@@ -580,8 +591,10 @@ describe("course.generateBaseline", () => {
       const course = await createCourse({ userId: USER, topic: "Rust" });
       await updateCourseScopingState(course.id, {
         clarification: {
-          questions: [{ id: "q1", text: "Goal?", type: "free_text" as const }],
-          answers: [],
+          questions: [
+            { id: "q1", prompt: "Goal?", type: "free_text" as const, freetextRubric: "r" },
+          ],
+          responses: [],
         },
       });
 
@@ -610,7 +623,7 @@ describe("course.generateBaseline", () => {
       const result = await caller.course.generateBaseline({ courseId });
 
       expect(result.nextStage).toBe("answering");
-      expect(result.baseline.questions.length).toBeGreaterThanOrEqual(7);
+      expect(result.baseline.questions.questions.length).toBeGreaterThanOrEqual(7);
 
       // DB: 4 rows — user, failed, directive, assistant.
       const rows = await db

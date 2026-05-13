@@ -23,11 +23,25 @@ export const courseRouter = router({
     .input(
       z.object({
         courseId: z.string().uuid(),
-        answers: z.array(z.string().min(1)).min(1).max(SCOPING.maxClarifyAnswers),
+        // `responses` replaces the old flat `answers` array — each entry carries
+        // the questionId so the step can reconstruct Q/A pairs for the LLM.
+        responses: z
+          .array(
+            z.object({
+              questionId: z.string().min(1),
+              freetext: z.string().min(1),
+            }),
+          )
+          .min(1)
+          .max(SCOPING.maxClarifyAnswers),
       }),
     )
     .mutation(({ ctx, input }) =>
-      generateFramework({ userId: ctx.userId, courseId: input.courseId, answers: input.answers }),
+      generateFramework({
+        userId: ctx.userId,
+        courseId: input.courseId,
+        responses: input.responses,
+      }),
     ),
 
   /** Generate the baseline assessment questions from the stored framework. */

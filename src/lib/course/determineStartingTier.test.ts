@@ -2,21 +2,20 @@ import { describe, it, expect } from "vitest";
 import { PROGRESSION } from "@/lib/config/tuning";
 import type { QualityScore } from "@/lib/types/spaced-repetition";
 import { determineStartingTier } from "./determineStartingTier";
-import type { QuestionGrading } from "./gradeBaseline";
 
 /**
  * Build a grading with only the fields the placement rule cares about
- * (tier, quality). The rest of `QuestionGrading` is irrelevant here but
- * still typed to keep the fixture honest.
+ * (tier, qualityScore). Typed as inline object — `QuestionGrading` is gone
+ * from the new gradeBaseline.ts shape.
  */
-function g(id: string, tier: number, quality: QualityScore): QuestionGrading {
+function g(
+  _id: string,
+  tier: number,
+  qualityScore: QualityScore,
+): { readonly qualityScore: QualityScore; readonly tier: number } {
   return {
-    questionId: id,
-    conceptName: `c-${id}`,
     tier,
-    quality,
-    isCorrect: quality >= PROGRESSION.passingQualityScore,
-    rationale: "r",
+    qualityScore,
   };
 }
 
