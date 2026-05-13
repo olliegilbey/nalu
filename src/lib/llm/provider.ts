@@ -20,6 +20,10 @@ export function getLlmModel(): LlmModel {
     name: "nalu-llm",
     baseURL: env.LLM_BASE_URL,
     apiKey: env.LLM_API_KEY,
+    // Provider-level flag: equivalent to model-level because this provider
+    // exposes a single chat model. Enables generateObject to use the
+    // JSON-schema structured-output path rather than JSON-mode fallback.
+    supportsStructuredOutputs: true,
   });
   return provider.chatModel(env.LLM_MODEL);
 }
