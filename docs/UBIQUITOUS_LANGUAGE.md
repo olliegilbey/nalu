@@ -43,23 +43,27 @@ Within a phase the prefix is byte-stable (keeps prompt cache warm). At phase bou
 
 ## Learner input
 
-What the User actually said this turn. Either the prose they typed into the chat input and sent as a message, or the collection of answers from a Questionnaire submitted via the answer card UI. In both cases the Harness receives it server-side, persists it, and wrangles it into the next User envelope sent to the LLM. Learner input is _what the User said_ before any prompt assembly — distinct from the envelope the model eventually sees.
+Either the prose the User types into the chat input and submits as a message, or the collection of Responses to a Questionnaire submitted via the answer card UI. In both cases the Harness receives it server-side, persists it, and wrangles it into the next User envelope sent to the LLM. It is _what the User said_ before any prompt assembly.
 
 ## User envelope
 
-The `role: user` message the Harness builds and sends to the LLM each turn. Wraps the Learner input together with the active stage instruction and the per-stage schema's auto-rendered field guide. The model only ever sees envelopes; raw Learner input never reaches it unwrapped. Envelope assembly lives in `src/lib/prompts/`.
+The harness-built `role: user` message sent to the LLM each turn. Wraps the Learner input together with a bare `<stage>...</stage>` label. The model only ever sees envelopes; raw Learner input never reaches it unwrapped.
 
 ## Per-stage schema
 
-The Zod schema describing the LLM's expected output for one scoping stage (clarify, framework, baseline). Single source of truth: produces the wire schema for Cerebras `response_format: { type: "json_schema", strict: true }`, the runtime Zod validator that throws `ValidationGateFailure` on shape errors, and the human-readable field guide rendered into the User envelope. Defined once in `src/lib/prompts/`.
+The Zod schema describing the LLM's expected output for one scoping stage (clarify, framework, baseline, grade-baseline). Single source of truth: produces the wire schema (Cerebras `response_format`), the runtime validator, and — via `.describe()` annotations rendered into the decoder's context — the model's own field-level guidance.
 
 ## Questionnaire
 
-A `{ questions: Question[] }` payload with at least one question. Used identically across clarify, baseline, and (future) teaching quizzes. The UI renders questions one at a time as an answer card; the User submits the whole questionnaire before the model sees their answers.
+A `{ questions: Question[] }` payload with at least one question. Used identically across clarify, baseline, and teaching quizzes. The UI renders questions one at a time as an answer card.
 
 ## Question
 
-One of two shapes inside a Questionnaire: `free_text` (with a grading rubric) or `multiple_choice` (with four keyed options A/B/C/D and a free-text escape — there is no MC without escape). Stage-specific metadata (`conceptName`, `tier`, `correct`) is optional at the schema level and enforced as required by the per-stage parser where it applies (baseline, quizzes — not clarify).
+One of two shapes: `free_text` (with a grading rubric) or `multiple_choice` (with four keyed options A/B/C/D, a free-text escape, and a `correct` key when graded). Stage-specific metadata (`conceptName`, `tier`, `correct`) is optional at the schema level and required by the per-stage refine where applicable.
+
+## Response
+
+The learner's reply to one Question: either a `choice` (MC option key) or a `freetext` body, never both. Distinct from MC `options`, which are the four candidate answers the model emits as part of the Question.
 
 ## Harness injection
 
