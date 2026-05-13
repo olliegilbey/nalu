@@ -282,7 +282,7 @@ describe("makeBaselineSchema", () => {
       fullMc("b7", 3),
     ];
     const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
-    expect(schema.safeParse(wrap(qs)).success).toBe(true);
+    expect(() => schema.parse(wrap(qs))).not.toThrow();
   });
 
   it("rejects a question with a tier outside the requested scope", () => {
@@ -296,12 +296,7 @@ describe("makeBaselineSchema", () => {
       fullMc("b7", 99), // tier 99 is out of scope
     ];
     const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
-    const result = schema.safeParse(wrap(qs));
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const msgs = result.error.issues.map((i) => i.message);
-      expect(msgs.some((m) => /outside the requested scope/i.test(m))).toBe(true);
-    }
+    expect(() => schema.parse(wrap(qs))).toThrow(/outside the requested scope/i);
   });
 
   it("rejects a question missing conceptName", () => {
@@ -319,12 +314,7 @@ describe("makeBaselineSchema", () => {
       ...Array.from({ length: BASELINE.minQuestions - 1 }, (_, i) => fullMc(`b${i + 2}`, 1)),
     ];
     const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
-    const result = schema.safeParse(wrap(qs));
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const msgs = result.error.issues.map((i) => i.message);
-      expect(msgs.some((m) => /missing required conceptname/i.test(m))).toBe(true);
-    }
+    expect(() => schema.parse(wrap(qs))).toThrow(/missing required conceptname/i);
   });
 
   it("rejects a question missing tier", () => {
@@ -341,12 +331,7 @@ describe("makeBaselineSchema", () => {
       ...Array.from({ length: BASELINE.minQuestions - 1 }, (_, i) => fullMc(`b${i + 2}`, 1)),
     ];
     const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
-    const result = schema.safeParse(wrap(qs));
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const msgs = result.error.issues.map((i) => i.message);
-      expect(msgs.some((m) => /missing required tier/i.test(m))).toBe(true);
-    }
+    expect(() => schema.parse(wrap(qs))).toThrow(/missing required tier/i);
   });
 
   it("rejects an MC question missing the correct key", () => {
@@ -365,12 +350,7 @@ describe("makeBaselineSchema", () => {
       ...Array.from({ length: BASELINE.minQuestions - 1 }, (_, i) => fullMc(`b${i + 2}`, 1)),
     ];
     const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
-    const result = schema.safeParse(wrap(qs));
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const msgs = result.error.issues.map((i) => i.message);
-      expect(msgs.some((m) => /missing required correct key/i.test(m))).toBe(true);
-    }
+    expect(() => schema.parse(wrap(qs))).toThrow(/missing required correct key/i);
   });
 
   it("rejects duplicate question ids", () => {
@@ -381,11 +361,6 @@ describe("makeBaselineSchema", () => {
     // Force the last question to also have id "b1".
     const withDupe = [...qs.slice(0, -1), { ...qs[qs.length - 1]!, id: "b1" }];
     const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
-    const result = schema.safeParse(wrap(withDupe));
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const msgs = result.error.issues.map((i) => i.message);
-      expect(msgs.some((m) => /duplicate question ids/i.test(m))).toBe(true);
-    }
+    expect(() => schema.parse(wrap(withDupe))).toThrow(/duplicate question ids/i);
   });
 });
