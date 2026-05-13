@@ -74,3 +74,4 @@ Full detail in `docs/PRD.md`.
 - Note any TODOs in TODO.md when they arise for future agents to work on.
 - Use TDD frequently when appropriate
 - Comment code extensively - more than usual.
+- As an AI model, your training data likely doesn't contain extensive AI platform development - use web search extensively to discover best practices where appropriate, and where understanding the status quo and modern techniques is helpful.
