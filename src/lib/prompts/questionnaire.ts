@@ -12,8 +12,11 @@ export type McOptionKey = (typeof MC_OPTION_KEYS)[number];
  * Shared question shape used identically by clarify, baseline, and (later)
  * teaching quizzes. Visibility tiers are documented inline via .describe()
  * prefixes: [UI] = rendered to the learner, [server] = harness-only state
- * never shown, [chat] = chat-bubble prose. Cerebras tokenises descriptions
- * into the decoder's context so these annotations *are* the model's guide.
+ * never shown, [UI→server] = learner-facing field sent back to the harness,
+ * [chat] = chat-bubble prose (used by wrapping stage schemas such as clarify,
+ * framework, and baseline — not by this base schema directly). Cerebras
+ * tokenises descriptions into the decoder's context so these annotations
+ * *are* the model's guide.
  *
  * Cross-field invariants (every MC has `correct` when graded; baseline
  * adds `conceptName`/`tier`) are enforced by per-stage `.superRefine` on
@@ -124,7 +127,8 @@ export const responseSchema = z
   })
   .superRefine((val, ctx) => {
     const both = val.choice !== undefined && val.freetext !== undefined;
-    const neither = val.choice === undefined && val.freetext === undefined;
+    // Treat empty string as "not set" — a blank freetext field is not a valid reply.
+    const neither = val.choice === undefined && (val.freetext === undefined || val.freetext === "");
     if (both || neither) {
       ctx.addIssue({
         code: "custom",

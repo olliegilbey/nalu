@@ -6,6 +6,7 @@ import {
   responsesSchema,
   MC_OPTION_KEYS,
 } from "./questionnaire";
+import { toCerebrasJsonSchema } from "@/lib/llm/toCerebrasJsonSchema";
 
 describe("questionSchema", () => {
   it("accepts a minimal free_text question", () => {
@@ -75,6 +76,11 @@ describe("responseSchema", () => {
   it("rejects a response with neither choice nor freetext", () => {
     expect(() => responseSchema.parse({ questionId: "q1" })).toThrow(/exactly one/i);
   });
+
+  it("rejects a response with an empty-string freetext (treated as not-set)", () => {
+    // Empty string is a blank field — same as omitting freetext entirely.
+    expect(() => responseSchema.parse({ questionId: "q1", freetext: "" })).toThrow(/exactly one/i);
+  });
 });
 
 describe("questionnaireSchema + responsesSchema", () => {
@@ -100,5 +106,17 @@ describe("questionnaireSchema + responsesSchema", () => {
 describe("MC_OPTION_KEYS", () => {
   it("is the canonical A/B/C/D tuple", () => {
     expect(MC_OPTION_KEYS).toEqual(["A", "B", "C", "D"]);
+  });
+});
+
+describe("visibility tags survive toCerebrasJsonSchema", () => {
+  it("serialised schema retains [server] and [UI] annotations", () => {
+    // Regression guard: .describe() calls on questionSchema fields are the
+    // model's guide on the wire. Stripping them would silently break structured
+    // output quality. This test catches anyone removing them "as dead docs".
+    const result = toCerebrasJsonSchema(questionSchema, { name: "question" });
+    const wire = JSON.stringify(result.schema);
+    expect(wire).toMatch(/\[server\]/);
+    expect(wire).toMatch(/\[UI\]/);
   });
 });
