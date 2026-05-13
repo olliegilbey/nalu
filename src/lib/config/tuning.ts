@@ -122,6 +122,8 @@ export const PROGRESSION = {
 export const SCOPING = {
   maxParseRetries: 2,
   maxTopicLength: 500,
+  // Lower bound for the clarify questionnaire (P-ON-01).
+  minClarifyAnswers: 2,
   maxClarifyAnswers: 4,
 } as const;
 
