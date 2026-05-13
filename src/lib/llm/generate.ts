@@ -1,4 +1,4 @@
-import { generateObject, generateText } from "ai";
+import { generateText } from "ai";
 import type { z } from "zod/v4";
 import { LLM } from "@/lib/config/tuning";
 import { getLlmModel } from "./provider";
@@ -6,7 +6,7 @@ import { toCerebrasJsonSchema } from "./toCerebrasJsonSchema";
 import type { LlmMessage, LlmModel, LlmUsage } from "@/lib/types/llm";
 
 /**
- * Options common to both generate wrappers. All optional — `tuning.LLM`
+ * Options common to the chat wrapper. All optional — `tuning.LLM`
  * supplies defaults. Callers override per-flow (e.g. a creative framing
  * prompt may raise temperature).
  */
@@ -31,22 +31,9 @@ export interface ChatOptions extends GenerateOptions {
 }
 
 /**
- * Successful structured-output result.
- *
- * @typeParam T - The Zod-inferred shape returned by the caller's schema.
- *                The SDK guarantees `object` parses under that schema.
- */
-export interface StructuredResult<T> {
-  /** Parsed, schema-validated payload. */
-  readonly object: T;
-  /** Provider-reported token usage for this call. */
-  readonly usage: LlmUsage;
-}
-
-/**
  * Successful chat result. When `responseSchema` is supplied the `text`
  * field is a JSON string guaranteed to match the schema; otherwise it is
- * raw model output and callers extract embedded XML via `extractTag`.
+ * raw model output.
  */
 export interface ChatResult {
   /** Raw model output (JSON string or prose). */
@@ -56,37 +43,9 @@ export interface ChatResult {
 }
 
 /**
- * Structured-output call. Hands a Zod schema to the AI SDK, which uses
- * provider-native JSON-schema enforcement where available (Cerebras
- * does) and falls back to prompt-coaxed JSON + validation elsewhere.
- *
- * `maxRetries` bounds transport-level retries (timeouts, 5xx). The
- * SDK's internal JSON-parse repair is a separate, automatic pass.
- *
- * @deprecated Slated for deletion in Task 14 once `gradeBaseline` migrates
- * to `executeTurn` + `responseSchema`. New code MUST NOT call this.
- */
-export async function generateStructured<T>(
-  schema: z.ZodType<T>,
-  messages: readonly LlmMessage[],
-  opts: GenerateOptions = {},
-): Promise<StructuredResult<T>> {
-  const result = await generateObject({
-    model: opts.model ?? getLlmModel(),
-    schema,
-    messages: [...messages],
-    temperature: opts.temperature ?? LLM.defaultTemperature,
-    maxRetries: opts.maxRetries ?? LLM.maxRetries,
-  });
-  return { object: result.object as T, usage: result.usage };
-}
-
-/**
  * Chat call. When `responseSchema` is supplied, Cerebras constrained decoding
  * guarantees the output parses as JSON matching the schema (modulo business
- * invariants — those still run Zod-side in the caller). Without
- * `responseSchema`, the call is unconstrained and the output is raw prose
- * that callers extract embedded XML from via `extractTag`.
+ * invariants — those still run Zod-side in the caller).
  */
 export async function generateChat(
   messages: readonly LlmMessage[],

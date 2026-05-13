@@ -1,5 +1,5 @@
 import { BASELINE, PROGRESSION } from "@/lib/config/tuning";
-import type { BaselineEvaluationItem, McOptionKey } from "@/lib/prompts";
+import type { McOptionKey } from "@/lib/prompts/questionnaire";
 import type { LlmUsage } from "@/lib/types/llm";
 import type { z } from "zod";
 import type { baselineGradingSchema } from "@/lib/types/jsonb";
@@ -7,6 +7,30 @@ import type { BaselineAnswer } from "./gradeBaseline";
 
 /** The new unified grading shape (camelCase, matches baselineGradingSchema). */
 export type GradingEntry = z.infer<typeof baselineGradingSchema>;
+
+/**
+ * Wire shape for a single answered-question item handed to the batch grader.
+ * Free-text and freetext-escape-on-MC answers share this shape; `viaEscape`
+ * distinguishes them so the grader prompt can flag the contextual prefix
+ * (P-AC-03). Lives here rather than `prompts/` because it's the lib-side
+ * grader-input contract, not a prompt-text concern.
+ */
+export interface BaselineEvaluationItem {
+  /** Question id from baseline generation (stable through grading). */
+  readonly questionId: string;
+  /** Concept name from the question — stored on the `assessments` row. */
+  readonly conceptName: string;
+  /** Tier of the question. Passed through so the grader sees the level. */
+  readonly tier: number;
+  /** Question text as shown to the learner. Trusted (our own output). */
+  readonly question: string;
+  /** Rubric from the question. Trusted. Source of truth for expectations. */
+  readonly rubric: string;
+  /** Learner's raw prose. Untrusted upstream; sanitisation runs in the prompt builder. */
+  readonly learnerProse: string;
+  /** True if the learner reached this grader via the freetext-escape affordance on an MC question. */
+  readonly viaEscape: boolean;
+}
 
 /** Quality score for a correct MC click (from `tuning.BASELINE`). */
 export const MC_CORRECT_QUALITY = BASELINE.mcCorrectQuality;

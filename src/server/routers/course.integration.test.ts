@@ -59,8 +59,8 @@ function validClarifyText(): string {
 
 /**
  * Valid framework LLM response — needs 3+ tiers (FRAMEWORK.minTiers=3).
- * Tag: <framework>{...}</framework> (parseFrameworkResponse reads this tag).
- * Uses camelCase fields because frameworkSchema (parser-side) is camelCase.
+ * Tag: <framework>{...}</framework> (executeTurn extracts and validates against frameworkSchema).
+ * Uses camelCase fields because frameworkSchema is camelCase.
  */
 function validFrameworkText(): string {
   const framework = {
@@ -111,7 +111,7 @@ function mcQuestion(id: string, tier: 1 | 2) {
 
 /**
  * Valid baseline LLM response — exactly 7 questions (BASELINE.minQuestions=7).
- * Tag: <baseline>{...}</baseline> (parseBaselineResponse reads this tag).
+ * Tag: <baseline>{...}</baseline> (executeTurn extracts and validates against makeBaselineSchema).
  * All tiers in [1, 2] to satisfy baseline_scope_tiers constraint.
  */
 function validBaselineText(): string {
@@ -614,7 +614,7 @@ describe("course.generateBaseline", () => {
     await withTestDb(async (db) => {
       const courseId = await seedCourseWithFramework(db);
 
-      // First call: no <baseline> tag → parseBaselineResponse throws.
+      // First call: no <baseline> tag → executeTurn surfaces a ValidationGateFailure.
       vi.mocked(generateChat)
         .mockResolvedValueOnce({ text: "<response>thinking...</response>", usage: FAKE_USAGE })
         .mockResolvedValueOnce({ text: validBaselineText(), usage: FAKE_USAGE });

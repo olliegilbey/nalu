@@ -116,8 +116,9 @@ export const PROGRESSION = {
  * happily store; the practical reason for capping is to stop pathological
  * pastes from blowing out the system prompt prefix that becomes the cache key.
  *
- * `maxClarifyAnswers` must equal `clarifyingQuestionsSchema.max()` (4) so
- * a learner can answer every question the LLM emitted.
+ * `maxClarifyAnswers` must equal the upper bound on the clarify
+ * questionnaire (see `questionnaireSchema` in `src/lib/prompts/questionnaire.ts`)
+ * so a learner can answer every question the LLM emitted.
  */
 export const SCOPING = {
   maxParseRetries: 2,
@@ -159,8 +160,8 @@ export const FRAMEWORK = {
 
 /**
  * Baseline-assessment bounds. Consumed by `src/lib/prompts/baseline.ts`
- * (generation), `src/lib/prompts/baselineEvaluation.ts` (batch grading),
- * and `src/lib/course/gradeBaseline.ts` (mechanical MC scoring). Keeping
+ * (generation) and `src/lib/course/gradeBaseline.ts` (mechanical MC
+ * scoring + batch grading via `executeTurn`). Keeping
  * the numbers in one place means prompt text, Zod schemas, and grading
  * code can't drift.
  *

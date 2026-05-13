@@ -29,8 +29,8 @@ export interface WaveSeedInputs {
  *
  * Scoping is one Context across clarify → framework → baseline steps;
  * the system prompt frames the multi-turn discipline. Specific per-turn
- * prompt strings are built by the existing `src/lib/prompts/clarification.ts`
- * etc. and arrive as user-role `context_messages` rows.
+ * envelopes are built by `renderStageEnvelope` in `src/lib/prompts/scoping.ts`
+ * and arrive as user-role `context_messages` rows.
  */
 export interface ScopingSeedInputs {
   readonly kind: "scoping";
