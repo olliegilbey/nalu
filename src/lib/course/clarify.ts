@@ -54,6 +54,8 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
     seed: { kind: "scoping", topic: params.topic },
     userMessageContent: sanitiseUserInput(params.topic),
     parser: parseClarifyResponse,
+    label: "clarify",
+    successSummary: (p) => `questions=${p.questions.length}`,
   });
 
   // D1 option B: translate bare strings from the parser into the JSONB discriminated-union shape.

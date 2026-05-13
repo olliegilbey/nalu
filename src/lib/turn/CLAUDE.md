@@ -17,3 +17,15 @@ between).
 
 Do not put per-stage logic here. If a turn-shape needs stage-specific
 behaviour, that belongs in the caller's lib step, not behind a flag here.
+
+## Live-smoke observability
+
+`formatTurn.ts` + `diagnoseFailure.ts` provide per-turn stderr output
+gated on `CEREBRAS_LIVE=1`. Default is verbose (header + prompt +
+response + parse outcome per attempt); `NALU_SMOKE_QUIET=1` collapses
+success to a one-line ✓ summary and only flushes the prompt/response
+trail on failure. Prompt and response bodies are uncolored (raw bytes);
+status, diagnosis, and retry directives use ANSI color when stderr is a
+TTY and `NO_COLOR` is unset. Callers tag their turns with `label`
+(`"clarify"`, `"framework"`, `"baseline"`) and may pass a
+`successSummary` projection for the ✓ line.

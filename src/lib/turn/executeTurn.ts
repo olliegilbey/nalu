@@ -13,6 +13,16 @@ import { renderContext } from "@/lib/llm/renderContext";
 import { SCOPING } from "@/lib/config/tuning";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 import type { SeedInputs } from "@/lib/types/context";
+import {
+  formatHeader,
+  formatParseFailure,
+  formatParseSuccess,
+  formatPromptBlock,
+  formatResponseBlock,
+  isLive,
+  isQuiet,
+} from "./formatTurn";
+import { diagnoseFailure } from "./diagnoseFailure";
 
 /**
  * Parameters for one invocation of `executeTurn`.
@@ -33,6 +43,18 @@ export interface ExecuteTurnParams<T> {
   readonly userMessageContent: string;
   readonly parser: (raw: string) => T;
   readonly retryDirective?: (err: ValidationGateFailure, attempt: number) => string;
+  /**
+   * Optional human label for live-smoke observability (`CEREBRAS_LIVE=1`).
+   * Names the per-turn stage in the banner — e.g. "clarify", "framework",
+   * "baseline". Unused in production; falls back to `seed.kind`.
+   */
+  readonly label?: string;
+  /**
+   * Optional one-line projection of `parsed` used in the green ✓ summary
+   * (e.g. `(p) => `questions=${p.questions.length}``). Falls back to a
+   * generic shape hint if absent.
+   */
+  readonly successSummary?: (parsed: T) => string;
 }
 
 /** Result of a successful turn: parsed value + token usage from the winning LLM call. */
@@ -91,6 +113,14 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   // Default directive surfaces the parser's authored detail verbatim.
   const directiveFn = params.retryDirective ?? ((err) => err.detail);
 
+  // Live-smoke observability (CEREBRAS_LIVE=1). All emit decisions
+  // collapse to noop in production — `live` is the master gate.
+  const live = isLive();
+  const quiet = isQuiet();
+  const label = params.label ?? params.seed.kind;
+  const headerTopic = params.seed.kind === "scoping" ? params.seed.topic : params.seed.courseTopic;
+  const modelName = process.env.LLM_MODEL ?? "(default)";
+
   /**
    * Recursive attempt loop — functional alternative to mutable loop state.
    * Threads the growing in-memory `batch` through each frame.
@@ -126,10 +156,43 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
         return { role: "user", content: m.content };
       }),
     ];
+    // Banner per attempt — always emitted under live mode so a 3-retry turn
+    // produces three banners and the reader knows which call's output follows.
+    if (live) {
+      process.stderr.write(
+        formatHeader({
+          label,
+          attempt: i + 1,
+          totalAttempts,
+          model: modelName,
+          topic: headerTopic,
+        }),
+      );
+    }
+    // Verbose mode: prompt printed inline before the call. Quiet mode:
+    // suppressed on success, but we'll retroactively print it on failure.
+    if (live && !quiet) {
+      process.stderr.write(formatPromptBlock(llmMessages));
+    }
+
+    const t0 = Date.now();
     const result = await generateChat(llmMessages);
+    const dt = Date.now() - t0;
+
+    // Verbose mode: response printed inline. Quiet mode: suppressed for now;
+    // the failure branch below replays it if needed.
+    if (live && !quiet) {
+      process.stderr.write(formatResponseBlock(result.text, dt, result.usage));
+    }
     try {
       // Parser success path: append assistant_response and commit the whole batch.
       const parsed = params.parser(result.text);
+      if (live) {
+        const summary = params.successSummary
+          ? params.successSummary(parsed)
+          : `chars=${result.text.length}`;
+        process.stderr.write(formatParseSuccess(label, summary));
+      }
       const successRow: AppendMessageParams = {
         parent: params.parent,
         turnIndex,
@@ -144,6 +207,17 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       // Anything other than a validation gate failure is treated as a transport-class
       // error and propagates without persisting — the batch never commits.
       if (!(err instanceof ValidationGateFailure)) throw err;
+      // Failure observability: in quiet mode we retroactively flush the
+      // prompt + response so the reader has the full forensic trail.
+      // In verbose mode they're already on stderr; just append diagnosis.
+      if (live) {
+        if (quiet) {
+          process.stderr.write(formatPromptBlock(llmMessages));
+          process.stderr.write(formatResponseBlock(result.text, dt, result.usage));
+        }
+        const diagnosis = diagnoseFailure(err, result.text);
+        process.stderr.write(formatParseFailure(label, err, diagnosis));
+      }
       const failedRow: AppendMessageParams = {
         parent: params.parent,
         turnIndex,

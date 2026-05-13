@@ -88,6 +88,8 @@ export async function generateBaseline(
     // Bind scopeTiers into the parser closure so the parser can enforce the invariant
     // that every question's tier is within the framework's baseline scope.
     parser: (raw: string) => parseBaselineResponse(raw, { scopeTiers }),
+    label: "baseline",
+    successSummary: (p) => `questions=${p.baseline.questions.length}`,
   });
 
   // Persist via translator: BaselineAssessment has only `questions`; the JSONB storage

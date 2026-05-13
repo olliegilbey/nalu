@@ -10,8 +10,9 @@
  *
  * Design:
  * - One `describe` per topic; one test per topic (chains all three procedures).
- * - `console.log` of the framework/baseline JSON so the human running the test
- *   can eyeball model output without re-running.
+ * - Per-turn observability — banner, prompt, response, parse outcome — is
+ *   emitted to stderr by `executeTurn` itself (gated on `CEREBRAS_LIVE=1`).
+ *   Set `NALU_SMOKE_QUIET=1` to suppress prompt/response on success.
  * - Idempotency check: a second `generateBaseline` call must return from DB
  *   cache (< 200ms) without calling the LLM again.
  */
@@ -75,8 +76,6 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           );
           expect(clarifyingQuestions.length, "clarify: question count ≤ 4").toBeLessThanOrEqual(4);
 
-          console.log(`[${topic.slug}] clarify questions:`, clarifyingQuestions);
-
           // ---------------------------------------------------------------
           // 2. generateFramework
           // ---------------------------------------------------------------
@@ -89,7 +88,6 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           const { framework } = await caller.course.generateFramework({ courseId, answers });
 
           assertFrameworkStructural(framework);
-          console.log(`[${topic.slug}] framework:`, JSON.stringify(framework, null, 2));
 
           // ---------------------------------------------------------------
           // 3. generateBaseline
@@ -97,7 +95,6 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           const { baseline } = await caller.course.generateBaseline({ courseId });
 
           assertBaselineStructural(baseline, framework);
-          console.log(`[${topic.slug}] baseline:`, JSON.stringify(baseline, null, 2));
 
           // ---------------------------------------------------------------
           // 4. Idempotency — second call must hit DB, not LLM

@@ -118,6 +118,9 @@ export async function generateFramework(
     seed: { kind: "scoping", topic: course.topic },
     userMessageContent: userContent,
     parser: parseFrameworkResponse,
+    label: "framework",
+    successSummary: (p) =>
+      `tiers=${p.framework.tiers.length} startTier=${p.framework.estimatedStartingTier}`,
   });
 
   // Translate camelCase Framework → snake_case FrameworkJsonb before persisting.
