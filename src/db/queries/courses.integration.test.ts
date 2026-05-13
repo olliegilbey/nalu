@@ -76,24 +76,22 @@ describe("courses queries", () => {
     await seedUserAndRun(async () => {
       const course = await createCourse({ userId: USER, topic: "TypeScript generics" });
 
-      // Write a minimal valid framework payload.
+      // Write a minimal valid framework payload (camelCase — spec §4.8).
       const frameworkPayload = {
-        topic: "TypeScript generics",
-        scope_summary: "Covers generic types and constraints",
-        estimated_starting_tier: 2,
-        baseline_scope_tiers: [1, 2],
+        estimatedStartingTier: 2,
+        baselineScopeTiers: [1, 2],
         tiers: [
           {
             number: 1,
             name: "Basics",
             description: "Intro",
-            example_concepts: ["T", "U"],
+            exampleConcepts: ["T", "U"],
           },
           {
             number: 2,
             name: "Advanced",
             description: "Constraints",
-            example_concepts: ["extends"],
+            exampleConcepts: ["extends"],
           },
         ],
       };
@@ -102,7 +100,7 @@ describe("courses queries", () => {
 
       // Re-fetch and confirm JSONB was validated and round-tripped.
       const fetched = await getCourseById(course.id);
-      expect(fetched.framework).toMatchObject({ estimated_starting_tier: 2 });
+      expect(fetched.framework).toMatchObject({ estimatedStartingTier: 2 });
     });
   });
 
@@ -264,10 +262,8 @@ describe("courses queries", () => {
       await expect(
         updateCourseScopingState(course.id, {
           framework: {
-            topic: "x",
-            scope_summary: "y",
-            estimated_starting_tier: 1,
-            baseline_scope_tiers: [1],
+            estimatedStartingTier: 1,
+            baselineScopeTiers: [1],
             // `tiers` is required by frameworkJsonbSchema — omitting it must throw.
           },
         }),

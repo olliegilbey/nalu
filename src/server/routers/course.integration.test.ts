@@ -50,20 +50,55 @@ const FAKE_USAGE = {
 // ---------------------------------------------------------------------------
 
 /**
- * Valid clarify LLM response. Two questions so it satisfies the 2–4 constraint.
- * Shape matches clarifySchema: { userMessage, questions: { questions: [...] } }.
+ * Build a minimal valid MC question for baseline fixtures.
+ * `tier` must be within the framework's baseline_scope_tiers ([1, 2]).
  */
-function validClarifyText(): string {
-  return `<response>Let me ask you a couple of questions.</response><questions>["What is your goal with Rust?","What is your current programming background?"]</questions>`;
+function mcQuestion(id: string, tier: 1 | 2) {
+  return {
+    id,
+    tier,
+    conceptName: "test-concept",
+    type: "multiple_choice" as const,
+    prompt: "Which of the following best describes X?",
+    options: { A: "opt-a", B: "opt-b", C: "opt-c", D: "opt-d" },
+    correct: "A" as const,
+    freetextRubric: "A good answer explains X clearly.",
+  };
 }
 
 /**
- * Valid framework LLM response — needs 3+ tiers (FRAMEWORK.minTiers=3).
- * Tag: <framework>{...}</framework> (executeTurn extracts and validates against frameworkSchema).
- * Uses camelCase fields because frameworkSchema is camelCase.
+ * Valid clarify LLM response — pure JSON matching clarifySchema.
+ * Two questions satisfies the 2–4 constraint; no conceptName/tier (elicitation only).
+ */
+function validClarifyText(): string {
+  return JSON.stringify({
+    userMessage: "Let me ask you a couple of questions.",
+    questions: {
+      questions: [
+        {
+          id: "q1",
+          type: "free_text",
+          prompt: "What is your goal with Rust?",
+          freetextRubric: "no grading — informational",
+        },
+        {
+          id: "q2",
+          type: "free_text",
+          prompt: "What is your current programming background?",
+          freetextRubric: "no grading — informational",
+        },
+      ],
+    },
+  });
+}
+
+/**
+ * Valid framework LLM response — pure JSON matching frameworkSchema.
+ * 3+ tiers (FRAMEWORK.minTiers=3); estimatedStartingTier in scope; baselineScopeTiers contiguous.
  */
 function validFrameworkText(): string {
-  const framework = {
+  return JSON.stringify({
+    userMessage: "Here is the framework.",
     tiers: [
       {
         number: 1,
@@ -87,46 +122,28 @@ function validFrameworkText(): string {
     estimatedStartingTier: 1,
     // baselineScopeTiers must include estimatedStartingTier and be contiguous.
     baselineScopeTiers: [1, 2],
-  };
-  return `<response>Here is the framework.</response><framework>${JSON.stringify(framework)}</framework>`;
+  });
 }
 
 /**
- * Build a minimal valid MC question for baseline fixtures.
- * `tier` must be within the framework's baseline_scope_tiers ([1, 2]).
- */
-function mcQuestion(id: string, tier: 1 | 2) {
-  return {
-    id,
-    tier,
-    conceptName: "test-concept",
-    type: "multiple_choice" as const,
-    // v3 shape: `prompt` replaces `question`.
-    prompt: "Which of the following best describes X?",
-    options: { A: "opt-a", B: "opt-b", C: "opt-c", D: "opt-d" },
-    correct: "A" as const,
-    freetextRubric: "A good answer explains X clearly.",
-  };
-}
-
-/**
- * Valid baseline LLM response — exactly 7 questions (BASELINE.minQuestions=7).
- * Tag: <baseline>{...}</baseline> (executeTurn extracts and validates against makeBaselineSchema).
- * All tiers in [1, 2] to satisfy baseline_scope_tiers constraint.
+ * Valid baseline LLM response — pure JSON matching makeBaselineSchema.
+ * Exactly 7 questions (BASELINE.minQuestions=7), all tiers in [1, 2] (scope from validFrameworkText).
  */
 function validBaselineText(): string {
-  const baseline = {
-    questions: [
-      mcQuestion("b1", 1),
-      mcQuestion("b2", 2),
-      mcQuestion("b3", 1),
-      mcQuestion("b4", 2),
-      mcQuestion("b5", 1),
-      mcQuestion("b6", 2),
-      mcQuestion("b7", 1),
-    ],
-  };
-  return `<response>Here is the baseline.</response><baseline>${JSON.stringify(baseline)}</baseline>`;
+  return JSON.stringify({
+    userMessage: "Here is the baseline.",
+    questions: {
+      questions: [
+        mcQuestion("b1", 1),
+        mcQuestion("b2", 2),
+        mcQuestion("b3", 1),
+        mcQuestion("b4", 2),
+        mcQuestion("b5", 1),
+        mcQuestion("b6", 2),
+        mcQuestion("b7", 1),
+      ],
+    },
+  });
 }
 
 // Answers matching the 2 questions emitted by validClarifyText.
@@ -161,8 +178,7 @@ describe("course.clarify", () => {
   // -------------------------------------------------------------------------
   // Case 1: happy path
   // -------------------------------------------------------------------------
-  // TODO(Task 13): re-enable once clarify.ts is rewritten to pass responseSchema.
-  it.skip("happy path: returns questions + courseId, persists 2 context_messages and clarification JSONB", async () => {
+  it("happy path: returns questions + courseId, persists 2 context_messages and clarification JSONB", async () => {
     await withTestDb(async (db) => {
       await seedUser(db);
       vi.mocked(generateChat).mockResolvedValueOnce({
@@ -202,8 +218,7 @@ describe("course.clarify", () => {
   // -------------------------------------------------------------------------
   // Case 2: retry-then-success
   // -------------------------------------------------------------------------
-  // TODO(Task 13): re-enable once clarify.ts is rewritten to pass responseSchema.
-  it.skip("retry-then-success: persists 4 rows (user, failed, directive, assistant)", async () => {
+  it("retry-then-success: persists 4 rows (user, failed, directive, assistant)", async () => {
     await withTestDb(async (db) => {
       await seedUser(db);
 
@@ -293,8 +308,7 @@ describe("course.generateFramework", () => {
   // -------------------------------------------------------------------------
   // Case 5: happy path after clarify
   // -------------------------------------------------------------------------
-  // TODO(Tasks 13–14): re-enable once clarify.ts + generateFramework.ts pass responseSchema.
-  it.skip("happy path: runs after clarify, returns FrameworkJsonb, persists to DB", async () => {
+  it("happy path: runs after clarify, returns FrameworkJsonb, persists to DB", async () => {
     await withTestDb(async (db) => {
       await seedUser(db);
 
@@ -336,8 +350,7 @@ describe("course.generateFramework", () => {
   // -------------------------------------------------------------------------
   // Case 6: idempotency — pre-populated framework, LLM not called
   // -------------------------------------------------------------------------
-  // TODO(Tasks 13–14): re-enable once clarify.ts + generateFramework.ts pass responseSchema.
-  it.skip("idempotency: returns cached framework, does not call generateChat", async () => {
+  it("idempotency: returns cached framework, does not call generateChat", async () => {
     await withTestDb(async (db) => {
       await seedUser(db);
 
@@ -422,8 +435,7 @@ describe("course.generateFramework", () => {
   // -------------------------------------------------------------------------
   // Case 8: NOT_FOUND for different user
   // -------------------------------------------------------------------------
-  // TODO(Tasks 13–14): re-enable once clarify.ts + generateFramework.ts pass responseSchema.
-  it.skip("NOT_FOUND when a different user attempts generateFramework on another user's course", async () => {
+  it("NOT_FOUND when a different user attempts generateFramework on another user's course", async () => {
     await withTestDb(async (db) => {
       await seedUser(db, USER);
       await seedUser(db, OTHER_USER);
@@ -517,8 +529,7 @@ describe("course.generateBaseline", () => {
   // -------------------------------------------------------------------------
   // Case 9: happy path after framework
   // -------------------------------------------------------------------------
-  // TODO(Task 15): re-enable once generateBaseline.ts passes responseSchema.
-  it.skip("happy path: returns baseline with >=7 questions, nextStage=answering, persists BaselineJsonb", async () => {
+  it("happy path: returns baseline with >=7 questions, nextStage=answering, persists BaselineJsonb", async () => {
     await withTestDb(async (db) => {
       const courseId = await seedCourseWithFramework(db);
 
@@ -609,8 +620,7 @@ describe("course.generateBaseline", () => {
   // -------------------------------------------------------------------------
   // Case 12: retry-then-success for baseline
   // -------------------------------------------------------------------------
-  // TODO(Task 15): re-enable once generateBaseline.ts passes responseSchema.
-  it.skip("retry-then-success: first response missing <baseline>, second valid — returns success", async () => {
+  it("retry-then-success: first response is invalid JSON, second valid — returns success", async () => {
     await withTestDb(async (db) => {
       const courseId = await seedCourseWithFramework(db);
 

@@ -15,20 +15,18 @@ import {
 const USER_ID = "44444444-4444-4444-4444-444444444444";
 const COURSE_ID = "00000000-0000-0000-0000-000000000401";
 
-/** Minimal valid frameworkSnapshot matching frameworkJsonbSchema. */
+/** Minimal valid frameworkSnapshot matching frameworkJsonbSchema (camelCase — spec §4.8). */
 const FRAMEWORK_SNAPSHOT = {
-  topic: "Rust ownership",
-  scope_summary: "Covers ownership, borrowing, lifetimes",
-  estimated_starting_tier: 1,
-  baseline_scope_tiers: [1, 2],
+  estimatedStartingTier: 1,
+  baselineScopeTiers: [1, 2],
   tiers: [
     {
       number: 1,
       name: "Basics",
       description: "Variables and ownership",
-      example_concepts: ["move"],
+      exampleConcepts: ["move"],
     },
-    { number: 2, name: "Borrowing", description: "References", example_concepts: ["&T"] },
+    { number: 2, name: "Borrowing", description: "References", exampleConcepts: ["&T"] },
   ],
 };
 
