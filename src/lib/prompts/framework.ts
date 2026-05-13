@@ -25,6 +25,7 @@ export const FRAMEWORK_TURN_INSTRUCTIONS = `<framework_rules>
 - Example concepts are illustrative anchors, not the full curriculum. Pick concrete, specific concepts (e.g. "borrow checker lifetimes") rather than vague themes ("memory stuff").
 - Tailor tier breadth and emphasis to the learner's clarification answers (sub-area, baseline knowledge, end goal).
 - Do not teach, answer, or assess in this turn. Frameworks only.
+- Emit a brief \`userMessage\`: one or two warm sentences framing the framework you produced. Do NOT enumerate the tiers in \`userMessage\`; the UI renders them from \`tiers\`.
 </framework_rules>
 
 <baseline_scope_rules>
@@ -34,7 +35,7 @@ export const FRAMEWORK_TURN_INSTRUCTIONS = `<framework_rules>
 </baseline_scope_rules>
 
 <output_contract>
-Return JSON: { "tiers": [ { "number": int, "name": string, "description": string, "exampleConcepts": string[] }, ... ], "estimatedStartingTier": int, "baselineScopeTiers": int[] }.
+Return JSON: { "userMessage": string, "tiers": [ { "number": int, "name": string, "description": string, "exampleConcepts": string[] }, ... ], "estimatedStartingTier": int, "baselineScopeTiers": int[] }.
 </output_contract>`;
 
 /** A single Q&A pair from the prior clarification turn. */
