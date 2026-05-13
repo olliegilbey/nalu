@@ -1,49 +1,45 @@
 import { escapeXmlText } from "@/lib/security/escapeXmlText";
 import type { ScopingSeedInputs } from "@/lib/types/context";
-import { FRAMEWORK_TURN_INSTRUCTIONS } from "./framework";
-import { BASELINE_TURN_INSTRUCTIONS } from "./baseline";
 
 /**
- * Renders the static system prompt for a scoping pass (spec §9.1, P7).
+ * Slim system prompt for a scoping pass.
  *
- * Scoping is multi-turn, byte-stable, append-only. The system prompt
- * frames that discipline; per-step user-role prompts (clarification,
- * framework, baseline) are appended as `context_messages` rows by the
- * scoping tRPC procedures (next milestone). Once scoping closes, the
- * prompt history is discarded — only the structured outputs persist on
- * `courses` (P-ON-05).
+ * Contains only: persona, topic interpolation, the one-line "reply in JSON
+ * matching the attached schema" rule. Per-stage instructions are NOT here —
+ * they live entirely on each stage schema's `.describe()` annotations,
+ * which Cerebras strict mode tokenises into the decoder context as part of
+ * `response_format`. The wire-side rule "this turn's schema is attached to
+ * THIS turn's user envelope" is the only contract the system prompt
+ * carries.
  *
- * WHY all stage instructions live here (spec §3.4):
- * Per-turn user messages are minimal envelopes (`<answers>…</answers>`,
- * `<request>generate baseline</request>`). Stage-specific rules embedded
- * in those envelopes would break cache-prefix stability — every new turn
- * would shift the cache window. Placing rules in the system prompt keeps
- * the prefix byte-identical across turns once the topic is fixed, so a
- * single cached prefix covers all three scoping stages.
- *
- * Ordering mirrors the conversation sequence the model will encounter:
- *   1. Clarification role block (inline in the template below — no
- *      separate constant; the rules are short enough to live in `<role>`)
- *   2. FRAMEWORK_TURN_INSTRUCTIONS (imported from `./framework`)
- *   3. BASELINE_TURN_INSTRUCTIONS (imported from `./baseline`)
- *
- * Pure function. Same input → same string, byte-identical.
+ * Emitted exactly once per scoping pass — `renderContext` only renders a
+ * `role: "system"` row when one is present at the top of the message log.
+ * Subsequent turns append user/assistant rows; the prefix stays byte-stable.
  */
 export function renderScopingSystem(inputs: ScopingSeedInputs): string {
   return `<role>
-You are Nalu, a learning-design assistant in scoping mode.
+You are Nalu, an expert teacher and tutor. You are building a bespoke course for a learner on the topic of <scoping_topic>${escapeXmlText(inputs.topic)}</scoping_topic>.
 
-You will be asked, in sequence, to:
-1. Generate clarifying questions for a topic.
-2. Generate a proficiency framework given the topic and the learner's clarification answers.
-3. Generate a baseline assessment given the framework.
+Each turn, reply with a single JSON object matching the response schema attached to that turn. Field-level guidance lives in the schema's description metadata — read it carefully before generating. No prose outside the JSON object.
+</role>`;
+}
 
-Each request is a structured tool call with its own response schema. Stay terse, never produce free-form prose outside the requested structure.
-</role>
+export interface RenderStageEnvelopeParams {
+  /** Bare stage label — appears verbatim inside `<stage>...</stage>`. */
+  readonly stage: "clarify" | "generate framework" | "generate baseline" | "grade baseline";
+  /** Learner input — XML-escaped before embedding. May be empty for stage-only envelopes. */
+  readonly learnerInput: string;
+}
 
-<scoping_topic>${escapeXmlText(inputs.topic)}</scoping_topic>
-
-${FRAMEWORK_TURN_INSTRUCTIONS}
-
-${BASELINE_TURN_INSTRUCTIONS}`;
+/**
+ * Build the per-turn user-role envelope. Minimal by design — the schema's
+ * descriptions carry per-field guidance; this wrapper just names the stage
+ * and surfaces the learner's input. Cache-prefix stability: the only
+ * variable bytes per turn are the stage label and the escaped input.
+ */
+export function renderStageEnvelope(params: RenderStageEnvelopeParams): string {
+  return `<stage>${params.stage}</stage>
+<learner_input>
+${escapeXmlText(params.learnerInput)}
+</learner_input>`;
 }
