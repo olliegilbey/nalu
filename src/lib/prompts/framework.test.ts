@@ -5,6 +5,7 @@ import { CLARIFICATION_SYSTEM_PROMPT, buildClarificationPrompt } from "./clarifi
 
 // Minimal valid framework built from tuning bounds — reused across schema
 // assertions so bound changes only edit this one fixture.
+// Now includes `userMessage` (required by the updated frameworkSchema).
 function buildValidFramework(tierCount: number) {
   // Mid-tier estimate with a full three-wide contiguous scope that fits
   // inside `tierCount` for any tierCount ≥ 3 (the minimum). Keeps every
@@ -17,6 +18,7 @@ function buildValidFramework(tierCount: number) {
     (_, i) => scopeLow + i,
   );
   return {
+    userMessage: "Here's the proficiency ladder I drafted from your answers.",
     tiers: Array.from({ length: tierCount }, (_, i) => ({
       number: i + 1,
       name: `Tier ${i + 1}`,
@@ -212,5 +214,100 @@ describe("frameworkSchema", () => {
     const base = buildValidFramework(FRAMEWORK.maxTiers);
     const missing = { ...base, estimatedStartingTier: 3, baselineScopeTiers: [1, 2] };
     expect(frameworkSchema.safeParse(missing).success).toBe(false);
+  });
+
+  // userMessage is a required chat-bubble field added in Task 7.
+  it("rejects framework without userMessage", () => {
+    const { userMessage: _omitted, ...noMsg } = buildValidFramework(FRAMEWORK.minTiers);
+    const result = frameworkSchema.safeParse(noMsg);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join("."));
+      expect(paths).toContain("userMessage");
+    }
+  });
+
+  // Refine messages — verify the exact retry-directive text that goes back to the model.
+  it("refine: tier count below minimum emits correct message", () => {
+    const result = frameworkSchema.safeParse(buildValidFramework(FRAMEWORK.minTiers - 1));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msgs = result.error.issues.map((i) => i.message);
+      expect(msgs.some((m) => /tiers must contain between/.test(m))).toBe(true);
+    }
+  });
+
+  it("refine: tier count above maximum emits correct message", () => {
+    const result = frameworkSchema.safeParse(buildValidFramework(FRAMEWORK.maxTiers + 1));
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msgs = result.error.issues.map((i) => i.message);
+      expect(msgs.some((m) => /tiers must contain between/.test(m))).toBe(true);
+    }
+  });
+
+  it("refine: non-contiguous tier numbers emits correct message", () => {
+    const base = buildValidFramework(FRAMEWORK.minTiers);
+    const skewed = {
+      ...base,
+      tiers: base.tiers.map((t, i) => (i === 0 ? { ...t, number: 99 } : t)),
+    };
+    const result = frameworkSchema.safeParse(skewed);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msgs = result.error.issues.map((i) => i.message);
+      expect(msgs.some((m) => /tier numbers must be contiguous starting at 1/.test(m))).toBe(true);
+    }
+  });
+
+  it("refine: exampleConcepts below minimum emits correct message", () => {
+    const base = buildValidFramework(FRAMEWORK.minTiers);
+    const tooFew = {
+      ...base,
+      tiers: base.tiers.map((t) => ({ ...t, exampleConcepts: [] })),
+    };
+    const result = frameworkSchema.safeParse(tooFew);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msgs = result.error.issues.map((i) => i.message);
+      expect(msgs.some((m) => /exampleConcepts must contain between/.test(m))).toBe(true);
+    }
+  });
+
+  it("superRefine: baselineScopeTiers must be contiguous emits correct message", () => {
+    const base = buildValidFramework(FRAMEWORK.maxTiers);
+    const skew = { ...base, estimatedStartingTier: 1, baselineScopeTiers: [1, 3] };
+    const result = frameworkSchema.safeParse(skew);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msgs = result.error.issues.map((i) => i.message);
+      expect(msgs.some((m) => /baselineScopeTiers must be contiguous/.test(m))).toBe(true);
+    }
+  });
+
+  it("superRefine: baselineScopeTiers unsorted emits correct message", () => {
+    const base = buildValidFramework(FRAMEWORK.maxTiers);
+    const unsorted = { ...base, estimatedStartingTier: 2, baselineScopeTiers: [3, 2] };
+    const result = frameworkSchema.safeParse(unsorted);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msgs = result.error.issues.map((i) => i.message);
+      expect(
+        msgs.some((m) => /baselineScopeTiers must be sorted ascending with no duplicates/.test(m)),
+      ).toBe(true);
+    }
+  });
+
+  it("superRefine: estimatedStartingTier outside tier set emits correct message", () => {
+    const base = buildValidFramework(FRAMEWORK.minTiers);
+    const skew = { ...base, estimatedStartingTier: 99, baselineScopeTiers: [99] };
+    const result = frameworkSchema.safeParse(skew);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msgs = result.error.issues.map((i) => i.message);
+      expect(
+        msgs.some((m) => /estimatedStartingTier must be one of the produced tier numbers/.test(m)),
+      ).toBe(true);
+    }
   });
 });

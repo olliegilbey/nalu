@@ -40,6 +40,8 @@ describe("parseClarifyResponse", () => {
 
 describe("parseFrameworkResponse", () => {
   const valid = {
+    // userMessage required by Task 7 frameworkSchema update.
+    userMessage: "Here's the ladder I drafted from your answers.",
     tiers: [
       { number: 1, name: "Basics", description: "d", exampleConcepts: ["e1", "e2", "e3", "e4"] },
       { number: 2, name: "Inter", description: "d", exampleConcepts: ["e1", "e2", "e3", "e4"] },
