@@ -1,112 +1,76 @@
+import type { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+
 /**
- * Heuristic post-mortem for `ValidationGateFailure`s during live smoke.
+ * Heuristic post-mortem for `ValidationGateFailure` during live smoke.
  *
- * Goal: one short string that points at the *probable root cause* of a
- * parse failure, so a reader scanning the smoke output can decide
- * "weak prompt vs noise" without re-reading the raw response.
- *
- * Strategy (cheap-to-expensive checks, first hit wins):
- *   1. **Tag presence.** If the parser's directive names a tag and the
- *      raw response contains a *different* known scoping tag, say so —
- *      this is the classic "model is in the wrong stage" failure.
- *   2. **Shape match.** If a known tag is present but the JSON inside
- *      shadows another stage's schema, surface that — e.g. a baseline
- *      payload that looks like a framework (`tiers` array present).
- *   3. **Fallback.** Echo the gate's `reason` field with a short hint.
- *
- * Heuristics are intentionally simple regex + keyword checks: they're
- * read by a human as *hypotheses*, not enforced as facts. No false
- * positives that mislead, no false negatives that hide signal.
+ * Under JSON-everywhere all parse failures fall into a small set:
+ *   1. Non-JSON response — directive starts with "Your previous response did not parse as JSON".
+ *   2. Missing required field — Zod error mentions a field path.
+ *   3. Wrong stage payload — the raw text JSON-parses but its keys belong to another stage.
+ *   4. Generic Zod failure — fall through with a short gloss.
  */
 
-import type { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
-import { extractTag } from "@/lib/llm/extractTag";
-
-/** Tags the scoping flow emits — the universe of "known stages" for shape mismatch. */
-const KNOWN_TAGS = ["questions", "framework", "baseline"] as const;
-type KnownTag = (typeof KNOWN_TAGS)[number];
-
-/** Keyword signatures inside a tag body that hint at *which* stage's payload it actually is. */
-const SHAPE_SIGNATURES: Record<KnownTag, readonly string[]> = {
-  // A clarify payload is a bare JSON array — no defining keys. Empty list = no
-  // shape signature (we never assert "it looks like clarify"); covered by tag-name match only.
-  questions: [],
-  framework: ['"tiers"', '"estimatedStartingTier"', '"baselineScopeTiers"'],
-  baseline: ['"questions"', '"id"', '"tier"', '"prompt"'],
+// Each signature is the *leaf* key name we expect to see quoted in the JSON
+// body — pre-flattened so the scoring loop is a plain `includes` check and
+// avoids chained string ops that trip typed-lint rules.
+const STAGE_KEY_SIGNATURES: Record<string, readonly string[]> = {
+  clarify: ["questions", "freetextRubric"],
+  framework: ["tiers", "estimatedStartingTier", "baselineScopeTiers"],
+  baseline: ["questions", "conceptName", "tier", "correct"],
+  "grade-baseline": ["gradings", "verdict", "qualityScore"],
 };
 
-/** Pull the expected tag name out of the parser's directive, if present. */
-function expectedTagFromDirective(directive: string): KnownTag | null {
-  for (const t of KNOWN_TAGS) {
-    if (directive.includes(`<${t}>`)) return t;
+// Minimum unique signature hits before we'll commit to a stage guess.
+const STAGE_MATCH_THRESHOLD = 2;
+
+function tryParseJson(raw: string): unknown | null {
+  // Local helper so the caller stays `const`-only (no `let` for try/catch result).
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
   }
-  return null;
 }
 
-/**
- * Score a candidate tag body for shape match — the count of signature
- * substrings it contains. Higher = stronger match.
- */
-function scoreShape(body: string, tag: KnownTag): number {
-  return SHAPE_SIGNATURES[tag].filter((sig) => body.includes(sig)).length;
+function detectStageFromBody(raw: string): string | null {
+  // Cheap JSON probe — if the response parses, count unique signature
+  // hits per stage. Highest score (≥ threshold) wins.
+  const parsed = tryParseJson(raw);
+  if (parsed === null) return null;
+  const haystack = JSON.stringify(parsed);
+  const scored = Object.entries(STAGE_KEY_SIGNATURES).map(([stage, sigs]) => {
+    const score = sigs.filter((sig) => haystack.includes(`"${sig}"`)).length;
+    return { stage, score };
+  });
+  const best = scored.reduce<{ stage: string; score: number }>(
+    (acc, cur) => (cur.score > acc.score ? cur : acc),
+    { stage: "", score: 0 },
+  );
+  return best.score >= STAGE_MATCH_THRESHOLD ? best.stage : null;
 }
 
 export function diagnoseFailure(err: ValidationGateFailure, raw: string): string {
-  const expected = expectedTagFromDirective(err.detail);
+  const detail = err.detail;
 
-  // (1) Tag-name mismatch: parser wants <X>, model emitted <Y>.
-  if (expected !== null) {
-    const presentOther = KNOWN_TAGS.filter((t) => t !== expected && extractTag(raw, t) !== null);
-    if (presentOther.length > 0) {
-      return (
-        `parser expected <${expected}> but the response contains ` +
-        `<${presentOther.join(">, <")}> — model appears to be in the wrong stage.`
-      );
-    }
-    // Tag missing entirely (no other known tag either).
-    if (extractTag(raw, expected) === null) {
-      return `parser expected <${expected}> but no such tag is present in the response.`;
-    }
-
-    // (2) Tag present — does its body match a *different* schema's signature?
-    const body = extractTag(raw, expected) ?? "";
-    const ownScore = scoreShape(body, expected);
-    const otherScores = KNOWN_TAGS.filter((t) => t !== expected).map((t) => ({
-      tag: t,
-      score: scoreShape(body, t),
-    }));
-    const bestOther = otherScores.reduce((a, b) => (b.score > a.score ? b : a), {
-      tag: expected,
-      score: -1,
-    });
-    if (bestOther.score > 0 && bestOther.score > ownScore) {
-      return (
-        `<${expected}> tag is present but its body matches the <${bestOther.tag}> schema ` +
-        `more closely than <${expected}> — the wrapper is right, the payload is from a different stage.`
-      );
-    }
-
-    // (3) Tag present, shape unclear — fall through to JSON/zod hint.
-    return interpretReason(err);
+  // (1) Non-JSON.
+  if (detail.toLowerCase().includes("did not parse as json")) {
+    return "model returned text that is not valid JSON — check for stray prose outside the JSON envelope.";
   }
 
-  return interpretReason(err);
-}
-
-/**
- * Last-resort interpreter when no tag hint is recoverable from the
- * directive. Surfaces the gate's reason field with a brief gloss, plus
- * the first zod-issue line if one is embedded.
- */
-function interpretReason(err: ValidationGateFailure): string {
-  // Parsers embed zod's `error.message` JSON verbatim in the detail string.
-  // If we can spot the leading '[' of a zod issue array, point the reader at it.
-  const zodHint = err.detail.match(/\[\s*\{[\s\S]*?"path":\s*\[[^\]]*\]/);
-  if (zodHint !== null) {
-    return `zod schema validation failed — see retry directive below for the precise field path(s).`;
+  // (2) Missing userMessage — every stage requires it.
+  if (detail.includes("userMessage") && detail.toLowerCase().includes("required")) {
+    return "response is missing the required `userMessage` field — every turn must include it.";
   }
-  if (err.reason === "missing_final_turn_tags") {
-    return `required final-turn tags (e.g. <next_lesson_blueprint>, <course_summary_update>) are missing.`;
+
+  // (3) Wrong-stage detection.
+  const detected = detectStageFromBody(raw);
+  if (detected !== null) {
+    return `body matches the ${detected} stage schema — model appears to have answered the wrong turn.`;
+  }
+
+  // (4) Generic Zod fallback.
+  if (detail.match(/\[\s*\{[\s\S]*?"path":\s*\[/)) {
+    return "zod schema validation failed — see retry directive below.";
   }
   return `gate '${err.reason}' tripped — see retry directive below.`;
 }

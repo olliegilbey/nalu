@@ -1,58 +1,29 @@
-import { describe, expect, test } from "vitest";
-import { diagnoseFailure } from "./diagnoseFailure";
+import { describe, expect, it } from "vitest";
 import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { diagnoseFailure } from "./diagnoseFailure";
 
-/**
- * The heuristic is intentionally simple — these tests assert the
- * *intent* of each branch fires on representative inputs. We don't try
- * to cover every phrasing of every diagnosis; we just want signal not
- * silence.
- */
+const fail = (msg: string) => new ValidationGateFailure("missing_response", msg);
 
-describe("diagnoseFailure — tag-name mismatch (wrong stage)", () => {
-  test("parser wants <baseline> but response has <framework>", () => {
-    const err = new ValidationGateFailure(
-      "missing_response",
-      "Your response was missing the required <baseline>{...}</baseline> tag.",
-    );
-    const raw = `<response>blah</response><framework>{"tiers":[]}</framework>`;
-    const out = diagnoseFailure(err, raw);
-    expect(out).toContain("<baseline>");
-    expect(out).toContain("<framework>");
-    expect(out).toContain("wrong stage");
+describe("diagnoseFailure (JSON contract)", () => {
+  it("calls out a non-JSON response", () => {
+    const err = fail("Your previous response did not parse as JSON.");
+    expect(diagnoseFailure(err, "<framework>...</framework>")).toMatch(/json/i);
   });
 
-  test("parser wants <framework> but no tag present at all", () => {
-    const err = new ValidationGateFailure(
-      "missing_response",
-      "Your response was missing the required <framework>{...}</framework> tag.",
-    );
-    const raw = `<response>Just prose, no payload.</response>`;
-    const out = diagnoseFailure(err, raw);
-    expect(out).toContain("<framework>");
-    expect(out).toContain("no such tag");
+  it("calls out a missing userMessage", () => {
+    const err = fail('"userMessage": Required');
+    expect(diagnoseFailure(err, '{"tiers":[]}')).toMatch(/userMessage/);
   });
-});
 
-describe("diagnoseFailure — shape mismatch (right wrapper, wrong payload)", () => {
-  test("baseline tag present but body looks like a framework", () => {
-    const err = new ValidationGateFailure(
-      "missing_response",
-      "Your <baseline> payload failed schema validation: foo.",
-    );
-    // Body has framework signatures but no baseline signatures.
-    const raw = `<baseline>{"tiers":[{"n":1}],"estimatedStartingTier":2,"baselineScopeTiers":[1,2]}</baseline>`;
-    const out = diagnoseFailure(err, raw);
-    expect(out).toContain("<baseline>");
-    expect(out).toContain("<framework>");
-    expect(out).toMatch(/payload is from a different stage|matches the <framework>/);
+  it("notes a plausible cross-stage payload (framework keys in a baseline turn)", () => {
+    const err = fail("baselineScopeTiers");
+    const raw =
+      '{"tiers":[{"number":1,"name":"a","description":"d","exampleConcepts":["x"]}],"estimatedStartingTier":1,"baselineScopeTiers":[1]}';
+    expect(diagnoseFailure(err, raw)).toMatch(/framework|stage/i);
   });
-});
 
-describe("diagnoseFailure — fallback", () => {
-  test("no tag hint and no zod issue array → reason gloss", () => {
-    const err = new ValidationGateFailure("missing_response", "Something generic went wrong.");
-    const out = diagnoseFailure(err, "completely empty raw");
-    expect(out).toContain("missing_response");
+  it("falls back to a generic message when no heuristic matches", () => {
+    const err = fail("something else");
+    expect(diagnoseFailure(err, '{"x":"y"}')).toMatch(/zod|gate|directive/i);
   });
 });
