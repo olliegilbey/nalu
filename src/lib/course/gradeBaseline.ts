@@ -9,7 +9,7 @@ import type { BaselineJsonb } from "@/lib/types/jsonb";
 import { baselineGradingSchema } from "@/lib/types/jsonb";
 import type { LlmUsage } from "@/lib/types/llm";
 import type { McOptionKey } from "@/lib/prompts/questionnaire";
-import { gradeMc, splitOne, ZERO_USAGE, toEvaluationItem } from "./gradeBaseline.internal";
+import { splitOne, ZERO_USAGE } from "./gradeBaseline.internal";
 
 export type BaselineAnswer =
   | { readonly id: string; readonly kind: "mc"; readonly selected: McOptionKey }
@@ -138,6 +138,3 @@ export async function gradeBaseline(params: GradeBaselineParams): Promise<GradeB
 
   return { gradings: mergedGradings, usage };
 }
-
-// Re-export so callers don't need to know about the internal helper.
-export { toEvaluationItem, gradeMc };
