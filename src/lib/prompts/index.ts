@@ -58,3 +58,5 @@ export { clarifySchema, type ClarifyTurn } from "./clarify";
 export { makeBaselineSchema, type BaselineTurn, type MakeBaselineSchemaParams } from "./baseline";
 
 export { renderScopingSystem, renderStageEnvelope } from "./scoping";
+
+export { gradeBaselineSchema, type GradeBaselineTurn } from "./baselineGrading";
