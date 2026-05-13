@@ -222,7 +222,7 @@ describe("course.clarify", () => {
     await withTestDb(async (db) => {
       await seedUser(db);
 
-      // First call: missing <questions> tag → parser throws ValidationGateFailure.
+      // First call: not valid JSON → JSON.parse throws → ValidationGateFailure.
       vi.mocked(generateChat)
         .mockResolvedValueOnce({ text: "<response>thinking...</response>", usage: FAKE_USAGE })
         .mockResolvedValueOnce({ text: validClarifyText(), usage: FAKE_USAGE });
@@ -256,7 +256,7 @@ describe("course.clarify", () => {
     await withTestDb(async (db) => {
       await seedUser(db);
 
-      // All 3 attempts fail — no <questions> tag.
+      // All 3 attempts fail — response is not valid JSON.
       vi.mocked(generateChat).mockResolvedValue({
         text: "<response>still no questions</response>",
         usage: FAKE_USAGE,
@@ -624,7 +624,7 @@ describe("course.generateBaseline", () => {
     await withTestDb(async (db) => {
       const courseId = await seedCourseWithFramework(db);
 
-      // First call: no <baseline> tag → executeTurn surfaces a ValidationGateFailure.
+      // First call: not valid JSON → executeTurn surfaces a ValidationGateFailure.
       vi.mocked(generateChat)
         .mockResolvedValueOnce({ text: "<response>thinking...</response>", usage: FAKE_USAGE })
         .mockResolvedValueOnce({ text: validBaselineText(), usage: FAKE_USAGE });
