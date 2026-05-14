@@ -136,9 +136,14 @@ export async function gradeBaseline(params: GradeBaselineParams): Promise<GradeB
     if (s.kind === "mechanical") return s.grading;
     const g = llmGradingsById[s.qid];
     if (!g) throw new Error(`no grading produced for ${s.qid}`);
+    // Enrich with `conceptTier` from the LLM-side item, which was sourced
+    // from the baseline question's tier. The wire schema doesn't carry
+    // conceptTier (LLM only emits conceptName), but persistence requires
+    // it so downstream consumers don't have to re-correlate.
     return {
       questionId: g.questionId,
       conceptName: g.conceptName,
+      conceptTier: s.item.tier,
       verdict: g.verdict,
       qualityScore: g.qualityScore,
       rationale: g.rationale,

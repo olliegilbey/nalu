@@ -218,6 +218,7 @@ describe("gradeBaseline — idempotency", () => {
       {
         questionId: "b1",
         conceptName: "c",
+        conceptTier: 1,
         verdict: "correct" as const,
         qualityScore: 4 as const,
         rationale: "already graded",

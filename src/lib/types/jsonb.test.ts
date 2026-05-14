@@ -3,6 +3,8 @@ import {
   clarificationJsonbSchema,
   frameworkJsonbSchema,
   baselineJsonbSchema,
+  baselineQuestionsJsonbSchema,
+  baselineClosedJsonbSchema,
   dueConceptsSnapshotSchema,
   seedSourceSchema,
   blueprintSchema,
@@ -108,9 +110,13 @@ describe("jsonb trust-boundary schemas", () => {
     ).toBeDefined();
   });
 
-  it("validates a baseline payload with gradings (camelCase)", () => {
+  // ---------------------------------------------------------------------------
+  // baselineQuestionsJsonbSchema — pre-close shape (after generateBaseline)
+  // ---------------------------------------------------------------------------
+
+  it("validates a pre-close baseline payload (questions/responses/gradings only)", () => {
     expect(
-      baselineJsonbSchema.parse({
+      baselineQuestionsJsonbSchema.parse({
         userMessage: "Here is your baseline assessment.",
         questions: [],
         responses: [],
@@ -118,6 +124,7 @@ describe("jsonb trust-boundary schemas", () => {
           {
             questionId: "b1",
             conceptName: "x",
+            conceptTier: 1,
             verdict: "correct",
             qualityScore: 4,
             rationale: "ok",
@@ -129,7 +136,7 @@ describe("jsonb trust-boundary schemas", () => {
 
   it("rejects a baseline grading with unknown verdict", () => {
     expect(() =>
-      baselineJsonbSchema.parse({
+      baselineQuestionsJsonbSchema.parse({
         userMessage: "Here is your baseline assessment.",
         questions: [],
         responses: [],
@@ -137,6 +144,7 @@ describe("jsonb trust-boundary schemas", () => {
           {
             questionId: "b1",
             conceptName: "x",
+            conceptTier: 1,
             verdict: "maybe",
             qualityScore: 4,
             rationale: "ok",
@@ -151,7 +159,7 @@ describe("jsonb trust-boundary schemas", () => {
   // via manual DB writes or future schema drift.
   it("rejects a baseline grading when verdict and qualityScore bands disagree", () => {
     expect(() =>
-      baselineJsonbSchema.parse({
+      baselineQuestionsJsonbSchema.parse({
         userMessage: "Here is your baseline assessment.",
         questions: [],
         responses: [],
@@ -159,6 +167,7 @@ describe("jsonb trust-boundary schemas", () => {
           {
             questionId: "b1",
             conceptName: "x",
+            conceptTier: 1,
             verdict: "correct", // band [4, 5]
             qualityScore: 1, // mismatch
             rationale: "ok",
@@ -166,6 +175,91 @@ describe("jsonb trust-boundary schemas", () => {
         ],
       }),
     ).toThrow();
+  });
+
+  // ---------------------------------------------------------------------------
+  // baselineClosedJsonbSchema — close-turn shape (after submitBaseline)
+  // ---------------------------------------------------------------------------
+
+  it("accepts the closing payload with summaries, startingTier, and per-grading conceptTier", () => {
+    const parsed = baselineClosedJsonbSchema.parse({
+      userMessage: "wrap-up",
+      questions: [
+        {
+          id: "b1",
+          type: "multiple_choice",
+          prompt: "Q",
+          options: { A: "a", B: "b", C: "c", D: "d" },
+          freetextRubric: "rubric",
+          conceptName: "ownership",
+          tier: 2,
+        },
+      ],
+      responses: [{ questionId: "b1", choice: "A" }],
+      gradings: [
+        {
+          questionId: "b1",
+          conceptName: "ownership",
+          conceptTier: 2,
+          verdict: "correct",
+          qualityScore: 5,
+          rationale: "fine",
+        },
+      ],
+      immutableSummary: "durable profile",
+      summarySeed: "evolving summary v0",
+      startingTier: 2,
+    });
+    expect(parsed.startingTier).toBe(2);
+    expect(parsed.gradings[0]?.conceptTier).toBe(2);
+  });
+
+  it("rejects verdict/qualityScore mismatch on the closed shape", () => {
+    expect(() =>
+      baselineClosedJsonbSchema.parse({
+        userMessage: "x",
+        questions: [],
+        responses: [],
+        gradings: [
+          {
+            questionId: "b1",
+            conceptName: "c",
+            conceptTier: 1,
+            verdict: "correct",
+            qualityScore: 1,
+            rationale: "r",
+          },
+        ],
+        immutableSummary: "s",
+        summarySeed: "s",
+        startingTier: 1,
+      }),
+    ).toThrow(/qualityScore/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // baselineJsonbSchema (union) — accepts either shape
+  // ---------------------------------------------------------------------------
+
+  it("parses both pre-close and closed payloads via the union", () => {
+    const preClose = baselineJsonbSchema.parse({
+      userMessage: "u",
+      questions: [],
+      responses: [],
+      gradings: [],
+    });
+    expect(preClose).toBeDefined();
+
+    const closed = baselineJsonbSchema.parse({
+      userMessage: "u",
+      questions: [],
+      responses: [],
+      gradings: [],
+      immutableSummary: "s",
+      summarySeed: "s",
+      startingTier: 1,
+    });
+    expect(closed).toBeDefined();
   });
 
   it("validates a due-concepts snapshot", () => {
@@ -181,10 +275,17 @@ describe("jsonb trust-boundary schemas", () => {
     ).toHaveLength(1);
   });
 
-  it("validates a scoping_handoff seed_source", () => {
-    expect(seedSourceSchema.parse({ kind: "scoping_handoff" })).toMatchObject({
+  // ---------------------------------------------------------------------------
+  // seedSourceSchema — discriminated union with blueprint on scoping_handoff
+  // ---------------------------------------------------------------------------
+
+  it("requires a blueprint on scoping_handoff seed_source", () => {
+    const ok = seedSourceSchema.parse({
       kind: "scoping_handoff",
+      blueprint: { topic: "t", outline: ["a"], openingText: "hi" },
     });
+    expect(ok.kind).toBe("scoping_handoff");
+    expect(() => seedSourceSchema.parse({ kind: "scoping_handoff" })).toThrow();
   });
 
   it("validates a prior_blueprint seed_source", () => {

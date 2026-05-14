@@ -94,12 +94,14 @@ export function gradeMc(question: StoredQuestion, selected: McOptionKey): Gradin
   if (question.type !== "multiple_choice") {
     throw new Error(`gradeMc called with free_text question ${question.id}`);
   }
-  // Baseline questions are required to carry `conceptName` (see baseline.ts
-  // superRefine). A missing value here means the upstream invariant slipped —
-  // fail loud rather than silently substituting the questionId as concept name,
-  // which would corrupt SM-2 scheduling against a synthetic concept.
+  // Baseline questions are required to carry `conceptName` AND `tier` (see
+  // baseline.ts superRefine). Silent defaults would corrupt SM-2 scheduling
+  // (synthetic concept) and starting-tier placement (tier=0). Fail loud.
   if (question.conceptName === undefined) {
     throw new Error(`gradeMc: baseline question ${question.id} missing required conceptName`);
+  }
+  if (question.tier === undefined) {
+    throw new Error(`gradeMc: baseline question ${question.id} missing required tier`);
   }
   const isCorrect = selected === question.correct;
   const qualityScore = isCorrect ? MC_CORRECT_QUALITY : MC_INCORRECT_QUALITY;
@@ -108,6 +110,11 @@ export function gradeMc(question: StoredQuestion, selected: McOptionKey): Gradin
   return {
     questionId: question.id,
     conceptName: question.conceptName,
+    // Enriched server-side from the question's tier — the LLM-facing grading
+    // schema doesn't emit conceptTier; persistence (`baselineGradingSchema`)
+    // requires it so downstream consumers don't re-correlate against
+    // `baseline.questions`.
+    conceptTier: question.tier,
     verdict,
     qualityScore,
     rationale: isCorrect

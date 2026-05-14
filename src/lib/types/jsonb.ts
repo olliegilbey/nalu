@@ -99,11 +99,21 @@ const VERDICT_QUALITY_BANDS: Readonly<
   incorrect: [0, 1],
 };
 
-/** LLM grading output for one baseline question. */
+/**
+ * LLM grading output for one baseline question, enriched server-side with
+ * `conceptTier` (looked up from the baseline question the grading targets).
+ *
+ * The LLM-facing v4 wire schema (`src/lib/prompts/baselineGrading.ts`) does
+ * NOT include `conceptTier` — the model only emits `conceptName`. The
+ * harness enriches with `conceptTier` from the baseline question before
+ * persisting, so downstream consumers (XP, SM-2 scheduling, starting-tier
+ * placement) don't need to re-correlate against `baseline.questions`.
+ */
 export const baselineGradingSchema = z
   .object({
     questionId: z.string(),
     conceptName: z.string(),
+    conceptTier: z.number().int().positive(),
     verdict: z.enum(["correct", "partial", "incorrect"]),
     qualityScore: qualityScoreSchema,
     rationale: z.string(),
@@ -119,13 +129,45 @@ export const baselineGradingSchema = z
     }
   });
 
-export const baselineJsonbSchema = z.object({
+/**
+ * What `generateBaseline` writes after questions are generated, before close.
+ * `gradings` is initialised empty here and populated by `gradeBaseline`.
+ */
+export const baselineQuestionsJsonbSchema = z.object({
   /** The model's framing message for this baseline turn. Persisted so cached replay can return the model's exact wording. */
   userMessage: z.string(),
   questions: z.array(v3Question),
   responses: z.array(v3Response),
   gradings: z.array(baselineGradingSchema),
 });
+export type BaselineQuestionsJsonb = z.infer<typeof baselineQuestionsJsonbSchema>;
+
+/**
+ * What `submitBaseline` writes on close. Strict superset of the pre-close
+ * shape, with the close-turn outputs added: dual summaries (immutable
+ * profile + evolving seed) and the chosen `startingTier`.
+ */
+export const baselineClosedJsonbSchema = baselineQuestionsJsonbSchema.extend({
+  immutableSummary: z.string(),
+  summarySeed: z.string(),
+  startingTier: z.number().int().positive(),
+});
+export type BaselineClosedJsonb = z.infer<typeof baselineClosedJsonbSchema>;
+
+/**
+ * Row-guard schema: accepts either shape — the closed shape is a strict
+ * superset of the pre-close shape, so consumers discriminate by checking
+ * `"startingTier" in baseline`.
+ *
+ * The closed arm is listed first so payloads carrying close-turn fields
+ * surface their stricter parse errors (e.g. missing `summarySeed`) rather
+ * than silently degrading to the pre-close shape, which would strip those
+ * fields.
+ */
+export const baselineJsonbSchema = z.union([
+  baselineClosedJsonbSchema,
+  baselineQuestionsJsonbSchema,
+]);
 export type BaselineJsonb = z.infer<typeof baselineJsonbSchema>;
 
 // --- waves.due_concepts_snapshot ------------------------------------------
@@ -164,8 +206,15 @@ export type Blueprint = z.infer<typeof blueprintSchema>;
  * on whether this is the first Wave (scoping handoff) or a continuation.
  */
 export const seedSourceSchema = z.discriminatedUnion("kind", [
-  /** Wave 1: seeded directly from the scoping framework output. */
-  z.object({ kind: z.literal("scoping_handoff") }),
+  /**
+   * Wave 1: seeded from the scoping close-turn output. The blueprint here is
+   * the one emitted alongside `startingContext` when scoping finalised,
+   * carried over to seed the first teaching Wave's opening prompt.
+   */
+  z.object({
+    kind: z.literal("scoping_handoff"),
+    blueprint: blueprintSchema,
+  }),
   /** Wave N>1: seeded from the prior Wave's emitted blueprint. */
   z.object({
     kind: z.literal("prior_blueprint"),
