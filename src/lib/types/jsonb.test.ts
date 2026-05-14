@@ -16,6 +16,7 @@ describe("jsonb trust-boundary schemas", () => {
   it("validates a clarification payload with a free_text question", () => {
     expect(
       clarificationJsonbSchema.parse({
+        userMessage: "Let me ask you a few questions.",
         questions: [
           {
             id: "q1",
@@ -32,6 +33,7 @@ describe("jsonb trust-boundary schemas", () => {
   it("validates a clarification payload with a multiple_choice question", () => {
     expect(
       clarificationJsonbSchema.parse({
+        userMessage: "Here are your questions.",
         questions: [
           {
             id: "q1",
@@ -50,6 +52,7 @@ describe("jsonb trust-boundary schemas", () => {
   it("validates a clarification response (freetext)", () => {
     expect(
       clarificationJsonbSchema.parse({
+        userMessage: "Here are your questions.",
         questions: [
           {
             id: "q1",
@@ -66,6 +69,7 @@ describe("jsonb trust-boundary schemas", () => {
   it("rejects a clarification response with both choice and freetext", () => {
     expect(() =>
       clarificationJsonbSchema.parse({
+        userMessage: "Here are your questions.",
         questions: [
           {
             id: "q1",
@@ -106,6 +110,7 @@ describe("jsonb trust-boundary schemas", () => {
   it("validates a baseline payload with gradings (camelCase)", () => {
     expect(
       baselineJsonbSchema.parse({
+        userMessage: "Here is your baseline assessment.",
         questions: [],
         responses: [],
         gradings: [
@@ -124,6 +129,7 @@ describe("jsonb trust-boundary schemas", () => {
   it("rejects a baseline grading with unknown verdict", () => {
     expect(() =>
       baselineJsonbSchema.parse({
+        userMessage: "Here is your baseline assessment.",
         questions: [],
         responses: [],
         gradings: [

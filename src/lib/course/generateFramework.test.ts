@@ -31,6 +31,7 @@ const TOPIC = "Rust ownership";
 
 /** Minimal valid ClarificationJsonb — new camelCase/prompt shape. */
 const CLARIFICATION = {
+  userMessage: "Let me ask you a few questions.",
   questions: [
     {
       id: "q1",
@@ -200,6 +201,7 @@ describe("generateFramework", () => {
     const xssCourse = {
       ...SCOPING_COURSE,
       clarification: {
+        userMessage: "Let me ask you a few questions.",
         questions: [
           {
             id: "q1",

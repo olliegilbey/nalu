@@ -84,9 +84,9 @@ describe("assertFrameworkStructural", () => {
     expect(() => assertFrameworkStructural(fw)).toThrow();
   });
 
-  it("throws when tier count > 7", () => {
-    // Build 8 tiers via spread.
-    const extra = [4, 5, 6, 7, 8].map((n) => ({
+  it("throws when tier count > FRAMEWORK.maxTiers (8)", () => {
+    // Build 9 tiers via spread (3 from validFramework + 6 extra = 9 > maxTiers).
+    const extra = [4, 5, 6, 7, 8, 9].map((n) => ({
       number: n,
       name: `Tier ${n}`,
       description: "desc",

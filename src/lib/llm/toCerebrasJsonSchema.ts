@@ -79,6 +79,29 @@ export function toCerebrasJsonSchema<T>(
 }
 
 /**
+ * Convenience: stringify just the cleaned schema body (no wrapper) for
+ * inlining into the user-side prompt envelope.
+ *
+ * Why this exists: `response_format` on the wire is documented but
+ * historically free-tier Cerebras models (notably `llama3.1-8b`) ignore
+ * strict-mode constrained decoding and emit free-form JSON. Inlining the
+ * same schema bytes into the user envelope gives the model an in-context
+ * shape contract it can read directly, which empirically fixes the issue
+ * without forcing a model upgrade.
+ *
+ * The string returned here is byte-equivalent to
+ * `JSON.stringify(toCerebrasJsonSchema(schema, opts).schema, null, 2)` — i.e.
+ * the *post-strip* shape that Cerebras actually receives, so the prompt
+ * and the wire payload agree.
+ */
+export function toSchemaJsonString<T>(
+  schema: z.ZodType<T>,
+  opts: CerebrasJsonSchemaOptions,
+): string {
+  return JSON.stringify(toCerebrasJsonSchema(schema, opts).schema, null, 2);
+}
+
+/**
  * Compute the JSON Schema *structural* depth of a node.
  *
  * Only increments when entering a new schema "level" — i.e. descending into

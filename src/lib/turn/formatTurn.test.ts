@@ -65,6 +65,30 @@ describe("formatPromptBlock", () => {
     expect(out).toContain("─── user ───");
     expect(out).toContain("USER_TEXT");
   });
+
+  test("header annotates that role separators are stderr-only, not wire bytes", () => {
+    const out = formatPromptBlock([{ role: "user", content: "x" }]);
+    // Future readers need to know the separators are not part of the
+    // wire payload — otherwise they'll wonder why the model "sees" them.
+    expect(out).toContain("messages sent to model");
+    expect(out).toContain("stderr-only");
+    expect(out).toContain("not in the wire payload");
+  });
+
+  test("appends response_format block when schema is supplied", () => {
+    const schema = '{"type":"object","required":["x"]}';
+    const out = formatPromptBlock([{ role: "user", content: "hi" }], schema);
+    // Schema body is rendered verbatim so the reader can spot drift.
+    expect(out).toContain(schema);
+    // And clearly labelled — including the "not a message" disclaimer.
+    expect(out).toContain("response_format");
+    expect(out).toContain("not as a message");
+  });
+
+  test("omits the response_format block when no schema is supplied", () => {
+    const out = formatPromptBlock([{ role: "user", content: "hi" }]);
+    expect(out).not.toContain("response_format");
+  });
 });
 
 describe("formatResponseBlock", () => {

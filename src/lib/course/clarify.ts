@@ -1,9 +1,11 @@
-import { sanitiseUserInput } from "@/lib/security/sanitiseUserInput";
 import { executeTurn } from "@/lib/turn/executeTurn";
+import { buildRetryDirective } from "@/lib/turn/retryDirective";
 import { createCourse, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { clarifySchema, type ClarifyTurn } from "@/lib/prompts/clarify";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
+import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
+import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import type { ClarificationJsonb } from "@/lib/types/jsonb";
 
 /** Parameters for {@link clarify}. */
@@ -38,7 +40,7 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
     return {
       courseId: course.id,
       clarification: {
-        userMessage: "", // userMessage not persisted post-clarify — UI shows nothing on replay.
+        userMessage: stored.userMessage,
         questions: { questions: stored.questions },
       },
       nextStage: "framework",
@@ -46,22 +48,43 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
   }
 
   const pass = await ensureOpenScopingPass(course.id);
+  // Build schema string regardless — retry directive always needs it (the
+  // model failed and must see the contract again even on strong models).
+  // `sanitiseUserInput` is intentionally NOT applied here: the
+  // `<user_message>` wrapper was a teaching-layer convention and the new
+  // scoping system prompt doesn't reference it. `renderStageEnvelope`
+  // already XML-escapes `learnerInput`, so passing the raw topic is safe.
+  const modelName = process.env.LLM_MODEL ?? "(default)";
+  const capabilities = getModelCapabilities(modelName);
+  const schemaJson = toSchemaJsonString(clarifySchema, { name: "clarify" });
   const { parsed } = await executeTurn({
     parent: { kind: "scoping", id: pass.id },
     seed: { kind: "scoping", topic: params.topic },
     userMessageContent: renderStageEnvelope({
       stage: "clarify",
-      learnerInput: sanitiseUserInput(params.topic),
+      learnerInput: params.topic,
+      // Inline schema only for models that ignore wire response_format.
+      // Strong models read the schema from the wire; sending it inline too
+      // wastes ~3-5 KB per turn without adding reliability.
+      responseSchema: capabilities.honorsStrictMode ? undefined : schemaJson,
     }),
     responseSchema: clarifySchema,
     responseSchemaName: "clarify",
+    // Schema always provided to retry directive — a failed model must see the
+    // contract again regardless of whether it normally honours strict-mode.
+    retryDirective: (err) => buildRetryDirective(err, schemaJson),
     label: "clarify",
     successSummary: (p) => `questions=${p.questions.questions.length}`,
   });
 
   // Persist wire shape directly. responses start empty; populated after the learner submits.
+  // userMessage persisted so cached-replay returns the model's framing, not "".
   await updateCourseScopingState(course.id, {
-    clarification: { questions: parsed.questions.questions, responses: [] },
+    clarification: {
+      userMessage: parsed.userMessage,
+      questions: parsed.questions.questions,
+      responses: [],
+    },
   });
 
   return { courseId: course.id, clarification: parsed, nextStage: "framework" };

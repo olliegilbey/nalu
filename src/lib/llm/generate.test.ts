@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z } from "zod/v4";
 
 // Mock the `ai` module so we never dispatch real network calls. We
@@ -16,6 +16,13 @@ vi.mock("./provider", () => ({
 
 import { generateChat } from "./generate";
 import { LLM } from "@/lib/config/tuning";
+
+// Ensure tests run against a model that honours strict-mode so responseFormat
+// assertions are meaningful. `vi.stubEnv` is the idiomatic Vitest approach —
+// no mutable let, automatically restored between tests.
+beforeEach(() => {
+  vi.stubEnv("LLM_MODEL", "llama-3.3-70b");
+});
 
 describe("generateChat", () => {
   it("returns text + usage from generateText", async () => {

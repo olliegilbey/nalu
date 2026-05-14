@@ -56,6 +56,8 @@ const v3Response = z
   });
 
 export const clarificationJsonbSchema = z.object({
+  /** The model's framing message for this clarification turn. Persisted so cached replay can return the model's exact wording. */
+  userMessage: z.string(),
   questions: z.array(v3Question),
   responses: z.array(v3Response),
 });
@@ -90,6 +92,8 @@ export const baselineGradingSchema = z.object({
 });
 
 export const baselineJsonbSchema = z.object({
+  /** The model's framing message for this baseline turn. Persisted so cached replay can return the model's exact wording. */
+  userMessage: z.string(),
   questions: z.array(v3Question),
   responses: z.array(v3Response),
   gradings: z.array(baselineGradingSchema),

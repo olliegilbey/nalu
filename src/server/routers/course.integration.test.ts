@@ -484,6 +484,7 @@ describe("course.generateBaseline", () => {
     // Populate clarification — camelCase v3 shape.
     await updateCourseScopingState(course.id, {
       clarification: {
+        userMessage: "Let me ask you a few questions.",
         questions: [
           {
             id: "q1",
@@ -565,6 +566,7 @@ describe("course.generateBaseline", () => {
 
       // Pre-populate baseline directly — camelCase BaselineJsonb.
       const storedBaseline = {
+        userMessage: "Here is your baseline.",
         questions: [
           mcQuestion("b1", 1),
           mcQuestion("b2", 2),
@@ -602,6 +604,7 @@ describe("course.generateBaseline", () => {
       const course = await createCourse({ userId: USER, topic: "Rust" });
       await updateCourseScopingState(course.id, {
         clarification: {
+          userMessage: "Let me ask you a few questions.",
           questions: [
             { id: "q1", prompt: "Goal?", type: "free_text" as const, freetextRubric: "r" },
           ],

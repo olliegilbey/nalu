@@ -3,6 +3,7 @@ import type { z } from "zod/v4";
 import { LLM } from "@/lib/config/tuning";
 import { getLlmModel } from "./provider";
 import { toCerebrasJsonSchema } from "./toCerebrasJsonSchema";
+import { getModelCapabilities } from "./modelCapabilities";
 import type { LlmMessage, LlmModel, LlmUsage } from "@/lib/types/llm";
 
 /**
@@ -44,18 +45,33 @@ export interface ChatResult {
 
 /**
  * Chat call. When `responseSchema` is supplied, Cerebras constrained decoding
- * guarantees the output parses as JSON matching the schema (modulo business
- * invariants — those still run Zod-side in the caller).
+ * is used — but only for models that honour strict-mode JSON schema decoding.
+ *
+ * WHY the model gate: weak models (e.g. llama3.1-8b on Cerebras free tier)
+ * silently ignore `response_format: { type: "json_schema", strict: true }` and
+ * emit free-form JSON anyway. Sending `response_format` to them wastes bytes on
+ * the wire and obscures the actual contract. Those models get an inline
+ * `<response_schema>` block in the user envelope instead (handled at the prompt
+ * assembly layer in `src/lib/course/`). Strong models (e.g. llama-3.3-70b)
+ * honour strict-mode; they get `response_format` only and no inline duplicate.
+ *
+ * Model name is read from `process.env.LLM_MODEL` (the same source `provider.ts`
+ * uses to configure the provider). An unrecognised model defaults to
+ * `honorsStrictMode: true` — see `modelCapabilities.ts`.
  */
 export async function generateChat(
   messages: readonly LlmMessage[],
   opts: ChatOptions = {},
 ): Promise<ChatResult> {
-  // Build the responseFormat only when a schema is explicitly provided.
-  // Spreading undefined keys into generateText args would send them as
-  // `responseFormat: undefined` which some SDK versions treat as an error.
+  // Determine whether this model honours strict-mode constrained decoding.
+  const modelName = process.env.LLM_MODEL ?? "(default)";
+  const capabilities = getModelCapabilities(modelName);
+
+  // Build the responseFormat only when a schema is provided AND the model
+  // will actually honour it. Spreading undefined into generateText would
+  // send `responseFormat: undefined`, which some SDK versions treat as an error.
   const responseFormat =
-    opts.responseSchema !== undefined
+    opts.responseSchema !== undefined && capabilities.honorsStrictMode
       ? toCerebrasJsonSchema(opts.responseSchema, {
           name: opts.responseSchemaName ?? "response",
         })

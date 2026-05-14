@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod/v4";
-import { toCerebrasJsonSchema } from "./toCerebrasJsonSchema";
+import { toCerebrasJsonSchema, toSchemaJsonString } from "./toCerebrasJsonSchema";
 
 describe("toCerebrasJsonSchema", () => {
   it("strips minItems/maxItems on arrays", () => {
@@ -146,6 +146,20 @@ describe("toCerebrasJsonSchema", () => {
     const schema = z.object({ x: z.string() });
     const out = toCerebrasJsonSchema(schema, { name: "my_schema" });
     expect((out as { name?: string }).name).toBe("my_schema");
+  });
+
+  it("toSchemaJsonString returns pretty-printed body matching the cleaned schema", () => {
+    const schema = z.object({ x: z.string().describe("[UI] greeting") });
+    const wire = toCerebrasJsonSchema(schema, { name: "t" });
+    const str = toSchemaJsonString(schema, { name: "t" });
+    // Body matches the post-strip wire shape, byte-for-byte.
+    expect(str).toBe(JSON.stringify(wire.schema, null, 2));
+    // Pretty-printed (contains a newline + indentation).
+    expect(str).toMatch(/\n {2}/);
+    // Descriptions survive so the inlined block stays human-readable.
+    expect(str).toContain("[UI] greeting");
+    // Forbidden keywords are absent in the stringified output too.
+    expect(str).not.toContain("$schema");
   });
 
   it("error message includes schema name and actual depth", () => {

@@ -1,10 +1,13 @@
 import { TRPCError } from "@trpc/server";
 import { executeTurn } from "@/lib/turn/executeTurn";
+import { buildRetryDirective } from "@/lib/turn/retryDirective";
 import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { SCOPING } from "@/lib/config/tuning";
 import { frameworkSchema, type Framework } from "@/lib/prompts/framework";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
+import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
+import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import type { ClarificationJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
 export interface GenerateFrameworkParams {
@@ -60,8 +63,10 @@ export async function generateFramework(
   // Persist the learner's responses on the clarification row before calling the LLM,
   // so a retry of generateFramework does not lose them. Idempotent: overwrites the
   // empty `responses: []` initialised by clarify.
+  // Preserve the existing userMessage so the parse-before-persist guard passes.
   await updateCourseScopingState(course.id, {
     clarification: {
+      userMessage: clarification.userMessage,
       questions: clarification.questions,
       responses: params.responses.map((r) => ({ questionId: r.questionId, freetext: r.freetext })),
     },
@@ -80,15 +85,24 @@ export async function generateFramework(
     .join("\n\n");
 
   const pass = await ensureOpenScopingPass(course.id);
+  // Build schema string regardless — retry directive always needs it.
+  // Gate the inline on model capability: weak models (honorsStrictMode=false)
+  // get the schema inlined in the envelope; strong models read it from the
+  // wire response_format and don't need the extra tokens.
+  const modelName = process.env.LLM_MODEL ?? "(default)";
+  const capabilities = getModelCapabilities(modelName);
+  const schemaJson = toSchemaJsonString(frameworkSchema, { name: "framework" });
   const { parsed } = await executeTurn({
     parent: { kind: "scoping", id: pass.id },
     seed: { kind: "scoping", topic: course.topic },
     userMessageContent: renderStageEnvelope({
       stage: "generate framework",
       learnerInput: qaPairs,
+      responseSchema: capabilities.honorsStrictMode ? undefined : schemaJson,
     }),
     responseSchema: frameworkSchema,
     responseSchemaName: "framework",
+    retryDirective: (err) => buildRetryDirective(err, schemaJson),
     label: "framework",
     successSummary: (p) => `tiers=${p.tiers.length} startTier=${p.estimatedStartingTier}`,
   });

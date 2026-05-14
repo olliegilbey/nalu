@@ -10,6 +10,8 @@ import type { ContextMessage } from "@/db/schema";
 import { generateChat } from "@/lib/llm/generate";
 import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
 import { renderContext } from "@/lib/llm/renderContext";
+import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
+import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { SCOPING } from "@/lib/config/tuning";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 import type { SeedInputs } from "@/lib/types/context";
@@ -134,6 +136,17 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   const label = params.label ?? params.seed.kind;
   const headerTopic = params.seed.kind === "scoping" ? params.seed.topic : params.seed.courseTopic;
   const modelName = process.env.LLM_MODEL ?? "(default)";
+  const capabilities = getModelCapabilities(modelName);
+  // Wire-side response_format schema string — only built and displayed in live
+  // mode AND only when the model actually honours strict-mode (i.e. will receive
+  // response_format). Weak models get the schema inline in the user envelope
+  // instead; showing it here would misrepresent the wire payload.
+  const liveSchemaJson =
+    live && capabilities.honorsStrictMode
+      ? toSchemaJsonString(params.responseSchema, {
+          name: params.responseSchemaName ?? params.seed.kind,
+        })
+      : undefined;
 
   /**
    * Recursive attempt loop — functional alternative to mutable loop state.
@@ -186,7 +199,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
     // Verbose mode: prompt printed inline before the call. Quiet mode:
     // suppressed on success, but we'll retroactively print it on failure.
     if (live && !quiet) {
-      process.stderr.write(formatPromptBlock(llmMessages));
+      process.stderr.write(formatPromptBlock(llmMessages, liveSchemaJson));
     }
 
     const t0 = Date.now();
@@ -229,7 +242,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       // In verbose mode they're already on stderr; just append diagnosis.
       if (live) {
         if (quiet) {
-          process.stderr.write(formatPromptBlock(llmMessages));
+          process.stderr.write(formatPromptBlock(llmMessages, liveSchemaJson));
           process.stderr.write(formatResponseBlock(result.text, dt, result.usage));
         }
         const diagnosis = diagnoseFailure(err, result.text);

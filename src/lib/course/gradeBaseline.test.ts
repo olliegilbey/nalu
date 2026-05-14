@@ -66,7 +66,7 @@ function ftQ(id: string, tier: number) {
 
 /** Build a minimal BaselineJsonb with the given questions. */
 function storedBaseline(questions: ReturnType<typeof mcQ>[]): BaselineJsonb {
-  return { questions, responses: [], gradings: [] };
+  return { userMessage: "Here is your baseline.", questions, responses: [], gradings: [] };
 }
 
 function scopingCourse(baseline: BaselineJsonb): Course {
@@ -75,7 +75,7 @@ function scopingCourse(baseline: BaselineJsonb): Course {
     userId: USER_ID,
     topic: TOPIC,
     status: "scoping",
-    clarification: { questions: [], responses: [] },
+    clarification: { userMessage: "", questions: [], responses: [] },
     framework: { tiers: [], estimatedStartingTier: 1, baselineScopeTiers: [1] },
     baseline,
   } as unknown as Course;
@@ -229,6 +229,7 @@ describe("gradeBaseline — idempotency", () => {
       topic: TOPIC,
       status: "scoping",
       baseline: {
+        userMessage: "Here is your baseline.",
         questions: [mcQ("b1", 1, "A")],
         responses: [],
         gradings: existingGradings,

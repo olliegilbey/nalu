@@ -47,12 +47,40 @@ function colorEnabled(): boolean {
 function wrap(code: number, s: string): string {
   return colorEnabled() ? `\x1b[${code}m${s}\x1b[0m` : s;
 }
+/**
+ * Wrap with two SGR codes (e.g. dim + cyan). Keeps each segment readable
+ * by emitting both codes in one prefix and a single reset on the suffix.
+ */
+function wrap2(c1: number, c2: number, s: string): string {
+  return colorEnabled() ? `\x1b[${c1};${c2}m${s}\x1b[0m` : s;
+}
 const dim = (s: string): string => wrap(2, s);
 const bold = (s: string): string => wrap(1, s);
 const red = (s: string): string => wrap(31, s);
 const green = (s: string): string => wrap(32, s);
 const yellow = (s: string): string => wrap(33, s);
 const cyan = (s: string): string => wrap(36, s);
+// Bold variants used to differentiate role separators without colliding
+// with the success/failure palette (✓ green, ✗ red).
+const boldMagenta = (s: string): string => wrap2(1, 35, s);
+const boldBlue = (s: string): string => wrap2(1, 34, s);
+const boldYellow = (s: string): string => wrap2(1, 33, s);
+// Dim+cyan for the inlined `response_format` block so it visually
+// separates from message bodies while staying readable.
+const dimCyan = (s: string): string => wrap2(2, 36, s);
+
+/**
+ * Per-role separator color. Chosen so each role has a distinct hue on
+ * both dark and light backgrounds and so the assistant separator does
+ * NOT reuse `green` (which is the success ✓ color) or `red` (failure).
+ */
+function colorForRole(role: string): (s: string) => string {
+  if (role === "system") return boldMagenta;
+  if (role === "user") return boldBlue;
+  if (role === "assistant") return boldYellow;
+  // Fallback — keeps `tool` / future roles visible but not styled.
+  return dim;
+}
 
 // ---------------------------------------------------------------------------
 // Header
@@ -88,16 +116,35 @@ export function formatHeader(ctx: HeaderContext): string {
  * Renders the flattened LLM message list with `─── role ───` separators.
  * Body is raw text — never colored — so what you see is byte-identical
  * to what was sent (modulo the separator lines themselves).
+ *
+ * When `schema` is supplied, appends a clearly-labelled
+ * `▼ response_format` block AFTER the messages so the reader can see the
+ * full wire payload the provider receives. The schema string is NOT a
+ * message — the header annotation calls this out explicitly so future
+ * readers don't mistake it for one.
+ *
+ * The header line also annotates that `─── role ───` separators are
+ * stderr-only formatting; they do not appear in the actual wire payload.
  */
-export function formatPromptBlock(messages: readonly LlmMessage[]): string {
+export function formatPromptBlock(messages: readonly LlmMessage[], schema?: string): string {
+  // Header doubles as a legend for the `─── role ───` lines below.
   const header = dim(
-    `▼ prompt sent (${messages.length} message${messages.length === 1 ? "" : "s"})`,
+    `▼ messages sent to model (${messages.length}) — \`─── role ───\` lines are stderr-only, not in the wire payload`,
   );
   const blocks = messages.map((m) => {
-    const sep = dim(`─── ${m.role} ───`);
+    // Role-specific color on the separator so the eye can scan quickly.
+    const colorise = colorForRole(m.role);
+    const sep = colorise(`─── ${m.role} ───`);
     return `${sep}\n${stringifyMessageContent(m)}`;
   });
-  return `\n${header}\n${blocks.join("\n")}\n`;
+  // Optional schema block: surfaces what `generateChat` actually puts
+  // into `response_format.json_schema.schema`. Use dim+cyan to keep it
+  // visually distinct from the message bodies above.
+  const schemaPart =
+    schema !== undefined
+      ? `\n${dimCyan("▼ response_format (sent as `response_format.json_schema.schema`, not as a message)")}\n${schema}\n`
+      : "";
+  return `\n${header}\n${blocks.join("\n")}\n${schemaPart}`;
 }
 
 /**
@@ -159,10 +206,47 @@ export function formatParseFailure(
   const head = `${red("✗")} ${bold("parse FAILED")}  ${cyan(label)}  ${yellow(err.reason)}`;
   const diag = `  ${dim("└─")} ${bold("diagnosis:")} ${diagnosis}`;
   // Indent each line of the retry directive so multi-line ones stay aligned.
-  const indented = err.detail
-    .split("\n")
-    .map((l) => `       ${l}`)
-    .join("\n");
+  // The directive may include a `<response_schema>` block (when callers
+  // pass a `buildRetryDirective` factory). Dim those lines so the
+  // imperative prose stands out against the schema body.
+  const indented = colorizeDirectiveLines(err.detail);
   const directive = `  ${dim("└─")} ${bold("retry directive (sent to model verbatim next attempt):")}\n${indented}`;
   return `${head}\n${diag}\n${directive}\n`;
+}
+
+/**
+ * Indent + dim-highlight the schema portion of a retry directive.
+ *
+ * The directive format is:
+ *   <imperative prose>
+ *   <response_schema>
+ *   …JSON…
+ *   </response_schema>
+ *
+ * We dim everything from the opening tag through the closing tag so the
+ * actionable prose stays bright while the bulky schema body recedes.
+ * If no `<response_schema>` block is present (e.g. caller didn't pass a
+ * factory), every line is left uncoloured.
+ */
+function colorizeDirectiveLines(detail: string): string {
+  const lines = detail.split("\n");
+  // Track whether we're inside the schema block to choose a per-line style.
+  // `reduce` keeps the function `let`-free under `functional/no-let`.
+  return lines
+    .reduce<{ readonly out: readonly string[]; readonly inSchema: boolean }>(
+      (acc, line) => {
+        // Opening tag enters the block (and is itself dimmed).
+        if (line.includes("<response_schema>")) {
+          return { out: [...acc.out, `       ${dim(line)}`], inSchema: true };
+        }
+        // Closing tag exits (still part of the block visually).
+        if (line.includes("</response_schema>")) {
+          return { out: [...acc.out, `       ${dim(line)}`], inSchema: false };
+        }
+        const styled = acc.inSchema ? dim(line) : line;
+        return { out: [...acc.out, `       ${styled}`], inSchema: acc.inSchema };
+      },
+      { out: [], inSchema: false },
+    )
+    .out.join("\n");
 }

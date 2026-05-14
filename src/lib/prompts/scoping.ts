@@ -20,7 +20,7 @@ export function renderScopingSystem(inputs: ScopingSeedInputs): string {
   return `<role>
 You are Nalu, an expert teacher and tutor. You are building a bespoke course for a learner on the topic of <scoping_topic>${escapeXmlText(inputs.topic)}</scoping_topic>.
 
-Each turn, reply with a single JSON object matching the response schema attached to that turn. Field-level guidance lives in the schema's description metadata — read it carefully before generating. No prose outside the JSON object.
+Each turn you receive a <response_schema> block inside the user message. Reply with a single JSON object whose top-level keys are EXACTLY the keys named in that schema's "required" array, and whose value shapes match the schema's "properties". Field-level guidance lives in each property's "description" — read it before generating. Do not invent fields the schema does not declare. No prose outside the JSON object.
 </role>`;
 }
 
@@ -29,17 +29,42 @@ export interface RenderStageEnvelopeParams {
   readonly stage: "clarify" | "generate framework" | "generate baseline" | "grade baseline";
   /** Learner input — XML-escaped before embedding. May be empty for stage-only envelopes. */
   readonly learnerInput: string;
+  /**
+   * Optional JSON-Schema string for the response shape this turn must
+   * match. Inlined into the envelope verbatim inside `<response_schema>`.
+   * Should be the same post-strip shape the wire `response_format` sees,
+   * built via `toSchemaJsonString`. Inlining is necessary because some
+   * free-tier Cerebras models (llama3.1-8b) silently ignore
+   * `response_format: { type: "json_schema", strict: true }` and emit
+   * free-form JSON; an in-context schema gives them a shape contract
+   * they actually read.
+   *
+   * Lives on the user envelope, NOT the system prompt, because the
+   * schema differs per stage and the system prompt must stay cache-prefix
+   * stable across all turns of a scoping pass.
+   */
+  readonly responseSchema?: string;
 }
 
 /**
  * Build the per-turn user-role envelope. Minimal by design — the schema's
- * descriptions carry per-field guidance; this wrapper just names the stage
- * and surfaces the learner's input. Cache-prefix stability: the only
- * variable bytes per turn are the stage label and the escaped input.
+ * descriptions carry per-field guidance; this wrapper names the stage,
+ * surfaces the learner's input, and (when supplied) inlines the response
+ * schema as a redundant in-context contract. Cache-prefix stability: the
+ * only variable bytes per turn are the stage label, the escaped input,
+ * and (per stage) the schema JSON.
  */
 export function renderStageEnvelope(params: RenderStageEnvelopeParams): string {
+  // Schema is emitted as a *raw* JSON literal — no XML escaping, because
+  // its contents are first-party (we built it) and JSON has no `<`/`>`
+  // tokens that would collide with the surrounding tags in practice. The
+  // model needs to parse it as JSON to read the field shapes.
+  const schemaBlock =
+    params.responseSchema !== undefined
+      ? `\n<response_schema>\n${params.responseSchema}\n</response_schema>`
+      : "";
   return `<stage>${params.stage}</stage>
 <learner_input>
 ${escapeXmlText(params.learnerInput)}
-</learner_input>`;
+</learner_input>${schemaBlock}`;
 }

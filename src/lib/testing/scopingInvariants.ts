@@ -11,7 +11,7 @@
 
 import { expect } from "vitest";
 import type { FrameworkJsonb } from "@/lib/types/jsonb";
-import { BASELINE } from "@/lib/config/tuning";
+import { BASELINE, FRAMEWORK } from "@/lib/config/tuning";
 
 // ---------------------------------------------------------------------------
 // assertFrameworkStructural
@@ -33,8 +33,15 @@ import { BASELINE } from "@/lib/config/tuning";
  */
 export function assertFrameworkStructural(framework: FrameworkJsonb): void {
   // --- tier count ---
-  expect(framework.tiers.length, "framework: tier count ≥ 3").toBeGreaterThanOrEqual(3);
-  expect(framework.tiers.length, "framework: tier count ≤ 7").toBeLessThanOrEqual(7);
+  // Lower bound matches FRAMEWORK.minTiers; upper bound matches FRAMEWORK.maxTiers (8).
+  // Previously hard-coded to 7, which was stricter than the schema without reason.
+  expect(framework.tiers.length, "framework: tier count ≥ 3").toBeGreaterThanOrEqual(
+    FRAMEWORK.minTiers,
+  );
+  expect(
+    framework.tiers.length,
+    `framework: tier count ≤ ${FRAMEWORK.maxTiers}`,
+  ).toBeLessThanOrEqual(FRAMEWORK.maxTiers);
 
   const tierNumbers = framework.tiers.map((t) => t.number);
 

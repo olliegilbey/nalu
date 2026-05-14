@@ -1,10 +1,13 @@
 import { TRPCError } from "@trpc/server";
 import type { z } from "zod";
 import { executeTurn } from "@/lib/turn/executeTurn";
+import { buildRetryDirective } from "@/lib/turn/retryDirective";
 import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { gradeBaselineSchema } from "@/lib/prompts/baselineGrading";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
+import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
+import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import type { BaselineJsonb } from "@/lib/types/jsonb";
 import { baselineGradingSchema } from "@/lib/types/jsonb";
 import type { LlmUsage } from "@/lib/types/llm";
@@ -95,12 +98,22 @@ export async function gradeBaseline(params: GradeBaselineParams): Promise<GradeB
   // LLM grading via executeTurn.
   const pass = await ensureOpenScopingPass(course.id);
   const learnerInput = JSON.stringify({ items: llmItems });
+  // Build schema string regardless — retry directive always needs it.
+  // Gate the inline on model capability.
+  const modelName = process.env.LLM_MODEL ?? "(default)";
+  const capabilities = getModelCapabilities(modelName);
+  const schemaJson = toSchemaJsonString(gradeBaselineSchema, { name: "grade_baseline" });
   const { parsed, usage } = await executeTurn({
     parent: { kind: "scoping", id: pass.id },
     seed: { kind: "scoping", topic: course.topic },
-    userMessageContent: renderStageEnvelope({ stage: "grade baseline", learnerInput }),
+    userMessageContent: renderStageEnvelope({
+      stage: "grade baseline",
+      learnerInput,
+      responseSchema: capabilities.honorsStrictMode ? undefined : schemaJson,
+    }),
     responseSchema: gradeBaselineSchema,
     responseSchemaName: "grade_baseline",
+    retryDirective: (err) => buildRetryDirective(err, schemaJson),
     label: "grade-baseline",
     successSummary: (p) => `gradings=${p.gradings.length}`,
   });

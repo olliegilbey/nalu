@@ -55,6 +55,7 @@ const SCOPING_COURSE = {
   topic: TOPIC,
   status: "scoping",
   clarification: {
+    userMessage: "Let me ask you a few questions.",
     questions: [
       {
         id: "q1",
@@ -160,6 +161,7 @@ describe("generateBaseline", () => {
   // Case 2: idempotency — if baseline already stored, return it without calling LLM.
   it("idempotency: returns re-parsed baseline when already stored, does not call executeTurn", async () => {
     const storedBaseline: BaselineJsonb = {
+      userMessage: "Here is your baseline.",
       questions: VALID_BASELINE_PARSED.questions.questions,
       responses: [],
       gradings: [],
