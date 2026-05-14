@@ -14,6 +14,8 @@ export default defineConfig({
       "src/db/queries/**/*.test.ts",
       // Integration tests (.integration.test.ts) run under the integration project only.
       "src/db/**/*.integration.test.ts",
+      // Live smoke tests (.live.test.ts) run under the live project only.
+      "src/**/*.live.test.ts",
     ],
     alias: { "@": path.resolve(__dirname, "./src") },
   },

@@ -56,7 +56,9 @@ export interface AppendMessageParams {
     | "card_answer"
     | "assistant_response"
     | "harness_turn_counter"
-    | "harness_review_block";
+    | "harness_review_block"
+    | "failed_assistant_response"
+    | "harness_retry_directive";
   /** LLM role — 'system' excluded; system content is never persisted (P3). */
   readonly role: "user" | "assistant" | "tool";
   /** Raw text content of the message. */
@@ -93,6 +95,49 @@ export async function appendMessage(params: AppendMessageParams): Promise<Contex
   // The insert must return a row on success — no scenario where it doesn't.
   if (!row) throw new Error("appendMessage: insert returned no row");
   return row;
+}
+
+/**
+ * Atomically append a batch of context messages.
+ *
+ * Implementation: one multi-VALUES INSERT — Postgres rejects any row that
+ * violates a constraint and rolls back the whole statement. No explicit
+ * transaction wrapper required; the single-statement guarantee is the
+ * atomicity boundary.
+ *
+ * Use this when a turn produces multiple rows (e.g. user_message +
+ * assistant_response, or the full retry trail: user_message +
+ * failed_assistant_response + harness_retry_directive + assistant_response).
+ */
+export async function appendMessages(
+  params: readonly AppendMessageParams[],
+): Promise<readonly ContextMessage[]> {
+  // Defensive: a zero-length INSERT would either be a no-op or a SQL error
+  // depending on the driver; treat empty input as a programming bug.
+  if (params.length === 0) throw new Error("appendMessages: empty batch");
+
+  const rows = await db
+    .insert(contextMessages)
+    .values(
+      params.map((p) => ({
+        // XOR FK mapping mirrors appendMessage: exactly one parent FK is set
+        // per row; the DB CHECK constraint enforces this invariant.
+        waveId: p.parent.kind === "wave" ? p.parent.id : null,
+        scopingPassId: p.parent.kind === "scoping" ? p.parent.id : null,
+        turnIndex: p.turnIndex,
+        seq: p.seq,
+        kind: p.kind,
+        role: p.role,
+        content: p.content,
+      })),
+    )
+    .returning();
+  // Sanity check: RETURNING should yield one row per input row. A mismatch
+  // would indicate a driver-level filter or partial failure we did not catch.
+  if (rows.length !== params.length) {
+    throw new Error(`appendMessages: expected ${params.length} rows returned, got ${rows.length}`);
+  }
+  return rows;
 }
 
 // ---------------------------------------------------------------------------

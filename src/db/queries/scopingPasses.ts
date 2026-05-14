@@ -51,6 +51,44 @@ export async function openScopingPass(courseId: string): Promise<ScopingPass> {
 }
 
 /**
+ * Return the open scoping pass for `courseId`, opening one if absent.
+ *
+ * Idempotent under the single-writer invariant: a re-entrant call returns
+ * the same row. The DB UNIQUE constraint on `course_id` is the backstop
+ * if two writers ever raced — the previous implementation surfaced that
+ * race as a UNIQUE-violation exception. Now we catch the violation and
+ * re-fetch, restoring idempotency under genuine concurrency.
+ *
+ * @throws when the second read after a unique-violation still finds no row
+ *   (only possible if another writer closed the pass mid-flight).
+ */
+export async function ensureOpenScopingPass(courseId: string): Promise<ScopingPass> {
+  const existing = await getOpenScopingPassByCourse(courseId);
+  if (existing) return existing;
+  try {
+    return await openScopingPass(courseId);
+  } catch (err) {
+    // postgres-js surfaces the unique-violation code (SQLSTATE 23505) on `.code`.
+    // A different writer beat us; re-read should now find the open row.
+    if (isUniqueViolation(err)) {
+      const after = await getOpenScopingPassByCourse(courseId);
+      if (after) return after;
+    }
+    throw err;
+  }
+}
+
+/** Narrow an unknown thrown value to a Postgres unique-violation (SQLSTATE 23505). */
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "23505"
+  );
+}
+
+/**
  * Flip a scoping pass to `status = 'closed'` and stamp `closed_at`.
  *
  * Idempotent: `COALESCE(closed_at, NOW())` means a second call returns the

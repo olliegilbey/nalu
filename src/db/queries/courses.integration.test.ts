@@ -76,24 +76,23 @@ describe("courses queries", () => {
     await seedUserAndRun(async () => {
       const course = await createCourse({ userId: USER, topic: "TypeScript generics" });
 
-      // Write a minimal valid framework payload.
+      // Write a minimal valid framework payload (camelCase — spec §4.8).
       const frameworkPayload = {
-        topic: "TypeScript generics",
-        scope_summary: "Covers generic types and constraints",
-        estimated_starting_tier: 2,
-        baseline_scope_tiers: [1, 2],
+        userMessage: "Here's the framework.",
+        estimatedStartingTier: 2,
+        baselineScopeTiers: [1, 2],
         tiers: [
           {
             number: 1,
             name: "Basics",
             description: "Intro",
-            example_concepts: ["T", "U"],
+            exampleConcepts: ["T", "U"],
           },
           {
             number: 2,
             name: "Advanced",
             description: "Constraints",
-            example_concepts: ["extends"],
+            exampleConcepts: ["extends"],
           },
         ],
       };
@@ -102,7 +101,7 @@ describe("courses queries", () => {
 
       // Re-fetch and confirm JSONB was validated and round-tripped.
       const fetched = await getCourseById(course.id);
-      expect(fetched.framework).toMatchObject({ estimated_starting_tier: 2 });
+      expect(fetched.framework).toMatchObject({ estimatedStartingTier: 2 });
     });
   });
 
@@ -232,6 +231,27 @@ describe("courses queries", () => {
   });
 
   // -----------------------------------------------------------------------
+  // getCourseById with userId scopes ownership — wrong owner → NotFoundError
+  // (info-leak-safe: indistinguishable from "id does not exist")
+  // -----------------------------------------------------------------------
+  it("getCourseById with a userId scopes ownership: wrong owner → NotFoundError", async () => {
+    await withTestDb(async (db) => {
+      const ownerId = "11111111-1111-1111-1111-111111111111";
+      const intruderId = "22222222-2222-2222-2222-222222222222";
+      await db.insert(userProfiles).values({ id: ownerId, displayName: "owner" });
+      await db.insert(userProfiles).values({ id: intruderId, displayName: "intruder" });
+      const course = await createCourse({ userId: ownerId, topic: "Rust" });
+
+      await expect(getCourseById(course.id, intruderId)).rejects.toBeInstanceOf(NotFoundError);
+      const ok = await getCourseById(course.id, ownerId);
+      expect(ok.id).toBe(course.id);
+      // Backward-compat: no userId → unscoped read still works.
+      const legacy = await getCourseById(course.id);
+      expect(legacy.id).toBe(course.id);
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // updateCourseScopingState rejects malformed JSONB (parse-before-persist)
   // -----------------------------------------------------------------------
   it("updateCourseScopingState throws ZodError for malformed framework payload", async () => {
@@ -243,10 +263,8 @@ describe("courses queries", () => {
       await expect(
         updateCourseScopingState(course.id, {
           framework: {
-            topic: "x",
-            scope_summary: "y",
-            estimated_starting_tier: 1,
-            baseline_scope_tiers: [1],
+            estimatedStartingTier: 1,
+            baselineScopeTiers: [1],
             // `tiers` is required by frameworkJsonbSchema — omitting it must throw.
           },
         }),

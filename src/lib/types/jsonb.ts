@@ -8,107 +8,122 @@ import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
  * payload before handing rows to consumers. drizzle-zod alone returns
  * `unknown` for JSONB; these schemas tighten that.
  *
- * Schemas mirror the `<...>` envelopes defined in spec §6.5 and the
- * existing prompt schemas under `src/lib/prompts/`.
+ * Schemas mirror the wire shapes defined in the prompt schemas under
+ * `src/lib/prompts/`. Field names are camelCase to match the JSON-everywhere
+ * contract (spec §4.8).
+ *
+ * NOTE: storage schemas live on `zod` v3 (the v3 import the rest of jsonb.ts
+ * already uses for table guards). Wire schemas live on `zod/v4` for the
+ * `z.toJSONSchema()` codegen. We bridge by re-defining the JSONB shapes
+ * here in v3 mirroring the v4 wire shape — these two surfaces drift only
+ * if a developer changes one without the other, which is caught by the
+ * round-trip test below.
  */
 
-// --- courses.clarification -------------------------------------------------
+// --- courses.clarification --------------------------------------------------
 
-/**
- * A single question emitted by the LLM during the scoping clarification step.
- *
- * Discriminated union so:
- *   - `single_select` requires ≥2 options (a radio group needs a choice)
- *   - `free_text` explicitly forbids an `options` field (Zod's discriminator
- *     strips unknown keys, so any accidental `options` is silently dropped —
- *     the important thing is we no longer allow it through unvalidated)
- *
- * WHY discriminated union over a plain object with optional `options`?
- * The old schema allowed `{type:"single_select"}` with no options, and
- * allowed `{type:"free_text", options:[...]}` — both are nonsensical at the
- * domain level. CodeRabbit Major finding requested tighter enforcement.
- */
-export const clarificationQuestionSchema = z.discriminatedUnion("type", [
+const v3McOption = z.enum(["A", "B", "C", "D"]);
+
+const v3Question = z.discriminatedUnion("type", [
   z.object({
     id: z.string(),
-    text: z.string(),
-    type: z.literal("single_select"),
-    // single_select needs ≥2 options to present a meaningful radio group.
-    options: z.array(z.string()).min(2),
+    type: z.literal("free_text"),
+    prompt: z.string(),
+    freetextRubric: z.string(),
+    conceptName: z.string().optional(),
+    tier: z.number().int().positive().optional(),
   }),
-  // `.strict()` makes Zod error if the LLM smuggles an `options` array into
-  // a free_text question. Without `.strict()`, Zod silently strips unknown keys
-  // and the invariant is unenforced. CodeRabbit Major: tighten JSONB schemas.
-  z
-    .object({
-      id: z.string(),
-      text: z.string(),
-      type: z.literal("free_text"),
-      // Explicitly NO options field — free_text renders an open input box.
-    })
-    .strict(),
+  z.object({
+    id: z.string(),
+    type: z.literal("multiple_choice"),
+    prompt: z.string(),
+    options: z.object({ A: z.string(), B: z.string(), C: z.string(), D: z.string() }),
+    correct: v3McOption.optional(),
+    freetextRubric: z.string(),
+    conceptName: z.string().optional(),
+    tier: z.number().int().positive().optional(),
+  }),
 ]);
 
-/** The learner's answer to one clarification question. */
-export const clarificationAnswerSchema = z.object({
-  questionId: z.string(),
-  answer: z.string(),
-});
+const v3Response = z
+  .object({
+    questionId: z.string(),
+    choice: v3McOption.optional(),
+    freetext: z.string().optional(),
+  })
+  .refine((r) => (r.choice === undefined) !== (r.freetext === undefined), {
+    message: "response must have exactly one of choice or freetext",
+  });
 
-/**
- * Full JSONB payload stored in `courses.clarification`.
- * Persists both what the LLM asked and what the learner answered,
- * so the scoping context can be reconstructed without re-querying LLM.
- */
 export const clarificationJsonbSchema = z.object({
-  questions: z.array(clarificationQuestionSchema),
-  answers: z.array(clarificationAnswerSchema),
+  /** The model's framing message for this clarification turn. Persisted so cached replay can return the model's exact wording. */
+  userMessage: z.string(),
+  questions: z.array(v3Question),
+  responses: z.array(v3Response),
 });
 export type ClarificationJsonb = z.infer<typeof clarificationJsonbSchema>;
 
-// --- courses.framework -----------------------------------------------------
+// --- courses.framework ------------------------------------------------------
 
-/** One rung of the learning ladder for a topic. */
+/** One rung of the learning ladder. camelCase — matches wire shape (spec §4.8). */
 export const tierSchema = z.object({
   number: z.number().int().min(1),
   name: z.string(),
   description: z.string(),
-  example_concepts: z.array(z.string()),
+  exampleConcepts: z.array(z.string()),
 });
 
-/**
- * Full JSONB payload stored in `courses.framework`.
- * Produced by the framework step; seeds the first Wave's blueprint.
- */
 export const frameworkJsonbSchema = z.object({
-  topic: z.string(),
-  scope_summary: z.string(),
-  estimated_starting_tier: z.number().int().min(1),
-  /** Tiers the baseline assessment covers — a subset of all tiers. */
-  baseline_scope_tiers: z.array(z.number().int().min(1)),
+  /** The model's framing message for this framework turn. Persisted so cached replay can return the model's exact wording — symmetric with clarification/baseline. */
+  userMessage: z.string(),
   tiers: z.array(tierSchema),
+  estimatedStartingTier: z.number().int().min(1),
+  baselineScopeTiers: z.array(z.number().int().min(1)),
 });
 export type FrameworkJsonb = z.infer<typeof frameworkJsonbSchema>;
 
-// --- courses.baseline ------------------------------------------------------
-
-/** LLM grading output for one baseline question. */
-export const baselineGradingSchema = z.object({
-  question_id: z.string(),
-  concept_name: z.string(),
-  quality_score: qualityScoreSchema,
-  is_correct: z.boolean(),
-  rationale: z.string(),
-});
+// --- courses.baseline -------------------------------------------------------
 
 /**
- * Full JSONB payload stored in `courses.baseline`.
- * Questions and answers are opaque after grading (any shape the LLM emitted);
- * only gradings need strict typing for downstream progression logic.
+ * Verdict ↔ qualityScore alignment table. Defence-in-depth mirror of the
+ * same constant in `src/lib/prompts/baselineGrading.ts`: the LLM-facing
+ * schema enforces this on parse, and the persistence schema enforces it
+ * again on every JSONB read so a manual DB write or a future schema drift
+ * can't smuggle in `verdict: "correct"` with `qualityScore: 1`.
  */
+const VERDICT_QUALITY_BANDS: Readonly<
+  Record<"correct" | "partial" | "incorrect", readonly [number, number]>
+> = {
+  correct: [4, 5],
+  partial: [2, 3],
+  incorrect: [0, 1],
+};
+
+/** LLM grading output for one baseline question. */
+export const baselineGradingSchema = z
+  .object({
+    questionId: z.string(),
+    conceptName: z.string(),
+    verdict: z.enum(["correct", "partial", "incorrect"]),
+    qualityScore: qualityScoreSchema,
+    rationale: z.string(),
+  })
+  .superRefine((val, ctx) => {
+    const [lo, hi] = VERDICT_QUALITY_BANDS[val.verdict];
+    if (val.qualityScore < lo || val.qualityScore > hi) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["qualityScore"],
+        message: `verdict='${val.verdict}' requires qualityScore in [${lo}, ${hi}], got ${val.qualityScore}.`,
+      });
+    }
+  });
+
 export const baselineJsonbSchema = z.object({
-  questions: z.array(z.unknown()), // generated payload — opaque after grading
-  answers: z.array(z.unknown()),
+  /** The model's framing message for this baseline turn. Persisted so cached replay can return the model's exact wording. */
+  userMessage: z.string(),
+  questions: z.array(v3Question),
+  responses: z.array(v3Response),
   gradings: z.array(baselineGradingSchema),
 });
 export type BaselineJsonb = z.infer<typeof baselineJsonbSchema>;

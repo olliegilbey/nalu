@@ -2,7 +2,12 @@ import { describe, it, expect } from "vitest";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles, courses } from "@/db/schema";
 import { NotFoundError } from "./errors";
-import { openScopingPass, getOpenScopingPassByCourse, closeScopingPass } from "./scopingPasses";
+import {
+  openScopingPass,
+  getOpenScopingPassByCourse,
+  closeScopingPass,
+  ensureOpenScopingPass,
+} from "./scopingPasses";
 
 /** Fixed UUID for the test user. */
 const USER = "33333333-3333-3333-3333-333333333333";
@@ -79,6 +84,35 @@ describe("scopingPasses queries", () => {
       await expect(closeScopingPass("00000000-0000-0000-0000-000000000000")).rejects.toBeInstanceOf(
         NotFoundError,
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 6: ensureOpenScopingPass is idempotent — second call returns the same row
+  // -------------------------------------------------------------------------
+  it("ensureOpenScopingPass returns the existing open pass on second call", async () => {
+    await withTestDb(async (db) => {
+      const userId = "33333333-3333-3333-3333-333333333333";
+      await db.insert(userProfiles).values({ id: userId, displayName: "u" });
+      const [course] = await db.insert(courses).values({ userId, topic: "x" }).returning();
+      const first = await ensureOpenScopingPass(course!.id);
+      const second = await ensureOpenScopingPass(course!.id);
+      expect(second.id).toBe(first.id);
+      expect(second.status).toBe("open");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 7: ensureOpenScopingPass opens a fresh pass when none exists
+  // -------------------------------------------------------------------------
+  it("ensureOpenScopingPass opens a new pass when none exists", async () => {
+    await withTestDb(async (db) => {
+      const userId = "44444444-4444-4444-4444-444444444444";
+      await db.insert(userProfiles).values({ id: userId, displayName: "u" });
+      const [course] = await db.insert(courses).values({ userId, topic: "x" }).returning();
+      const pass = await ensureOpenScopingPass(course!.id);
+      expect(pass.courseId).toBe(course!.id);
+      expect(pass.status).toBe("open");
     });
   });
 });

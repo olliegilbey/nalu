@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  clarificationQuestionSchema,
   clarificationJsonbSchema,
   frameworkJsonbSchema,
   baselineJsonbSchema,
@@ -11,105 +10,162 @@ import {
 
 describe("jsonb trust-boundary schemas", () => {
   // ---------------------------------------------------------------------------
-  // clarificationQuestionSchema — discriminated union tightness
+  // clarificationJsonbSchema — camelCase wire shape
   // ---------------------------------------------------------------------------
 
-  describe("clarificationQuestionSchema discriminated union", () => {
-    it("accepts well-formed free_text question", () => {
-      // free_text with no options is the canonical shape.
-      expect(
-        clarificationQuestionSchema.parse({
-          id: "q1",
-          text: "What's your goal?",
-          type: "free_text",
-        }),
-      ).toBeDefined();
-    });
-
-    it("accepts well-formed single_select question with ≥2 options", () => {
-      // single_select must have at least 2 options for a meaningful radio group.
-      expect(
-        clarificationQuestionSchema.parse({
-          id: "q2",
-          text: "Pick one",
-          type: "single_select",
-          options: ["Beginner", "Intermediate"],
-        }),
-      ).toBeDefined();
-    });
-
-    it("rejects free_text question with an options field", () => {
-      // free_text branch uses `.strict()` so unrecognised keys (including an
-      // accidental `options` array) cause a ZodError instead of silent stripping.
-      // This prevents the LLM from smuggling display options into a free_text
-      // question and having them silently ignored at the parse boundary.
-      expect(() =>
-        clarificationQuestionSchema.parse({
-          id: "q1",
-          text: "x",
-          type: "free_text",
-          options: ["a", "b"],
-        }),
-      ).toThrow();
-    });
-
-    it("rejects single_select question without options", () => {
-      // single_select with no options makes no sense as a radio group.
-      expect(() =>
-        clarificationQuestionSchema.parse({ id: "q3", text: "Pick one", type: "single_select" }),
-      ).toThrow();
-    });
-
-    it("rejects single_select with only 1 option", () => {
-      // min(2) enforced — a single-option radio group cannot represent a choice.
-      expect(() =>
-        clarificationQuestionSchema.parse({
-          id: "q4",
-          text: "Pick one",
-          type: "single_select",
-          options: ["Only option"],
-        }),
-      ).toThrow();
-    });
-  });
-
-  it("validates a clarification payload", () => {
+  it("validates a clarification payload with a free_text question", () => {
     expect(
       clarificationJsonbSchema.parse({
-        questions: [{ id: "q1", text: "x", type: "free_text" }],
-        answers: [{ questionId: "q1", answer: "y" }],
+        userMessage: "Let me ask you a few questions.",
+        questions: [
+          {
+            id: "q1",
+            type: "free_text",
+            prompt: "What's your goal?",
+            freetextRubric: "Explain clearly.",
+          },
+        ],
+        responses: [],
       }),
     ).toBeDefined();
   });
 
-  it("validates a framework payload with tiers", () => {
+  it("validates a clarification payload with a multiple_choice question", () => {
+    expect(
+      clarificationJsonbSchema.parse({
+        userMessage: "Here are your questions.",
+        questions: [
+          {
+            id: "q1",
+            type: "multiple_choice",
+            prompt: "Pick one",
+            options: { A: "Beginner", B: "Intermediate", C: "Advanced", D: "Expert" },
+            freetextRubric: "Explain your choice.",
+            correct: "A",
+          },
+        ],
+        responses: [],
+      }),
+    ).toBeDefined();
+  });
+
+  it("validates a clarification response (freetext)", () => {
+    expect(
+      clarificationJsonbSchema.parse({
+        userMessage: "Here are your questions.",
+        questions: [
+          {
+            id: "q1",
+            type: "free_text",
+            prompt: "x",
+            freetextRubric: "r",
+          },
+        ],
+        responses: [{ questionId: "q1", freetext: "my answer" }],
+      }),
+    ).toBeDefined();
+  });
+
+  it("rejects a clarification response with both choice and freetext", () => {
+    expect(() =>
+      clarificationJsonbSchema.parse({
+        userMessage: "Here are your questions.",
+        questions: [
+          {
+            id: "q1",
+            type: "multiple_choice",
+            prompt: "x",
+            options: { A: "a", B: "b", C: "c", D: "d" },
+            freetextRubric: "r",
+          },
+        ],
+        responses: [{ questionId: "q1", choice: "A", freetext: "my answer" }],
+      }),
+    ).toThrow();
+  });
+
+  it("validates a framework payload with tiers (camelCase)", () => {
     expect(
       frameworkJsonbSchema.parse({
-        topic: "Rust ownership",
-        scope_summary: "test",
-        estimated_starting_tier: 2,
-        baseline_scope_tiers: [1, 2, 3],
-        tiers: [{ number: 1, name: "Mental Model", description: "x", example_concepts: ["a"] }],
+        userMessage: "Here's the framework.",
+        estimatedStartingTier: 2,
+        baselineScopeTiers: [1, 2],
+        tiers: [
+          {
+            number: 1,
+            name: "Basics",
+            description: "Intro",
+            exampleConcepts: ["T", "U"],
+          },
+          {
+            number: 2,
+            name: "Advanced",
+            description: "Constraints",
+            exampleConcepts: ["extends"],
+          },
+        ],
       }),
     ).toBeDefined();
   });
 
-  it("validates a baseline payload with gradings", () => {
+  it("validates a baseline payload with gradings (camelCase)", () => {
     expect(
       baselineJsonbSchema.parse({
+        userMessage: "Here is your baseline assessment.",
         questions: [],
-        answers: [],
+        responses: [],
         gradings: [
           {
-            question_id: "b1",
-            concept_name: "x",
-            quality_score: 3,
-            is_correct: true,
+            questionId: "b1",
+            conceptName: "x",
+            verdict: "correct",
+            qualityScore: 4,
             rationale: "ok",
           },
         ],
       }),
     ).toBeDefined();
+  });
+
+  it("rejects a baseline grading with unknown verdict", () => {
+    expect(() =>
+      baselineJsonbSchema.parse({
+        userMessage: "Here is your baseline assessment.",
+        questions: [],
+        responses: [],
+        gradings: [
+          {
+            questionId: "b1",
+            conceptName: "x",
+            verdict: "maybe",
+            qualityScore: 4,
+            rationale: "ok",
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  // Defence-in-depth: persistence layer also rejects band/verdict mismatches —
+  // not just the LLM-facing prompt schema. Guards against bad data smuggled in
+  // via manual DB writes or future schema drift.
+  it("rejects a baseline grading when verdict and qualityScore bands disagree", () => {
+    expect(() =>
+      baselineJsonbSchema.parse({
+        userMessage: "Here is your baseline assessment.",
+        questions: [],
+        responses: [],
+        gradings: [
+          {
+            questionId: "b1",
+            conceptName: "x",
+            verdict: "correct", // band [4, 5]
+            qualityScore: 1, // mismatch
+            rationale: "ok",
+          },
+        ],
+      }),
+    ).toThrow();
   });
 
   it("validates a due-concepts snapshot", () => {

@@ -17,5 +17,11 @@
   ],
   "ignore": [],
   "ignoreExportsUsedInFile": true,
-  "ignoreBinaries": []
+  "ignoreBinaries": [],
+  "ignoreIssues": {
+    "src/lib/prompts/questionnaire.ts": ["types"],
+    "src/lib/prompts/clarify.ts": ["types"],
+    "src/lib/prompts/baseline.ts": ["types"],
+    "src/lib/prompts/baselineGrading.ts": ["types"]
+  }
 }

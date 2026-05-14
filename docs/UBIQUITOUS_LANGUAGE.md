@@ -41,6 +41,30 @@ Nalu has distinct phases, each with its own Context:
 
 Within a phase the prefix is byte-stable (keeps prompt cache warm). At phase boundaries the closing Context is archived for history/UI but never replayed into future prompts. The DB stores Contexts as a row-per-message table; no prompt-from-components reassembly happens per turn.
 
+## Learner input
+
+Either the prose the User types into the chat input and submits as a message, or the collection of Responses to a Questionnaire submitted via the answer card UI. In both cases the Harness receives it server-side, persists it, and wrangles it into the next User envelope sent to the LLM. It is _what the User said_ before any prompt assembly.
+
+## User envelope
+
+The harness-built `role: user` message sent to the LLM each turn. Wraps the Learner input together with a bare `<stage>...</stage>` label. The model only ever sees envelopes; raw Learner input never reaches it unwrapped.
+
+## Per-stage schema
+
+The Zod schema describing the LLM's expected output for one scoping stage (clarify, framework, baseline, grade-baseline). Single source of truth: produces the wire schema (Cerebras `response_format`), the runtime validator, and — via `.describe()` annotations rendered into the decoder's context — the model's own field-level guidance.
+
+## Questionnaire
+
+A `{ questions: Question[] }` payload with at least one question. Used identically across clarify, baseline, and teaching quizzes. The UI renders questions one at a time as an answer card.
+
+## Question
+
+One of two shapes: `free_text` (with a grading rubric) or `multiple_choice` (with four keyed options A/B/C/D, a free-text escape, and a `correct` key when graded). Stage-specific metadata (`conceptName`, `tier`, `correct`) is optional at the schema level and required by the per-stage refine where applicable.
+
+## Response
+
+The learner's reply to one Question: either a `choice` (MC option key) or a `freetext` body, never both. Distinct from MC `options`, which are the four candidate answers the model emits as part of the Question.
+
 ## Harness injection
 
 A `context_messages` row authored by the Harness (not the User, not the LLM) — kinds `harness_turn_counter` (every turn's `<turns_remaining>`) and `harness_review_block` (final-turn `<due_for_review>`). Content is natural-language English wrapped in an XML tag, so the model reads it the same way it reads any other turn (P4: harness injections are visible in the Context, not hidden side-channel state).
@@ -59,7 +83,7 @@ This repo. The system that wraps the LLM with deterministic logic (XP, SM-2 sche
 
 ## LLM
 
-The stateless text model (currently Cerebras' `llama-4-scout-17b-16e-instruct` via OpenAI-compatible API). Stateless: it holds no memory between HTTP calls. Each turn, the Harness loads the current Context from DB and sends it as-is — no regeneration from components. Regeneration only happens at phase boundaries, where a new system prompt is built. All LLM access goes through `src/lib/llm/` (`provider.ts` + `generate.ts`); direct `ai` SDK imports elsewhere are forbidden.
+The stateless text model (currently Cerebras' `llama3.1-8b` via OpenAI-compatible API). Stateless: it holds no memory between HTTP calls. Each turn, the Harness loads the current Context from DB and sends it as-is — no regeneration from components. Regeneration only happens at phase boundaries, where a new system prompt is built. All LLM access goes through `src/lib/llm/` (`provider.ts` + `generate.ts`); direct `ai` SDK imports elsewhere are forbidden.
 
 ## Router
 

@@ -235,6 +235,37 @@ describe("context_messages constraints", () => {
     });
   });
 
+  it("accepts failed_assistant_response and harness_retry_directive kinds", async () => {
+    // Both kinds are persisted by the per-turn retry loop in executeTurn:
+    //  - failed_assistant_response: raw model output that didn't parse (role=assistant)
+    //  - harness_retry_directive: synthesised nudge telling the model to try again (role=user)
+    // They share (wave_id, turn_index) with the original failed attempt; seq disambiguates.
+    await withTestDb(async (db) => {
+      const waveId = await seedWave(db);
+      await db.insert(contextMessages).values({
+        waveId,
+        turnIndex: 0,
+        seq: 0,
+        kind: "failed_assistant_response",
+        role: "assistant",
+        content: "<response>oops",
+      });
+      await db.insert(contextMessages).values({
+        waveId,
+        turnIndex: 0,
+        seq: 1,
+        kind: "harness_retry_directive",
+        role: "user",
+        content: "your last response was missing a closing tag; please retry",
+      });
+      const rows = await db
+        .select()
+        .from(contextMessages)
+        .where(eq(contextMessages.waveId, waveId));
+      expect(rows).toHaveLength(2);
+    });
+  });
+
   it("rejects duplicate (wave_id, turn_index, seq) — partial wave-order unique", async () => {
     await withTestDb(async (db) => {
       const waveId = await seedWave(db);

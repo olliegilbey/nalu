@@ -1,11 +1,13 @@
-import { generateObject, generateText } from "ai";
+import { generateText } from "ai";
 import type { z } from "zod/v4";
 import { LLM } from "@/lib/config/tuning";
 import { getLlmModel } from "./provider";
+import { toCerebrasJsonSchema } from "./toCerebrasJsonSchema";
+import { getModelCapabilities } from "./modelCapabilities";
 import type { LlmMessage, LlmModel, LlmUsage } from "@/lib/types/llm";
 
 /**
- * Options common to both generate wrappers. All optional — `tuning.LLM`
+ * Options common to the chat wrapper. All optional — `tuning.LLM`
  * supplies defaults. Callers override per-flow (e.g. a creative framing
  * prompt may raise temperature).
  */
@@ -16,70 +18,82 @@ export interface GenerateOptions {
   readonly maxRetries?: number;
   /** Override the model for a single call (testing, capability routing). */
   readonly model?: LlmModel;
+  /**
+   * Model name override for capability lookup. Set this alongside `model`
+   * when the override is a different model than `process.env.LLM_MODEL`,
+   * otherwise the capability gate could send `response_format` to a model
+   * that ignores strict-mode (or strip it from one that needs it).
+   */
+  readonly modelName?: string;
 }
 
 /**
- * Successful structured-output result.
- *
- * @typeParam T - The Zod-inferred shape returned by the caller's schema.
- *                The SDK guarantees `object` parses under that schema.
+ * Chat-call extension: when `responseSchema` is provided, the call uses
+ * Cerebras strict-mode constrained decoding — the model can only emit JSON
+ * matching the schema. `responseSchemaName` is the JSON Schema `name`
+ * field on the wire (defaults to "response").
  */
-export interface StructuredResult<T> {
-  /** Parsed, schema-validated payload. */
-  readonly object: T;
-  /** Provider-reported token usage for this call. */
-  readonly usage: LlmUsage;
+export interface ChatOptions extends GenerateOptions {
+  readonly responseSchema?: z.ZodType<unknown>;
+  readonly responseSchemaName?: string;
 }
 
 /**
- * Successful free-form chat result. Text is raw model output — callers
- * extract embedded XML blocks via `extractTag` and Zod-validate the
- * payload at that boundary.
+ * Successful chat result. When `responseSchema` is supplied the `text`
+ * field is a JSON string guaranteed to match the schema; otherwise it is
+ * raw model output.
  */
 export interface ChatResult {
-  /** Raw model output. May be empty on abnormal completions. */
+  /** Raw model output (JSON string or prose). */
   readonly text: string;
   /** Provider-reported token usage for this call. */
   readonly usage: LlmUsage;
 }
 
 /**
- * Structured-output call. Hands a Zod schema to the AI SDK, which uses
- * provider-native JSON-schema enforcement where available (Cerebras
- * does) and falls back to prompt-coaxed JSON + validation elsewhere.
+ * Chat call. When `responseSchema` is supplied, Cerebras constrained decoding
+ * is used — but only for models that honour strict-mode JSON schema decoding.
  *
- * `maxRetries` bounds transport-level retries (timeouts, 5xx). The
- * SDK's internal JSON-parse repair is a separate, automatic pass.
- */
-export async function generateStructured<T>(
-  schema: z.ZodType<T>,
-  messages: readonly LlmMessage[],
-  opts: GenerateOptions = {},
-): Promise<StructuredResult<T>> {
-  const result = await generateObject({
-    model: opts.model ?? getLlmModel(),
-    schema,
-    messages: [...messages],
-    temperature: opts.temperature ?? LLM.defaultTemperature,
-    maxRetries: opts.maxRetries ?? LLM.maxRetries,
-  });
-  return { object: result.object as T, usage: result.usage };
-}
-
-/**
- * Free-form chat call. Used for PRD §5 conversational turns that mix
- * prose with embedded structured XML blocks (`<assessment>`, etc.).
- * Callers extract blocks via `extractTag` and Zod-validate the payload.
+ * WHY the model gate: weak models (e.g. llama3.1-8b on Cerebras free tier)
+ * silently ignore `response_format: { type: "json_schema", strict: true }` and
+ * emit free-form JSON anyway. Sending `response_format` to them wastes bytes on
+ * the wire and obscures the actual contract. Those models get an inline
+ * `<response_schema>` block in the user envelope instead (handled at the prompt
+ * assembly layer in `src/lib/course/`). Strong models (e.g. llama-3.3-70b)
+ * honour strict-mode; they get `response_format` only and no inline duplicate.
+ *
+ * Model name is read from `process.env.LLM_MODEL` (the same source `provider.ts`
+ * uses to configure the provider). An unrecognised model defaults to
+ * `honorsStrictMode: true` — see `modelCapabilities.ts`.
  */
 export async function generateChat(
   messages: readonly LlmMessage[],
-  opts: GenerateOptions = {},
+  opts: ChatOptions = {},
 ): Promise<ChatResult> {
+  // Determine whether this model honours strict-mode constrained decoding.
+  // `opts.modelName` is the test/override seam — it wins over the env so
+  // capability detection stays in sync with the actual provider call when a
+  // test injects a different `opts.model`.
+  const modelName = opts.modelName ?? process.env.LLM_MODEL ?? "(default)";
+  const capabilities = getModelCapabilities(modelName);
+
+  // Build the responseFormat only when a schema is provided AND the model
+  // will actually honour it. Spreading undefined into generateText would
+  // send `responseFormat: undefined`, which some SDK versions treat as an error.
+  const responseFormat =
+    opts.responseSchema !== undefined && capabilities.honorsStrictMode
+      ? toCerebrasJsonSchema(opts.responseSchema, {
+          name: opts.responseSchemaName ?? "response",
+        })
+      : undefined;
+
   const result = await generateText({
     model: opts.model ?? getLlmModel(),
     messages: [...messages],
     temperature: opts.temperature ?? LLM.defaultTemperature,
     maxRetries: opts.maxRetries ?? LLM.maxRetries,
+    // Conditionally spread so the key is absent (not undefined) when unused.
+    ...(responseFormat !== undefined ? { responseFormat } : {}),
   });
   return { text: result.text, usage: result.usage };
 }

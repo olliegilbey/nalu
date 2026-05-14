@@ -22,6 +22,14 @@ test:
 test-int:
     bun run test:integration
 
+# Live Cerebras smoke test — opt-in only. Calls real Cerebras + real Postgres.
+# Never runs in `just check` or CI. Gated by CEREBRAS_LIVE=1 at the describe
+# level; LLM_API_KEY is resolved from 1Password via `op run` so the secret
+# never lands on disk. `.env.local` holds an `op://` reference, not the key
+# itself. Requires `op signin` once per shell.
+smoke:
+    CEREBRAS_LIVE=1 op run --account my.1password.com --env-file=.env.local -- bun run test:live
+
 # Run unit tests in watch mode
 test-watch:
     bun run test:watch

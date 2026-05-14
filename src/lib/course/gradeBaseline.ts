@@ -1,189 +1,153 @@
-import { generateStructured } from "@/lib/llm/generate";
-import {
-  baselineEvaluationSchema,
-  buildBaselineEvaluationPrompt,
-  type BaselineAssessment,
-  type BaselineEvaluationItem,
-  type BaselineQuestion,
-  type ClarificationExchange,
-  type Framework,
-  type McOptionKey,
-} from "@/lib/prompts";
+import { TRPCError } from "@trpc/server";
+import type { z } from "zod";
+import { executeTurn } from "@/lib/turn/executeTurn";
+import { buildRetryDirective } from "@/lib/turn/retryDirective";
+import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
+import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
+import { gradeBaselineSchema } from "@/lib/prompts/baselineGrading";
+import { renderStageEnvelope } from "@/lib/prompts/scoping";
+import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
+import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
+import type { BaselineJsonb } from "@/lib/types/jsonb";
+import { baselineGradingSchema } from "@/lib/types/jsonb";
 import type { LlmUsage } from "@/lib/types/llm";
-import type { QualityScore } from "@/lib/types/spaced-repetition";
-import { splitOne, ZERO_USAGE, type QuestionSplit } from "./gradeBaseline.internal";
+import type { McOptionKey } from "@/lib/prompts/questionnaire";
+import { splitOne, ZERO_USAGE } from "./gradeBaseline.internal";
 
-/**
- * A single learner answer to a baseline question. The UI submits this
- * shape at the end of client-side answer collection (P-AC-05).
- *
- * - `mc`: the learner clicked an MC option.
- * - `freetext`: native free-text answer, or an MC question answered via
- *   the freetext-escape affordance — indicated by `fromEscape: true`
- *   (P-AC-03). The same shape serves both because DRY: the grader input
- *   only needs to know the learner's words, not which affordance they
- *   used, except to prepend the P-AC-03 prefix.
- */
 export type BaselineAnswer =
   | { readonly id: string; readonly kind: "mc"; readonly selected: McOptionKey }
   | {
       readonly id: string;
       readonly kind: "freetext";
       readonly text: string;
-      /** True if the learner escaped out of an MC question into freetext. */
       readonly fromEscape: boolean;
     };
 
-/** Per-question grading result, merged across mechanical and LLM paths. */
-export interface QuestionGrading {
-  readonly questionId: string;
-  readonly conceptName: string;
-  readonly tier: number;
-  readonly quality: QualityScore;
-  /** Matches the LLM grader's `isCorrect` (quality ≥ passing threshold). */
-  readonly isCorrect: boolean;
-  readonly rationale: string;
-}
-
 export interface GradeBaselineParams {
-  /** Raw, untrusted topic from the scoping conversation. */
-  readonly topic: string;
-  /** Clarification Q&A, needed to rebuild the scoping history. */
-  readonly clarifications: readonly ClarificationExchange[];
-  /** Framework from the framework-generation turn. */
-  readonly framework: Framework;
-  /** Baseline assessment from the baseline-generation turn. */
-  readonly baseline: BaselineAssessment;
-  /** The learner's answers collected client-side. One per question. */
+  readonly courseId: string;
+  readonly userId: string;
   readonly answers: readonly BaselineAnswer[];
 }
 
 export interface GradeBaselineResult {
-  readonly gradings: readonly QuestionGrading[];
-  /** Usage from the batched grader call. Zero-filled if no LLM call was needed. */
+  readonly gradings: readonly z.infer<typeof baselineGradingSchema>[];
   readonly usage: LlmUsage;
 }
 
 /**
- * Drive the baseline-grading turn (PRD §4.1 step 3, grading half).
+ * Drive the baseline-grading turn.
  *
- * Splits the answer batch:
+ * Pattern (spec §4.9): course fetch → preconditions → idempotency →
+ * mechanical MC pass (no LLM) → if any non-MC answers, executeTurn with
+ * `gradeBaselineSchema` → merge → persist `courses.baseline.gradings`.
  *
- *   - MC-on-MC (click answer): graded mechanically, no LLM call.
- *   - Everything else (native free-text, freetext-escape on MC): batched
- *     into a single `generateStructured` call with the evaluation schema.
- *
- * This is the P-ON-04 invariant: baseline grading is at most one LLM
- * call, never one-per-card. When every answer is an MC click, no LLM
- * call runs at all and usage is zero-filled.
- *
- * Merged results are returned in input (question-array) order, not
- * answer-array order, so downstream consumers can zip with
- * `baseline.questions`.
- *
- * Fail-loud invariants at the LLM boundary:
- *   - Every LLM-returned `questionId` must be one we submitted.
- *   - Every LLM-submitted `questionId` must come back in the response.
- *   - No answer may lack a grading when the merge completes.
+ * The all-MC shortcut (no LLM call when every answer is an MC click) is
+ * preserved verbatim from the legacy implementation — same byId lookup,
+ * same mechanical grader (`gradeMc` in `gradeBaseline.internal.ts`).
  */
 export async function gradeBaseline(params: GradeBaselineParams): Promise<GradeBaselineResult> {
-  // Lookup: question by id. Built once; input trust-boundary checks below.
-  const byId: Readonly<Record<string, BaselineQuestion>> = Object.fromEntries(
-    params.baseline.questions.map((q) => [q.id, q] as const),
-  );
+  const course = await getCourseById(params.courseId, params.userId);
+  if (course.status !== "scoping") {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `gradeBaseline: course ${course.id} is in status '${course.status}'`,
+    });
+  }
+  if (course.baseline === null) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `gradeBaseline: course ${course.id} has no baseline`,
+    });
+  }
 
-  // Validate answers: every id known, no duplicates. Functional scan
-  // avoids the mutable-Set accumulator that the `functional/immutable-data`
-  // rule would flag.
+  const stored = course.baseline as BaselineJsonb;
+  // Idempotency — if gradings already exist, just return them.
+  if (stored.gradings.length > 0) {
+    return { gradings: stored.gradings, usage: ZERO_USAGE };
+  }
+
+  // Build byId, validate answers (every id known, no duplicates).
+  const byId = Object.fromEntries(stored.questions.map((q) => [q.id, q] as const));
   const unknown = params.answers.find((a) => !(a.id in byId));
-  if (unknown) {
-    throw new Error(`answer for unknown question id: ${unknown.id}`);
-  }
-  const answerIds = params.answers.map((a) => a.id);
-  const duplicate = answerIds.find((id, i) => answerIds.indexOf(id) !== i);
-  if (duplicate !== undefined) {
-    throw new Error(`duplicate answer for question id: ${duplicate}`);
-  }
+  if (unknown) throw new Error(`answer for unknown question id: ${unknown.id}`);
+  const dupId = params.answers.map((a) => a.id).find((id, i, all) => all.indexOf(id) !== i);
+  if (dupId !== undefined) throw new Error(`duplicate answer for question id: ${dupId}`);
 
-  const answerById: Readonly<Record<string, BaselineAnswer>> = Object.fromEntries(
-    params.answers.map((a) => [a.id, a] as const),
-  );
+  const answerById = Object.fromEntries(params.answers.map((a) => [a.id, a] as const));
 
-  // Partition questions into mechanical vs LLM splits in one pass.
-  // Preserves baseline.questions order so the merge can zip by index.
-  const splits: readonly QuestionSplit[] = params.baseline.questions.map((question) => {
-    const answer = answerById[question.id];
-    if (!answer) throw new Error(`no answer provided for question ${question.id}`);
-    return splitOne(question, answer);
+  const splits = stored.questions.map((q) => {
+    const a = answerById[q.id];
+    if (!a) throw new Error(`no answer provided for question ${q.id}`);
+    return splitOne(q, a);
   });
 
-  const llmItems: readonly BaselineEvaluationItem[] = splits.flatMap((s) =>
-    s.kind === "llm" ? [s.item] : [],
-  );
+  const llmItems = splits.flatMap((s) => (s.kind === "llm" ? [s.item] : []));
 
-  // All-MC shortcut: no LLM call, zero-filled usage.
+  // All-MC shortcut.
   if (llmItems.length === 0) {
     const gradings = splits.map((s) => {
-      if (s.kind !== "mechanical") {
-        throw new Error(`no grading produced for question ${s.qid}`);
-      }
+      if (s.kind !== "mechanical") throw new Error(`no mechanical grading for ${s.qid}`);
       return s.grading;
+    });
+    await updateCourseScopingState(course.id, {
+      baseline: { ...stored, gradings },
     });
     return { gradings, usage: ZERO_USAGE };
   }
 
-  const messages = buildBaselineEvaluationPrompt({
-    topic: params.topic,
-    clarifications: params.clarifications,
-    framework: params.framework,
-    baseline: params.baseline,
-    items: llmItems,
-  });
-  const result = await generateStructured(baselineEvaluationSchema, messages);
-
-  // Validate the grader's response against the submitted ids — fail loud
-  // on any drift (stragglers, duplicates, omissions). The orchestrator
-  // treats the LLM as an external surface.
-  const submittedIds = llmItems.map((i) => i.questionId);
-  const returnedIds = result.object.evaluations.map((e) => e.questionId);
-  const unsubmitted = returnedIds.find((id) => !submittedIds.includes(id));
-  if (unsubmitted !== undefined) {
-    throw new Error(`grader returned evaluation for unsubmitted question id: ${unsubmitted}`);
-  }
-  const dupEval = returnedIds.find((id, i) => returnedIds.indexOf(id) !== i);
-  if (dupEval !== undefined) {
-    throw new Error(`grader returned duplicate evaluation for question id: ${dupEval}`);
-  }
-  const missing = submittedIds.filter((id) => !returnedIds.includes(id));
-  if (missing.length > 0) {
-    throw new Error(`grader omitted evaluations for: ${missing.join(", ")}`);
-  }
-
-  const llmGradings: Readonly<Record<string, QuestionGrading>> = Object.fromEntries(
-    result.object.evaluations.map((ev) => {
-      // `byId[ev.questionId]` is guaranteed by the unsubmitted check above.
-      const question = byId[ev.questionId]!;
-      return [
-        ev.questionId,
-        {
-          questionId: ev.questionId,
-          conceptName: ev.conceptName,
-          tier: question.tier,
-          quality: ev.qualityScore,
-          isCorrect: ev.isCorrect,
-          rationale: ev.rationale,
-        },
-      ] as const;
+  // LLM grading via executeTurn.
+  const pass = await ensureOpenScopingPass(course.id);
+  const learnerInput = JSON.stringify({ items: llmItems });
+  // Build schema string regardless — retry directive always needs it.
+  // Gate the inline on model capability.
+  const modelName = process.env.LLM_MODEL ?? "(default)";
+  const capabilities = getModelCapabilities(modelName);
+  const schemaJson = toSchemaJsonString(gradeBaselineSchema, { name: "grade_baseline" });
+  const { parsed, usage } = await executeTurn({
+    parent: { kind: "scoping", id: pass.id },
+    seed: { kind: "scoping", topic: course.topic },
+    userMessageContent: renderStageEnvelope({
+      stage: "grade baseline",
+      learnerInput,
+      responseSchema: capabilities.honorsStrictMode ? undefined : schemaJson,
     }),
+    responseSchema: gradeBaselineSchema,
+    responseSchemaName: "grade_baseline",
+    retryDirective: (err) => buildRetryDirective(err, schemaJson),
+    label: "grade-baseline",
+    successSummary: (p) => `gradings=${p.gradings.length}`,
+  });
+
+  // Fail loud on drift between submitted and returned ids.
+  const submitted = new Set(llmItems.map((i) => i.questionId));
+  const returned = new Set(parsed.gradings.map((g) => g.questionId));
+  const stragglers = [...returned].filter((id) => !submitted.has(id));
+  if (stragglers.length > 0) {
+    throw new Error(`grader returned unsubmitted ids: ${stragglers.join(", ")}`);
+  }
+  const omitted = [...submitted].filter((id) => !returned.has(id));
+  if (omitted.length > 0) throw new Error(`grader omitted ids: ${omitted.join(", ")}`);
+
+  const llmGradingsById = Object.fromEntries(
+    parsed.gradings.map((g) => [g.questionId, g] as const),
   );
 
-  // Merge in question-array order so callers can zip with `baseline.questions`.
-  const gradings: readonly QuestionGrading[] = splits.map((s) => {
+  const mergedGradings = splits.map((s) => {
     if (s.kind === "mechanical") return s.grading;
-    const g = llmGradings[s.qid];
-    if (!g) throw new Error(`no grading produced for question ${s.qid}`);
-    return g;
+    const g = llmGradingsById[s.qid];
+    if (!g) throw new Error(`no grading produced for ${s.qid}`);
+    return {
+      questionId: g.questionId,
+      conceptName: g.conceptName,
+      verdict: g.verdict,
+      qualityScore: g.qualityScore,
+      rationale: g.rationale,
+    };
   });
 
-  return { gradings, usage: result.usage };
+  await updateCourseScopingState(course.id, {
+    baseline: { ...stored, gradings: mergedGradings },
+  });
+
+  return { gradings: mergedGradings, usage };
 }

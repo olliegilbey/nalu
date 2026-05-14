@@ -1,86 +1,89 @@
-import { generateStructured } from "@/lib/llm/generate";
-import {
-  baselineSchema,
-  buildBaselinePrompt,
-  type BaselineQuestion,
-  type ClarificationExchange,
-  type Framework,
-} from "@/lib/prompts";
-import type { LlmUsage } from "@/lib/types/llm";
+import { TRPCError } from "@trpc/server";
+import { executeTurn } from "@/lib/turn/executeTurn";
+import { buildRetryDirective } from "@/lib/turn/retryDirective";
+import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
+import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
+import { makeBaselineSchema, type BaselineTurn } from "@/lib/prompts/baseline";
+import { renderStageEnvelope } from "@/lib/prompts/scoping";
+import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
+import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
+import type { BaselineJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
-/** Params for {@link generateBaseline}. Mirrors `buildBaselinePrompt` inputs. */
 export interface GenerateBaselineParams {
-  /** Raw, untrusted topic. Sanitised inside the prompt builder. */
-  readonly topic: string;
-  /** Q&A from the clarification turn. Answers sanitised downstream. */
-  readonly clarifications: readonly ClarificationExchange[];
-  /** Trusted framework from the framework-generation turn. */
-  readonly framework: Framework;
+  readonly courseId: string;
+  readonly userId: string;
 }
 
-/**
- * Result of a baseline-generation turn. `scopeTiers` and
- * `estimatedStartingTier` are surfaced as first-class fields (even though
- * they're already on `framework`) because downstream consumers
- * (`gradeBaseline`, `determineStartingTier`, UI progress bar) need them
- * without re-reading the full framework.
- */
 export interface GenerateBaselineResult {
-  readonly questions: readonly BaselineQuestion[];
-  readonly scopeTiers: readonly number[];
-  readonly estimatedStartingTier: number;
-  readonly usage: LlmUsage;
+  readonly baseline: BaselineTurn;
+  readonly nextStage: "answering";
 }
 
-/**
- * Drive the baseline-generation turn (PRD §4.1 step 3).
- *
- * Thin orchestrator over the continuation-history prompt builder:
- * `buildBaselinePrompt` reconstructs the scoping conversation up through
- * the new baseline-task user message, hands it to `generateStructured`
- * with `baselineSchema`, then we assert two orchestrator-level
- * invariants the Zod schema can't express on its own:
- *
- * 1. Every question's `tier` is one of `framework.baselineScopeTiers`.
- *    P-ON-02 at runtime: the schema enforces a tier is a positive int,
- *    but not that it sits inside the scope the prompt specified.
- * 2. Question IDs are unique within the batch. Duplicate IDs would
- *    break the mechanical/LLM grader split downstream.
- *
- * Invariant failures are hard errors — surfaced, not patched — because
- * they indicate an LLM that stopped obeying the prompt contract.
- */
 export async function generateBaseline(
   params: GenerateBaselineParams,
 ): Promise<GenerateBaselineResult> {
-  const messages = buildBaselinePrompt({
-    topic: params.topic,
-    clarifications: params.clarifications,
-    framework: params.framework,
+  const course = await getCourseById(params.courseId, params.userId);
+
+  if (course.status !== "scoping") {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `generateBaseline: course ${course.id} is in status '${course.status}'`,
+    });
+  }
+  if (course.clarification === null || course.framework === null) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `generateBaseline: course ${course.id} requires both clarification and framework`,
+    });
+  }
+
+  const framework = course.framework as FrameworkJsonb;
+  const scopeTiers = framework.baselineScopeTiers;
+  const schema = makeBaselineSchema({ scopeTiers });
+
+  if (course.baseline !== null) {
+    const stored = course.baseline as BaselineJsonb;
+    // Re-validate the stored questions against the per-call schema so the
+    // returned BaselineTurn matches the freshly-typed shape.
+    const out = schema.parse({
+      userMessage: stored.userMessage,
+      questions: { questions: stored.questions },
+    });
+    return { baseline: out, nextStage: "answering" };
+  }
+
+  const pass = await ensureOpenScopingPass(course.id);
+  // Build schema string regardless — retry directive always needs it.
+  // Gate the inline on model capability: only non-strict-mode models get the
+  // inline block. Strong models get the schema via the wire response_format.
+  const modelName = process.env.LLM_MODEL ?? "(default)";
+  const capabilities = getModelCapabilities(modelName);
+  const schemaJson = toSchemaJsonString(schema, { name: "baseline" });
+  const { parsed } = await executeTurn({
+    parent: { kind: "scoping", id: pass.id },
+    seed: { kind: "scoping", topic: course.topic },
+    userMessageContent: renderStageEnvelope({
+      stage: "generate baseline",
+      // Stage envelope carries no learner input on this turn — scope is in the
+      // schema description. Empty learner_input is the bare-stage signal.
+      learnerInput: "",
+      responseSchema: capabilities.honorsStrictMode ? undefined : schemaJson,
+    }),
+    responseSchema: schema,
+    responseSchemaName: "baseline",
+    retryDirective: (err) => buildRetryDirective(err, schemaJson),
+    label: "baseline",
+    successSummary: (p) => `questions=${p.questions.questions.length}`,
   });
-  const { object, usage } = await generateStructured(baselineSchema, messages);
 
-  const outOfScope = object.questions.filter(
-    (q: BaselineQuestion) => !params.framework.baselineScopeTiers.includes(q.tier),
-  );
-  if (outOfScope.length > 0) {
-    const ids = outOfScope.map((q) => `${q.id}(tier=${q.tier})`).join(", ");
-    throw new Error(`baseline questions outside baselineScopeTiers: ${ids}`);
-  }
-
-  // Functional duplicate scan: indexOf's first-occurrence semantics means
-  // any id whose later index differs from its first is a duplicate. Avoids
-  // the mutable-Set pattern `functional/immutable-data` flags.
-  const allIds = object.questions.map((q) => q.id);
-  const duplicates = allIds.filter((id, i) => allIds.indexOf(id) !== i);
-  if (duplicates.length > 0) {
-    throw new Error(`baseline question ids are not unique: ${duplicates.join(", ")}`);
-  }
-
-  return {
-    questions: object.questions,
-    scopeTiers: params.framework.baselineScopeTiers,
-    estimatedStartingTier: params.framework.estimatedStartingTier,
-    usage,
+  // Persist userMessage so cached-replay returns the model's framing, not "".
+  const jsonb: BaselineJsonb = {
+    userMessage: parsed.userMessage,
+    questions: parsed.questions.questions,
+    responses: [],
+    gradings: [],
   };
+  await updateCourseScopingState(course.id, { baseline: jsonb });
+
+  return { baseline: parsed, nextStage: "answering" };
 }
