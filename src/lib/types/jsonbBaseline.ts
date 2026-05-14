@@ -48,7 +48,7 @@ const v3Response = z
 
 /**
  * Verdict ↔ qualityScore alignment table. Defence-in-depth mirror of the
- * same constant in `src/lib/prompts/baselineGrading.ts`: the LLM-facing
+ * same constant in `src/lib/prompts/closeTurn.ts`: the LLM-facing
  * schema enforces this on parse, and the persistence schema enforces it
  * again on every JSONB read so a manual DB write or a future schema drift
  * can't smuggle in `verdict: "correct"` with `qualityScore: 1`.
@@ -65,11 +65,11 @@ export const VERDICT_QUALITY_BANDS: Readonly<
  * LLM grading output for one baseline question, enriched server-side with
  * `conceptTier` (looked up from the baseline question the grading targets).
  *
- * The LLM-facing v4 wire schema (`src/lib/prompts/baselineGrading.ts`) does
- * NOT include `conceptTier` — the model only emits `conceptName`. The
- * harness enriches with `conceptTier` from the baseline question before
- * persisting, so downstream consumers (XP, SM-2 scheduling, starting-tier
- * placement) don't need to re-correlate against `baseline.questions`.
+ * The LLM-facing wire schema (`src/lib/prompts/closeTurn.ts`) does NOT
+ * include `conceptTier` — the model only emits `conceptName`. The harness
+ * enriches with `conceptTier` from the baseline question before persisting,
+ * so downstream consumers (XP, SM-2 scheduling, starting-tier placement)
+ * don't need to re-correlate against `baseline.questions`.
  */
 export const baselineGradingSchema = z
   .object({
@@ -94,7 +94,7 @@ export type BaselineGrading = z.infer<typeof baselineGradingSchema>;
 
 /**
  * What `generateBaseline` writes after questions are generated, before close.
- * `gradings` is initialised empty here and populated by `gradeBaseline`.
+ * `gradings` is initialised empty here and populated by `submitBaseline`.
  *
  * `.strict()` is required for union discrimination in `baselineJsonbSchema`:
  * without it, a malformed closed payload (with `immutableSummary` but missing

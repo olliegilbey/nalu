@@ -1,6 +1,5 @@
 import { BASELINE, PROGRESSION } from "@/lib/config/tuning";
 import type { McOptionKey } from "@/lib/prompts/questionnaire";
-import type { LlmUsage } from "@/lib/types/llm";
 import type { z } from "zod";
 import type { baselineGradingSchema } from "@/lib/types/jsonb";
 
@@ -44,27 +43,6 @@ export interface BaselineEvaluationItem {
 export const MC_CORRECT_QUALITY = BASELINE.mcCorrectQuality;
 /** Quality score for an incorrect MC click. */
 export const MC_INCORRECT_QUALITY = BASELINE.mcIncorrectQuality;
-
-/**
- * `LlmUsage` (= AI SDK `LanguageModelUsage`) requires detail sub-objects
- * even when no call was made. Zero-filled across the board — cache /
- * reasoning fields are `0` rather than `undefined` so the merge reads
- * cleanly downstream if a caller ever aggregates token counts.
- */
-export const ZERO_USAGE: LlmUsage = {
-  inputTokens: 0,
-  outputTokens: 0,
-  totalTokens: 0,
-  inputTokenDetails: {
-    noCacheTokens: 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-  },
-  outputTokenDetails: {
-    textTokens: 0,
-    reasoningTokens: 0,
-  },
-};
 
 /**
  * The shape of a baseline question as stored in the JSONB. We reference
