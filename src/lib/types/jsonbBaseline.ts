@@ -103,7 +103,15 @@ export type BaselineGrading = z.infer<typeof baselineGradingSchema>;
  */
 export const baselineQuestionsJsonbSchema = z
   .object({
-    /** The model's framing message for this baseline turn. Persisted so cached replay can return the model's exact wording. */
+    /**
+     * The model's framing message for this baseline payload. Persisted so
+     * cached replay can return the model's exact wording. In the pre-close
+     * shape this is the baseline-presentation framing written by
+     * `generateBaseline`; on close `submitBaseline` overwrites it with the
+     * model's closing-turn framing so a cached replay of `submitBaseline`
+     * returns the close message (not the presentation message, which still
+     * lives in `context_messages`).
+     */
     userMessage: z.string(),
     questions: z.array(v3Question),
     responses: z.array(v3Response),

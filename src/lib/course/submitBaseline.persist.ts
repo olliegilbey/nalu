@@ -94,8 +94,15 @@ export async function persistScopingClose(
     //    schema regression on this surface fails loud here, not on later read.
     //    `merged.gradings` is the canonical-ordered grading list — overrides
     //    any gradings that may already sit on the pre-close payload.
+    //    `userMessage` is OVERWRITTEN with the model's closing framing
+    //    (`parsed.userMessage`) — replacing the baseline-presentation framing
+    //    that `generateBaseline` wrote earlier. The presentation message is
+    //    NOT lost: it still lives in `context_messages` as the assistant turn
+    //    that emitted the baseline questions. The closing message is the one
+    //    a cached-replay of `submitBaseline` must return, since `submitBaseline`
+    //    is the producer of that payload (cross-task fix per plan §7).
     const widened = baselineClosedJsonbSchema.parse({
-      userMessage: existingBaseline.userMessage,
+      userMessage: parsed.userMessage,
       questions: existingBaseline.questions,
       responses: existingBaseline.responses,
       gradings: merged.gradings,
