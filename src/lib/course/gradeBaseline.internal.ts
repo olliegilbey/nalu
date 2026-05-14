@@ -94,13 +94,20 @@ export function gradeMc(question: StoredQuestion, selected: McOptionKey): Gradin
   if (question.type !== "multiple_choice") {
     throw new Error(`gradeMc called with free_text question ${question.id}`);
   }
+  // Baseline questions are required to carry `conceptName` (see baseline.ts
+  // superRefine). A missing value here means the upstream invariant slipped —
+  // fail loud rather than silently substituting the questionId as concept name,
+  // which would corrupt SM-2 scheduling against a synthetic concept.
+  if (question.conceptName === undefined) {
+    throw new Error(`gradeMc: baseline question ${question.id} missing required conceptName`);
+  }
   const isCorrect = selected === question.correct;
   const qualityScore = isCorrect ? MC_CORRECT_QUALITY : MC_INCORRECT_QUALITY;
   const verdict: GradingEntry["verdict"] =
     qualityScore >= PROGRESSION.passingQualityScore ? "correct" : "incorrect";
   return {
     questionId: question.id,
-    conceptName: question.conceptName ?? question.id,
+    conceptName: question.conceptName,
     verdict,
     qualityScore,
     rationale: isCorrect
@@ -115,10 +122,22 @@ export function toEvaluationItem(
   text: string,
   viaEscape: boolean,
 ): BaselineEvaluationItem {
+  // Baseline questions are required to carry `conceptName` and `tier`
+  // (see baseline.ts superRefine). Silent defaults of `question.id` / `0`
+  // would mask an upstream contract violation as a degraded grading run
+  // (mis-attributed concept; tier=0 confusing the grader prompt). Fail loud.
+  if (question.conceptName === undefined) {
+    throw new Error(
+      `toEvaluationItem: baseline question ${question.id} missing required conceptName`,
+    );
+  }
+  if (question.tier === undefined) {
+    throw new Error(`toEvaluationItem: baseline question ${question.id} missing required tier`);
+  }
   return {
     questionId: question.id,
-    conceptName: question.conceptName ?? question.id,
-    tier: question.tier ?? 0,
+    conceptName: question.conceptName,
+    tier: question.tier,
     question: question.prompt,
     rubric: question.freetextRubric,
     learnerProse: text,

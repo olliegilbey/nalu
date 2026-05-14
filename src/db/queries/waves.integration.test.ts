@@ -17,6 +17,7 @@ const COURSE_ID = "00000000-0000-0000-0000-000000000401";
 
 /** Minimal valid frameworkSnapshot matching frameworkJsonbSchema (camelCase — spec §4.8). */
 const FRAMEWORK_SNAPSHOT = {
+  userMessage: "Here's the framework.",
   estimatedStartingTier: 1,
   baselineScopeTiers: [1, 2],
   tiers: [

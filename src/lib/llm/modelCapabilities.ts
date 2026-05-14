@@ -54,16 +54,19 @@ const MODEL_CAPABILITIES: Readonly<Record<string, ModelCapabilities>> = {
 /**
  * Return capability flags for the given model name.
  *
- * Unknown model names default to `{ honorsStrictMode: true }` — we assume
- * support and let only explicitly weak models opt out. This is conservative:
- * a new honouring model gets correct behaviour without a registry entry.
- * A new weak model that is not yet registered will have `response_format`
- * sent unnecessarily, but the inline schema fallback in the prompt prevents
- * silently broken output (the prompt layer still carries the contract).
+ * Unknown model names default to `{ honorsStrictMode: false }` — the safer
+ * direction. An unknown model is *more* likely to silently ignore
+ * `response_format` than to enforce it (the failure mode this gating exists
+ * to mitigate). Defaulting to `false` causes the inline `<response_schema>`
+ * block to be added, which strong models simply parse and ignore (a few KB
+ * of wasted tokens); the opposite mistake — assuming strict support and
+ * losing both enforcement paths — produces schema-non-conformant output and
+ * avoidable retry exhaust. New honouring models must be added to the
+ * registry explicitly to drop the inline block.
  *
  * @param modelName - The exact model name string (from `LLM_MODEL` env var or
  *   the provider call). Not normalised — must match a registry key exactly.
  */
 export function getModelCapabilities(modelName: string): ModelCapabilities {
-  return MODEL_CAPABILITIES[modelName] ?? { honorsStrictMode: true };
+  return MODEL_CAPABILITIES[modelName] ?? { honorsStrictMode: false };
 }

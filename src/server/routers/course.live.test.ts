@@ -81,7 +81,7 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           // 2. generateFramework
           // ---------------------------------------------------------------
           // Build responses from the clarifying questions — cycle the answer pool.
-          const responses = clarifyingQuestions.map((q: { id: string }, i: number) => ({
+          const responses = clarifyingQuestions.map((q, i) => ({
             questionId: q.id,
             freetext: topic.answerPool[i % topic.answerPool.length]!,
           }));

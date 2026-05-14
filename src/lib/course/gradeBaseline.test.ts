@@ -76,7 +76,7 @@ function scopingCourse(baseline: BaselineJsonb): Course {
     topic: TOPIC,
     status: "scoping",
     clarification: { userMessage: "", questions: [], responses: [] },
-    framework: { tiers: [], estimatedStartingTier: 1, baselineScopeTiers: [1] },
+    framework: { userMessage: "", tiers: [], estimatedStartingTier: 1, baselineScopeTiers: [1] },
     baseline,
   } as unknown as Course;
 }

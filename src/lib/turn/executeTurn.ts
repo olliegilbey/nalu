@@ -12,6 +12,7 @@ import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
 import { renderContext } from "@/lib/llm/renderContext";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
+import { JSON_PARSE_RETRY_DIRECTIVE } from "@/lib/prompts/turn";
 import { SCOPING } from "@/lib/config/tuning";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 import type { SeedInputs } from "@/lib/types/context";
@@ -293,10 +294,7 @@ function parseAndValidate<T>(raw: string, schema: z.ZodType<T>): T {
     try {
       return JSON.parse(raw) as unknown;
     } catch {
-      throw new ValidationGateFailure(
-        "missing_response",
-        "Your previous response did not parse as JSON. Reply with a single JSON object matching the schema attached to this turn.",
-      );
+      throw new ValidationGateFailure("missing_response", JSON_PARSE_RETRY_DIRECTIVE);
     }
   })();
   const safe = schema.safeParse(parsed);

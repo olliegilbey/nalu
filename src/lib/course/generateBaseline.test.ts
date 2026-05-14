@@ -30,6 +30,7 @@ const TOPIC = "Rust ownership";
 
 /** Minimal valid FrameworkJsonb (camelCase — new wire shape). */
 const FRAMEWORK_JSONB: FrameworkJsonb = {
+  userMessage: "Here's the framework I drafted for you.",
   estimatedStartingTier: 1,
   baselineScopeTiers: [1, 2],
   tiers: [

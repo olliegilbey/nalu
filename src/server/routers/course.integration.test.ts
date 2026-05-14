@@ -364,6 +364,7 @@ describe("course.generateFramework", () => {
 
       // Pre-populate the framework directly — simulates a prior successful call.
       const storedFramework = {
+        userMessage: "Cached framework framing.",
         estimatedStartingTier: 1,
         baselineScopeTiers: [1, 2],
         tiers: [
@@ -449,10 +450,11 @@ describe("course.generateFramework", () => {
       const clarifyResult = await callerA.course.clarify({ topic: "Rust" });
 
       // UserB attempts to run generateFramework on UserA's course.
-      // getCourseById throws NotFoundError (plain Error, not TRPCError) when userId
-      // doesn't match — tRPC maps that to INTERNAL_SERVER_ERROR at the transport layer.
-      // The important invariant is that the call rejects and reveals nothing about
-      // UserA's course (info-leak-safe ownership scoping).
+      // getCourseById throws NotFoundError on ownership mismatch; the trpc
+      // mapNotFound middleware translates that to TRPCError(NOT_FOUND) so the
+      // client gets a semantic 404, not a 500. Ownership remains info-leak
+      // safe — same response shape whether the id is unknown or owned by
+      // another user.
       const callerB = appRouter.createCaller({ userId: OTHER_USER });
       await expect(
         callerB.course.generateFramework({
@@ -462,7 +464,7 @@ describe("course.generateFramework", () => {
             { questionId: "q2", freetext: CLARIFY_ANSWERS[1]! },
           ],
         }),
-      ).rejects.toThrow(/course not found/i);
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
   });
 });
@@ -500,6 +502,7 @@ describe("course.generateBaseline", () => {
     // Populate framework — camelCase FrameworkJsonb.
     await updateCourseScopingState(course.id, {
       framework: {
+        userMessage: "Here's the framework.",
         estimatedStartingTier: 1,
         baselineScopeTiers: [1, 2],
         tiers: [

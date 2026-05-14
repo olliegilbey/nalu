@@ -92,33 +92,14 @@ export const PROGRESSION = {
 } as const;
 
 /**
- * LLM transport defaults. Applied in `src/lib/llm/generate.ts` to every
- * structured / chat call unless the caller overrides.
+ * Scoping flow tunables: bounds for input validation and the retry policy on
+ * the clarify → framework → baseline pipeline.
  *
- * `defaultTemperature` favours consistency over creativity — a pedagogical
- * tutor should explain the same concept the same way twice. Individual
- * flows (e.g. creative framing) may override upward.
- *
- * `maxRetries` bounds transient-failure retries (timeouts, 5xx) for
- * every call. The AI SDK handles JSON-parse repair on structured
- * outputs internally — no separate budget.
- */
-/**
- * Scoping flow tunables. Bounds for input validation and retry policy
- * during the clarify → framework → baseline pipeline.
- *
- * `maxParseRetries` is the number of *retry* attempts after the first
- * attempt fails — total attempts = maxParseRetries + 1. Default 2 → 3
- * total. Set deliberately low: with well-authored ValidationGateFailure
- * messages, recovery should land on attempt 2 or fail fast.
- *
- * `maxTopicLength` mirrors the upper bound a Postgres `text` column will
- * happily store; the practical reason for capping is to stop pathological
- * pastes from blowing out the system prompt prefix that becomes the cache key.
- *
- * `maxClarifyAnswers` must equal the upper bound on the clarify
- * questionnaire (see `questionnaireSchema` in `src/lib/prompts/questionnaire.ts`)
- * so a learner can answer every question the LLM emitted.
+ * `maxParseRetries` is *retries* after the first attempt — total = retries + 1.
+ * Low by design: with well-authored ValidationGateFailure messages, recovery
+ * lands on attempt 2 or fails fast. `maxTopicLength` caps pathological pastes
+ * that would blow out the cache-key system prefix. `maxClarifyAnswers` must
+ * match the questionnaire upper bound in `src/lib/prompts/questionnaire.ts`.
  */
 export const SCOPING = {
   maxParseRetries: 2,
@@ -205,11 +186,14 @@ export const BASELINE = {
   mcIncorrectQuality: 1,
 } as const;
 
+/**
+ * LLM transport defaults. Applied in `src/lib/llm/generate.ts` to every
+ * structured and chat call unless an explicit override is passed.
+ * `defaultTemperature` favours consistency over creativity; raise per-flow
+ * only where variety aids learning. `maxRetries` bounds transient-failure
+ * retries — the AI SDK handles JSON-parse repair internally.
+ */
 export const LLM = {
-  // Low temp → consistent explanations + predictable XML tag emission.
-  // PRD-tunable; raise per-flow only where variety aids learning.
   defaultTemperature: 0.3,
-  // Transport retry budget for transient errors. Used by both structured
-  // and chat calls so resilience is uniform.
   maxRetries: 3,
 } as const;

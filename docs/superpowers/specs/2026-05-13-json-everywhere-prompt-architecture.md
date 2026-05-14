@@ -51,7 +51,7 @@ Each turn's user-role message is built by the harness as a _minimal_ envelope: t
 
 Envelope template:
 
-```
+```xml
 <stage>generate baseline</stage>
 <learner_input>
 [The prose the user typed, or a rendered transcript of their questionnaire answers.]

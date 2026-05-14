@@ -6,6 +6,7 @@ import { z } from "zod/v4";
  * to the same letters without duplicating the constant.
  */
 export const MC_OPTION_KEYS = ["A", "B", "C", "D"] as const;
+/** Literal-union of valid MC option keys. Used wherever an MC choice is typed. */
 export type McOptionKey = (typeof MC_OPTION_KEYS)[number];
 
 /**
@@ -102,6 +103,7 @@ export const questionnaireSchema = z
     path: ["questions"],
   });
 
+/** Inferred Questionnaire type — the validated payload returned by the model. */
 export type Questionnaire = z.infer<typeof questionnaireSchema>;
 
 /**
@@ -138,6 +140,7 @@ export const responseSchema = z
     }
   });
 
+/** Inferred single-response type. Has `choice` xor `freetext` set. */
 export type Response = z.infer<typeof responseSchema>;
 
 /** Wrapper for serialising the learner's full set of replies. */
@@ -145,4 +148,5 @@ export const responsesSchema = z.object({
   responses: z.array(responseSchema),
 });
 
+/** Inferred type for the full set of learner replies. */
 export type Responses = z.infer<typeof responsesSchema>;

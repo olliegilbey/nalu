@@ -24,6 +24,7 @@ import {
 /** Minimal valid three-tier framework (camelCase — new wire shape). */
 function validFramework(): FrameworkJsonb {
   return {
+    userMessage: "Here's the framework.",
     estimatedStartingTier: 1,
     baselineScopeTiers: [1, 2],
     tiers: [

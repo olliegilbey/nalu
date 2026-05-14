@@ -22,8 +22,8 @@ import { BASELINE, FRAMEWORK } from "@/lib/config/tuning";
  * requires for the teaching + baseline flows to work correctly.
  *
  * Checks:
- * - Tier count is ≥3 and ≤7 (PRD §3; FRAMEWORK.minTiers/maxTiers, but we use
- *   7 not 8 here because the live tests target standard topics — adjust if needed).
+ * - Tier count is between `FRAMEWORK.minTiers` and `FRAMEWORK.maxTiers`
+ *   (PRD §3 — currently 3–8 inclusive; bounds tracked in `src/lib/config/tuning.ts`).
  * - Every tier has a unique `number`, non-empty `name`, non-empty `description`,
  *   and at least one example concept.
  * - `baselineScopeTiers` is non-empty and every entry is a real tier number.

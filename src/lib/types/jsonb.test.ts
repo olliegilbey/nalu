@@ -87,6 +87,7 @@ describe("jsonb trust-boundary schemas", () => {
   it("validates a framework payload with tiers (camelCase)", () => {
     expect(
       frameworkJsonbSchema.parse({
+        userMessage: "Here's the framework.",
         estimatedStartingTier: 2,
         baselineScopeTiers: [1, 2],
         tiers: [

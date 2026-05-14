@@ -18,6 +18,13 @@ export interface GenerateOptions {
   readonly maxRetries?: number;
   /** Override the model for a single call (testing, capability routing). */
   readonly model?: LlmModel;
+  /**
+   * Model name override for capability lookup. Set this alongside `model`
+   * when the override is a different model than `process.env.LLM_MODEL`,
+   * otherwise the capability gate could send `response_format` to a model
+   * that ignores strict-mode (or strip it from one that needs it).
+   */
+  readonly modelName?: string;
 }
 
 /**
@@ -64,7 +71,10 @@ export async function generateChat(
   opts: ChatOptions = {},
 ): Promise<ChatResult> {
   // Determine whether this model honours strict-mode constrained decoding.
-  const modelName = process.env.LLM_MODEL ?? "(default)";
+  // `opts.modelName` is the test/override seam — it wins over the env so
+  // capability detection stays in sync with the actual provider call when a
+  // test injects a different `opts.model`.
+  const modelName = opts.modelName ?? process.env.LLM_MODEL ?? "(default)";
   const capabilities = getModelCapabilities(modelName);
 
   // Build the responseFormat only when a schema is provided AND the model

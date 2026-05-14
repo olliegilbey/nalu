@@ -147,6 +147,7 @@ describe("generateFramework", () => {
 
   it("idempotency: returns cached FrameworkJsonb when framework already populated", async () => {
     const storedFramework: FrameworkJsonb = {
+      userMessage: "Cached framework framing.",
       estimatedStartingTier: 1,
       baselineScopeTiers: [1, 2],
       tiers: [

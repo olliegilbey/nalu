@@ -1,5 +1,6 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
+import { NotFoundError } from "@/db/queries/errors";
 
 /**
  * Build the tRPC request context. Dev-stub auth: reads `x-dev-user-id`
@@ -23,11 +24,34 @@ export const router = t.router;
 export const publicProcedure = t.procedure;
 
 /**
+ * Map `NotFoundError` (thrown by `src/db/queries/`) to a tRPC `NOT_FOUND`
+ * response. Without this middleware, plain `Error` becomes INTERNAL_SERVER_ERROR
+ * on the wire — clients can't tell a missing row from a server crash. Applied
+ * as a middleware (not a global error formatter) so query-layer code stays
+ * tRPC-agnostic and unit tests on `src/db/queries/` see the original error.
+ */
+const mapNotFound = t.middleware(async ({ next }) => {
+  const result = await next();
+  // tRPC v11 wraps thrown errors into a `{ ok: false, error }` return value
+  // (see `callRecursive` in @trpc/server). Errors don't propagate as throws to
+  // outer middleware — we have to inspect the result and re-throw with the
+  // semantic code.
+  if (!result.ok && result.error.cause instanceof NotFoundError) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: result.error.cause.message,
+      cause: result.error.cause,
+    });
+  }
+  return result;
+});
+
+/**
  * Authenticated procedure. Requires `x-dev-user-id` to be set on the
  * request. Once real auth lands, the body of this middleware swaps to
  * Supabase session resolution; call sites stay unchanged.
  */
-export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+export const protectedProcedure = t.procedure.use(mapNotFound).use(({ ctx, next }) => {
   if (!ctx.userId) {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "missing x-dev-user-id header" });
   }

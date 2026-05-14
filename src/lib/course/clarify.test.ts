@@ -72,11 +72,15 @@ describe("clarify", () => {
     expect(out.clarification.questions.questions).toHaveLength(2);
     expect(out.clarification.questions.questions[0]?.prompt).toBe("What is your goal?");
     expect(out.nextStage).toBe("framework");
-    // Persistence called with the JSONB shape (questions + empty responses).
+    // Persistence called with the JSONB shape (userMessage + questions + empty responses).
     expect(updateCourseScopingState).toHaveBeenCalledWith(
       COURSE.id,
       expect.objectContaining({
-        clarification: expect.objectContaining({ questions: expect.any(Array), responses: [] }),
+        clarification: expect.objectContaining({
+          userMessage: MOCK_CLARIFY_PARSED.userMessage,
+          questions: expect.any(Array),
+          responses: [],
+        }),
       }),
     );
   });

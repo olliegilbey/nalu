@@ -888,7 +888,7 @@ export function renderContext(
 
 Also update the top-of-file TSDoc to describe the filter rule alongside the same-role coalescing. Specifically, add a paragraph:
 
-```
+```text
  * Per-turn retry filter — IMPORTANT: rows are grouped by `turn_index`
  * before coalescing. Within each group: if any row is `assistant_response`,
  * `failed_assistant_response` + `harness_retry_directive` rows in that

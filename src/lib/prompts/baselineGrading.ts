@@ -21,11 +21,31 @@ const gradingItemSchema = z.object({
 });
 
 /**
+ * Verdict ↔ qualityScore alignment table.
+ *
+ * Codifies the description on `qualityScore` ("correct → 4–5, partial → 2–3,
+ * incorrect → 0–1") as machine-checkable bands. Without this the model can
+ * emit `verdict: "correct"` with `qualityScore: 1` and the post-decode gate
+ * passes; SM-2 then schedules a "correct" answer aggressively while XP /
+ * tier-advancement logic disagrees. Bands are inclusive on both ends.
+ */
+const VERDICT_QUALITY_BANDS: Readonly<
+  Record<"correct" | "partial" | "incorrect", [number, number]>
+> = {
+  correct: [4, 5],
+  partial: [2, 3],
+  incorrect: [0, 1],
+};
+
+/**
  * Grade-baseline turn schema. Mirrors the rest of the scoping contract:
  * userMessage (chat) + structured gradings (server-only).
  *
- * Cross-field invariant: gradings list has unique questionIds. Count
- * bounds come from the submitted answer list — the harness enforces those
+ * Cross-field invariants:
+ *   - gradings list has unique questionIds.
+ *   - `verdict` matches the band on `qualityScore` (see VERDICT_QUALITY_BANDS).
+ *
+ * Count bounds come from the submitted answer list — the harness enforces those
  * post-decode in `gradeBaseline.ts` because Cerebras strict mode rejects
  * minItems/maxItems.
  */
@@ -50,6 +70,20 @@ export const gradeBaselineSchema = z
         message: `duplicate questionIds in gradings: ${[...new Set(dupes)].join(", ")}`,
       });
     }
+    // Verdict-band alignment. Caught here (not in `gradingItemSchema`) so the
+    // refine message can quote the questionId for easier model recovery.
+    val.gradings.forEach((g, idx) => {
+      const [lo, hi] = VERDICT_QUALITY_BANDS[g.verdict];
+      if (g.qualityScore < lo || g.qualityScore > hi) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["gradings", idx, "qualityScore"],
+          message:
+            `grading for ${g.questionId}: verdict='${g.verdict}' requires qualityScore in [${lo}, ${hi}], got ${g.qualityScore}. ` +
+            "Map: correct → 4–5, partial → 2–3, incorrect → 0–1.",
+        });
+      }
+    });
   });
 
 export type GradeBaselineTurn = z.infer<typeof gradeBaselineSchema>;

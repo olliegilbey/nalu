@@ -55,6 +55,25 @@ export async function generateFramework(
       message: `responses length (${params.responses.length}) must match questions length (${clarification.questions.length})`,
     });
   }
+  // Fail loud if any response references an unknown questionId, or if duplicate
+  // ids slip through. The old code silently emitted `Q: (unknown <id>) ...` lines
+  // to the LLM, which obscured a client-side bug as a model-quality issue.
+  const knownIds = new Set(clarification.questions.map((q) => q.id));
+  const unknownIds = params.responses.map((r) => r.questionId).filter((id) => !knownIds.has(id));
+  if (unknownIds.length > 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `unknown questionId(s): ${[...new Set(unknownIds)].join(", ")}`,
+    });
+  }
+  const ids = params.responses.map((r) => r.questionId);
+  const dupIds = ids.filter((id, idx) => ids.indexOf(id) !== idx);
+  if (dupIds.length > 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `duplicate questionId(s): ${[...new Set(dupIds)].join(", ")}`,
+    });
+  }
   // Idempotency.
   if (course.framework !== null) {
     return { framework: course.framework as FrameworkJsonb, nextStage: "baseline" };
@@ -75,12 +94,13 @@ export async function generateFramework(
   // Render responses as Q/A pairs for the envelope. Question text comes from the
   // stored questions (trusted — we generated them). Response freetext is sanitised
   // by `renderStageEnvelope` (XML escape).
+  // questionIds validated above — every response now maps to a known question.
+  const questionById = new Map(clarification.questions.map((q) => [q.id, q]));
   const qaPairs = params.responses
     .map((r) => {
-      const q = clarification.questions.find((q) => q.id === r.questionId);
-      return q
-        ? `Q: ${q.prompt}\nA: ${r.freetext}`
-        : `Q: (unknown ${r.questionId})\nA: ${r.freetext}`;
+      const q = questionById.get(r.questionId);
+      if (!q) throw new Error(`generateFramework: invariant — unknown questionId ${r.questionId}`);
+      return `Q: ${q.prompt}\nA: ${r.freetext}`;
     })
     .join("\n\n");
 
@@ -108,9 +128,10 @@ export async function generateFramework(
   });
 
   // Wire shape IS storage shape — write the structured fields directly (no translator).
-  // `userMessage` is the chat bubble; we drop it from JSONB persistence because it's
-  // not re-read after the turn (UI re-uses the assistant_response row for replay).
+  // userMessage persisted so cached-replay returns the model's framing, not "" —
+  // symmetric with clarify/baseline.
   const jsonb: FrameworkJsonb = {
+    userMessage: parsed.userMessage,
     tiers: parsed.tiers,
     estimatedStartingTier: parsed.estimatedStartingTier,
     baselineScopeTiers: parsed.baselineScopeTiers,

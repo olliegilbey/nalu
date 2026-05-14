@@ -74,6 +74,8 @@ export const tierSchema = z.object({
 });
 
 export const frameworkJsonbSchema = z.object({
+  /** The model's framing message for this framework turn. Persisted so cached replay can return the model's exact wording — symmetric with clarification/baseline. */
+  userMessage: z.string(),
   tiers: z.array(tierSchema),
   estimatedStartingTier: z.number().int().min(1),
   baselineScopeTiers: z.array(z.number().int().min(1)),

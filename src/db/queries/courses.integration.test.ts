@@ -78,6 +78,7 @@ describe("courses queries", () => {
 
       // Write a minimal valid framework payload (camelCase — spec §4.8).
       const frameworkPayload = {
+        userMessage: "Here's the framework.",
         estimatedStartingTier: 2,
         baselineScopeTiers: [1, 2],
         tiers: [

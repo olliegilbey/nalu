@@ -10,12 +10,16 @@ describe("getModelCapabilities", () => {
     expect(getModelCapabilities("llama-3.3-70b").honorsStrictMode).toBe(true);
   });
 
-  it("defaults to honorsStrictMode=true for unknown models", () => {
-    expect(getModelCapabilities("some-future-model-7b").honorsStrictMode).toBe(true);
+  it("defaults to honorsStrictMode=false for unknown models", () => {
+    // Safer direction: assume an unknown model ignores strict-mode unless we've
+    // explicitly registered it as honouring. Strong models parse-and-ignore the
+    // resulting inline `<response_schema>` block — cheap insurance against
+    // silent free-form JSON from a not-yet-registered weak model.
+    expect(getModelCapabilities("some-future-model-7b").honorsStrictMode).toBe(false);
   });
 
   it("is case-sensitive — does not normalise model names", () => {
-    // "LLAMA3.1-8B" is NOT in the registry; should get the default (true), not false.
-    expect(getModelCapabilities("LLAMA3.1-8B").honorsStrictMode).toBe(true);
+    // "LLAMA3.1-8B" is NOT in the registry; should get the default (false), not true.
+    expect(getModelCapabilities("LLAMA3.1-8B").honorsStrictMode).toBe(false);
   });
 });

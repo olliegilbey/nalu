@@ -7,6 +7,7 @@ const FIXTURE: WaveSeedInputs = {
   courseTopic: "Rust ownership",
   topicScope: "Python background → embedded systems",
   framework: {
+    userMessage: "Here's the framework.",
     estimatedStartingTier: 2,
     baselineScopeTiers: [1, 2, 3],
     tiers: [
