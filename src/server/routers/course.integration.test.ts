@@ -150,6 +150,37 @@ function validBaselineText(): string {
 // Not `as const` — tRPC input schema expects mutable string[].
 const CLARIFY_ANSWERS: string[] = ["Learn systems programming.", "C++ background."];
 
+/**
+ * Valid scoping-close LLM response — pure JSON matching `makeScopingCloseSchema`.
+ * One grading per baseline question (7 total), all conceptTier in scope ([1, 2]),
+ * verdict/qualityScore bands aligned (correct → 5 ∈ [4,5]).
+ */
+function validScopingCloseText(): string {
+  // Question ids must exactly match those emitted by validBaselineText.
+  const questionIds = ["b1", "b2", "b3", "b4", "b5", "b6", "b7"] as const;
+  return JSON.stringify({
+    userMessage: "Nice work — your first lesson is ready.",
+    gradings: questionIds.map((qid, idx) => ({
+      questionId: qid,
+      verdict: "correct" as const,
+      qualityScore: 5,
+      conceptName: "test-concept",
+      // Alternate tier 1/2 so we exercise both scope tiers; both are in scope.
+      conceptTier: (idx % 2 === 0 ? 1 : 2) as 1 | 2,
+      rationale: "Selected the correct option. Start lesson 1 with a deeper probe.",
+    })),
+    summary: "Learner shows solid grasp of foundations across the baseline.",
+    immutableSummary:
+      "C++ background; aims to learn systems programming. Comfortable with manual memory models.",
+    startingTier: 2,
+    nextUnitBlueprint: {
+      topic: "Ownership basics",
+      outline: ["intro to ownership", "moves vs copies", "borrowing rules"],
+      openingText: "Welcome — given your C++ background, let's start with how Rust differs.",
+    },
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Shared seed helper
 // ---------------------------------------------------------------------------
@@ -653,6 +684,77 @@ describe("course.generateBaseline", () => {
         "harness_retry_directive",
         "assistant_response",
       ]);
+    });
+  });
+});
+
+// ===========================================================================
+// submitBaseline
+// ===========================================================================
+
+describe("course.submitBaseline", () => {
+  // -------------------------------------------------------------------------
+  // Case 13: full pipeline end-to-end
+  // -------------------------------------------------------------------------
+  // Exercises the complete scoping pipeline through the tRPC router:
+  // clarify → generateFramework → generateBaseline → submitBaseline. Each
+  // stage mocks `generateChat` (LLM boundary) with a fixture matching the
+  // stage's Zod schema. All persistence is real DB so we assert the final
+  // course.status flip and the returned wave1Id are consistent end-to-end.
+  it("happy path: full pipeline flips status to active and returns wave1Id", async () => {
+    await withTestDb(async (db) => {
+      await seedUser(db);
+
+      // Stage 1: clarify. Mock returns 2 free-text questions.
+      // Stage 2: framework. Mock returns 3 tiers, baselineScopeTiers=[1,2].
+      // Stage 3: baseline. Mock returns 7 MC questions, all `correct: "A"`.
+      // Stage 4: scoping-close. Mock returns gradings covering all 7 ids,
+      //          startingTier=2 (in scope), valid blueprint + immutableSummary.
+      vi.mocked(generateChat)
+        .mockResolvedValueOnce({ text: validClarifyText(), usage: FAKE_USAGE })
+        .mockResolvedValueOnce({ text: validFrameworkText(), usage: FAKE_USAGE })
+        .mockResolvedValueOnce({ text: validBaselineText(), usage: FAKE_USAGE })
+        .mockResolvedValueOnce({ text: validScopingCloseText(), usage: FAKE_USAGE });
+
+      const caller = appRouter.createCaller({ userId: USER });
+
+      // Stage 1.
+      const clarifyResult = await caller.course.clarify({ topic: "Rust" });
+      const courseId = clarifyResult.courseId;
+
+      // Stage 2.
+      await caller.course.generateFramework({
+        courseId,
+        responses: [
+          { questionId: "q1", freetext: CLARIFY_ANSWERS[0]! },
+          { questionId: "q2", freetext: CLARIFY_ANSWERS[1]! },
+        ],
+      });
+
+      // Stage 3.
+      const baselineResult = await caller.course.generateBaseline({ courseId });
+      // Sanity: ensure mock emitted 7 questions so the submitBaseline answers
+      // below cover every id (precondition enforced server-side).
+      expect(baselineResult.baseline.questions.questions).toHaveLength(7);
+
+      // Stage 4: submit one MC answer per question. All `selected: "A"` =
+      // correct (matches validBaselineText's `correct: "A"` on every q).
+      const answers = baselineResult.baseline.questions.questions.map((q) => ({
+        id: q.id,
+        kind: "mc" as const,
+        selected: "A" as const,
+      }));
+      const result = await caller.course.submitBaseline({ courseId, answers });
+
+      // Returned payload shape.
+      expect(result.userMessage).toBe("Nice work — your first lesson is ready.");
+      expect(result.wave1Id).toBeTruthy();
+      // wave1Id is a UUID — basic shape check (no need to import a regex lib).
+      expect(result.wave1Id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-/i);
+
+      // Course flipped to active.
+      const course = await getCourseById(courseId);
+      expect(course.status).toBe("active");
     });
   });
 });

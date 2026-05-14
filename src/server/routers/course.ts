@@ -3,6 +3,7 @@ import { router, protectedProcedure } from "../trpc";
 import { clarify } from "@/lib/course/clarify";
 import { generateFramework } from "@/lib/course/generateFramework";
 import { generateBaseline } from "@/lib/course/generateBaseline";
+import { submitBaseline } from "@/lib/course/submitBaseline";
 import { SCOPING } from "@/lib/config/tuning";
 
 /**
@@ -49,5 +50,40 @@ export const courseRouter = router({
     .input(z.object({ courseId: z.string().uuid() }))
     .mutation(({ ctx, input }) =>
       generateBaseline({ userId: ctx.userId, courseId: input.courseId }),
+    ),
+
+  /** Close scoping: grade the baseline, prime Wave 1, flip status to active. */
+  submitBaseline: protectedProcedure
+    .input(
+      z.object({
+        courseId: z.string().uuid(),
+        // Discriminated union mirrors the `BaselineAnswer` type exported by
+        // the lib step. The router is the trust boundary; the lib step
+        // assumes the shape is already validated.
+        answers: z
+          .array(
+            z.discriminatedUnion("kind", [
+              z.object({
+                id: z.string().min(1),
+                kind: z.literal("mc"),
+                selected: z.enum(["A", "B", "C", "D"]),
+              }),
+              z.object({
+                id: z.string().min(1),
+                kind: z.literal("freetext"),
+                text: z.string().min(1),
+                fromEscape: z.boolean(),
+              }),
+            ]),
+          )
+          .min(1),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      submitBaseline({
+        userId: ctx.userId,
+        courseId: input.courseId,
+        answers: input.answers,
+      }),
     ),
 });
