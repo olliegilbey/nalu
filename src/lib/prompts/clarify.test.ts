@@ -41,7 +41,10 @@ describe("clarifySchema", () => {
     ).toThrow(/clarify questions must be between/i);
   });
 
-  it("rejects clarify questions carrying conceptName or tier", () => {
+  // Clarify deliberately tolerates stray `conceptName`/`tier` — see the note in
+  // `clarify.ts`. Schema description + system prompt instruct the model to omit
+  // them; weak models occasionally slip and we accept rather than fail the turn.
+  it("accepts clarify questions even if the model emits stray conceptName/tier", () => {
     expect(() =>
       clarifySchema.parse({
         userMessage: "hi",
@@ -52,14 +55,14 @@ describe("clarifySchema", () => {
               type: "free_text",
               prompt: "p",
               freetextRubric: "r",
-              conceptName: "should not be here",
+              conceptName: "model slipped",
               tier: 1,
             },
             { id: "q2", type: "free_text", prompt: "p2", freetextRubric: "r" },
           ],
         },
       }),
-    ).toThrow(/clarify questions must not carry conceptName or tier/i);
+    ).not.toThrow();
   });
 
   it("accepts exactly the maximum clarify questions", () => {
