@@ -11,17 +11,13 @@ import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import type { BaselineJsonb } from "@/lib/types/jsonb";
 import { baselineGradingSchema } from "@/lib/types/jsonb";
 import type { LlmUsage } from "@/lib/types/llm";
-import type { McOptionKey } from "@/lib/prompts/questionnaire";
 import { splitOne, ZERO_USAGE } from "./gradeBaseline.internal";
+import type { BaselineAnswer } from "./submitBaseline.internal";
 
-export type BaselineAnswer =
-  | { readonly id: string; readonly kind: "mc"; readonly selected: McOptionKey }
-  | {
-      readonly id: string;
-      readonly kind: "freetext";
-      readonly text: string;
-      readonly fromEscape: boolean;
-    };
+// Re-export so existing consumers of `gradeBaseline`'s `BaselineAnswer`
+// keep working until Task 9 deletes this file. Definition lives in
+// `submitBaseline.internal.ts` (single source of truth post-Task 4).
+export type { BaselineAnswer };
 
 export interface GradeBaselineParams {
   readonly courseId: string;
