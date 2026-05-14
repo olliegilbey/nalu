@@ -262,6 +262,43 @@ describe("jsonb trust-boundary schemas", () => {
     expect(closed).toBeDefined();
   });
 
+  // Regression guard for the silent-degradation hazard: without `.strict()` on
+  // the pre-close arm, a half-written close payload (missing `summarySeed`)
+  // would fail the closed arm and then fall through to the pre-close arm,
+  // which would happily strip the unknown close-turn fields and look healthy.
+  it("rejects a malformed close payload (immutableSummary without summarySeed) through the union", () => {
+    expect(() =>
+      baselineJsonbSchema.parse({
+        userMessage: "x",
+        questions: [],
+        responses: [],
+        gradings: [],
+        immutableSummary: "durable",
+        // summarySeed missing
+        startingTier: 1,
+      }),
+    ).toThrow(); // strict mode on the questions arm makes immutableSummary/startingTier unknown keys
+  });
+
+  // Parallel guard: a well-formed closed payload must surface its close-turn
+  // fields through the union — the discrimination cannot silently degrade.
+  it("preserves close-turn fields when a closed payload parses through the union (no silent strip)", () => {
+    const parsed = baselineJsonbSchema.parse({
+      userMessage: "x",
+      questions: [],
+      responses: [],
+      gradings: [],
+      immutableSummary: "durable",
+      summarySeed: "v0",
+      startingTier: 3,
+    });
+    expect("startingTier" in parsed).toBe(true);
+    if ("startingTier" in parsed) {
+      expect(parsed.startingTier).toBe(3);
+      expect(parsed.summarySeed).toBe("v0");
+    }
+  });
+
   it("validates a due-concepts snapshot", () => {
     expect(
       dueConceptsSnapshotSchema.parse([

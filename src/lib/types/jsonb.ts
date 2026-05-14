@@ -85,90 +85,23 @@ export type FrameworkJsonb = z.infer<typeof frameworkJsonbSchema>;
 // --- courses.baseline -------------------------------------------------------
 
 /**
- * Verdict ↔ qualityScore alignment table. Defence-in-depth mirror of the
- * same constant in `src/lib/prompts/baselineGrading.ts`: the LLM-facing
- * schema enforces this on parse, and the persistence schema enforces it
- * again on every JSONB read so a manual DB write or a future schema drift
- * can't smuggle in `verdict: "correct"` with `qualityScore: 1`.
+ * Baseline JSONB shapes are defined in `./jsonbBaseline.ts` to keep both
+ * files under the 200-LOC ceiling. Re-exported here so callers continue to
+ * import everything from `@/lib/types/jsonb`.
  */
-const VERDICT_QUALITY_BANDS: Readonly<
-  Record<"correct" | "partial" | "incorrect", readonly [number, number]>
-> = {
-  correct: [4, 5],
-  partial: [2, 3],
-  incorrect: [0, 1],
-};
-
-/**
- * LLM grading output for one baseline question, enriched server-side with
- * `conceptTier` (looked up from the baseline question the grading targets).
- *
- * The LLM-facing v4 wire schema (`src/lib/prompts/baselineGrading.ts`) does
- * NOT include `conceptTier` — the model only emits `conceptName`. The
- * harness enriches with `conceptTier` from the baseline question before
- * persisting, so downstream consumers (XP, SM-2 scheduling, starting-tier
- * placement) don't need to re-correlate against `baseline.questions`.
- */
-export const baselineGradingSchema = z
-  .object({
-    questionId: z.string(),
-    conceptName: z.string(),
-    conceptTier: z.number().int().positive(),
-    verdict: z.enum(["correct", "partial", "incorrect"]),
-    qualityScore: qualityScoreSchema,
-    rationale: z.string(),
-  })
-  .superRefine((val, ctx) => {
-    const [lo, hi] = VERDICT_QUALITY_BANDS[val.verdict];
-    if (val.qualityScore < lo || val.qualityScore > hi) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["qualityScore"],
-        message: `verdict='${val.verdict}' requires qualityScore in [${lo}, ${hi}], got ${val.qualityScore}.`,
-      });
-    }
-  });
-
-/**
- * What `generateBaseline` writes after questions are generated, before close.
- * `gradings` is initialised empty here and populated by `gradeBaseline`.
- */
-export const baselineQuestionsJsonbSchema = z.object({
-  /** The model's framing message for this baseline turn. Persisted so cached replay can return the model's exact wording. */
-  userMessage: z.string(),
-  questions: z.array(v3Question),
-  responses: z.array(v3Response),
-  gradings: z.array(baselineGradingSchema),
-});
-export type BaselineQuestionsJsonb = z.infer<typeof baselineQuestionsJsonbSchema>;
-
-/**
- * What `submitBaseline` writes on close. Strict superset of the pre-close
- * shape, with the close-turn outputs added: dual summaries (immutable
- * profile + evolving seed) and the chosen `startingTier`.
- */
-export const baselineClosedJsonbSchema = baselineQuestionsJsonbSchema.extend({
-  immutableSummary: z.string(),
-  summarySeed: z.string(),
-  startingTier: z.number().int().positive(),
-});
-export type BaselineClosedJsonb = z.infer<typeof baselineClosedJsonbSchema>;
-
-/**
- * Row-guard schema: accepts either shape — the closed shape is a strict
- * superset of the pre-close shape, so consumers discriminate by checking
- * `"startingTier" in baseline`.
- *
- * The closed arm is listed first so payloads carrying close-turn fields
- * surface their stricter parse errors (e.g. missing `summarySeed`) rather
- * than silently degrading to the pre-close shape, which would strip those
- * fields.
- */
-export const baselineJsonbSchema = z.union([
-  baselineClosedJsonbSchema,
+export {
+  VERDICT_QUALITY_BANDS,
+  baselineGradingSchema,
   baselineQuestionsJsonbSchema,
-]);
-export type BaselineJsonb = z.infer<typeof baselineJsonbSchema>;
+  baselineClosedJsonbSchema,
+  baselineJsonbSchema,
+} from "./jsonbBaseline";
+export type {
+  BaselineGrading,
+  BaselineQuestionsJsonb,
+  BaselineClosedJsonb,
+  BaselineJsonb,
+} from "./jsonbBaseline";
 
 // --- waves.due_concepts_snapshot ------------------------------------------
 
