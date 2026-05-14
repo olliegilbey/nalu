@@ -23,6 +23,7 @@
     "src/lib/prompts/clarify.ts": ["types"],
     "src/lib/prompts/baseline.ts": ["types"],
     "src/lib/prompts/baselineGrading.ts": ["types"],
-    "src/lib/prompts/closeTurn.ts": ["types"]
+    "src/lib/prompts/closeTurn.ts": ["types"],
+    "src/lib/prompts/scopingClose.ts": ["types"]
   }
 }

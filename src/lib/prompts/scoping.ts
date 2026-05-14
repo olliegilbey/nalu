@@ -26,7 +26,12 @@ Each turn you receive a <response_schema> block inside the user message. Reply w
 
 export interface RenderStageEnvelopeParams {
   /** Bare stage label — appears verbatim inside `<stage>...</stage>`. */
-  readonly stage: "clarify" | "generate framework" | "generate baseline" | "grade baseline";
+  readonly stage:
+    | "clarify"
+    | "generate framework"
+    | "generate baseline"
+    | "grade baseline"
+    | "close scoping";
   /** Learner input — XML-escaped before embedding. May be empty for stage-only envelopes. */
   readonly learnerInput: string;
   /**
