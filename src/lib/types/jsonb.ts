@@ -84,14 +84,40 @@ export type FrameworkJsonb = z.infer<typeof frameworkJsonbSchema>;
 
 // --- courses.baseline -------------------------------------------------------
 
+/**
+ * Verdict ↔ qualityScore alignment table. Defence-in-depth mirror of the
+ * same constant in `src/lib/prompts/baselineGrading.ts`: the LLM-facing
+ * schema enforces this on parse, and the persistence schema enforces it
+ * again on every JSONB read so a manual DB write or a future schema drift
+ * can't smuggle in `verdict: "correct"` with `qualityScore: 1`.
+ */
+const VERDICT_QUALITY_BANDS: Readonly<
+  Record<"correct" | "partial" | "incorrect", readonly [number, number]>
+> = {
+  correct: [4, 5],
+  partial: [2, 3],
+  incorrect: [0, 1],
+};
+
 /** LLM grading output for one baseline question. */
-export const baselineGradingSchema = z.object({
-  questionId: z.string(),
-  conceptName: z.string(),
-  verdict: z.enum(["correct", "partial", "incorrect"]),
-  qualityScore: qualityScoreSchema,
-  rationale: z.string(),
-});
+export const baselineGradingSchema = z
+  .object({
+    questionId: z.string(),
+    conceptName: z.string(),
+    verdict: z.enum(["correct", "partial", "incorrect"]),
+    qualityScore: qualityScoreSchema,
+    rationale: z.string(),
+  })
+  .superRefine((val, ctx) => {
+    const [lo, hi] = VERDICT_QUALITY_BANDS[val.verdict];
+    if (val.qualityScore < lo || val.qualityScore > hi) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["qualityScore"],
+        message: `verdict='${val.verdict}' requires qualityScore in [${lo}, ${hi}], got ${val.qualityScore}.`,
+      });
+    }
+  });
 
 export const baselineJsonbSchema = z.object({
   /** The model's framing message for this baseline turn. Persisted so cached replay can return the model's exact wording. */

@@ -146,6 +146,28 @@ describe("jsonb trust-boundary schemas", () => {
     ).toThrow();
   });
 
+  // Defence-in-depth: persistence layer also rejects band/verdict mismatches —
+  // not just the LLM-facing prompt schema. Guards against bad data smuggled in
+  // via manual DB writes or future schema drift.
+  it("rejects a baseline grading when verdict and qualityScore bands disagree", () => {
+    expect(() =>
+      baselineJsonbSchema.parse({
+        userMessage: "Here is your baseline assessment.",
+        questions: [],
+        responses: [],
+        gradings: [
+          {
+            questionId: "b1",
+            conceptName: "x",
+            verdict: "correct", // band [4, 5]
+            qualityScore: 1, // mismatch
+            rationale: "ok",
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("validates a due-concepts snapshot", () => {
     expect(
       dueConceptsSnapshotSchema.parse([
