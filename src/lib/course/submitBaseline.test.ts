@@ -1,11 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { withTestDb } from "@/db/testing/withTestDb";
-import { userProfiles } from "@/db/schema";
 import { submitBaseline } from "./submitBaseline";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
-import { createCourse, getCourseById, updateCourseScopingState } from "@/db/queries/courses";
-import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
-import { USER_ID, FRAMEWORK, BASELINE_PRECLOSE, PARSED } from "./submitBaseline.fixtures";
+import { getCourseById } from "@/db/queries/courses";
+import { USER_ID, PARSED, ZERO_USAGE, seedScopingCourse } from "./submitBaseline.fixtures";
 
 /**
  * Integration tests for `submitBaseline`.
@@ -27,35 +25,6 @@ import { USER_ID, FRAMEWORK, BASELINE_PRECLOSE, PARSED } from "./submitBaseline.
  * `submitBaseline.fixtures.ts` alongside the persist suite's shared
  * helpers.
  */
-
-/** Full AI SDK v5 `LanguageModelUsage` zero shape. */
-const ZERO_USAGE = {
-  inputTokens: 0,
-  outputTokens: 0,
-  totalTokens: 0,
-  inputTokenDetails: { noCacheTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-  outputTokenDetails: { textTokens: 0, reasoningTokens: 0 },
-};
-
-/**
- * Seed user, course in scoping with framework + baseline populated, and an
- * open scoping pass (so `executeTurn`'s parent FK has somewhere to land
- * before we mock it out). Returns the course id for the test body.
- */
-async function seedScopingCourse(): Promise<string> {
-  await Promise.resolve(); // satisfy lint: no top-level user inserts.
-  // Note: caller has already entered `withTestDb`.
-  const dbModule = await import("@/db/client");
-  await dbModule.db.insert(userProfiles).values({ id: USER_ID, displayName: "U" });
-  const course = await createCourse({ userId: USER_ID, topic: "Rust" });
-  await updateCourseScopingState(course.id, {
-    framework: FRAMEWORK,
-    baseline: BASELINE_PRECLOSE,
-  });
-  // Pre-open the scoping pass so `ensureOpenScopingPass` returns the same row.
-  await ensureOpenScopingPass(course.id);
-  return course.id;
-}
 
 describe("submitBaseline (integration)", () => {
   beforeEach(() => {

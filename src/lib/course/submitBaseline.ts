@@ -8,7 +8,7 @@ import { makeScopingCloseSchema, renderScopingCloseStage } from "@/lib/prompts/s
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { splitOne, type BaselineAnswer } from "./submitBaseline.internal";
-import { mergeAndComputeXp } from "./submitBaseline.merge";
+import { mergeAndComputeXp } from "@/lib/scoring/baselineMerge";
 import { persistScopingClose } from "./submitBaseline.persist";
 import type { BaselineJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 

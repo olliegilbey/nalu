@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergeAndComputeXp, type StoredGrading } from "./submitBaseline.merge";
+import { mergeAndComputeXp, type StoredGrading } from "./baselineMerge";
 import { BASELINE } from "@/lib/config/tuning";
 import { calculateXP } from "@/lib/scoring/xp";
 

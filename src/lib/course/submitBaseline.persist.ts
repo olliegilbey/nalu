@@ -10,7 +10,7 @@ import {
   type FrameworkJsonb,
 } from "@/lib/types/jsonb";
 import type { ScopingCloseTurn } from "@/lib/prompts/scopingClose";
-import type { MergeAndComputeXpResult } from "./submitBaseline.merge";
+import type { MergeAndComputeXpResult } from "@/lib/scoring/baselineMerge";
 
 /**
  * Inputs for {@link persistScopingClose}.

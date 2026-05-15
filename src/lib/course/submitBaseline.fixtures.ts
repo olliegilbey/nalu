@@ -12,8 +12,9 @@
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles } from "@/db/schema";
 import { createCourse, updateCourseScopingState } from "@/db/queries/courses";
+import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import type { ScopingCloseTurn } from "@/lib/prompts/scopingClose";
-import type { MergeAndComputeXpResult } from "./submitBaseline.merge";
+import type { MergeAndComputeXpResult } from "@/lib/scoring/baselineMerge";
 
 /** Fixed UUID for the test user — avoids runtime UUID generation. */
 export const USER_ID = "55555555-5555-5555-5555-555555555555";
@@ -108,4 +109,34 @@ export async function seedScopingCourseAndRun(
     });
     await fn(course.id);
   });
+}
+
+/** Full AI SDK v5 `LanguageModelUsage` zero shape for executeTurn mocks. */
+export const ZERO_USAGE = {
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  inputTokenDetails: { noCacheTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+  outputTokenDetails: { textTokens: 0, reasoningTokens: 0 },
+};
+
+/**
+ * Seed user, course in scoping with framework + baseline populated, and an
+ * open scoping pass (so `executeTurn`'s parent FK has somewhere to land
+ * before it's mocked out). Returns the course id for the test body.
+ *
+ * Caller must already be inside `withTestDb` (uses the imported db singleton
+ * directly rather than receiving it via callback).
+ */
+export async function seedScopingCourse(): Promise<string> {
+  const dbModule = await import("@/db/client");
+  await dbModule.db.insert(userProfiles).values({ id: USER_ID, displayName: "U" });
+  const course = await createCourse({ userId: USER_ID, topic: "Rust" });
+  await updateCourseScopingState(course.id, {
+    framework: FRAMEWORK,
+    baseline: BASELINE_PRECLOSE,
+  });
+  // Pre-open the scoping pass so `ensureOpenScopingPass` returns the same row.
+  await ensureOpenScopingPass(course.id);
+  return course.id;
 }

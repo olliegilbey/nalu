@@ -30,6 +30,10 @@ export interface MergeAndComputeXpResult {
  * Merge LLM and mechanical gradings into one canonically-ordered list and
  * compute total XP for the baseline.
  *
+ * Lives under `src/lib/scoring/` because it is a pure scoring/aggregation
+ * function — no IO, no DB. The orchestrator (`src/lib/course/submitBaseline`)
+ * imports it; nothing scoring-side depends on course types.
+ *
  * Defence-in-depth: the LLM schema's superRefine already enforces
  * `startingTier` and `conceptTier` are in scope, but a second assertion
  * here makes the orchestration fail loud if a future schema regression
