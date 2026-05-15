@@ -85,48 +85,23 @@ export type FrameworkJsonb = z.infer<typeof frameworkJsonbSchema>;
 // --- courses.baseline -------------------------------------------------------
 
 /**
- * Verdict ↔ qualityScore alignment table. Defence-in-depth mirror of the
- * same constant in `src/lib/prompts/baselineGrading.ts`: the LLM-facing
- * schema enforces this on parse, and the persistence schema enforces it
- * again on every JSONB read so a manual DB write or a future schema drift
- * can't smuggle in `verdict: "correct"` with `qualityScore: 1`.
+ * Baseline JSONB shapes are defined in `./jsonbBaseline.ts` to keep both
+ * files under the 200-LOC ceiling. Re-exported here so callers continue to
+ * import everything from `@/lib/types/jsonb`.
  */
-const VERDICT_QUALITY_BANDS: Readonly<
-  Record<"correct" | "partial" | "incorrect", readonly [number, number]>
-> = {
-  correct: [4, 5],
-  partial: [2, 3],
-  incorrect: [0, 1],
-};
-
-/** LLM grading output for one baseline question. */
-export const baselineGradingSchema = z
-  .object({
-    questionId: z.string(),
-    conceptName: z.string(),
-    verdict: z.enum(["correct", "partial", "incorrect"]),
-    qualityScore: qualityScoreSchema,
-    rationale: z.string(),
-  })
-  .superRefine((val, ctx) => {
-    const [lo, hi] = VERDICT_QUALITY_BANDS[val.verdict];
-    if (val.qualityScore < lo || val.qualityScore > hi) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["qualityScore"],
-        message: `verdict='${val.verdict}' requires qualityScore in [${lo}, ${hi}], got ${val.qualityScore}.`,
-      });
-    }
-  });
-
-export const baselineJsonbSchema = z.object({
-  /** The model's framing message for this baseline turn. Persisted so cached replay can return the model's exact wording. */
-  userMessage: z.string(),
-  questions: z.array(v3Question),
-  responses: z.array(v3Response),
-  gradings: z.array(baselineGradingSchema),
-});
-export type BaselineJsonb = z.infer<typeof baselineJsonbSchema>;
+export {
+  VERDICT_QUALITY_BANDS,
+  baselineGradingSchema,
+  baselineQuestionsJsonbSchema,
+  baselineClosedJsonbSchema,
+  baselineJsonbSchema,
+} from "./jsonbBaseline";
+export type {
+  BaselineGrading,
+  BaselineQuestionsJsonb,
+  BaselineClosedJsonb,
+  BaselineJsonb,
+} from "./jsonbBaseline";
 
 // --- waves.due_concepts_snapshot ------------------------------------------
 
@@ -164,8 +139,15 @@ export type Blueprint = z.infer<typeof blueprintSchema>;
  * on whether this is the first Wave (scoping handoff) or a continuation.
  */
 export const seedSourceSchema = z.discriminatedUnion("kind", [
-  /** Wave 1: seeded directly from the scoping framework output. */
-  z.object({ kind: z.literal("scoping_handoff") }),
+  /**
+   * Wave 1: seeded from the scoping close-turn output. The blueprint here is
+   * the one emitted alongside `startingContext` when scoping finalised,
+   * carried over to seed the first teaching Wave's opening prompt.
+   */
+  z.object({
+    kind: z.literal("scoping_handoff"),
+    blueprint: blueprintSchema,
+  }),
   /** Wave N>1: seeded from the prior Wave's emitted blueprint. */
   z.object({
     kind: z.literal("prior_blueprint"),

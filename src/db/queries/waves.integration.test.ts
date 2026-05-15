@@ -34,15 +34,18 @@ const FRAMEWORK_SNAPSHOT = {
 /** Minimal valid dueConceptsSnapshot (empty is valid). */
 const DUE_CONCEPTS_SNAPSHOT = [] as const;
 
-/** Minimal valid seedSource for Wave 1. */
-const SEED_SOURCE_WAVE1 = { kind: "scoping_handoff" } as const;
-
 /** Minimal valid Blueprint for closeWave. */
 const BLUEPRINT = {
   topic: "Rust borrowing",
   outline: ["What is borrowing?", "Mutable vs immutable references"],
   openingText: "Let's dive into borrowing in Rust.",
 };
+
+/**
+ * Minimal valid seedSource for Wave 1. Wave 1 is seeded from the scoping
+ * close-turn's blueprint, so `scoping_handoff` now carries a blueprint too.
+ */
+const SEED_SOURCE_WAVE1 = { kind: "scoping_handoff", blueprint: BLUEPRINT } as const;
 
 /**
  * Seed the test user and course, then run `fn` inside the same `withTestDb` call.

@@ -141,8 +141,8 @@ export const FRAMEWORK = {
 
 /**
  * Baseline-assessment bounds. Consumed by `src/lib/prompts/baseline.ts`
- * (generation) and `src/lib/course/gradeBaseline.ts` (mechanical MC
- * scoring + batch grading via `executeTurn`). Keeping
+ * (generation) and `src/lib/course/submitBaseline.ts` (mechanical MC
+ * scoring + batch grading via the close turn). Keeping
  * the numbers in one place means prompt text, Zod schemas, and grading
  * code can't drift.
  *

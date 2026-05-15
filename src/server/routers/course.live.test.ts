@@ -27,6 +27,7 @@ import {
   assertBaselineStructural,
   assertIdempotency,
 } from "@/lib/testing/scopingInvariants";
+import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 
 // ---------------------------------------------------------------------------
 // Gate: skip every test unless both flags are set.
@@ -104,6 +105,11 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           const { baseline: cached } = await caller.course.generateBaseline({ courseId });
           assertIdempotency(Date.now() - start, `generateBaseline(${topic.slug})`);
           expect(cached, "idempotency: cached baseline equals original").toEqual(baseline);
+
+          // End-of-test forensics — see submitBaseline.live.test.ts for
+          // rationale. Per-topic block at the bottom of stderr; lets a
+          // reader scroll once to find each topic's final prompt.
+          await emitSmokeFinalSnapshot({ db, courseId, topic: topic.topic });
         });
       });
     });

@@ -49,6 +49,21 @@ const MODEL_CAPABILITIES: Readonly<Record<string, ModelCapabilities>> = {
    * The inline schema block is omitted for this model to save prompt tokens.
    */
   "llama-3.3-70b": { honorsStrictMode: true },
+
+  /**
+   * Cerebras preview 235B model (Qwen 3 Instruct). Supports strict-mode
+   * `response_format` constrained decoding, so the inline `<response_schema>`
+   * block is omitted to save prompt tokens.
+   *
+   * Current default for `just smoke` (see justfile). Picked because the
+   * llama3.1-8b 8192-token ceiling overruns on the close-scoping turn once
+   * the conversation accrues all four stage envelopes; qwen has headroom.
+   *
+   * Cerebras sunsets this model on 2026-05-27 — same cliff as llama3.1-8b.
+   * Re-audit free-tier availability before that date. See
+   * memory/project_llama_8b_deprecation.md.
+   */
+  "qwen-3-235b-a22b-instruct-2507": { honorsStrictMode: true },
 };
 
 /**

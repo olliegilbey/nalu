@@ -1,5 +1,6 @@
 {
   "enabledPlugins": {
-    "superpowers@claude-plugins-official": true
+    "superpowers@claude-plugins-official": true,
+    "context-budget-monitor@olliegilbey-plugins": true
   }
 }

@@ -20,7 +20,11 @@ const SEED: WaveSeedInputs = {
   customInstructions: null,
   courseSummary: null,
   dueConcepts: [],
-  seedSource: { kind: "scoping_handoff" },
+  // scoping_handoff now carries the blueprint emitted by scoping's close turn.
+  seedSource: {
+    kind: "scoping_handoff",
+    blueprint: { topic: "Rust ownership", outline: ["ownership"], openingText: "Welcome." },
+  },
 };
 
 const baseRow: Omit<ContextMessage, "id" | "createdAt"> = {

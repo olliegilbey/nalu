@@ -1,5 +1,5 @@
 import { and, asc, eq, lte, sql } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { concepts, type Concept } from "@/db/schema";
 import type { QualityScore, SM2CardState } from "@/lib/types/spaced-repetition";
 import { NotFoundError } from "./errors";
@@ -151,14 +151,23 @@ export async function getDueConceptsByCourse(
  * SQL expression objects). After the upsert, re-fetches via a typed Drizzle
  * select keyed on `(courseId, lower(name))` for camelCase mapping.
  *
+ * Optional `tx` opts the INSERT and re-fetch into a caller's transaction. The
+ * INSERT and SELECT share the same executor — using `db` for the SELECT after
+ * a tx INSERT would query a different connection that cannot see the
+ * uncommitted row.
+ *
  * @throws {Error} if the re-fetch returns no row (should never happen).
  */
-export async function upsertConcept(params: UpsertConceptParams): Promise<Concept> {
+export async function upsertConcept(params: UpsertConceptParams, tx?: DbOrTx): Promise<Concept> {
+  // Use the caller's transaction handle if supplied, else the singleton.
+  // BOTH the INSERT and the re-fetch must run on the same executor — see
+  // docstring.
+  const exec = tx ?? db;
   // Raw INSERT … ON CONFLICT DO NOTHING: functional index target
   // `(course_id, lower(name))` cannot be passed to Drizzle's insert builder
   // in this version. DO NOTHING skips the write without locking the existing
   // row — cheaper than the prior `DO UPDATE SET name = EXCLUDED.name` no-op.
-  await db.execute(sql`
+  await exec.execute(sql`
     INSERT INTO concepts (course_id, name, description, tier)
     VALUES (
       ${params.courseId},
@@ -173,7 +182,7 @@ export async function upsertConcept(params: UpsertConceptParams): Promise<Concep
   // Re-fetch via typed Drizzle select on the natural key so the returned row
   // goes through Drizzle's camelCase mapping.
   // `lower(name) = lower(incoming name)` matches both the insert and conflict paths.
-  const [row] = await db
+  const [row] = await exec
     .select()
     .from(concepts)
     .where(

@@ -1,5 +1,5 @@
 import { asc, eq, and, sql, max } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { waves, type Wave } from "@/db/schema";
 import {
   frameworkJsonbSchema,
@@ -164,8 +164,11 @@ export async function getLatestWaveNumberByCourse(courseId: string): Promise<num
  * The partial unique index `waves_one_open_per_course` will throw a unique
  * violation if another open Wave already exists for this course — callers
  * must close the current Wave before opening the next.
+ *
+ * Optional `tx` opts the INSERT into a caller's transaction so a Wave-open
+ * rolls back atomically with sibling writes (e.g. scoping-close transaction).
  */
-export async function openWave(params: OpenWaveParams): Promise<Wave> {
+export async function openWave(params: OpenWaveParams, tx?: DbOrTx): Promise<Wave> {
   // Parse-before-persist boundary: each JSONB column is Zod-validated BEFORE
   // the insert so a malformed payload throws here rather than landing a bad
   // row that only fails on the next read via `waveRowGuard`. Mirrors the
@@ -174,7 +177,8 @@ export async function openWave(params: OpenWaveParams): Promise<Wave> {
   const validatedDue = dueConceptsSnapshotSchema.parse(params.dueConceptsSnapshot);
   const validatedSeed = seedSourceSchema.parse(params.seedSource);
 
-  const [row] = await db
+  const exec = tx ?? db;
+  const [row] = await exec
     .insert(waves)
     .values({
       courseId: params.courseId,

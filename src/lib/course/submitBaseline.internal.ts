@@ -1,9 +1,16 @@
 import { BASELINE, PROGRESSION } from "@/lib/config/tuning";
 import type { McOptionKey } from "@/lib/prompts/questionnaire";
-import type { LlmUsage } from "@/lib/types/llm";
 import type { z } from "zod";
 import type { baselineGradingSchema } from "@/lib/types/jsonb";
-import type { BaselineAnswer } from "./gradeBaseline";
+
+export type BaselineAnswer =
+  | { readonly id: string; readonly kind: "mc"; readonly selected: McOptionKey }
+  | {
+      readonly id: string;
+      readonly kind: "freetext";
+      readonly text: string;
+      readonly fromEscape: boolean;
+    };
 
 /** The new unified grading shape (camelCase, matches baselineGradingSchema). */
 export type GradingEntry = z.infer<typeof baselineGradingSchema>;
@@ -36,27 +43,6 @@ export interface BaselineEvaluationItem {
 export const MC_CORRECT_QUALITY = BASELINE.mcCorrectQuality;
 /** Quality score for an incorrect MC click. */
 export const MC_INCORRECT_QUALITY = BASELINE.mcIncorrectQuality;
-
-/**
- * `LlmUsage` (= AI SDK `LanguageModelUsage`) requires detail sub-objects
- * even when no call was made. Zero-filled across the board — cache /
- * reasoning fields are `0` rather than `undefined` so the merge reads
- * cleanly downstream if a caller ever aggregates token counts.
- */
-export const ZERO_USAGE: LlmUsage = {
-  inputTokens: 0,
-  outputTokens: 0,
-  totalTokens: 0,
-  inputTokenDetails: {
-    noCacheTokens: 0,
-    cacheReadTokens: 0,
-    cacheWriteTokens: 0,
-  },
-  outputTokenDetails: {
-    textTokens: 0,
-    reasoningTokens: 0,
-  },
-};
 
 /**
  * The shape of a baseline question as stored in the JSONB. We reference
@@ -94,12 +80,14 @@ export function gradeMc(question: StoredQuestion, selected: McOptionKey): Gradin
   if (question.type !== "multiple_choice") {
     throw new Error(`gradeMc called with free_text question ${question.id}`);
   }
-  // Baseline questions are required to carry `conceptName` (see baseline.ts
-  // superRefine). A missing value here means the upstream invariant slipped —
-  // fail loud rather than silently substituting the questionId as concept name,
-  // which would corrupt SM-2 scheduling against a synthetic concept.
+  // Baseline questions are required to carry `conceptName` AND `tier` (see
+  // baseline.ts superRefine). Silent defaults would corrupt SM-2 scheduling
+  // (synthetic concept) and starting-tier placement (tier=0). Fail loud.
   if (question.conceptName === undefined) {
     throw new Error(`gradeMc: baseline question ${question.id} missing required conceptName`);
+  }
+  if (question.tier === undefined) {
+    throw new Error(`gradeMc: baseline question ${question.id} missing required tier`);
   }
   const isCorrect = selected === question.correct;
   const qualityScore = isCorrect ? MC_CORRECT_QUALITY : MC_INCORRECT_QUALITY;
@@ -108,6 +96,12 @@ export function gradeMc(question: StoredQuestion, selected: McOptionKey): Gradin
   return {
     questionId: question.id,
     conceptName: question.conceptName,
+    // MC is graded mechanically — the LLM never sees this answer. Per the
+    // LLM-XP boundary, the server uses the stored `question.tier` as the
+    // authoritative source. (The wire schema does emit `conceptTier` for
+    // free-text entries; that path is validated server-side in
+    // `mergeAndComputeXp` against the framework's `baselineScopeTiers`.)
+    conceptTier: question.tier,
     verdict,
     qualityScore,
     rationale: isCorrect
