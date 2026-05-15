@@ -62,14 +62,13 @@ export const VERDICT_QUALITY_BANDS: Readonly<
 };
 
 /**
- * LLM grading output for one baseline question, enriched server-side with
- * `conceptTier` (looked up from the baseline question the grading targets).
- *
- * The LLM-facing wire schema (`src/lib/prompts/closeTurn.ts`) does NOT
- * include `conceptTier` — the model only emits `conceptName`. The harness
- * enriches with `conceptTier` from the baseline question before persisting,
- * so downstream consumers (XP, SM-2 scheduling, starting-tier placement)
- * don't need to re-correlate against `baseline.questions`.
+ * LLM grading output for one baseline question. The wire schema
+ * (`src/lib/prompts/closeTurn.ts`) emits both `conceptName` and
+ * `conceptTier`, but the model never grades MC answers: for mechanical MC
+ * entries the server uses the stored `question.tier` (authoritative,
+ * per the LLM-XP boundary). For free-text entries the LLM's `conceptTier`
+ * is what gets stored, validated server-side against the framework's
+ * `baselineScopeTiers` via `mergeAndComputeXp`'s defence-in-depth check.
  */
 export const baselineGradingSchema = z
   .object({

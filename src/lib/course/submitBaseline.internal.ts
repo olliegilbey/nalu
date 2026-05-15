@@ -96,10 +96,11 @@ export function gradeMc(question: StoredQuestion, selected: McOptionKey): Gradin
   return {
     questionId: question.id,
     conceptName: question.conceptName,
-    // Enriched server-side from the question's tier — the LLM-facing grading
-    // schema doesn't emit conceptTier; persistence (`baselineGradingSchema`)
-    // requires it so downstream consumers don't re-correlate against
-    // `baseline.questions`.
+    // MC is graded mechanically — the LLM never sees this answer. Per the
+    // LLM-XP boundary, the server uses the stored `question.tier` as the
+    // authoritative source. (The wire schema does emit `conceptTier` for
+    // free-text entries; that path is validated server-side in
+    // `mergeAndComputeXp` against the framework's `baselineScopeTiers`.)
     conceptTier: question.tier,
     verdict,
     qualityScore,
