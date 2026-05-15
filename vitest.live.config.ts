@@ -11,8 +11,11 @@ import path from "path";
  *
  * `fileParallelism: false`: sequential file execution so we don't hammer the
  * Cerebras free-tier rate limit with concurrent long-running tests.
- * `testTimeout: 120_000`: each test makes 3+ LLM round-trips; framework gen
- * alone can take 10–30s on Cerebras free tier.
+ * `testTimeout: 180_000`: each test makes 3–4 LLM round-trips; framework gen
+ * alone can take 10–30s on Cerebras free tier, and the close-turn test in
+ * submitBaseline.live makes 4 round-trips including a slower qwen call. 120s
+ * was right at the edge; 180s gives comfortable headroom without masking a
+ * genuine hang.
  */
 export default defineConfig({
   test: {
@@ -23,8 +26,8 @@ export default defineConfig({
     alias: { "@": path.resolve(__dirname, "./src") },
     pool: "forks",
     fileParallelism: false,
-    testTimeout: 120_000,
-    hookTimeout: 120_000,
+    testTimeout: 180_000,
+    hookTimeout: 180_000,
     setupFiles: ["src/db/testing/setup.ts"],
   },
 });

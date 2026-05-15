@@ -31,3 +31,14 @@ export function getEnv(): z.infer<typeof envSchema> {
   }
   return _env;
 }
+
+/**
+ * Test-only: invalidate the cached env so the next `getEnv()` re-reads
+ * `process.env`. Used by the close-scoping live smoke to swap models
+ * mid-test (llama for clarify/framework/baseline, qwen for the close turn
+ * only — llama's 8k ceiling overflows on the close after prior turns are
+ * appended). Production never mutates env, so never calls this.
+ */
+export function __resetEnvCacheForTests(): void {
+  _env = undefined;
+}

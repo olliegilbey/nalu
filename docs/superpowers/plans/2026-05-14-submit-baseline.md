@@ -1858,7 +1858,7 @@ EOF
 
 ## Notes for the implementing agent
 
-- **Subagent dispatch:** if executing via `superpowers:subagent-driven-development`, default subagent model = Sonnet (per `feedback_subagent_default_model_sonnet`). Implementers use red→green TDD; controller verifies green locally (per `feedback_subagent_tdd_and_local_verify`), never defers to CI.
+- **Subagent dispatch:** if executing via `superpowers:subagent-driven-development`, use Opus 4.7 (`opus`) for all implementer and reviewer subagents on this plan. Implementers use red→green TDD; controller verifies green locally (per `feedback_subagent_tdd_and_local_verify`), never defers to CI.
 - **Branch, not worktree:** check the impl branch out directly in the main repo (per `feedback_subagent_branches_not_worktrees`); avoid worktree permission friction.
 - **Don't echo secrets:** if Cerebras keys are referenced for smoke, use `op read` piped into env or `op run` — never echo the value (per `feedback_secrets_never_in_chat`).
 - **Simplification audit at each task:** before adding a new file, ask whether an existing file could absorb it. The plan's three-file split for `submitBaseline.{ts,persist.ts,internal.ts,merge.ts}` is justified by the 200-LOC ceiling, but collapse anything that's actually small enough.
