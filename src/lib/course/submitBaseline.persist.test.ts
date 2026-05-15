@@ -1,11 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { withTestDb } from "@/db/testing/withTestDb";
-import { userProfiles } from "@/db/schema";
 import { persistScopingClose } from "./submitBaseline.persist";
-import { createCourse, getCourseById, updateCourseScopingState } from "@/db/queries/courses";
+import { getCourseById } from "@/db/queries/courses";
 import { getConceptsByCourse } from "@/db/queries/concepts";
 import { openWave, getOpenWaveByCourse } from "@/db/queries/waves";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
+import { FRAMEWORK, PARSED, MERGED, seedScopingCourseAndRun } from "./submitBaseline.fixtures";
 
 /**
  * Integration tests for `persistScopingClose`.
@@ -13,101 +12,11 @@ import { getMessagesForWave } from "@/db/queries/contextMessages";
  * Runs against the real Postgres testcontainer (no mocks) so the SQL paths,
  * JSONB casts, and partial unique indexes all exercise the same code as
  * production. Each `withTestDb` call truncates every table first.
- */
-
-/** Fixed UUID for the test user — avoids runtime UUID generation. */
-const USER_ID = "55555555-5555-5555-5555-555555555555";
-
-/** Minimal valid framework matching `frameworkJsonbSchema`. */
-const FRAMEWORK = {
-  userMessage: "fw",
-  estimatedStartingTier: 1,
-  baselineScopeTiers: [1, 2],
-  tiers: [
-    { number: 1, name: "Basics", description: "Intro", exampleConcepts: ["a"] },
-    { number: 2, name: "Borrowing", description: "Refs", exampleConcepts: ["b"] },
-  ],
-} as const;
-
-/** Minimal valid baseline (pre-close shape) with one free-text question. */
-const BASELINE_PRECLOSE = {
-  userMessage: "baseline framing",
-  questions: [
-    {
-      id: "b1",
-      type: "free_text" as const,
-      prompt: "What is ownership?",
-      freetextRubric: "rubric",
-      conceptName: "ownership",
-      tier: 2,
-    },
-  ],
-  responses: [{ questionId: "b1", freetext: "the rule about owning values" }],
-  gradings: [],
-} as const;
-
-/**
- * Minimal valid parsed close-turn payload (post-Zod).
  *
- * Plain (non-`as const`) object so `gradings` is a mutable array — matches
- * the inferred `ScopingCloseTurn` shape from `makeScopingCloseSchema`.
- * `verdict`/`qualityScore` retain literal types via `satisfies` below.
+ * Fixtures (FRAMEWORK / BASELINE_PRECLOSE / PARSED / MERGED /
+ * seedScopingCourseAndRun) live in `submitBaseline.fixtures.ts` so this
+ * file stays under the 200-LOC ceiling.
  */
-const PARSED: import("@/lib/prompts/scopingClose").ScopingCloseTurn = {
-  userMessage: "closing chat message",
-  immutableSummary: "durable profile",
-  summary: "evolving seed",
-  startingTier: 2,
-  // The base schema also requires `gradings` on the parsed payload, but
-  // persistScopingClose only consumes `merged.gradings`, not parsed.gradings.
-  // Keep this here as a typed value to match `ScopingCloseTurn`.
-  gradings: [
-    {
-      questionId: "b1",
-      conceptName: "ownership",
-      conceptTier: 2,
-      verdict: "correct",
-      qualityScore: 5,
-      rationale: "good",
-    },
-  ],
-  nextUnitBlueprint: {
-    topic: "Ownership basics",
-    outline: ["intro", "examples"],
-    openingText: "Welcome to lesson 1.",
-  },
-};
-
-/** Canonical-ordered gradings + deterministic XP from `mergeAndComputeXp`. */
-const MERGED: import("./submitBaseline.merge").MergeAndComputeXpResult = {
-  gradings: [
-    {
-      questionId: "b1",
-      conceptName: "ownership",
-      conceptTier: 2,
-      verdict: "correct",
-      qualityScore: 5,
-      rationale: "good",
-    },
-  ],
-  totalXp: 50,
-};
-
-/**
- * Seed user, create a course in scoping with framework + baseline already
- * populated, then run the test body against the same `withTestDb` instance.
- */
-async function seedScopingCourseAndRun(fn: (courseId: string) => Promise<void>): Promise<void> {
-  return withTestDb(async (db) => {
-    await db.insert(userProfiles).values({ id: USER_ID, displayName: "U" });
-    const course = await createCourse({ userId: USER_ID, topic: "Rust" });
-    await updateCourseScopingState(course.id, {
-      framework: FRAMEWORK,
-      baseline: BASELINE_PRECLOSE,
-    });
-    await fn(course.id);
-  });
-}
 
 describe("persistScopingClose (integration)", () => {
   // -------------------------------------------------------------------------

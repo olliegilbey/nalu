@@ -104,7 +104,7 @@ Three small extensions, no migrations:
 
 **`courses.baseline` JSONB widens** (in `src/lib/types/jsonb.ts`):
 
-```
+```text
 {
   userMessage, questions, responses, gradings,   // existing
   immutableSummary,                              // NEW
@@ -274,7 +274,7 @@ The voice across all of these: imperative, outcome-led, learner-facing vocabular
 
 ## 4. The lib step
 
-```
+```text
 src/lib/course/submitBaseline.ts          (orchestration: preconditions, executeTurn, calls persist)
 src/lib/course/submitBaseline.persist.ts  (transaction body: all the writes)
 src/lib/course/submitBaseline.internal.ts (MC grading helpers; content of old gradeBaseline.internal.ts)
@@ -399,10 +399,11 @@ Refine messages are written as teacher-style retry directives so the model can f
 ### 7.1 Pure-logic TDD (red → green)
 
 - MC grading helpers in `submitBaseline.internal.ts` — keep existing unit tests, adjust imports.
-- `clampAndMerge` — new pure function. Tests:
-  - Out-of-range `startingTier` is clamped to scope.
-  - Out-of-range `conceptTier` is clamped to scope.
+- `mergeAndComputeXp` — new pure function. Tests:
+  - Out-of-range `startingTier` throws (defence-in-depth; the superRefine should have caught it upstream).
+  - Out-of-range `conceptTier` throws on the same defence-in-depth principle.
   - Mechanical MC gradings merge with LLM gradings without duplicates and in the canonical question order.
+  - Mechanical MC grading wins when the LLM also emits an entry for the same questionId (MC is authoritative — LLM never grades MC).
   - Total XP equals sum of `calculateXP(startingTier, qualityScore)` across all gradings.
 
 ### 7.2 Integration tests (`submitBaseline.test.ts`)

@@ -84,14 +84,32 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
   const scopeTiers = framework.baselineScopeTiers;
   const questionIds = baseline.questions.map((q) => q.id);
 
-  // Every baseline question must have a matching answer; a missing answer is
-  // a UI bug, not an LLM error — surface as tRPC precondition before any call.
-  const answerIds = new Set(params.answers.map((a) => a.id));
+  // Every baseline question must have exactly one matching answer. Missing,
+  // duplicate, or unknown answer ids are all UI bugs (not LLM errors) and
+  // each fails loud before any LLM call. Duplicates would otherwise collapse
+  // silently via `Object.fromEntries` last-write-wins below.
+  const knownQids = new Set(questionIds);
+  const answerIdList = params.answers.map((a) => a.id);
+  const answerIds = new Set(answerIdList);
   const missing = questionIds.filter((qid) => !answerIds.has(qid));
   if (missing.length > 0) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
       message: `submitBaseline: missing answers for questions ${missing.join(", ")}`,
+    });
+  }
+  const duplicates = answerIdList.filter((id, i) => answerIdList.indexOf(id) !== i);
+  if (duplicates.length > 0) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `submitBaseline: duplicate answers for questions ${[...new Set(duplicates)].join(", ")}`,
+    });
+  }
+  const unknown = answerIdList.filter((id) => !knownQids.has(id));
+  if (unknown.length > 0) {
+    throw new TRPCError({
+      code: "PRECONDITION_FAILED",
+      message: `submitBaseline: answers for unknown questions ${unknown.join(", ")}`,
     });
   }
 

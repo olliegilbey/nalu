@@ -5,7 +5,7 @@ import { submitBaseline } from "./submitBaseline";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import { createCourse, getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
-import type { ScopingCloseTurn } from "@/lib/prompts/scopingClose";
+import { USER_ID, FRAMEWORK, BASELINE_PRECLOSE, PARSED } from "./submitBaseline.fixtures";
 
 /**
  * Integration tests for `submitBaseline`.
@@ -22,61 +22,11 @@ import type { ScopingCloseTurn } from "@/lib/prompts/scopingClose";
  * orchestrator's call site, including the cross-task fix to
  * `submitBaseline.persist.ts` (userMessage overwrite on close). Mocking the
  * DB layer here would mask that integration risk.
+ *
+ * Fixtures (USER_ID / FRAMEWORK / BASELINE_PRECLOSE / PARSED) live in
+ * `submitBaseline.fixtures.ts` alongside the persist suite's shared
+ * helpers.
  */
-
-/** Fixed UUID for the test user — avoids runtime UUID generation. */
-const USER_ID = "55555555-5555-5555-5555-555555555555";
-
-/** Minimal valid framework: two-tier scope, mirrors persist.test.ts. */
-const FRAMEWORK = {
-  userMessage: "fw",
-  estimatedStartingTier: 1,
-  baselineScopeTiers: [1, 2],
-  tiers: [
-    { number: 1, name: "Basics", description: "Intro", exampleConcepts: ["a"] },
-    { number: 2, name: "Borrowing", description: "Refs", exampleConcepts: ["b"] },
-  ],
-} as const;
-
-/** Pre-close baseline with one free-text question (drives the LLM path). */
-const BASELINE_PRECLOSE = {
-  userMessage: "baseline framing",
-  questions: [
-    {
-      id: "b1",
-      type: "free_text" as const,
-      prompt: "What is ownership?",
-      freetextRubric: "rubric",
-      conceptName: "ownership",
-      tier: 2,
-    },
-  ],
-  responses: [],
-  gradings: [],
-} as const;
-
-/** What the mocked executeTurn returns. Mirrors `ScopingCloseTurn`. */
-const PARSED: ScopingCloseTurn = {
-  userMessage: "wrap-up",
-  immutableSummary: "durable",
-  summary: "evolving",
-  startingTier: 2,
-  gradings: [
-    {
-      questionId: "b1",
-      conceptName: "ownership",
-      conceptTier: 2,
-      verdict: "correct",
-      qualityScore: 5,
-      rationale: "ok",
-    },
-  ],
-  nextUnitBlueprint: {
-    topic: "T",
-    outline: ["a"],
-    openingText: "hi",
-  },
-};
 
 /** Full AI SDK v5 `LanguageModelUsage` zero shape. */
 const ZERO_USAGE = {
@@ -133,19 +83,19 @@ describe("submitBaseline (integration)", () => {
       });
 
       expect(spy).toHaveBeenCalledTimes(1);
-      expect(result.userMessage).toBe("wrap-up");
+      expect(result.userMessage).toBe(PARSED.userMessage);
       expect(result.wave1Id).toBeTruthy();
 
       const after = await getCourseById(courseId);
       expect(after.status).toBe("active");
-      expect(after.startingTier).toBe(2);
-      expect(after.currentTier).toBe(2);
+      expect(after.startingTier).toBe(PARSED.startingTier);
+      expect(after.currentTier).toBe(PARSED.startingTier);
       // Closing userMessage replaces the baseline-presentation framing.
       expect(after.baseline).toMatchObject({
-        userMessage: "wrap-up",
-        immutableSummary: "durable",
-        summarySeed: "evolving",
-        startingTier: 2,
+        userMessage: PARSED.userMessage,
+        immutableSummary: PARSED.immutableSummary,
+        summarySeed: PARSED.summary,
+        startingTier: PARSED.startingTier,
       });
     });
   });
@@ -198,6 +148,50 @@ describe("submitBaseline (integration)", () => {
           courseId,
           userId: USER_ID,
           answers: [], // no answers — `b1` is missing.
+        }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  // Duplicate answer ids would otherwise collapse silently into the
+  // `Object.fromEntries` lookup (last write wins), masking a UI bug.
+  it("throws PRECONDITION_FAILED on duplicate answer ids", async () => {
+    await withTestDb(async () => {
+      const courseId = await seedScopingCourse();
+      const spy = vi.spyOn(executeTurnModule, "executeTurn");
+
+      await expect(
+        submitBaseline({
+          courseId,
+          userId: USER_ID,
+          answers: [
+            { id: "b1", kind: "freetext", text: "first", fromEscape: false },
+            { id: "b1", kind: "freetext", text: "second", fromEscape: false },
+          ],
+        }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  // Answers for unknown question ids would otherwise be silently dropped,
+  // hiding a UI/state bug where the client submitted stale answers.
+  it("throws PRECONDITION_FAILED on answers for unknown questions", async () => {
+    await withTestDb(async () => {
+      const courseId = await seedScopingCourse();
+      const spy = vi.spyOn(executeTurnModule, "executeTurn");
+
+      await expect(
+        submitBaseline({
+          courseId,
+          userId: USER_ID,
+          answers: [
+            { id: "b1", kind: "freetext", text: "my answer", fromEscape: false },
+            { id: "ghost", kind: "freetext", text: "stale", fromEscape: false },
+          ],
         }),
       ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
 

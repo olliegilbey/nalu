@@ -55,11 +55,15 @@ export function mergeAndComputeXp(params: MergeAndComputeXpParams): MergeAndComp
     );
   }
 
-  // Build the lookup with LLM entries overriding mechanical (last wins).
-  // Using `Map` constructed from a flat array keeps the function pure —
-  // no per-element mutation, no `immutable-data` lint warning.
+  // Mechanical MC gradings are authoritative — the LLM never grades MC
+  // answers (P-AC-04, LLM-XP boundary). The wire schema still requires the
+  // model to emit a grading per question id, but for MC question ids we
+  // discard the model's entry and keep the mechanical one. Ordering the
+  // `Map` so mechanical entries land LAST makes them win the last-write
+  // dedupe. Using `Map` constructed from a flat array keeps the function
+  // pure — no per-element mutation, no `immutable-data` lint warning.
   const byId = new Map<string, StoredGrading>(
-    [...params.mechanicalGradings, ...params.parsed.gradings].map((g) => [g.questionId, g]),
+    [...params.parsed.gradings, ...params.mechanicalGradings].map((g) => [g.questionId, g]),
   );
 
   const merged = params.baselineQuestionIds.map((qid) => {

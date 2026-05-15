@@ -75,6 +75,33 @@ describe("mergeAndComputeXp", () => {
     ).toThrow(/startingTier/);
   });
 
+  // Mechanical MC grading is authoritative: the close-turn wire schema
+  // requires the LLM to emit a grading for every question id (including MC),
+  // but the LLM never actually grades MC answers — its entry for an MC qid
+  // is discarded in favour of the deterministic mechanical grading.
+  // Regression guard for the order-of-merge bug where the LLM's entry
+  // silently overrode the mechanical one.
+  it("keeps the mechanical grading when the LLM also emits one for the same questionId", () => {
+    const mechanical = mcGrading("b1", "ownership", 2);
+    const llmConflict: StoredGrading = {
+      questionId: "b1",
+      conceptName: "ownership",
+      conceptTier: 2,
+      verdict: "incorrect",
+      qualityScore: 0,
+      rationale: "model thought wrong",
+    };
+    const merged = mergeAndComputeXp({
+      parsed: { gradings: [llmConflict], startingTier: 2 },
+      mechanicalGradings: [mechanical],
+      baselineQuestionIds: ["b1"],
+      scopeTiers: [1, 2, 3],
+    });
+    expect(merged.gradings).toEqual([mechanical]);
+    // XP follows the mechanical quality, not the LLM's qualityScore=0.
+    expect(merged.totalXp).toBe(calculateXP(2, BASELINE.mcCorrectQuality));
+  });
+
   it("throws on conceptTier outside scopeTiers", () => {
     expect(() =>
       mergeAndComputeXp({
