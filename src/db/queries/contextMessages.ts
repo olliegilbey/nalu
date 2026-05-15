@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, max } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { contextMessages, type ContextMessage } from "@/db/schema";
 import { assessmentSchema, type AssessmentCard } from "@/lib/llm/tagVocabulary";
 import { extractTag } from "@/lib/llm/extractTag";
@@ -76,10 +76,17 @@ export interface AppendMessageParams {
  * columns the DB expects. The XOR CHECK constraint will reject any attempt
  * to set both or neither parent column — this function always sets exactly one.
  *
+ * Optional `tx` opts the INSERT into a caller's transaction so the message
+ * row rolls back atomically with sibling writes.
+ *
  * @throws {Error} if the insert returns no row (should never happen on success).
  */
-export async function appendMessage(params: AppendMessageParams): Promise<ContextMessage> {
-  const [row] = await db
+export async function appendMessage(
+  params: AppendMessageParams,
+  tx?: DbOrTx,
+): Promise<ContextMessage> {
+  const exec = tx ?? db;
+  const [row] = await exec
     .insert(contextMessages)
     .values({
       // XOR: set only the FK matching the parent kind; leave the other null.

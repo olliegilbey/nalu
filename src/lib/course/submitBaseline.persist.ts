@@ -45,13 +45,11 @@ export interface PersistScopingCloseResult {
  * singleton and would deadlock against the transaction's row lock — this
  * file is the one place outside `src/db/queries/` permitted to issue raw SQL.
  *
- * MVP CAVEAT: `upsertConcept` / `openWave` / `appendMessage` run on the
- * singleton `db`, so their writes are NOT covered by the transaction.
- * Acceptable because: concepts use ON CONFLICT DO NOTHING (retry-safe); a
- * leftover open Wave 1 surfaces loudly via the partial unique index rather
- * than silently corrupting state; context_messages are tied to the Wave.
- * If true cross-table atomicity becomes necessary, thread an optional `tx`
- * through these query helpers.
+ * `upsertConcept` / `openWave` / `appendMessage` are passed `tx` so their
+ * writes participate in the same transaction — a unique-violation on Wave 1
+ * (e.g. concurrent submitBaseline race) rolls back the concept upsert and
+ * baseline JSONB widen along with everything else. The orchestrator catches
+ * the unique-violation and replays from the cached payload.
  */
 export async function persistScopingClose(
   params: PersistScopingCloseParams,
@@ -135,7 +133,7 @@ export async function persistScopingClose(
     // could race. ON CONFLICT DO NOTHING makes it safe-ish, but sequential
     // keeps log output deterministic for tests.
     for (const c of uniqueConcepts) {
-      await upsertConcept({ courseId, name: c.name, tier: c.tier });
+      await upsertConcept({ courseId, name: c.name, tier: c.tier }, tx);
     }
 
     // 4. Open Wave 1 with seed_source.scoping_handoff carrying the blueprint
@@ -143,30 +141,36 @@ export async function persistScopingClose(
     //    NOTE: turnBudget hardcoded `10` to match every other call site in
     //    the codebase (no `WAVE_TURN_COUNT` constant exists yet in
     //    `src/lib/config/tuning.ts`). If/when one is introduced, replace.
-    const wave1 = await openWave({
-      courseId,
-      waveNumber: 1,
-      tier: parsed.startingTier,
-      frameworkSnapshot: framework,
-      customInstructionsSnapshot: null,
-      dueConceptsSnapshot: [],
-      seedSource: {
-        kind: "scoping_handoff",
-        blueprint: parsed.nextUnitBlueprint,
+    const wave1 = await openWave(
+      {
+        courseId,
+        waveNumber: 1,
+        tier: parsed.startingTier,
+        frameworkSnapshot: framework,
+        customInstructionsSnapshot: null,
+        dueConceptsSnapshot: [],
+        seedSource: {
+          kind: "scoping_handoff",
+          blueprint: parsed.nextUnitBlueprint,
+        },
+        turnBudget: 10,
       },
-      turnBudget: 10,
-    });
+      tx,
+    );
 
     // 5. Insert one context_messages row for Wave 1 with the assistant
     //    openingText so the learner sees a primed first message.
-    await appendMessage({
-      parent: { kind: "wave", id: wave1.id },
-      turnIndex: 0,
-      seq: 0,
-      kind: "assistant_response",
-      role: "assistant",
-      content: parsed.nextUnitBlueprint.openingText,
-    });
+    await appendMessage(
+      {
+        parent: { kind: "wave", id: wave1.id },
+        turnIndex: 0,
+        seq: 0,
+        kind: "assistant_response",
+        role: "assistant",
+        content: parsed.nextUnitBlueprint.openingText,
+      },
+      tx,
+    );
 
     // 6. Flip course status, persist starting/current tier + the evolving
     //    summary seed (NOT the immutable summary — that lives only in the

@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { submitBaseline } from "./submitBaseline";
+import { persistScopingClose } from "./submitBaseline.persist";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import { getCourseById } from "@/db/queries/courses";
-import { USER_ID, PARSED, ZERO_USAGE, seedScopingCourse } from "./submitBaseline.fixtures";
+import { getOpenWaveByCourse } from "@/db/queries/waves";
+import { USER_ID, PARSED, MERGED, ZERO_USAGE, seedScopingCourse } from "./submitBaseline.fixtures";
 
 /**
  * Integration tests for `submitBaseline`.
@@ -143,6 +145,65 @@ describe("submitBaseline (integration)", () => {
       ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
 
       expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Concurrent-submit race recovery: two tabs both pass the precondition gate
+  // (course is 'scoping' at top), both call the LLM. The loser's persist
+  // hits the partial unique index `waves_one_open_per_course` — the orchestrator
+  // catches the unique-violation, re-reads the now-active course, and replays
+  // the cached payload so the user sees the winner's result rather than a
+  // 500. Token waste on the loser is acknowledged as acceptable in the TODO.
+  //
+  // Simulation strategy: have `executeTurn` (the LLM seam) commit a full
+  // `persistScopingClose` for the same course mid-call. That stands in for
+  // the winner finishing while the loser is still mid-LLM. When the outer
+  // `submitBaseline`'s own persist runs, openWave hits the unique-violation,
+  // the catch handler kicks in, and the cached payload is returned.
+  // ---------------------------------------------------------------------------
+  it("recovers from concurrent-submit race via cached replay", async () => {
+    await withTestDb(async () => {
+      const courseId = await seedScopingCourse();
+
+      const winnerOpening = `${PARSED.nextUnitBlueprint.openingText} (winner)`;
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(async () => {
+        // Stand in for a concurrent winner committing while we're "in the LLM".
+        // We persist with a distinct openingText so we can later prove the
+        // returned wave1 is the winner's row, not a phantom from the loser.
+        await persistScopingClose({
+          courseId,
+          parsed: {
+            ...PARSED,
+            nextUnitBlueprint: { ...PARSED.nextUnitBlueprint, openingText: winnerOpening },
+          },
+          merged: MERGED,
+        });
+        return { parsed: PARSED, usage: ZERO_USAGE } as never;
+      });
+
+      const result = await submitBaseline({
+        courseId,
+        userId: USER_ID,
+        answers: [{ id: "b1", kind: "freetext", text: "my answer", fromEscape: false }],
+      });
+
+      // Course is active and the returned wave is the winner's open Wave 1.
+      const after = await getCourseById(courseId);
+      expect(after.status).toBe("active");
+      const wave1 = await getOpenWaveByCourse(courseId);
+      expect(wave1).not.toBeNull();
+      expect(result.wave1Id).toBe(wave1!.id);
+      // The cached payload's userMessage is the one persisted by the winner
+      // (PARSED.userMessage — we did not vary it). The loser's would-be
+      // userMessage is identical here because we share PARSED, but this still
+      // proves we returned the cached read path: the seedSource carries the
+      // winner-marked openingText.
+      expect(wave1!.seedSource).toMatchObject({
+        kind: "scoping_handoff",
+        blueprint: { openingText: winnerOpening },
+      });
+      expect(result.userMessage).toBe(PARSED.userMessage);
     });
   });
 

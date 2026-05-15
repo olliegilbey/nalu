@@ -171,13 +171,32 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
   // persistScopingClose: widens baseline JSONB (overwriting userMessage with
   // the closing framing), upserts concepts, opens Wave 1, inserts the opening
   // assistant message, flips status, bumps XP — all in one transaction.
-  const { wave1Id } = await persistScopingClose({
-    courseId: course.id,
-    parsed,
-    merged,
-  });
-
-  return { userMessage: parsed.userMessage, wave1Id };
+  //
+  // Concurrent-submit recovery: two tabs racing both pass the precondition
+  // gate above and both call the LLM. The loser's persist will fail in one of
+  // two places depending on timing — `openWave` unique-violation on
+  // `waves_one_open_per_course` (loser races BEHIND winner's Wave insert), OR
+  // a Zod parse failure when re-fetching the now-widened baseline (winner
+  // committed before loser's SELECT). Rather than enumerate failure modes,
+  // we observe the post-failure state: if status flipped to 'active', the
+  // winner finished; replay from cached payload. Otherwise the failure is
+  // unrelated — re-throw. Token waste on the loser is acknowledged
+  // (acceptable per TODO; the alternative — row-locking across the LLM call
+  // — would tie up a pooled connection for seconds at a time).
+  try {
+    const { wave1Id } = await persistScopingClose({
+      courseId: course.id,
+      parsed,
+      merged,
+    });
+    return { userMessage: parsed.userMessage, wave1Id };
+  } catch (err) {
+    const refreshed = await getCourseById(course.id, params.userId);
+    if (refreshed.status !== "active") throw err;
+    // Winner committed during our persist — return their persisted payload
+    // via the same code path as the top-level idempotent replay.
+    return buildCachedPayload(refreshed.id, refreshed.baseline as BaselineJsonb | null);
+  }
 }
 
 /**

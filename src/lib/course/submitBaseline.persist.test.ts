@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { persistScopingClose } from "./submitBaseline.persist";
 import { getCourseById } from "@/db/queries/courses";
 import { getConceptsByCourse } from "@/db/queries/concepts";
-import { openWave, getOpenWaveByCourse } from "@/db/queries/waves";
+import { openWave, getOpenWaveByCourse, getLatestWaveNumberByCourse } from "@/db/queries/waves";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
 import { FRAMEWORK, PARSED, MERGED, seedScopingCourseAndRun } from "./submitBaseline.fixtures";
 
@@ -89,12 +89,10 @@ describe("persistScopingClose (integration)", () => {
   // -------------------------------------------------------------------------
   // Rollback path: pre-existing open Wave 1 forces `openWave` to throw via
   // the partial unique index `waves_one_open_per_course`. The transaction
-  // rolls back the `tx.execute` writes (baseline JSONB stays untouched and
-  // course stays in scoping). MVP CAVEAT: the helpers that use the top-level
-  // `db` singleton (`upsertConcept`) are NOT covered by the transaction;
-  // see `persistScopingClose` docstring. We assert what IS truly transactional.
+  // rolls back EVERY write inside the tx — baseline JSONB widen, status flip,
+  // tier set, XP bump, AND the concept upsert (now threaded through `tx`).
   // -------------------------------------------------------------------------
-  it("rolls back the baseline JSONB widen + status flip when Wave 1 insert fails", async () => {
+  it("rolls back the baseline widen, status flip, and concept upsert when Wave 1 insert fails", async () => {
     await seedScopingCourseAndRun(async (courseId) => {
       // Pre-create an open Wave 1 so the partial unique index rejects the
       // second insert inside persistScopingClose.
@@ -139,6 +137,14 @@ describe("persistScopingClose (integration)", () => {
         kind: "scoping_handoff",
         blueprint: { topic: "pre-existing" },
       });
+      // The pre-existing Wave 1 is the only Wave row for this course — no
+      // partial second-Wave row leaked in either.
+      expect(await getLatestWaveNumberByCourse(courseId)).toBe(1);
+
+      // Concept upsert is now inside the transaction — must roll back too.
+      // Pre-fix this would have left an "ownership" row behind.
+      const concepts = await getConceptsByCourse(courseId);
+      expect(concepts).toHaveLength(0);
     });
   });
 });

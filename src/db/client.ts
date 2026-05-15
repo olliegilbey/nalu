@@ -53,3 +53,19 @@ export const db = new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
 
 /** Inferred type of the exported `db` proxy — re-export for query-layer signatures. */
 export type DB = typeof db;
+
+/**
+ * Executor accepted by query helpers that participate in transactions.
+ *
+ * Either the singleton `db` or the `tx` handle yielded by
+ * `db.transaction(async (tx) => …)`. Helpers accept this as an optional
+ * argument so callers can opt their writes into the caller's transaction —
+ * required for cross-table atomicity. Using the singleton from inside another
+ * connection's transaction would NOT see (and would deadlock against) the
+ * caller's row locks; the type alias keeps that invariant explicit at the
+ * signature.
+ *
+ * Derived from `DB["transaction"]`'s callback param so we don't pull
+ * `PgTransaction<…>` generics into every query module.
+ */
+export type DbOrTx = DB | Parameters<Parameters<DB["transaction"]>[0]>[0];
