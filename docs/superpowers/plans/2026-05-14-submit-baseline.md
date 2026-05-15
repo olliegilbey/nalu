@@ -1798,23 +1798,23 @@ git commit -m "test(smoke): live scoping-close driver"
 
 Look at the spec with fresh eyes and check the plan's output against it. Inline checklist:
 
-- [ ] §1 Goal — `submitBaseline` exists; runs one LLM turn; persists everything; flips status to active.
-- [ ] §2 Non-goals — confirm nothing in this PR touches Wave teaching, SM-2 review writes, or `determineStartingTier`.
-- [ ] §3.1 Append-only — submitBaseline uses `ensureOpenScopingPass` and reuses the same Context; no new system prompt.
-- [ ] §3.2 Shared close-turn schema — `closeTurn.ts` exists, exports `makeCloseTurnBaseSchema`, `closeGradingItemSchema`, `blueprintSchema`.
-- [ ] §3.3 Wire vocab — `lesson` / `level` appear in field descriptions; `wave` / `tier` do not.
-- [ ] §3.4 Emit shape — exactly the fields listed; no `nextStage`, no XP.
-- [ ] §3.5 Data model — JSONB widened, no migrations, `seedSource.scoping_handoff` carries blueprint.
-- [ ] §3.6 Wave 1 row — created in the same transaction; openingText persisted to `context_messages`.
-- [ ] §3.7 Pattern B — concepts get default SM-2 fields (`lastReviewedAt`/`nextReviewAt`/`lastQualityScore` all NULL); assessments deferred (D1).
-- [ ] §3.8 XP — `mergeAndComputeXp` uses `calculateXP(startingTier, qualityScore)`; LLM doesn't emit XP.
-- [ ] §3.9 Descriptions — present, directive-voice, learner-facing vocab.
-- [ ] §4 Lib step — three files (`submitBaseline.ts`, `submitBaseline.persist.ts`, `submitBaseline.internal.ts`) plus `submitBaseline.merge.ts` (D3).
-- [ ] §5 Router — `course.submitBaseline` returns `{ userMessage, wave1Id }`.
-- [ ] §6 Error handling — preconditions, refine retries, idempotency, rollback all covered.
-- [ ] §7 Testing — unit tests for `mergeAndComputeXp`, integration tests for persist and orchestration, smoke for live.
-- [ ] §8 Cleanup — deletions complete.
-- [ ] §9 Acceptance — `just check` green, `just smoke` green, PR from `feat/submit-baseline`.
+- [x] §1 Goal — `submitBaseline` exists; runs one LLM turn; persists everything; flips status to active.
+- [x] §2 Non-goals — confirm nothing in this PR touches Wave teaching, SM-2 review writes, or `determineStartingTier`.
+- [x] §3.1 Append-only — submitBaseline uses `ensureOpenScopingPass` and reuses the same Context; no new system prompt.
+- [x] §3.2 Shared close-turn schema — `closeTurn.ts` exists, exports `makeCloseTurnBaseSchema`, `closeGradingItemSchema`, `blueprintSchema`.
+- [x] §3.3 Wire vocab — `lesson` / `level` appear in field descriptions; `wave` / `tier` do not.
+- [x] §3.4 Emit shape — exactly the fields listed; no `nextStage`, no XP.
+- [x] §3.5 Data model — JSONB widened, no migrations, `seedSource.scoping_handoff` carries blueprint.
+- [x] §3.6 Wave 1 row — created in the same transaction; openingText persisted to `context_messages`.
+- [x] §3.7 Pattern B — concepts get default SM-2 fields (`lastReviewedAt`/`nextReviewAt`/`lastQualityScore` all NULL); assessments deferred (D1).
+- [x] §3.8 XP — `mergeAndComputeXp` uses `calculateXP(startingTier, qualityScore)`; LLM doesn't emit XP.
+- [x] §3.9 Descriptions — present, directive-voice, learner-facing vocab.
+- [x] §4 Lib step — three files (`submitBaseline.ts`, `submitBaseline.persist.ts`, `submitBaseline.internal.ts`) plus `submitBaseline.merge.ts` (D3).
+- [x] §5 Router — `course.submitBaseline` returns `{ userMessage, wave1Id }`.
+- [x] §6 Error handling — preconditions, refine retries, idempotency, rollback all covered.
+- [x] §7 Testing — unit tests for `mergeAndComputeXp`, integration tests for persist and orchestration, smoke for live.
+- [x] §8 Cleanup — deletions complete.
+- [x] §9 Acceptance — `just check` green, `just smoke` green, PR from `feat/submit-baseline`.
 
 If you find a gap, raise it before opening the PR.
 

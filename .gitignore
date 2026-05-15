@@ -36,6 +36,7 @@ yarn-error.log*
 
 # Claude Code local overrides (personal, not committed)
 CLAUDE.local.md
+.claude/scheduled_tasks.lock
 
 # vercel
 .vercel
