@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import { router, protectedProcedure } from "../trpc";
 import { clarify } from "@/lib/course/clarify";
+import { getState } from "@/lib/course/getState";
 import { generateFramework } from "@/lib/course/generateFramework";
 import { generateBaseline } from "@/lib/course/generateBaseline";
 import { submitBaseline } from "@/lib/course/submitBaseline";
@@ -14,6 +15,11 @@ import { SCOPING } from "@/lib/config/tuning";
  * server never sends raw LLM output — every payload is typed.
  */
 export const courseRouter = router({
+  /** Return the current persisted state for a course (used by the UI to restore in-progress scoping). */
+  getState: protectedProcedure
+    .input(z.object({ courseId: z.string().uuid() }))
+    .query(({ ctx, input }) => getState({ userId: ctx.userId, courseId: input.courseId })),
+
   /** Initiate scoping for a new topic: creates a course and returns clarifying questions. */
   clarify: protectedProcedure
     .input(z.object({ topic: z.string().min(1).max(SCOPING.maxTopicLength) }))
