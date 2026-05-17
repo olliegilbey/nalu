@@ -7,8 +7,10 @@ import { z } from "zod/v4";
  */
 const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.url(),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  // New Supabase key system (2025+): publishable replaces the legacy anon JWT.
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().startsWith("sb_publishable_"),
+  // New Supabase key system: secret replaces the legacy service_role JWT.
+  SUPABASE_SECRET_KEY: z.string().startsWith("sb_secret_"),
   LLM_BASE_URL: z.url(),
   LLM_API_KEY: z.string().min(1),
   LLM_MODEL: z.string().min(1),

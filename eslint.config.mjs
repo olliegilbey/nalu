@@ -7,9 +7,18 @@ import prettier from "eslint-config-prettier";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Immutable-first patterns: warn during MVP, don't block velocity
+  // Immutable-first patterns: warn during MVP, don't block velocity.
+  // languageOptions.parserOptions.project is required by eslint-plugin-functional's
+  // immutable-data rule — it calls getTypeOfNode to detect mutating Set/Map methods.
+  // Scoped to src/**/*.ts(x) so root .mjs config files are not matched by tsconfig.
   {
+    files: ["src/**/*.ts", "src/**/*.tsx"],
     plugins: { functional },
+    languageOptions: {
+      parserOptions: {
+        project: true,
+      },
+    },
     rules: {
       "functional/immutable-data": "warn",
       "functional/no-let": "warn",
