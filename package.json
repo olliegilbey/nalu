@@ -54,6 +54,7 @@
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",
     "@tailwindcss/postcss": "^4",
+    "@tailwindcss/typography": "^0.5.19",
     "@testcontainers/postgresql": "^11.14.0",
     "@total-typescript/ts-reset": "^0.6.1",
     "@types/node": "^20",
