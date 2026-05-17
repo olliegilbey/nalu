@@ -6,9 +6,13 @@ import { useState } from "react";
 import { TRPCProvider, getBaseUrl } from "@/lib/trpc";
 import type { AppRouter } from "@/server/routers";
 
+/** Fallback dev user UUID — matches the seeded row in seed.ts. */
+const DEV_USER_FALLBACK = "a0000000-0000-4000-8000-000000000001";
+
 /**
  * Root providers — wraps the app with tRPC + TanStack Query.
- * Instantiated once per client lifecycle via useState to avoid re-creation on re-renders.
+ * Dev-only: injects `x-dev-user-id` header so `protectedProcedure` resolves
+ * a user without real auth. Swap for a Supabase session token when auth lands.
  */
 export function Providers({ children }: { readonly children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
@@ -17,6 +21,10 @@ export function Providers({ children }: { readonly children: React.ReactNode }) 
       links: [
         httpBatchLink({
           url: `${getBaseUrl()}/api/trpc`,
+          // Dev-only: lets protectedProcedure resolve ctx.userId without real auth.
+          headers: () => ({
+            "x-dev-user-id": process.env.NEXT_PUBLIC_DEV_USER_ID ?? DEV_USER_FALLBACK,
+          }),
         }),
       ],
     }),
