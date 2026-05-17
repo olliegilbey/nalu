@@ -34,11 +34,11 @@ export function shapeBaselineAnswers(
 ): readonly ShapedBaselineAnswer[] {
   return answers.map(({ question, answer }) => {
     const idx = question.options.indexOf(answer);
-    const isMcSelection = idx >= 0 && question.options.length > 0;
-    if (isMcSelection) {
-      // idx is bounded by options.length (≤4) so the index is always in range;
-      // the `!` narrows away `undefined` from `noUncheckedIndexedAccess`.
-      const letter = LETTERS[idx]!;
+    // Guard idx against LETTERS.length explicitly — adaptQuestionnaire currently
+    // emits exactly 4 options for MC questions, but ChoiceQuestion.options is
+    // typed as readonly string[], so a future schema change could overflow.
+    const letter = idx >= 0 && idx < LETTERS.length ? LETTERS[idx] : undefined;
+    if (letter !== undefined) {
       return { id: question.id, kind: "mc", selected: letter };
     }
     return {

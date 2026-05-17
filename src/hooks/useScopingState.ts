@@ -23,7 +23,7 @@ export interface UseScopingStateResult {
   readonly scopingResult: CourseState["scopingResult"];
   readonly isPending: boolean;
   readonly submitClarify: (
-    answers: { readonly questionId: string; readonly freetext: string }[],
+    answers: ReadonlyArray<{ readonly questionId: string; readonly freetext: string }>,
   ) => void;
   readonly submitBaselineAnswers: (
     answers: ReadonlyArray<
@@ -133,8 +133,11 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     generateBaseline.isPending ||
     submitBaseline.isPending;
 
-  const submitClarify = (answers: { readonly questionId: string; readonly freetext: string }[]) => {
-    generateFramework.mutate({ courseId, responses: answers });
+  const submitClarify: UseScopingStateResult["submitClarify"] = (answers) => {
+    // tRPC infers a mutable array shape; our public interface uses readonly.
+    // Inputs are structurally identical, so cast through `never` (mirrors
+    // submitBaselineAnswers below).
+    generateFramework.mutate({ courseId, responses: answers as never });
   };
 
   const submitBaselineAnswers: UseScopingStateResult["submitBaselineAnswers"] = (answers) => {

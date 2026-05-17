@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useScopingState } from "@/hooks/useScopingState";
 import { shapeBaselineAnswers } from "@/lib/course/shapeBaselineAnswers";
+import { shapeClarifyAnswers } from "@/lib/course/shapeClarifyAnswers";
 import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
 import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
@@ -87,13 +88,11 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
           moveOn={moveOn}
           onComplete={(answers) => {
             if (!activeQuestionnaire) return;
+            // Domain-shape mappers live in `src/lib/course/` so this
+            // component stays a thin rendering shell.
             if (activeQuestionnaire.kind === "clarify") {
-              submitClarify(
-                answers.map((a) => ({ questionId: a.question.id, freetext: a.answer })),
-              );
+              submitClarify(shapeClarifyAnswers(answers));
             } else {
-              // Domain-shape lives in `src/lib/course/shapeBaselineAnswers` so this
-              // component stays a thin rendering shell.
               submitBaselineAnswers(shapeBaselineAnswers(answers));
             }
           }}
