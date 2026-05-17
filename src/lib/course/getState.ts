@@ -6,6 +6,7 @@ import type {
   BaselineClosedJsonb,
 } from "@/lib/types/jsonb";
 
+/** Input to {@link getState}. `userId` enforces row-level ownership. */
 export interface GetStateParams {
   readonly userId: string;
   readonly courseId: string;
@@ -20,6 +21,11 @@ export interface ScopingResult {
   readonly startingTier: number;
 }
 
+/**
+ * Client-facing projection of a `courses` row. Each JSONB column is exposed
+ * directly so `deriveTurns` can render the chat scroll from a single object.
+ * `scopingResult` is the post-close summary; null while scoping is in progress.
+ */
 export interface CourseState {
   readonly courseId: string;
   readonly status: "scoping" | "active" | "archived";
@@ -46,6 +52,17 @@ export async function getState(params: GetStateParams): Promise<CourseState> {
   // The `in` check narrows baseline to BaselineClosedJsonb (the "widened" post-submitBaseline shape).
   const closedBaseline: BaselineClosedJsonb | null =
     baseline !== null && "startingTier" in baseline ? (baseline as BaselineClosedJsonb) : null;
+
+  // Fail loud on the post-close invariant: status flips to 'active' inside the
+  // same `persistScopingClose` transaction that widens the baseline JSONB, so
+  // an 'active' course with a non-closed baseline is a transactional split that
+  // would silently suppress the Move-on CTA. Surface it instead.
+  if (course.status === "active" && closedBaseline === null) {
+    throw new Error(
+      `getState: invariant — course ${course.id} is 'active' but baseline is not closed`,
+    );
+  }
+
   const scopingResult: ScopingResult | null =
     course.status === "active" && closedBaseline !== null
       ? {

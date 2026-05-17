@@ -1,3 +1,7 @@
+/**
+ * `/course/[id]/wave/[n]` route — static placeholder landing for the post-
+ * scoping Move-on CTA. Real teaching loop ships in the next spec.
+ */
 export default async function WavePage({
   params,
 }: {

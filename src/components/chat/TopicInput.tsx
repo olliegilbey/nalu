@@ -33,6 +33,9 @@ export function TopicInput() {
   );
 
   const send = (text?: string) => {
+    // Guard against double-fire from repeated suggestion clicks or rapid Enter
+    // — otherwise we'd create two courses and race the resulting redirects.
+    if (clarify.isPending) return;
     const content = (text ?? value).trim();
     if (!content) return;
     setValue("");

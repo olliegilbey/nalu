@@ -8,11 +8,17 @@
 let muted = false;
 const listeners = new Set<(m: boolean) => void>();
 
+/** Read the current mute flag. Module-level singleton; safe to call from any context. */
 export const isMuted = () => muted;
+/** Set the mute flag and synchronously notify every {@link subscribeMute} listener. */
 export const setMuted = (v: boolean) => {
   muted = v;
   listeners.forEach((l) => l(v));
 };
+/**
+ * Register `cb` to fire on every mute change. Returns an unsubscribe function;
+ * always call it in a `useEffect` cleanup to avoid leaks across remounts.
+ */
 export const subscribeMute = (cb: (m: boolean) => void) => {
   listeners.add(cb);
   return () => {

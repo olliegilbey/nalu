@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useScopingState } from "@/hooks/useScopingState";
+import { shapeBaselineAnswers } from "@/lib/course/shapeBaselineAnswers";
 import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
 import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
@@ -91,28 +92,9 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
                 answers.map((a) => ({ questionId: a.question.id, freetext: a.answer })),
               );
             } else {
-              // Baseline. Each answer is either an MC selection (when the user
-              // tapped an option) or a free-text reply (typed answer, escape
-              // hatch). Disambiguate by matching `answer` against the question's
-              // options array.
-              const submission = answers.map((a) => {
-                const idx = a.question.options.indexOf(a.answer);
-                const isMcSelection = idx >= 0 && a.question.options.length > 0;
-                if (isMcSelection) {
-                  // idx is bounded by options.length (≤4); the `!` narrows away
-                  // `undefined` from `noUncheckedIndexedAccess`.
-                  const letter = (["A", "B", "C", "D"] as const)[idx]!;
-                  return { id: a.question.id, kind: "mc" as const, selected: letter };
-                }
-                return {
-                  id: a.question.id,
-                  kind: "freetext" as const,
-                  text: a.answer,
-                  // fromEscape = the question HAS options but the user typed instead.
-                  fromEscape: a.question.options.length > 0,
-                };
-              });
-              submitBaselineAnswers(submission);
+              // Domain-shape lives in `src/lib/course/shapeBaselineAnswers` so this
+              // component stays a thin rendering shell.
+              submitBaselineAnswers(shapeBaselineAnswers(answers));
             }
           }}
         />

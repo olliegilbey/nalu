@@ -109,8 +109,21 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     if (state.data.framework && !state.data.baseline && state.status === "success") {
       if (baselineDispatchedFor.current === state.data.courseId) return;
       if (generateBaseline.isPending) return;
-      baselineDispatchedFor.current = state.data.courseId;
-      generateBaseline.mutate({ courseId: state.data.courseId });
+      const dispatchedCourseId = state.data.courseId;
+      baselineDispatchedFor.current = dispatchedCourseId;
+      generateBaseline.mutate(
+        { courseId: dispatchedCourseId },
+        {
+          // Clear the guard on error so a user retry (refetch/remount) can fire
+          // again. Without this, a single LLM failure would suppress baseline
+          // generation for this course until the page is fully reloaded.
+          onError: () => {
+            if (baselineDispatchedFor.current === dispatchedCourseId) {
+              baselineDispatchedFor.current = null;
+            }
+          },
+        },
+      );
     }
   }, [state.data, state.status, generateBaseline]);
 

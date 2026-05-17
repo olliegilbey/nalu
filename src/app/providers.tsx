@@ -22,9 +22,12 @@ export function Providers({ children }: { readonly children: React.ReactNode }) 
         httpBatchLink({
           url: `${getBaseUrl()}/api/trpc`,
           // Dev-only: lets protectedProcedure resolve ctx.userId without real auth.
-          headers: () => ({
-            "x-dev-user-id": process.env.NEXT_PUBLIC_DEV_USER_ID ?? DEV_USER_FALLBACK,
-          }),
+          // Gated on NODE_ENV so a production build can't leak the spoofable header
+          // even if the server-side dev-stub auth seam is still in place.
+          headers: () =>
+            process.env.NODE_ENV === "development"
+              ? { "x-dev-user-id": process.env.NEXT_PUBLIC_DEV_USER_ID ?? DEV_USER_FALLBACK }
+              : {},
         }),
       ],
     }),

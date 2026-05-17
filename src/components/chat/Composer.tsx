@@ -208,6 +208,7 @@ export function Composer({
   };
 
   const handleSend = () => {
+    if (disabled) return;
     if (hasQuestions && confirmMode) {
       confirmSelection();
       return;
@@ -374,7 +375,7 @@ export function Composer({
         {confirmMode ? (
           <button
             onClick={handleSend}
-            disabled={locked}
+            disabled={locked || disabled}
             aria-label={t<string>("composer.confirm")}
             style={{ color: "var(--sumi-ink-0)" }}
             className="h-9 shrink-0 inline-flex items-center justify-center rounded-xl px-3 gap-1.5 bg-spring-green hover:brightness-110 transition active:scale-95 disabled:opacity-60"
