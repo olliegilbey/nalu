@@ -6,9 +6,13 @@
 # read DIRECT_URL / DEV_USER_ID directly from process.env.
 set dotenv-filename := ".env.local"
 
-# Start dev server
+# Start dev server.
+# Wrapped in `op run` so 1Password `op://` references in `.env.local`
+# (notably LLM_API_KEY) are resolved before Next reads them — otherwise
+# Cerebras returns 401. Mirrors the smoke recipe; requires `op signin`
+# once per shell.
 dev:
-    bun run dev
+    op run --account my.1password.com --env-file=.env.local -- bun run dev
 
 # Production build
 build:
