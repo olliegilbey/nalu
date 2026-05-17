@@ -1,0 +1,59 @@
+{
+  "app": {
+    "name": "nalu",
+    "tagline": "your AI learning companion",
+    "disclaimer": "nalu · responses may be inaccurate"
+  },
+  "greeting": {
+    "morning": { "ja": "おはよう", "en": "good morning" },
+    "afternoon": { "ja": "こんにちは", "en": "good afternoon" },
+    "evening": { "ja": "こんばんは", "en": "good evening" },
+    "night": { "ja": "おやすみ", "en": "good night" }
+  },
+  "home": {
+    "headlineLead": "What would you like",
+    "headlineTail": "to learn today",
+    "suggestionsLabel": "/ start a course on",
+    "suggestions": [
+      { "kind": "language", "label": "conversational Japanese" },
+      { "kind": "concept", "label": "how transformers work" },
+      { "kind": "skill", "label": "playing chess like a 1500 elo" },
+      { "kind": "history", "label": "the Edo period in 10 lessons" }
+    ]
+  },
+  "composer": {
+    "placeholderFirst": "What do you want to learn…",
+    "placeholderContinue": "Reply to nalu…",
+    "placeholderAnswering": "Or type your own answer…",
+    "chooseLabel": "choose one · or type your own",
+    "questionCounter": "{current} / {total}",
+    "prev": "Previous question",
+    "next": "Next question",
+    "confirm": "Confirm",
+    "escapeHatch": "I'd rather pick from options"
+  },
+  "header": {
+    "newConversationTitle": "new course",
+    "menu": "Menu",
+    "newChat": "New course"
+  },
+  "menu": {
+    "title": "Your courses",
+    "subtitle": "pick up where you left off",
+    "newCourse": "Start a new course",
+    "settings": "Settings",
+    "mute": "Mute sounds",
+    "unmute": "Unmute sounds",
+    "profileNamePlaceholder": "Your name",
+    "profileSubPlaceholder": "free plan",
+    "empty": "No courses yet — start your first one.",
+    "courses": []
+  },
+  "stages": {
+    "clarify": { "indicator": "Clarifying" },
+    "framework": { "label": "Your learning ladder" },
+    "baseline": { "indicator": "Baseline check" }
+  },
+  "moveOn": { "toWave": "Move on to Wave {n}" },
+  "xp": { "gained": "10 XP Gained" }
+}
