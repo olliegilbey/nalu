@@ -1,0 +1,410 @@
+"use client";
+
+/* eslint-disable functional/immutable-data --
+ * Parity-locked port from kanagawa-whispers. Local array mutations are
+ * confined to handler closures whose results re-enter React state via setX.
+ */
+/* eslint-disable max-lines --
+ * Parity-locked port (~337 lines from whispers + 4 layered Nalu deltas).
+ * Splitting would diverge from upstream and complicate future re-syncs.
+ */
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUp, Check, ChevronLeft, ChevronRight, Mic, Plus } from "lucide-react";
+import { toast } from "sonner";
+import { t } from "@/i18n";
+import { playCorrect, playWrong } from "@/lib/sound";
+
+export type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
+import type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
+
+export function Composer({
+  value,
+  onChange,
+  onSend,
+  disabled,
+  questions,
+  onComplete,
+  isFirstMessage,
+  persistKey,
+  moveOn,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSend: () => void;
+  disabled?: boolean;
+  /** When non-empty, the composer renders a question card with navigation. */
+  questions?: ChoiceQuestion[] | null;
+  /** Called once every question has an answer. */
+  onComplete?: (answers: { question: ChoiceQuestion; answer: string }[]) => void;
+  /** When true, show the "What do you want to learn…" prompt. */
+  isFirstMessage?: boolean;
+  /** localStorage key for refresh-resilient questionnaire buffer. */
+  persistKey?: string;
+  /** When set, replaces the input row with a single advance button. */
+  moveOn?: { readonly label: string; readonly onAdvance: () => void };
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const hasQuestions = !!questions && questions.length > 0;
+
+  // Per-question answers, indexed alongside `questions`. Reset whenever the
+  // question set identity changes (new question batch from the assistant).
+  const questionsKey = useMemo(
+    () => (questions ? questions.map((q) => q.id).join("|") : ""),
+    [questions],
+  );
+  const [answers, setAnswers] = useState<(string | null)[]>([]);
+  const [step, setStep] = useState(0);
+  const [slideDir, setSlideDir] = useState<"next" | "prev" | "none">("none");
+  // Index of the option the user has tapped but not yet confirmed, per step.
+  const [pending, setPending] = useState<(number | null)[]>([]);
+  // Per-step transient feedback after Confirm — drives the pulse animation.
+  const [feedback, setFeedback] = useState<("correct" | "wrong" | null)[]>([]);
+  // While true, the option grid is locked (during the pulse).
+  const [locked, setLocked] = useState(false);
+
+  // Hydrate persisted answers/step from localStorage on mount or when persistKey
+  // changes. SSR-safe.
+  useEffect(() => {
+    if (!persistKey || typeof window === "undefined" || !hasQuestions) return;
+    try {
+      const raw = window.localStorage.getItem(persistKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        readonly questionsKey?: string;
+        readonly answers?: (string | null)[];
+        readonly step?: number;
+      };
+      if (parsed.questionsKey !== questionsKey) return;
+      if (parsed.answers && parsed.answers.length === questions!.length) {
+        setAnswers(parsed.answers);
+      }
+      if (typeof parsed.step === "number" && parsed.step >= 0 && parsed.step < questions!.length) {
+        setStep(parsed.step);
+      }
+    } catch {
+      // Malformed buffer — ignore.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persistKey, questionsKey]);
+
+  useEffect(() => {
+    if (!persistKey || typeof window === "undefined" || !hasQuestions) return;
+    try {
+      window.localStorage.setItem(persistKey, JSON.stringify({ questionsKey, answers, step }));
+    } catch {
+      // Quota / disabled — ignore.
+    }
+  }, [persistKey, questionsKey, answers, step, hasQuestions]);
+
+  useEffect(() => {
+    if (hasQuestions) {
+      setAnswers(Array(questions!.length).fill(null));
+      setPending(Array(questions!.length).fill(null));
+      setFeedback(Array(questions!.length).fill(null));
+      setStep(0);
+      setSlideDir("none");
+      setLocked(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questionsKey]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  }, [value]);
+
+  const canSend = value.trim().length > 0 && !disabled;
+  const currentPending = hasQuestions ? (pending[step] ?? null) : null;
+  const hasPending = currentPending != null;
+  // "Confirm" mode: question is active, user picked an option, no free text.
+  const confirmMode = hasQuestions && hasPending && value.trim().length === 0;
+
+  const placeholder = hasQuestions
+    ? t<string>("composer.placeholderAnswering")
+    : isFirstMessage
+      ? t<string>("composer.placeholderFirst")
+      : t<string>("composer.placeholderContinue");
+
+  const current = hasQuestions ? questions![step] : null;
+  const total = hasQuestions ? questions!.length : 0;
+
+  const advanceAfterAnswer = (answer: string) => {
+    if (!hasQuestions) return;
+    const next = [...answers];
+    next[step] = answer;
+    setAnswers(next);
+
+    // Find the next unanswered question, otherwise complete.
+    const nextUnanswered = next.findIndex((a, i) => i !== step && a == null);
+    if (next.every((a) => a != null)) {
+      if (persistKey && typeof window !== "undefined") {
+        try {
+          window.localStorage.removeItem(persistKey);
+        } catch {
+          /* ignore */
+        }
+      }
+      onComplete?.(questions!.map((q, i) => ({ question: q, answer: next[i]! })));
+      return;
+    }
+    if (step < total - 1) {
+      setSlideDir("next");
+      setStep(step + 1);
+    } else if (nextUnanswered !== -1) {
+      setSlideDir("next");
+      setStep(nextUnanswered);
+    }
+  };
+
+  const selectOption = (i: number) => {
+    if (!hasQuestions || locked) return;
+    // Tapping selects but does NOT advance. Confirm button locks it in.
+    const next = [...pending];
+    next[step] = i;
+    setPending(next);
+  };
+
+  const clearPending = () => {
+    if (!hasQuestions) return;
+    if (pending[step] == null) return;
+    const next = [...pending];
+    next[step] = null;
+    setPending(next);
+  };
+
+  const confirmSelection = () => {
+    if (!hasQuestions || !current || currentPending == null || locked) return;
+    const correctIdx = current.correctIndex;
+    const isCorrect = correctIdx != null && currentPending === correctIdx;
+    const fb = [...feedback];
+    fb[step] = isCorrect ? "correct" : "wrong";
+    setFeedback(fb);
+    setLocked(true);
+    if (isCorrect) {
+      playCorrect();
+      toast.success("10 XP Gained", { duration: 1500 });
+    } else playWrong();
+
+    const chosen = current.options[currentPending]!;
+    // Hold the pulse briefly so it's perceivable, then advance.
+    setTimeout(() => {
+      setLocked(false);
+      advanceAfterAnswer(chosen);
+    }, 750);
+  };
+
+  const goPrev = () => {
+    if (step === 0 || locked) return;
+    setSlideDir("prev");
+    setStep(step - 1);
+  };
+  const goNext = () => {
+    if (step >= total - 1 || locked) return;
+    setSlideDir("next");
+    setStep(step + 1);
+  };
+
+  const handleSend = () => {
+    if (hasQuestions && confirmMode) {
+      confirmSelection();
+      return;
+    }
+    if (!canSend) return;
+    if (hasQuestions) {
+      const answer = value.trim();
+      onChange("");
+      // Typing a free-text answer counts as the chosen answer for this step.
+      clearPending();
+      advanceAfterAnswer(answer);
+    } else {
+      onSend();
+    }
+  };
+
+  if (moveOn) {
+    return (
+      <div className="px-3 pb-4 pt-3 bg-sumi-1/85 backdrop-blur-xl border-t border-sumi-4/60">
+        <button
+          onClick={moveOn.onAdvance}
+          className="w-full h-11 inline-flex items-center justify-center rounded-2xl bg-spring-green text-sumi-0 font-medium tracking-tight transition active:scale-[0.99] hover:brightness-110"
+        >
+          {moveOn.label}
+        </button>
+        <p className="mt-2.5 text-center font-mono text-[10px] tracking-wider text-fuji-gray/80">
+          {t<string>("app.disclaimer")}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-3 pb-4 pt-3 bg-sumi-1/85 backdrop-blur-xl border-t border-sumi-4/60">
+      {hasQuestions && current && (
+        <div className="mb-3 animate-message-in">
+          {/* Header: counter + prev/next */}
+          <div className="flex items-center justify-between mb-2 px-1">
+            <div className="flex items-center gap-2">
+              <span className="h-1 w-1 rounded-full" style={{ background: "var(--carp-yellow)" }} />
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-fuji-gray">
+                {t<string>("composer.chooseLabel")}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                aria-label={t<string>("composer.prev")}
+                onClick={goPrev}
+                disabled={step === 0}
+                className="h-6 w-6 grid place-items-center rounded-md text-fuji-gray hover:text-foreground hover:bg-sumi-3 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fuji-gray"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
+              </button>
+              <span className="font-mono text-[10px] tabular-nums tracking-wider text-fuji-gray min-w-[28px] text-center">
+                {step + 1}/{total}
+              </span>
+              <button
+                aria-label={t<string>("composer.next")}
+                onClick={goNext}
+                disabled={step >= total - 1}
+                className="h-6 w-6 grid place-items-center rounded-md text-fuji-gray hover:text-foreground hover:bg-sumi-3 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fuji-gray"
+              >
+                <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
+              </button>
+            </div>
+          </div>
+
+          {/* Slide window */}
+          <div className="overflow-hidden">
+            <div
+              key={`${questionsKey}:${step}:${slideDir}`}
+              className={
+                slideDir === "next"
+                  ? "animate-q-slide-next"
+                  : slideDir === "prev"
+                    ? "animate-q-slide-prev"
+                    : ""
+              }
+            >
+              {/* Question prompt */}
+              <p className="px-1 mb-2 text-[14px] leading-snug text-foreground/90 font-medium">
+                {current.prompt}
+              </p>
+              {current.options.length > 0 ? (
+                <div className="grid grid-cols-1 gap-1.5">
+                  {current.options.map((opt, i) => {
+                    const isPending = currentPending === i;
+                    const fb = feedback[step];
+                    const pulseClass =
+                      isPending && fb === "correct"
+                        ? " pulse-correct border-spring-green text-foreground"
+                        : isPending && fb === "wrong"
+                          ? " pulse-wrong border-wave-red text-foreground"
+                          : "";
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => selectOption(i)}
+                        disabled={disabled || locked}
+                        className={
+                          "group flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 text-[14px] leading-snug transition-all active:scale-[0.99] disabled:opacity-60 border " +
+                          (isPending
+                            ? "bg-sumi-3 border-spring-green text-foreground"
+                            : "bg-sumi-2 hover:bg-sumi-3 border-sumi-4 hover:border-crystal/50 text-foreground/90") +
+                          pulseClass
+                        }
+                      >
+                        <span
+                          className={
+                            "font-mono text-[10px] transition-colors " +
+                            (isPending
+                              ? fb === "wrong"
+                                ? "text-wave-red"
+                                : "text-spring-green"
+                              : "text-fuji-gray group-hover:text-crystal")
+                          }
+                        >
+                          {String.fromCharCode(65 + i)}
+                        </span>
+                        <span className="flex-1">{opt}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="px-1 text-[12px] text-fuji-gray italic">
+                  {t<string>("composer.placeholderAnswering")}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      <div className="flex items-end gap-1.5 rounded-2xl bg-sumi-3 border border-sumi-4 px-1.5 py-1 transition-colors focus-within:border-crystal/50">
+        <button
+          aria-label="Attach"
+          className="h-9 w-9 shrink-0 grid place-items-center rounded-lg text-fuji-gray hover:text-foreground hover:bg-sumi-4 transition-colors"
+        >
+          <Plus className="h-[17px] w-[17px]" strokeWidth={1.75} />
+        </button>
+
+        <textarea
+          ref={ref}
+          rows={1}
+          value={value}
+          onChange={(e) => {
+            if (e.target.value.length > 0) clearPending();
+            onChange(e.target.value);
+          }}
+          onFocus={() => {
+            // Returning to free-text drops the pending MC selection.
+            if (hasQuestions) clearPending();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
+          placeholder={placeholder}
+          className="flex-1 resize-none bg-transparent px-1 py-2 text-[15px] leading-[1.4] outline-none placeholder:text-fuji-gray placeholder:font-normal"
+        />
+
+        {confirmMode ? (
+          <button
+            onClick={handleSend}
+            disabled={locked}
+            aria-label={t<string>("composer.confirm")}
+            style={{ color: "var(--sumi-ink-0)" }}
+            className="h-9 shrink-0 inline-flex items-center justify-center rounded-xl px-3 gap-1.5 bg-spring-green hover:brightness-110 transition active:scale-95 disabled:opacity-60"
+          >
+            <Check className="h-[15px] w-[15px]" strokeWidth={2.5} />
+            <span className="text-[12px] font-medium tracking-wide">
+              {t<string>("composer.confirm")}
+            </span>
+          </button>
+        ) : canSend ? (
+          <button
+            onClick={handleSend}
+            aria-label="Send"
+            style={{ color: "var(--sumi-ink-0)" }}
+            className="h-9 w-9 shrink-0 grid place-items-center rounded-xl bg-foreground hover:bg-crystal transition-colors active:scale-95"
+          >
+            <ArrowUp className="h-[17px] w-[17px]" strokeWidth={2.25} />
+          </button>
+        ) : (
+          <button
+            aria-label="Voice"
+            className="h-9 w-9 shrink-0 grid place-items-center rounded-lg text-fuji-gray hover:text-foreground hover:bg-sumi-4 transition-colors"
+          >
+            <Mic className="h-[17px] w-[17px]" strokeWidth={1.75} />
+          </button>
+        )}
+      </div>
+      <p className="mt-2.5 text-center font-mono text-[10px] tracking-wider text-fuji-gray/80">
+        {t<string>("app.disclaimer")}
+      </p>
+    </div>
+  );
+}
