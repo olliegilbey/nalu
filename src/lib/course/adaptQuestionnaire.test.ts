@@ -39,7 +39,7 @@ describe("adaptQuestionnaire", () => {
       },
     ];
     const r = adaptQuestionnaire(qs);
-     
+
     expect(r.questions[0]!.correctIndex).toBeUndefined();
   });
 
