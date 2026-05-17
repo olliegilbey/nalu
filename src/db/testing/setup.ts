@@ -34,8 +34,8 @@ beforeAll(async () => {
   // Zod validation in tests. Query-layer integration tests never actually call
   // Supabase or the LLM; these values are intentionally fake.
   process.env.NEXT_PUBLIC_SUPABASE_URL ??= "https://stub.supabase.co"; // eslint-disable-line functional/immutable-data
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??= "stub-anon-key"; // eslint-disable-line functional/immutable-data
-  process.env.SUPABASE_SERVICE_ROLE_KEY ??= "stub-service-role-key"; // eslint-disable-line functional/immutable-data
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??= "sb_publishable_stub"; // eslint-disable-line functional/immutable-data
+  process.env.SUPABASE_SECRET_KEY ??= "sb_secret_stub"; // eslint-disable-line functional/immutable-data
   process.env.LLM_BASE_URL ??= "https://stub.llm.invalid/v1"; // eslint-disable-line functional/immutable-data
   process.env.LLM_API_KEY ??= "stub-llm-key"; // eslint-disable-line functional/immutable-data
   process.env.LLM_MODEL ??= "stub-model"; // eslint-disable-line functional/immutable-data
