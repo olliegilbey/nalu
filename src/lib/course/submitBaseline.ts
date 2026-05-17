@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { executeTurn } from "@/lib/turn/executeTurn";
 import { buildRetryDirective } from "@/lib/turn/retryDirective";
-import { getCourseById } from "@/db/queries/courses";
+import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { getOpenWaveByCourse } from "@/db/queries/waves";
 import { makeScopingCloseSchema, renderScopingCloseStage } from "@/lib/prompts/scopingClose";
@@ -135,6 +135,23 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
   const modelName = process.env.LLM_MODEL ?? "(default)";
   const capabilities = getModelCapabilities(modelName);
   const schemaJson = toSchemaJsonString(schema, { name: "scoping_close" });
+
+  // Persist the learner's answers on the baseline row before calling the LLM,
+  // so a retry does not lose them and `deriveTurns` can render the user-baseline
+  // bubble from `baseline.responses`. Mirrors generateFramework.ts:86-92.
+  // Idempotent: overwrites the empty `responses: []` initialised by generateBaseline.
+  await updateCourseScopingState(course.id, {
+    baseline: {
+      userMessage: baseline.userMessage,
+      questions: baseline.questions,
+      gradings: baseline.gradings,
+      responses: params.answers.map((a) =>
+        a.kind === "mc"
+          ? { questionId: a.id, choice: a.selected }
+          : { questionId: a.id, freetext: a.text },
+      ),
+    },
+  });
 
   // Idempotent under single-writer invariant; handles concurrent-writer race
   // via re-read on unique-violation.
