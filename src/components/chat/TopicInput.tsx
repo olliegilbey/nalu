@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
 import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
@@ -21,6 +22,12 @@ export function TopicInput() {
     trpc.course.clarify.mutationOptions({
       onSuccess: (result) => {
         router.push(`/course/${result.courseId}`);
+      },
+      // Surface failures (env misconfig, server errors, validation) so the
+      // submit doesn't silently swallow them and leave the user staring at
+      // an empty input.
+      onError: (err) => {
+        toast.error("Couldn't start your course", { description: err.message });
       },
     }),
   );
