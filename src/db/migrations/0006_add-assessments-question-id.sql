@@ -1,0 +1,3 @@
+ALTER TABLE "assessments" ADD COLUMN "question_id" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "assessments_wave_question_unique" ON "assessments" USING btree ("wave_id","question_id") WHERE "assessments"."question_id" IS NOT NULL;--> statement-breakpoint
+ALTER TABLE "assessments" ADD CONSTRAINT "assessments_question_id_required_for_card_kinds" CHECK ("assessments"."assessment_kind" = 'inferred' OR "assessments"."question_id" IS NOT NULL);

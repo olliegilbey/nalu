@@ -30,6 +30,13 @@ export interface ApplyAssessmentGradingParams {
   readonly signal: GradedSignal;
   /** Caller's transaction handle so the assessment update is atomic with siblings. */
   readonly tx: DbOrTx;
+  /**
+   * Optional learner answer text. When set, replaces the placeholder
+   * `userAnswer = ""` written by `insertOpenAssessments` at probe time.
+   * Omit when the row was inserted with the real answer already present
+   * (e.g. `inferred` rows or one-shot `recordAssessment` callers).
+   */
+  readonly userAnswer?: string;
 }
 
 /** Returned to the caller so it can sum XP and tag turn payloads per question. */
@@ -61,6 +68,10 @@ export async function applyAssessmentGrading(
         // judged the answer.
         qualityScore: params.signal.correct ? 4 : 1,
         xpAwarded: xp,
+        // Forward the learner's text when the caller knows it (mid-turn flow);
+        // omit otherwise so the existing user_answer column is left untouched.
+        // Conditional spread keeps the call site flat and the type narrow.
+        ...(params.userAnswer !== undefined ? { userAnswer: params.userAnswer } : {}),
       },
       params.tx,
     );
@@ -71,7 +82,12 @@ export async function applyAssessmentGrading(
   const isCorrect = params.signal.verdict === "correct";
   await updateAssessmentGrading(
     params.assessmentId,
-    { isCorrect, qualityScore: params.signal.qualityScore, xpAwarded: xp },
+    {
+      isCorrect,
+      qualityScore: params.signal.qualityScore,
+      xpAwarded: xp,
+      ...(params.userAnswer !== undefined ? { userAnswer: params.userAnswer } : {}),
+    },
     params.tx,
   );
   return { questionId: params.signal.questionId, xpAwarded: xp, kind: "free-text" };

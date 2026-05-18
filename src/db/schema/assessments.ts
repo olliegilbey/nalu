@@ -7,6 +7,7 @@ import {
   timestamp,
   check,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
@@ -29,6 +30,15 @@ import { concepts } from "./concepts";
  * application-layer invariant: `card_mc` and `card_freetext` rows must carry
  * the question text so it can be rendered and audited; `inferred` rows may
  * omit it.
+ *
+ * `question_id` is the model-generated question id (verbatim from the prompt
+ * envelope's `id` field on each question) — nullable because `inferred` rows
+ * have no posed question. A partial unique index
+ * (`assessments_wave_question_unique`) prevents the mid-turn orchestrator
+ * from double-inserting the same model question id within a wave, and a CHECK
+ * (`assessments_question_id_required_for_card_kinds`) mirrors the existing
+ * `question` invariant: card kinds must carry a `question_id` so the grading
+ * step can find the row to update via `getAssessmentByWaveAndQuestionId`.
  */
 export const assessments = pgTable(
   "assessments",
@@ -42,6 +52,11 @@ export const assessments = pgTable(
       .references(() => concepts.id, { onDelete: "cascade" }),
     turnIndex: integer("turn_index").notNull(),
     question: text("question"),
+    // Model-generated question identifier (verbatim from waveMidTurn questionnaire's
+    // per-question `id` field). Nullable to keep `inferred` rows valid; the CHECK
+    // `assessments_question_id_required_for_card_kinds` enforces presence for card
+    // kinds.
+    questionId: text("question_id"),
     userAnswer: text("user_answer").notNull(),
     isCorrect: boolean("is_correct").notNull(),
     qualityScore: integer("quality_score").notNull(),
@@ -60,6 +75,19 @@ export const assessments = pgTable(
       "assessments_question_required_for_card_kinds",
       sql`${t.assessmentKind} = 'inferred' OR ${t.question} IS NOT NULL`,
     ),
+    // Mirror of the `question` invariant for the model-generated id: card kinds
+    // must carry a question_id (the mid-turn orchestrator finds the row to
+    // grade via wave_id + question_id); `inferred` rows have no posed question.
+    check(
+      "assessments_question_id_required_for_card_kinds",
+      sql`${t.assessmentKind} = 'inferred' OR ${t.questionId} IS NOT NULL`,
+    ),
+    // Partial unique index: prevents the mid-turn orchestrator from inserting
+    // duplicate rows for the same model question id within a wave. `inferred`
+    // rows are excluded via the WHERE clause (their question_id is null).
+    uniqueIndex("assessments_wave_question_unique")
+      .on(t.waveId, t.questionId)
+      .where(sql`${t.questionId} IS NOT NULL`),
     // Supports per-Wave aggregation (XP totals, Wave summary).
     index("assessments_wave_id_idx").on(t.waveId),
     // Supports per-concept timeline reads (last-N assessments for a concept).

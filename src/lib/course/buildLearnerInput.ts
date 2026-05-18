@@ -42,10 +42,16 @@ export interface OpenQuestionnaireRecord {
   }[];
 }
 
-// Stable letter→index mapping for MC keys. Mirrors the order used everywhere
-// in the codebase (A=0 .. D=3). Centralised here so the envelope emits exactly
-// the same numerical encoding the grading path uses.
-const KEY_TO_INDEX = { A: 0, B: 1, C: 2, D: 3 } as const;
+/**
+ * Stable letter→index mapping for MC keys. Mirrors the order used everywhere
+ * in the codebase (A=0 .. D=3). Centralised here so the envelope emits exactly
+ * the same numerical encoding the grading + obfuscation path uses (see
+ * `encodeCorrect` in `src/lib/security/obfuscateCorrect.ts`).
+ *
+ * Exported so `executeWaveMid` can compute `encodeCorrect(id, KEY_TO_INDEX[correct])`
+ * from the same source of truth — duplicating the literal would risk drift.
+ */
+export const KEY_TO_INDEX = { A: 0, B: 1, C: 2, D: 3 } as const;
 
 /**
  * Compose the per-turn `learnerInput` envelope body.

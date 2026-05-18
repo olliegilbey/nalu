@@ -78,6 +78,9 @@ async function seedAssessment(opts: {
     conceptId: concept.id,
     turnIndex: 0,
     question: opts.assessmentKind === "card_mc" ? "Pick one" : "Explain it",
+    // Card kinds require a question_id (CHECK
+    // `assessments_question_id_required_for_card_kinds`).
+    questionId: "q1",
     userAnswer: "the answer",
     isCorrect: false,
     qualityScore: 0,

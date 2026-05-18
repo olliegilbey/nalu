@@ -81,6 +81,9 @@ describe("assessments queries", () => {
         conceptId: CONCEPT,
         turnIndex: 1,
         question: "q?",
+        // question_id is required for card kinds (CHECK
+        // `assessments_question_id_required_for_card_kinds`).
+        questionId: "q-1",
         userAnswer: "B",
         isCorrect: true,
         qualityScore: 4,
@@ -113,6 +116,7 @@ describe("assessments queries", () => {
           conceptId: CONCEPT,
           turnIndex: 1,
           question: null,
+          questionId: "q-null",
           userAnswer: "B",
           isCorrect: false,
           qualityScore: 1,
@@ -131,12 +135,14 @@ describe("assessments queries", () => {
     await withTestDb(async (db) => {
       await seedFixtures(db);
 
-      // Should not throw.
+      // Should not throw. `inferred` rows have no posed question; both
+      // `question` and `question_id` are legitimately null.
       await recordAssessment({
         waveId: WAVE,
         conceptId: CONCEPT,
         turnIndex: 2,
         question: null,
+        questionId: null,
         userAnswer: "user prose that triggered the signal",
         isCorrect: true,
         qualityScore: 3,
@@ -164,6 +170,7 @@ describe("assessments queries", () => {
           conceptId: CONCEPT_B,
           turnIndex: 1,
           question: "q?",
+          questionId: "q-x",
           userAnswer: "A",
           isCorrect: true,
           qualityScore: 4,
@@ -187,6 +194,7 @@ describe("assessments queries", () => {
         conceptId: CONCEPT,
         turnIndex: 5,
         question: "q?",
+        questionId: "q-mono-1",
         userAnswer: "A",
         isCorrect: true,
         qualityScore: 4,
@@ -201,6 +209,7 @@ describe("assessments queries", () => {
           conceptId: CONCEPT,
           turnIndex: 3,
           question: "q?",
+          questionId: "q-mono-2",
           userAnswer: "B",
           isCorrect: false,
           qualityScore: 1,
@@ -220,11 +229,14 @@ describe("assessments queries", () => {
       await seedFixtures(db);
 
       // Turn 3, then 5, then 5 again — all valid (equal is allowed).
+      // Each row needs a distinct question_id because the partial unique index
+      // `assessments_wave_question_unique` forbids dupes within a wave.
       await recordAssessment({
         waveId: WAVE,
         conceptId: CONCEPT,
         turnIndex: 3,
         question: "q?",
+        questionId: "q-asc-1",
         userAnswer: "A",
         isCorrect: true,
         qualityScore: 4,
@@ -236,6 +248,7 @@ describe("assessments queries", () => {
         conceptId: CONCEPT,
         turnIndex: 5,
         question: "q?",
+        questionId: "q-asc-2",
         userAnswer: "B",
         isCorrect: true,
         qualityScore: 4,
@@ -248,6 +261,7 @@ describe("assessments queries", () => {
         conceptId: CONCEPT,
         turnIndex: 5,
         question: "q2?",
+        questionId: "q-asc-3",
         userAnswer: "C",
         isCorrect: false,
         qualityScore: 2,
@@ -273,6 +287,7 @@ describe("assessments queries", () => {
           conceptId: "00000000-0000-0000-0000-000000000000",
           turnIndex: 0,
           question: "q?",
+          questionId: "q-missing",
           userAnswer: "A",
           isCorrect: true,
           qualityScore: 4,
