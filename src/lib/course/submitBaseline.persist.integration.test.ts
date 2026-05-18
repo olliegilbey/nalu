@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { WAVE } from "@/lib/config/tuning";
 import { persistScopingClose } from "./submitBaseline.persist";
 import { getCourseById } from "@/db/queries/courses";
 import { getConceptsByCourse } from "@/db/queries/concepts";
@@ -111,7 +112,7 @@ describe("persistScopingClose (integration)", () => {
             openingText: "pre-existing opening",
           },
         },
-        turnBudget: 10,
+        turnBudget: WAVE.turnCount,
       });
 
       // The call must throw — postgres raises a unique-violation, which

@@ -68,9 +68,16 @@ export const XP = {
     4: 1, // correct and clear — full reward
     5: 1.5, // could teach it — bonus, but bounded
   },
+  // MC correct = equivalent to free-text q=4 (correct and clear). Q=5 stays
+  // reserved for free-text answers where the learner can demonstrate teach-
+  // level depth that a click cannot. Wrong MC clicks still pay 0 via the
+  // q=1 multiplier (BASELINE.mcIncorrectQuality = 1); this multiplier only
+  // applies to the `correct === true` branch in `calculateMcXp`.
+  mcCorrectMultiplier: 1,
 } as const satisfies {
   readonly basePerTier: number;
   readonly qualityMultipliers: Readonly<Record<QualityScore, number>>;
+  readonly mcCorrectMultiplier: number;
 };
 
 /**
@@ -196,4 +203,17 @@ export const BASELINE = {
 export const LLM = {
   defaultTemperature: 0.3,
   maxRetries: 3,
+} as const;
+
+/**
+ * Wave-loop tunables. `turnCount` is the fixed length of every teaching
+ * Wave (mid-turns 1…turnCount-1, close turn at turnsRemaining===0).
+ * `tierCheckInterval` gates the close-turn tier-advancement check —
+ * MVP value 2 keeps integration tests fast; production target ~5.
+ * `completionXp` is the flat bonus awarded on Wave close.
+ */
+export const WAVE = {
+  turnCount: 10,
+  tierCheckInterval: 2,
+  completionXp: 50,
 } as const;

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { WAVE as WAVE_CONFIG } from "@/lib/config/tuning";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles, courses, waves, concepts } from "@/db/schema";
 import {
@@ -53,7 +54,7 @@ async function seedFixtures(
     customInstructionsSnapshot: null,
     dueConceptsSnapshot: [],
     seedSource: { kind: "scoping_handoff" },
-    turnBudget: 10,
+    turnBudget: WAVE_CONFIG.turnCount,
   });
   await db.insert(concepts).values({ id: CONCEPT, courseId: COURSE, name: "x", tier: 1 });
 

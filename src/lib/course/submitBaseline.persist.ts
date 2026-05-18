@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
+import { WAVE } from "@/lib/config/tuning";
 import { upsertConcept } from "@/db/queries/concepts";
 import { openWave } from "@/db/queries/waves";
 import { appendMessage } from "@/db/queries/contextMessages";
@@ -138,9 +139,6 @@ export async function persistScopingClose(
 
     // 4. Open Wave 1 with seed_source.scoping_handoff carrying the blueprint
     //    emitted on this close turn.
-    //    NOTE: turnBudget hardcoded `10` to match every other call site in
-    //    the codebase (no `WAVE_TURN_COUNT` constant exists yet in
-    //    `src/lib/config/tuning.ts`). If/when one is introduced, replace.
     const wave1 = await openWave(
       {
         courseId,
@@ -153,7 +151,7 @@ export async function persistScopingClose(
           kind: "scoping_handoff",
           blueprint: parsed.nextUnitBlueprint,
         },
-        turnBudget: 10,
+        turnBudget: WAVE.turnCount,
       },
       tx,
     );
