@@ -63,6 +63,15 @@ function renderPlannedConcepts(seed: WaveSeedInputs["seedSource"]): string {
   ].join("\n");
 }
 
+/**
+ * Renders the lesson seed JSON for the `<lesson_seed>` block.
+ *
+ * Both branches currently emit identical content; the explicit split is
+ * deliberate so the wave-handoff branch (currently `prior_blueprint` in
+ * `seedSourceSchema`) can diverge from `scoping_handoff` without rewiring
+ * the call sites — Wave-to-Wave handoffs will likely carry extra fields
+ * (e.g. carryover summary) that scoping does not produce.
+ */
 function renderSeedSource(seed: WaveSeedInputs["seedSource"]): string {
   if (seed.kind === "scoping_handoff") {
     return escapeXmlText(JSON.stringify(seed.blueprint, null, 2));
