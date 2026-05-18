@@ -40,6 +40,7 @@ const BLUEPRINT = {
   topic: "Rust borrowing",
   outline: ["What is borrowing?", "Mutable vs immutable references"],
   openingText: "Let's dive into borrowing in Rust.",
+  plannedConcepts: [],
 };
 
 /**

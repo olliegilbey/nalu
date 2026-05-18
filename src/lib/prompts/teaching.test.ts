@@ -29,7 +29,12 @@ const FIXTURE: WaveSeedInputs = {
   // scoping_handoff now carries the blueprint emitted by scoping's close turn.
   seedSource: {
     kind: "scoping_handoff",
-    blueprint: { topic: "Rust ownership", outline: ["ownership"], openingText: "Welcome." },
+    blueprint: {
+      topic: "Rust ownership",
+      outline: ["ownership"],
+      openingText: "Welcome.",
+      plannedConcepts: [],
+    },
   },
 };
 
@@ -58,7 +63,7 @@ describe("renderTeachingSystem", () => {
       seedSource: {
         kind: "prior_blueprint",
         priorWaveId: "00000000-0000-0000-0000-000000000099",
-        blueprint: { topic: "next", outline: ["a", "b"], openingText: "hi" },
+        blueprint: { topic: "next", outline: ["a", "b"], openingText: "hi", plannedConcepts: [] },
       },
     });
     expect(out).toContain('"openingText": "hi"');

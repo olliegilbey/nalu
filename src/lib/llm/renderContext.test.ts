@@ -23,7 +23,12 @@ const SEED: WaveSeedInputs = {
   // scoping_handoff now carries the blueprint emitted by scoping's close turn.
   seedSource: {
     kind: "scoping_handoff",
-    blueprint: { topic: "Rust ownership", outline: ["ownership"], openingText: "Welcome." },
+    blueprint: {
+      topic: "Rust ownership",
+      outline: ["ownership"],
+      openingText: "Welcome.",
+      plannedConcepts: [],
+    },
   },
 };
 

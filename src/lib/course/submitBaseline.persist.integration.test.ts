@@ -110,6 +110,7 @@ describe("persistScopingClose (integration)", () => {
             topic: "pre-existing",
             outline: ["x"],
             openingText: "pre-existing opening",
+            plannedConcepts: [],
           },
         },
         turnBudget: WAVE.turnCount,

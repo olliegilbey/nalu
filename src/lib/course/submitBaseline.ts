@@ -131,7 +131,19 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
   // Schema closed over runtime scope + question ids so refine messages name
   // the specific values that triggered any violation. Wire-side JSON schema
   // only inlined for non-strict-mode models (see modelCapabilities).
-  const schema = makeScopingCloseSchema({ scopeTiers, questionIds });
+  //
+  // freshConceptNames: all example concepts from the framework tiers (the
+  // model may pick from these or introduce novel ones — validated loosely).
+  // reviewDueNames / existingConceptNames: both empty at scoping close since
+  // no concepts exist yet and SM-2 has no due entries pre-teaching.
+  const freshConceptNames = framework.tiers.flatMap((t) => t.exampleConcepts);
+  const schema = makeScopingCloseSchema({
+    scopeTiers,
+    questionIds,
+    freshConceptNames,
+    reviewDueNames: [],
+    existingConceptNames: [],
+  });
   const modelName = process.env.LLM_MODEL ?? "(default)";
   const capabilities = getModelCapabilities(modelName);
   const schemaJson = toSchemaJsonString(schema, { name: "scoping_close" });
@@ -178,8 +190,15 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
   // Defence-in-depth: the schema already enforced tier scope + id coverage,
   // but mergeAndComputeXp re-checks at the orchestration layer so a future
   // schema regression surfaces as a thrown Error rather than corrupt XP.
+  //
+  // Filter to free-text gradings only: mc-index gradings lack the full
+  // StoredGrading shape (no conceptName/conceptTier/verdict/qualityScore).
+  // Scoping baseline questions are all free-text anyway, but the type
+  // must be narrowed here to satisfy the StoredGrading type at the
+  // mergeAndComputeXp boundary.
+  const freeTextGradings = parsed.gradings.filter((g) => g.kind === "free-text");
   const merged = mergeAndComputeXp({
-    parsed: { gradings: parsed.gradings, startingTier: parsed.startingTier },
+    parsed: { gradings: freeTextGradings, startingTier: parsed.startingTier },
     mechanicalGradings,
     baselineQuestionIds: questionIds,
     scopeTiers,

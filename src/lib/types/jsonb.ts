@@ -124,13 +124,27 @@ export type DueConceptsSnapshot = z.infer<typeof dueConceptsSnapshotSchema>;
 // --- waves.seed_source (discriminated union) -------------------------------
 
 /**
+ * One planned concept entry stored inside a Blueprint.
+ * Mirrors the wire shape from `src/lib/prompts/closeTurn.ts`.
+ */
+export const plannedConceptStorageSchema = z.object({
+  name: z.string(),
+  tier: z.number().int(),
+  role: z.enum(["fresh", "review"]),
+});
+
+/**
  * Teaching plan emitted by the LLM on a Wave's final turn.
  * Seeds the next Wave's opening system prompt.
+ *
+ * `plannedConcepts` defaults to `[]` so pre-existing v3 rows (written before
+ * this field was added) can be read without parse failure — additive only.
  */
 export const blueprintSchema = z.object({
   topic: z.string(),
   outline: z.array(z.string()),
   openingText: z.string(),
+  plannedConcepts: z.array(plannedConceptStorageSchema).default([]),
 });
 export type Blueprint = z.infer<typeof blueprintSchema>;
 
