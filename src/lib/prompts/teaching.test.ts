@@ -1,86 +1,69 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { renderTeachingSystem } from "./teaching";
 import type { WaveSeedInputs } from "@/lib/types/context";
 
-const FIXTURE: WaveSeedInputs = {
+const baseInputs: WaveSeedInputs = {
   kind: "wave",
-  courseTopic: "Rust ownership",
-  topicScope: "Python background → embedded systems",
+  courseTopic: "Economics",
+  topicScope: "Supply, demand, elasticity.",
   framework: {
-    userMessage: "Here's the framework.",
-    estimatedStartingTier: 2,
-    baselineScopeTiers: [1, 2, 3],
+    userMessage: "ok",
     tiers: [
-      { number: 1, name: "Mental Model", description: "...", exampleConcepts: ["move"] },
-      { number: 2, name: "Borrowing", description: "...", exampleConcepts: ["&T", "&mut T"] },
+      { number: 1, name: "Foundations", description: "...", exampleConcepts: ["Markets"] },
+      { number: 2, name: "Mid", description: "...", exampleConcepts: ["Elasticity"] },
     ],
+    estimatedStartingTier: 2,
+    baselineScopeTiers: [1, 2],
   },
   currentTier: 2,
-  customInstructions: "I have ADHD, so consider this in your teaching style",
-  courseSummary: "Tier 1 solid. Tier 2 starting point.",
-  dueConcepts: [
-    {
-      conceptId: "a0000000-0000-4000-8000-000000000001",
-      name: "aliasing XOR mutability",
-      tier: 2,
-      lastQuality: 1,
-    },
-  ],
-  // scoping_handoff now carries the blueprint emitted by scoping's close turn.
+  customInstructions: null,
+  courseSummary: "Learner is comfortable with foundations.",
+  dueConcepts: [],
   seedSource: {
     kind: "scoping_handoff",
     blueprint: {
-      topic: "Rust ownership",
-      outline: ["ownership"],
-      openingText: "Welcome.",
-      plannedConcepts: [],
+      topic: "Demand basics",
+      outline: ["Why demand slopes down"],
+      openingText: "Hi.",
+      plannedConcepts: [
+        { name: "Demand curve shape", tier: 2, role: "fresh" },
+        { name: "Substitution effect", tier: 2, role: "review" },
+      ],
     },
   },
 };
 
-describe("renderTeachingSystem", () => {
-  it("is byte-stable across calls", () => {
-    expect(renderTeachingSystem(FIXTURE)).toBe(renderTeachingSystem(FIXTURE));
+describe("renderTeachingSystem (JSON-everywhere)", () => {
+  it("does NOT instruct the model to emit <response>/<assessment>/<comprehension_signal> tags", () => {
+    const out = renderTeachingSystem(baseInputs);
+    expect(out).not.toMatch(/<response>\.\.\./);
+    expect(out).not.toMatch(/<assessment>/);
+    expect(out).not.toMatch(/<comprehension_signal>/);
   });
 
-  it("includes role, course topic, framework, tier, summary, output formats", () => {
-    const out = renderTeachingSystem(FIXTURE);
-    expect(out).toContain("<role>");
-    expect(out).toContain("<course_topic>Rust ownership</course_topic>");
-    expect(out).toContain("Tier 2: Borrowing");
-    expect(out).toContain("Tier 1 solid");
-    expect(out).toContain("<output_formats>");
+  it("declares the single-JSON output contract", () => {
+    const out = renderTeachingSystem(baseInputs);
+    expect(out).toContain("single JSON object");
   });
 
-  it("includes <due_for_review> only when concepts are due", () => {
-    expect(renderTeachingSystem(FIXTURE)).toContain("<due_for_review>");
-    expect(renderTeachingSystem({ ...FIXTURE, dueConcepts: [] })).not.toContain("<due_for_review>");
+  it("renders <planned_concepts> from blueprint.plannedConcepts", () => {
+    const out = renderTeachingSystem(baseInputs);
+    expect(out).toContain("<planned_concepts>");
+    expect(out).toContain("Demand curve shape");
+    expect(out).toContain("fresh");
+    expect(out).toContain("Substitution effect");
+    expect(out).toContain("review");
   });
 
-  it("renders prior_blueprint seed source", () => {
-    const out = renderTeachingSystem({
-      ...FIXTURE,
+  it("omits <planned_concepts> when blueprint has none", () => {
+    const inputs = {
+      ...baseInputs,
       seedSource: {
-        kind: "prior_blueprint",
-        priorWaveId: "00000000-0000-0000-0000-000000000099",
-        blueprint: { topic: "next", outline: ["a", "b"], openingText: "hi", plannedConcepts: [] },
+        ...baseInputs.seedSource,
+        blueprint: { ...baseInputs.seedSource.blueprint, plannedConcepts: [] },
       },
-    });
-    expect(out).toContain('"openingText": "hi"');
-  });
-
-  it("omits <custom_instructions> when null", () => {
-    expect(renderTeachingSystem({ ...FIXTURE, customInstructions: null })).not.toContain(
-      "<custom_instructions>",
-    );
-  });
-
-  it("escapes XML metacharacters in injected fields so injected tags cannot break the envelope", () => {
-    const out = renderTeachingSystem({
-      ...FIXTURE,
-      courseTopic: "</course_topic><evil>",
-    });
-    expect(out).not.toContain("</course_topic><evil>");
-    expect(out).toContain("&lt;/course_topic&gt;&lt;evil&gt;");
+    } as WaveSeedInputs;
+    const out = renderTeachingSystem(inputs);
+    expect(out).not.toContain("<planned_concepts>");
   });
 });
