@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, max, sql } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { assessments, type Assessment } from "@/db/schema";
 import type { QualityScore } from "@/lib/types/spaced-repetition";
 import { NotFoundError } from "./errors";
@@ -162,4 +162,58 @@ export async function getAssessmentsByWaveAndConcept(
     .from(assessments)
     .where(and(eq(assessments.waveId, waveId), eq(assessments.conceptId, conceptId)))
     .orderBy(asc(assessments.assessedAt));
+}
+
+/**
+ * Grading patch applied to an existing assessment row after the LLM scores it.
+ *
+ * Only the three fields that flip from placeholders (set at insert time) to
+ * final scored values: correctness, quality, and XP. All other columns
+ * (waveId, conceptId, turnIndex, question, userAnswer, kind, assessedAt) are
+ * immutable post-insert.
+ */
+export interface UpdateAssessmentGradingParams {
+  /** Final correctness verdict (`verdict === "correct"` for free-text). */
+  readonly isCorrect: boolean;
+  /** LLM-assigned quality score 0-5; for MC use 4/1 (correct/incorrect). */
+  readonly qualityScore: number;
+  /** XP awarded — deterministic, computed by `calculateXP` / `calculateMcXp`. */
+  readonly xpAwarded: number;
+}
+
+/**
+ * Persist grading results onto an existing assessment row.
+ *
+ * Uses raw SQL UPDATE to avoid `eslint-plugin-functional/immutable-data` crash
+ * on `db.update().set()`. Re-fetches via a typed Drizzle select so the
+ * returned row goes through Drizzle's camelCase mapping (mirrors the
+ * `updateConceptSm2` pattern).
+ *
+ * Optional `tx` opts the UPDATE and re-fetch into a caller's transaction.
+ * BOTH operations must run on the same executor — using `db` for the re-fetch
+ * after a tx UPDATE would query a different connection that cannot see the
+ * uncommitted change.
+ *
+ * @throws {NotFoundError} if `id` does not match any row.
+ */
+export async function updateAssessmentGrading(
+  id: string,
+  params: UpdateAssessmentGradingParams,
+  tx?: DbOrTx,
+): Promise<Assessment> {
+  // Use the caller's transaction handle if supplied, else the singleton.
+  const exec = tx ?? db;
+  await exec.execute(sql`
+    UPDATE assessments
+    SET is_correct    = ${params.isCorrect},
+        quality_score = ${params.qualityScore},
+        xp_awarded    = ${params.xpAwarded}
+    WHERE id = ${id}
+  `);
+
+  // Re-fetch on the same executor for camelCase mapping and to surface
+  // a missing id as NotFoundError (Postgres UPDATE silently affects 0 rows).
+  const [row] = await exec.select().from(assessments).where(eq(assessments.id, id));
+  if (!row) throw new NotFoundError("assessment", id);
+  return row;
 }
