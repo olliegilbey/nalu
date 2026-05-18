@@ -10,6 +10,10 @@ import { questionnaireSchema } from "./questionnaire";
  * Discriminator-by-answer-kind (not card kind): an MC question answered via
  * the free-text escape is graded as free-text because the model only has
  * free-text content to evaluate (spec §4.3 rationale).
+ *
+ * No `verdict`/`qualityScore` band `superRefine` here — mid-turn signals are
+ * advisory (they shape the next turn's teaching). The XP-relevant grading
+ * runs at wave-close, where the band invariant IS enforced (`closeTurn.ts`).
  */
 const comprehensionSignalSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -78,7 +82,7 @@ export interface RenderWaveTurnEnvelopeParams {
  */
 export function renderWaveTurnEnvelope(params: RenderWaveTurnEnvelopeParams): string {
   const schemaBlock = params.responseSchema
-    ? `\n<response_schema>${params.responseSchema}</response_schema>`
+    ? `<response_schema>${params.responseSchema}</response_schema>`
     : "";
   return [
     "<stage>teaching turn</stage>",

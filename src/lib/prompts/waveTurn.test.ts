@@ -52,7 +52,7 @@ describe("renderWaveTurnEnvelope", () => {
       learnerInput: "<learner_reply>hello</learner_reply>",
       turnsRemaining: 5,
     });
-    expect(out).toContain("teaching turn");
+    expect(out).toContain("<stage>teaching turn</stage>");
     expect(out).toContain("<turns_remaining>5</turns_remaining>");
     expect(out).toContain("<learner_reply>hello</learner_reply>");
   });
@@ -64,5 +64,8 @@ describe("renderWaveTurnEnvelope", () => {
       responseSchema: '{"type":"object"}',
     });
     expect(out).toContain('<response_schema>{"type":"object"}</response_schema>');
+    // No blank line between turns_remaining and response_schema — bytes matter
+    // for cache-prefix stability across turns.
+    expect(out).not.toMatch(/<\/turns_remaining>\n\n<response_schema>/);
   });
 });
