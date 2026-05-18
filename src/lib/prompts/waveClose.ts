@@ -2,6 +2,7 @@ import { z } from "zod/v4";
 import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
 import { makeCloseTurnBaseSchema, type MakeCloseTurnBaseSchemaParams } from "./closeTurn";
 
+/** Per-concept SM-2 update emitted in the wave-close batch. */
 const conceptUpdateSchema = z.object({
   name: z
     .string()
@@ -52,9 +53,18 @@ export interface RenderWaveCloseEnvelopeParams {
   readonly learnerInput: string;
   /** Pre-rendered `<concepts_for_next_wave>…</concepts_for_next_wave>` block from `scheduler.renderConceptInjection`. */
   readonly conceptsForNextWaveBlock: string;
+  /** Optional inline JSON schema for non-strict-mode models. */
   readonly responseSchema?: string;
 }
 
+/**
+ * Renders the close-turn user envelope for a Wave. `turns_remaining=0` is
+ * hardcoded — this IS the close turn, so by definition no further turns
+ * remain in this Wave. The harness still injects the value explicitly so
+ * the model's contract ("read turns_remaining each turn") stays uniform.
+ * `learnerInput` and `conceptsForNextWaveBlock` are XML-escaped upstream
+ * by the caller; this function only stitches.
+ */
 export function renderWaveCloseEnvelope(params: RenderWaveCloseEnvelopeParams): string {
   const schemaBlock = params.responseSchema
     ? `<response_schema>${params.responseSchema}</response_schema>`
