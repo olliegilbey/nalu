@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateXP } from "./xp";
+import { calculateXP, calculateMcXp } from "./xp";
 
 describe("calculateXP", () => {
   describe("standard calculations", () => {
@@ -45,5 +45,23 @@ describe("calculateXP", () => {
     it("throws on non-integer tier", () => {
       expect(() => calculateXP(1.5, 5)).toThrow();
     });
+  });
+});
+
+describe("calculateMcXp", () => {
+  it("returns 0 for an incorrect MC at any tier", () => {
+    expect(calculateMcXp(1, false)).toBe(0);
+    expect(calculateMcXp(5, false)).toBe(0);
+  });
+
+  it("scales linearly with tier on correct (mcCorrectMultiplier = 1)", () => {
+    expect(calculateMcXp(1, true)).toBe(10); // 1 * 10 * 1
+    expect(calculateMcXp(2, true)).toBe(20);
+    expect(calculateMcXp(5, true)).toBe(50);
+  });
+
+  it("rejects non-positive tier", () => {
+    expect(() => calculateMcXp(0, true)).toThrow();
+    expect(() => calculateMcXp(-1, true)).toThrow();
   });
 });

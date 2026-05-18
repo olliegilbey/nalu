@@ -27,3 +27,26 @@ export function calculateXP(tier: number, qualityScore: number): number {
   const multiplier = XP.qualityMultipliers[validatedQuality];
   return Math.round(validatedTier * XP.basePerTier * multiplier);
 }
+
+/**
+ * Deterministic XP award for an MC question answered via index click.
+ *
+ *   XP = correct ? round(tier × XP.basePerTier × XP.mcCorrectMultiplier) : 0
+ *
+ * Used by the Wave instant-toast path (correctness decoded client-side from
+ * `correctEnc`) AND by the server-side reconciliation in `applyAssessmentGrading`.
+ * Both sides must agree — discrepancies log a warning and trust the server.
+ *
+ * `mcCorrectMultiplier = 1` makes this equivalent to a free-text q=4 award
+ * (correct and clear). Free-text retains the q=5 ceiling so a learner who
+ * can teach a concept earns more than one who just clicks the right answer.
+ *
+ * @param tier - Positive integer, the tier of the concept assessed.
+ * @param correct - Whether the learner picked the right option.
+ * @returns XP awarded (non-negative integer).
+ */
+export function calculateMcXp(tier: number, correct: boolean): number {
+  const validatedTier = tierSchema.parse(tier);
+  if (!correct) return 0;
+  return Math.round(validatedTier * XP.basePerTier * XP.mcCorrectMultiplier);
+}
