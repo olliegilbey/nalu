@@ -148,14 +148,23 @@ export const FRAMEWORK = {
 
 /**
  * Baseline-assessment bounds. Consumed by `src/lib/prompts/baseline.ts`
- * (generation) and `src/lib/course/submitBaseline.ts` (MC scoring + batch
- * grading). Keeping numbers here means prompt text, Zod schemas, and grading
+ * (generation) and `src/lib/course/submitBaseline.ts` (mechanical MC
+ * scoring + batch grading via the close turn). Keeping
+ * the numbers in one place means prompt text, Zod schemas, and grading
  * code can't drift.
  *
- * Question counts: PRD §4.1 — 7–9 total, ~3 per in-scope tier.
- * `FRAMEWORK.maxBaselineScopeSize` × 3 = 9 caps the upper bound.
- * Mechanical MC quality scores (q=4 correct, q=1 incorrect) are explained
- * inline below; rationale in `XP.qualityMultipliers`.
+ * Question counts follow PRD §4.1: 7–9 baseline questions total, with
+ * ~3 per in-scope tier. `FRAMEWORK.maxBaselineScopeSize` × 3 = 9 caps
+ * the upper bound; 7 floors it so single-tier-scope edge cases still
+ * produce a useful signal.
+ *
+ * Mechanical MC quality scores (q=4 correct, q=1 incorrect) encode what
+ * a correct click tells us and what a wrong click tells us — a correct
+ * MC is "correct and clear" but not the teach-level q=5 a free-text
+ * answer can earn; an incorrect MC is "wrong with clear misunderstanding"
+ * (q=1) rather than q=0 non-engagement, because clicking is engagement.
+ * The XP multiplier table in `XP.qualityMultipliers` floors q=1 to 0,
+ * so wrong MC clicks still earn nothing — anti-gaming holds.
  */
 export const BASELINE = {
   // PRD §4.1: "baseline assessment — 7-9 questions". Floor/ceiling enforced
@@ -185,14 +194,26 @@ export const BASELINE = {
 } as const;
 
 /**
- * LLM transport defaults for every structured and chat call in
- * `src/lib/llm/generate.ts`. Raise `defaultTemperature` per-flow only where
- * variety aids learning; `maxRetries` bounds transient-failure retries.
+ * LLM transport defaults. Applied in `src/lib/llm/generate.ts` to every
+ * structured and chat call unless an explicit override is passed.
+ * `defaultTemperature` favours consistency over creativity; raise per-flow
+ * only where variety aids learning. `maxRetries` bounds transient-failure
+ * retries — the AI SDK handles JSON-parse repair internally.
  */
 export const LLM = {
   defaultTemperature: 0.3,
   maxRetries: 3,
 } as const;
 
-// Moved to its own file to keep tuning.ts under 200 LOC.
-export { WAVE } from "./waveTuning";
+/**
+ * Wave-loop tunables. `turnCount` is the fixed length of every teaching
+ * Wave (mid-turns 1…turnCount-1, close turn at turnsRemaining===0).
+ * `tierCheckInterval` gates the close-turn tier-advancement check —
+ * MVP value 2 keeps integration tests fast; production target ~5.
+ * `completionXp` is the flat bonus awarded on Wave close.
+ */
+export const WAVE = {
+  turnCount: 10,
+  tierCheckInterval: 2,
+  completionXp: 50,
+} as const;
