@@ -24,4 +24,9 @@ describe("obfuscateCorrect", () => {
   it("encodes different indices to different strings", () => {
     expect(encodeCorrect("q-1", 0)).not.toEqual(encodeCorrect("q-1", 1));
   });
+
+  it("round-trips questionIds containing a colon (last-colon split)", () => {
+    const enc = encodeCorrect("baseline:q-1", 3);
+    expect(decodeCorrect("baseline:q-1", enc)).toBe(3);
+  });
 });
