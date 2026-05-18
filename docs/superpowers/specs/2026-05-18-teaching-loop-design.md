@@ -271,8 +271,8 @@ export async function submitWaveTurn(input: SubmitWaveTurnInput): Promise<Submit
 
 `buildLearnerInput` composes one of two envelope payloads:
 
-- **chat-reply path:** wraps the learner's free-text in `<learner_reply>`.
-- **card-answers path:** for each open question, emits a `<card_answer>` block discriminated by answer kind:
+- **chat-text path:** wraps the learner's free-text in `<learner_reply>`.
+- **questionnaire-answers path:** for each open question, emits a `<questionnaire_answer>` block discriminated by answer kind:
   - `kind="mc-index"` — carries `selected_index`, mechanical `verdict` (computed server-side from the persisted correct index), and `correct_index` (for model context).
   - `kind="free-text"` — carries the learner's text. (Originates from either a pure free-text card or an MC card answered via the free-text escape; `fromEscape: true` is annotated in the block for the model's context.)
 
@@ -306,7 +306,7 @@ Single transaction; all-or-nothing:
 - `src/lib/course/applyAssessmentGrading.ts` — shared per-question side effect: update assessment row, award per-question XP. No SM-2 touch.
 - `src/lib/course/applySm2Update.ts` — close-only: read concept's current SM-2 state, call `calculateSM2`, persist. No XP touch.
 - `src/lib/course/buildWaveSeed.ts` — assembles `WaveSeedInputs` from course + wave rows for `executeTurn`.
-- `src/lib/course/buildLearnerInput.ts` — composes free-text / card-answers envelope payload.
+- `src/lib/course/buildLearnerInput.ts` — composes chat-text / questionnaire-answers envelope payload.
 - `src/lib/course/loadWaveContext.ts` — fetches course, wave, prior messages, open questionnaire (if any) in one round-trip.
 
 ### 6.5 XP timing — three paths
@@ -337,9 +337,9 @@ export const waveRouter = router({
         courseId: z.string().uuid(),
         waveNumber: z.number().int().min(1),
         payload: z.discriminatedUnion("kind", [
-          z.object({ kind: z.literal("chat-reply"), text: z.string().min(1) }),
+          z.object({ kind: z.literal("chat-text"), text: z.string().min(1) }),
           z.object({
-            kind: z.literal("card-answers"),
+            kind: z.literal("questionnaire-answers"),
             questionnaireId: z.string(),
             answers: z.array(
               z.discriminatedUnion("kind", [
@@ -413,9 +413,19 @@ type GradedSignalForClient =
   | { kind: "free-text"; questionId: string; qualityScore: number; xpAwarded: number };
 ```
 
-### 7.4 `useWaveState` hook
+### 7.4 Server-side invariant — `chat-text` vs `questionnaire-answers` mutual exclusion
 
-Parallel to `useScopingState`. Drives `wave.getState` + `wave.submitTurn`. No auto-dispatch chain — Wave turns are entirely user-driven. On mutation success: emit deferred XP toasts from `gradedSignals[]`; on `close-turn`, emit completion banner; invalidate `getState` query.
+The Composer UI mode is gated on `activeQuestionnaire` (see `Onboarding.tsx:86`): when a questionnaire is open, the Composer enters question mode and the user cannot send a free-text reply. This is a UI invariant. The server still enforces it as defence-in-depth:
+
+- `payload.kind === "chat-text"` is rejected if `openQuestionnaire !== null` at load time.
+- `payload.kind === "questionnaire-answers"` is rejected if `openQuestionnaire === null`, or if `payload.questionnaireId !== openQuestionnaire.questionnaireId` (stale page state).
+- `payload.answers` length must equal `openQuestionnaire.questions.length`; partial submissions reject.
+
+Rejections return a TRPCError with code `PRECONDITION_FAILED`. The client's `onError` invalidates `getState` so the UI re-syncs with server truth.
+
+### 7.5 `useWaveState` hook
+
+Parallel to `useScopingState`. Drives `wave.getState` + `wave.submitTurn`. No auto-dispatch chain — Wave turns are entirely user-driven (just like scoping: each next-stage call is triggered by a user action; what differs is that scoping's stages follow a fixed sequence while Wave turns are uniform until the close). On mutation success: emit deferred XP toasts from `gradedSignals[]`; on `close-turn`, emit completion banner; invalidate `getState` query.
 
 ### 7.5 Turn union refactor (phase-agnostic)
 
@@ -438,7 +448,7 @@ export type Turn =
         readonly questionnaireId: string;
       };
     }
-  | { readonly kind: "user-card-answers"; readonly content: string }
+  | { readonly kind: "user-questionnaire-answers"; readonly content: string }
   | { readonly kind: "move-on-cta"; readonly next: { phase: "wave"; n: number } };
 ```
 
@@ -491,20 +501,20 @@ First migration on the teaching-loop branch. Adds:
 ```sql
 ALTER TABLE user_message
   ADD COLUMN kind TEXT
-    CHECK (kind IN ('chat-reply', 'card-answers'));
+    CHECK (kind IN ('chat-text', 'questionnaire-answers'));
 
 -- One-time backfill of existing scoping rows. Baseline-answer rows carry
 -- the persisted answers payload; clarify-reply rows are free-flowing.
-UPDATE user_message SET kind = 'card-answers'
+UPDATE user_message SET kind = 'questionnaire-answers'
   WHERE id IN (SELECT id FROM user_message WHERE /* baseline-answer marker */);
-UPDATE user_message SET kind = 'chat-reply' WHERE kind IS NULL;
+UPDATE user_message SET kind = 'chat-text' WHERE kind IS NULL;
 
 ALTER TABLE user_message ALTER COLUMN kind SET NOT NULL;
 ```
 
 The harness sets this authoritatively when persisting each row going forward; the backfill exists only to satisfy `NOT NULL` for pre-existing scoping rows. Scoping's `deriveTurns` still infers turn shape via row-ordering and doesn't depend on the column at read time.
 
-Naming: `chat-reply` is free-flowing conversational text; `card-answers` is a batch submission against an open questionnaire. Both are textually free-text at the keyboard level — the distinction is intent.
+Naming: `chat-text` is free-flowing conversational text; `questionnaire-answers` is a batch submission against an open questionnaire (always plural-shaped — the Composer fires one `onComplete(answers)` callback per questionnaire, even when N=1). The submission-level kind is intentionally not qualified with "free-text" because an MC-only submission contains index selections (`{kind: "mc", selected: "A"|"B"|"C"|"D"}`), not free-text. Per-answer shape (`mc` vs `freetext`) is discriminated separately inside `answers[]`.
 
 ### 8.2 Wave row `seed_source` JSONB schema
 
@@ -597,20 +607,37 @@ To honor DRY symmetry, two back-fills land alongside the Wave code:
 - `calculateMcXp` — table-driven tests for tier × correct/incorrect.
 - `encodeCorrect` / `decodeCorrect` — round-trip + binding violation (questionId mismatch returns null).
 - `renderConceptInjection` — empty / partial / full coverage.
-- `deriveWaveTurns` — fixture-driven; covers chat-reply, card-answers, questionnaire-drop, close, move-on-cta.
+- `deriveWaveTurns` — fixture-driven; covers chat-text, questionnaire-answers, questionnaire-drop, close, move-on-cta.
 
 ### 12.2 Integration tests (real DB)
 
-- `submitWaveTurn` mid-turn happy path: chat-reply → assistant text, no questionnaire.
+Scoping's integration tests (`submitBaseline.persist.integration.test.ts`, `course.integration.test.ts`) are the direct inspiration — fixture setup, transaction assertions, and ValidationGateFailure injection patterns transfer almost verbatim. The Wave suite extends rather than copies because the mid-turn shape introduces less deterministic outcomes from the model: every turn the model independently chooses whether to drop a questionnaire, what shape, and which concepts to ground it in. Schema retry logic (`ValidationGateFailure` → teacher-style directive) is identical to scoping; what changes is the breadth of valid-but-different shapes the model can return on the same input.
+
+- `submitWaveTurn` mid-turn happy path: chat-text → assistant text, no questionnaire.
 - `submitWaveTurn` mid-turn with questionnaire drop: assertion that new assessment rows + open questionnaire surface on next `getWaveState`.
-- `submitWaveTurn` mid-turn card-answers: assertion that assessments updated, XP awarded, no SM-2 mutation.
+- `submitWaveTurn` mid-turn questionnaire-answers: assertion that assessments updated, XP awarded, no SM-2 mutation.
 - `submitWaveTurn` close-turn: all-or-nothing transaction asserts (Wave closed + Wave N+1 inserted + SM-2 batched + completion XP awarded).
 - `submitWaveTurn` close-turn with empty concept lists: consolidation path, unconditional tier check.
 - Retry-pruning: forced ValidationGateFailure leaves no failed pair in the loaded Context.
 
+**Edge cases that scoping doesn't exercise** (Wave-specific non-determinism):
+
+- Model drops a questionnaire but emits no `comprehensionSignals` for the prior turn's open cards (orphaned grading) — covered by close-turn fallback grading the leftover rows.
+- Model drops a free-text-only questionnaire on one turn, MC-only on another, mixed on a third — assert Composer handles each.
+- Model emits `conceptUpdates[]` referencing a concept never grounded in any prior assessment (defence-in-depth refine catches).
+- Model emits identical `plannedConcepts.name` for fresh-role and review-role in the same blueprint (collision; reject via refine).
+- User sends `chat-text` while an open questionnaire exists (server-side invariant violation; see §7.4).
+- User sends `questionnaire-answers` with the wrong `questionnaireId` (stale page state; reject).
+- Submitting `questionnaire-answers` where the answer count doesn't match the open question count (partial submission; reject).
+- Two consecutive mid-turns where the model drops a questionnaire on both (pedagogy violation but not a schema violation; the prompt discourages this, but tests must verify the harness doesn't crash).
+
 ### 12.3 Live-smoke (`CEREBRAS_LIVE=1`)
 
+The existing scoping live-smokes (`course.live.test.ts`, `submitBaseline.live.test.ts`) are direct inspirations for the wiring shape. The Wave live-smoke adds breadth because each turn surfaces a wider distribution of model outputs:
+
 - One full Wave end-to-end against the live model, labels `"wave-mid"` and `"wave-close"`. Quiet mode collapses to ✓ summary; verbose mode shows prompt + response + parse outcome per turn.
+- Multiple full-Wave runs to sample model variance: questionnaire-drop frequency, comprehensionSignals coverage, conceptUpdates cardinality at close. The smoke harness logs these distributions so regressions in pedagogy adherence surface early.
+- Wave 1 → Wave 2 handoff: assert the next Wave's seed_source carries the prior blueprint correctly and the opening text persists as turn-0 assistant context.
 
 ### 12.4 UI
 
