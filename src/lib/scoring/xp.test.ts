@@ -64,4 +64,8 @@ describe("calculateMcXp", () => {
     expect(() => calculateMcXp(0, true)).toThrow();
     expect(() => calculateMcXp(-1, true)).toThrow();
   });
+
+  it("rejects non-integer tier", () => {
+    expect(() => calculateMcXp(1.5, true)).toThrow();
+  });
 });
