@@ -37,9 +37,19 @@ export const closeGradingItemSchema = z.discriminatedUnion("kind", [
     qualityScore: qualityScoreSchema.describe(
       "0-5. correct → 4-5, partial → 2-3, incorrect → 0-1.",
     ),
-    conceptName: z.string().min(1),
-    conceptTier: z.number().int(),
-    rationale: z.string(),
+    conceptName: z
+      .string()
+      .min(1)
+      .describe("Concept this question probes — verbatim from the prompt's concept list."),
+    conceptTier: z
+      .number()
+      .int()
+      .describe("Tier (level) of the concept; must be within the in-scope tiers from the prompt."),
+    rationale: z
+      .string()
+      .describe(
+        "Two sentences. First: why this verdict given the learner's text. Second: what to teach next.",
+      ),
   }),
 ]);
 
