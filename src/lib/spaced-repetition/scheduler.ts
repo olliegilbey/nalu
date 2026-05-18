@@ -22,15 +22,22 @@ export interface ConceptForInjection {
  * the untaught + current-tier slice in TS rather than a dedicated query —
  * concept lists per course are small (single digits to ~hundreds), so the
  * scan is cheap and we avoid a second SQL surface.
+ *
+ * Sort: `getConceptsByCourse` is explicitly unordered, but the rendered
+ * block becomes part of a cached prompt prefix on the close turn — any
+ * non-determinism in row order breaks cache reuse across requests. Sort
+ * by `name` using raw string compare (NOT `localeCompare`, which is
+ * locale-sensitive) so the byte sequence is stable.
  */
 export async function getFreshConcepts(
   courseId: string,
   currentTier: number,
 ): Promise<readonly ConceptForInjection[]> {
   const all = await getConceptsByCourse(courseId);
-  return all
+  const filtered = all
     .filter((c) => c.tier === currentTier && c.lastReviewedAt === null)
     .map((c) => ({ name: c.name, tier: c.tier, lastQuality: c.lastQualityScore }));
+  return [...filtered].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
 /**
@@ -40,6 +47,10 @@ export async function getFreshConcepts(
  * projection used by `renderConceptInjection`. `now` is caller-supplied to
  * keep the call site deterministic in tests (matches the underlying query's
  * `now: Date` contract).
+ *
+ * Sort: delegated to the underlying query, which orders by
+ * `(nextReviewAt ASC, id ASC)`. That ordering is part of the cache-stability
+ * contract — keep it in sync if the query is ever swapped.
  */
 export async function getDueConcepts(
   courseId: string,
