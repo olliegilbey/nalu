@@ -54,10 +54,12 @@ export interface WaveState {
   readonly messages: readonly RenderedMessage[];
   readonly openQuestionnaire: OpenQuestionnaireForClient | null;
   /**
-   * Always `null` on `getWaveState`. Present on the type for shape stability
-   * with `submitWaveTurn`'s close payload (spec §7.2): the close result is a
-   * one-shot response, not a re-readable wave property. Client consumers can
-   * thus type-narrow on a single union shape across both endpoints.
+   * Always `null` on `getWaveState` — close result is the response payload of
+   * `submitWaveTurn`, not a re-readable wave property (spec §7.2). The shape
+   * below is a NARROWER SUBSET of `ExecuteWaveCloseResult` (omits `kind`,
+   * `nextWaveId`, `gradedSignals`) — the four fields a client typically
+   * re-renders after close. Full close payload comes from `submitWaveTurn`'s
+   * return value; this field exists as a documentation handle only.
    */
   readonly closeResult: null | {
     readonly closingMessage: string;
@@ -125,8 +127,8 @@ export async function getWaveState(params: GetWaveStateParams): Promise<WaveStat
       id: r.id,
       turnIndex: r.turnIndex,
       seq: r.seq,
-      kind: r.kind as ContextMessage["kind"],
-      role: r.role as ContextMessage["role"],
+      kind: r.kind,
+      role: r.role,
       content: r.content,
     }));
 
