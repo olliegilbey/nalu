@@ -1,10 +1,12 @@
 /**
  * Per-model capability flags for the Nalu LLM layer.
  *
- * WHY this exists: Cerebras free-tier llama3.1-8b silently ignores
- * `response_format: { type: "json_schema", strict: true }` and emits
- * free-form JSON that may not match the declared schema. Stronger models
- * (llama-3.3-70b and above) honour strict-mode constrained decoding.
+ * WHY this exists: Cerebras free-tier weak models historically silently
+ * ignored `response_format: { type: "json_schema", strict: true }` and
+ * emitted free-form JSON that may not match the declared schema — the
+ * original `llama3.1-8b` floor exhibited this exact failure mode. Stronger
+ * models (llama-3.3-70b, gpt-oss-120b) honour strict-mode constrained
+ * decoding.
  *
  * Consequence: we gate two distinct mechanisms on `honorsStrictMode`:
  *   1. Wire-side `response_format` — only sent to honouring models. Sending
@@ -34,36 +36,22 @@ export interface ModelCapabilities {
  */
 const MODEL_CAPABILITIES: Readonly<Record<string, ModelCapabilities>> = {
   /**
-   * Cerebras free-tier floor model. Empirically ignores
-   * `response_format: { type: "json_schema", strict: true }` — emits
-   * free-form JSON that fits the schema most of the time but occasionally
-   * drifts. Inline `<response_schema>` in the user envelope is the
-   * mitigation used by the scoping prompts.
+   * Cerebras free-tier floor model (current). Empirically verified via
+   * one-shot probe on 2026-05-19: honours `response_format: { type:
+   * "json_schema", strict: true }` constrained decoding — strict-mode
+   * responses come back exactly schema-conformant (~210ms on the free tier).
    *
-   * Cerebras sunsets this model on 2026-05-27; see memory/llama_8b_deprecation.md.
+   * No listed deprecation date as of the probe. Slight prompt-budget
+   * overhead vs a non-reasoning model: ~40 reasoning tokens per turn.
    */
-  "llama3.1-8b": { honorsStrictMode: false },
+  "gpt-oss-120b": { honorsStrictMode: true },
 
   /**
    * Cerebras 70B model. Correctly enforces strict-mode constrained decoding.
    * The inline schema block is omitted for this model to save prompt tokens.
+   * Kept here as a reference honouring model — not the active floor.
    */
   "llama-3.3-70b": { honorsStrictMode: true },
-
-  /**
-   * Cerebras preview 235B model (Qwen 3 Instruct). Supports strict-mode
-   * `response_format` constrained decoding, so the inline `<response_schema>`
-   * block is omitted to save prompt tokens.
-   *
-   * Current default for `just smoke` (see justfile). Picked because the
-   * llama3.1-8b 8192-token ceiling overruns on the close-scoping turn once
-   * the conversation accrues all four stage envelopes; qwen has headroom.
-   *
-   * Cerebras sunsets this model on 2026-05-27 — same cliff as llama3.1-8b.
-   * Re-audit free-tier availability before that date. See
-   * memory/project_llama_8b_deprecation.md.
-   */
-  "qwen-3-235b-a22b-instruct-2507": { honorsStrictMode: true },
 };
 
 /**

@@ -26,7 +26,6 @@ import {
 } from "@/lib/testing/scopingInvariants";
 import { baselineClosedJsonbSchema, type FrameworkJsonb } from "@/lib/types/jsonb";
 import type { BaselineAnswer } from "@/lib/course/submitBaseline";
-import { __resetEnvCacheForTests } from "@/lib/config";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 
 // Gate: skip every test unless both flags are set. Mirrors course.live.test.ts.
@@ -97,27 +96,7 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
             } as const),
       );
 
-      // HACK: llama3.1-8b's 8192-token ceiling fits clarify→framework→baseline
-      // turns but overflows on close-scoping after they're all appended. Swap
-      // to qwen (much larger context) for just the close call. Confined to
-      // this smoke; production deploys a single model per env. Remove once the
-      // floor model has enough context, or once llama3.1-8b deprecates
-      // (2026-05-27) and we pick a wider-context successor.
-      //
-      // getEnv() caches on first access, so mutating process.env alone is not
-      // enough — we must invalidate the cache before and after the swap so
-      // the close call sees qwen and subsequent prior-state reads (none here,
-      // but defensive) see llama again.
-      const originalModel = process.env.LLM_MODEL;
-      process.env.LLM_MODEL = "qwen-3-235b-a22b-instruct-2507";
-      __resetEnvCacheForTests();
-      let result;
-      try {
-        result = await caller.course.submitBaseline({ courseId, answers });
-      } finally {
-        process.env.LLM_MODEL = originalModel;
-        __resetEnvCacheForTests();
-      }
+      const result = await caller.course.submitBaseline({ courseId, answers });
 
       // Live-return-shape assertions.
       expect(result.userMessage.length, "userMessage non-empty").toBeGreaterThan(0);

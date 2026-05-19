@@ -32,12 +32,16 @@ test-int:
 # never lands on disk. `.env.local` holds an `op://` reference, not the key
 # itself. Requires `op signin` once per shell.
 #
-# Default model is llama3.1-8b (.env.local). `submitBaseline.live.test.ts`
-# swaps to qwen-3-235b-a22b-instruct-2507 mid-test for the close-scoping turn
-# only — llama's 8192-token ceiling overflows on that single turn after the
-# prior three are appended. See the test's HACK comment for details.
+# Runs against whatever `LLM_MODEL` is set in `.env.local` (current default:
+# gpt-oss-120b). No mid-test model swaps.
 smoke:
     CEREBRAS_LIVE=1 op run --account my.1password.com --env-file=.env.local -- bun run test:live
+
+# One-shot probe for a Cerebras model. Wraps with `op run` so the
+# 1Password reference for LLM_API_KEY resolves. Overrides LLM_MODEL so
+# the .env.local default isn't used. See scripts/probe-model.ts.
+probe-model model:
+    op run --account my.1password.com --env-file=.env.local -- env LLM_MODEL={{model}} bun scripts/probe-model.ts
 
 # Run unit tests in watch mode
 test-watch:
