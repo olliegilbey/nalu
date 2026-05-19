@@ -22,6 +22,40 @@ turns are appended. Both models deprecate 2026-05-27 (see memory
 
 **Promote when:** floor-model selection lands (hard deadline 2026-05-27).
 
+## Teaching-loop UI (Task 15 follow-ups)
+
+### JSON-everywhere for wave `context_messages.content`
+
+**Files:** `src/lib/turn/executeTurn.ts`, `src/lib/llm/renderContext.ts`,
+`src/lib/course/getWaveState.ts`, `src/lib/course/deriveWaveTurns.ts`
+
+`executeTurn` currently persists `user_message` rows with the full XML
+envelope (`renderWaveTurnEnvelope` output: `<stage>…<learner_reply>…
+</learner_reply><turns_remaining>…</turns_remaining><response_schema>…
+</response_schema>`) and `assistant_response` rows with raw LLM JSON.
+The UI reads `context_messages.content` straight into chat bubbles, so
+both render the wire format verbatim (screenshots from 2026-05-19
+session). Scoping doesn't have this problem — it stores typed JSONB
+(`clarifications`, `baseline`, `framework`, `scopingResult` columns)
+and `deriveTurns` reads structured fields.
+
+**Fix:** mirror the JSON-everywhere principle that Task 7 applied to
+prompts. Persist clean structured payloads in `context_messages.content`
+— e.g. `{"text": "Great let's go"}` for chat-text, `{"answers": […]}`
+for questionnaire submissions, `{userMessage, comprehensionSignals,
+questionnaire}` for assistant turns. Build the XML envelope ONLY at
+LLM-send time inside `renderContext` (or executeTurn's send step), never
+persist it. `deriveWaveTurns` then reads structured fields, same as
+`deriveTurns` reads typed JSONB columns.
+
+**Touches:** `executeTurn` persistence, `renderContext` (LLM
+context-replay must reconstruct the envelope on the fly), `getWaveState`
+(`RenderedMessage.content` becomes structured), `deriveWaveTurns`,
+plus integration tests that snapshot envelope content.
+
+**Promote when:** backend Wave teaching loop is smoke-green and the
+team is ready to land a coordinated migration of persisted shape.
+
 ## executeWaveMid (Task 11 follow-ups)
 
 ### Enforce `conceptName` on waveMidTurn questionnaire at the schema layer
