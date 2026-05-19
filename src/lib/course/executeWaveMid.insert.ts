@@ -42,6 +42,12 @@ export interface InsertNewQuestionnaireParams {
   readonly tx: DbOrTx;
   readonly courseId: string;
   readonly waveId: string;
+  /**
+   * Row id of the just-persisted `assistant_response` message. Becomes the
+   * `questionnaireId` returned to the client and matches the value
+   * `loadWaveContext` reconstructs on subsequent loads.
+   */
+  readonly assistantMessageId: string;
   /** turn_index the assistant_response landed at — assessments align to this. */
   readonly assistantTurnIndex: number;
   /** Schema-validated questionnaire from `waveMidTurnSchema`. */
@@ -59,11 +65,10 @@ export interface InsertNewQuestionnaireParams {
  *   - Maps to one assessment row with `assessment_kind = card_mc|card_freetext`,
  *     placeholder grading fields, and the model-generated `q.id` as `question_id`.
  *
- * `questionnaireId` is the wave_id+assistantTurnIndex pair encoded as a single
- * stable key — the loadWaveContext reconstruction also uses the
- * assistant_response message row id, but mid-turn return shapes use the
- * (waveId, turn) tuple-as-id since the message row id isn't known here without
- * an extra re-fetch. The client passes it back verbatim in `submitTurn`.
+ * `questionnaireId` is the just-persisted `assistant_response` row id. This
+ * matches what `loadWaveContext` reconstructs (`loadWaveContext.ts:117`), so
+ * the value the client receives on emission is the same value it would see
+ * after a page reload. The client passes it back verbatim in `submitTurn`.
  */
 export async function insertNewQuestionnaire(
   params: InsertNewQuestionnaireParams,
@@ -145,13 +150,11 @@ export async function insertNewQuestionnaire(
   });
 
   return {
-    // questionnaireId pairs (waveId, turnIndex) so the client can echo it back
-    // on the next submitTurn. The loadWaveContext path uses the assistant
-    // message row id as its own questionnaireId — both addressing schemes
-    // resolve to the same questionnaire on the next turn because that's the
-    // only open one. The exact format is opaque to the client; only the
-    // server needs to interpret it (router will reconcile).
-    questionnaireId: `${params.waveId}:${params.assistantTurnIndex}`,
+    // questionnaireId IS the assistant_response message row id — same
+    // addressing scheme `loadWaveContext` uses (see `loadWaveContext.ts:117`).
+    // Keeping the two paths byte-identical means a mid-turn emission and a
+    // subsequent page reload both surface the same id.
+    questionnaireId: params.assistantMessageId,
     questions,
   };
 }

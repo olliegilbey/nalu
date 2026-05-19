@@ -32,7 +32,8 @@ import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTur
  *      assessments updated with grading + XP + userAnswer, no SM-2 mutation.
  *   3. New questionnaire emitted → N placeholder assessments inserted with
  *      matching question_ids, concepts upserted.
- *   4. ValidationGateFailure forces retry, eventual success → final state correct.
+ *   4. ValidationGateFailure from executeTurn propagates untouched and the
+ *      transaction is never opened (no assessment rows written).
  */
 
 const USER_ID = "88888888-8888-8888-8888-888888888888";
@@ -364,15 +365,10 @@ describe("executeWaveMid (integration)", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 4. ValidationGateFailure on the first executeTurn attempt → retry succeeds
-  //    → assessments + projection still correct. We simulate this by having
-  //    the spy throw once, then succeed (executeWaveMid only wraps one
-  //    executeTurn call; retry-internal logic lives inside executeTurn, so
-  //    the orchestrator-level test treats a thrown ValidationGateFailure as a
-  //    re-attempt of the whole submit). For executeWaveMid, the contract is:
-  //    if executeTurn throws, executeWaveMid propagates — there is no retry
-  //    at this layer. So this test asserts the propagation surface: caller
-  //    sees the failure unmodified.
+  // 4. ValidationGateFailure contract: retry logic lives INSIDE executeTurn;
+  //    once it gives up, the failure propagates untouched. executeWaveMid
+  //    must (a) re-raise the original error and (b) never open the persistence
+  //    transaction (no partial writes).
   // ---------------------------------------------------------------------------
   it("propagates ValidationGateFailure from executeTurn without touching DB", async () => {
     await withTestDb(async () => {

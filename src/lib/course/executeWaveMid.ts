@@ -1,4 +1,4 @@
-import { eq, max } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { contextMessages } from "@/db/schema";
 import { executeTurn } from "@/lib/turn/executeTurn";
@@ -45,8 +45,9 @@ export interface ExecuteWaveMidResult {
  *   1. Dispatch `executeTurn` against `waveMidTurnSchema`. The harness
  *      persists `user_message + assistant_response` at a freshly-allocated
  *      turn_index.
- *   2. Open a transaction. Read MAX(turn_index) for the wave — that IS the
- *      assistant_response's turn. New assessment rows align to that index.
+ *   2. Open a transaction. Look up the latest `assistant_response` row for
+ *      the wave — its id is the canonical `questionnaireId` (matches
+ *      `loadWaveContext`), and its turn_index is where new assessment rows align.
  *   3. Grade learner's prior answers (`parsed.comprehensionSignals`). Each
  *      signal maps to one assessment row via `(wave_id, question_id)`.
  *      Defensive skips: unknown question id, or learner didn't answer it.
@@ -91,19 +92,27 @@ export async function executeWaveMid(
   const correctLetterById = buildCorrectLetterMap(ctx);
 
   const result = await db.transaction(async (tx) => {
-    // After executeTurn returns, MAX(turn_index) on the wave's messages is
-    // the assistant_response's turn. New assessment rows align to that turn
-    // so the timeline reads: questionnaire posed on N → graded on N+1.
-    const [maxRow] = await tx
-      .select({ maxTurn: max(contextMessages.turnIndex) })
+    // Find the assistant_response row just persisted by executeTurn. We need
+    // BOTH its row id (used as the canonical `questionnaireId` so the
+    // mid-turn projection and the `loadWaveContext` reconstruction agree —
+    // see `loadWaveContext.ts:117`) and its turn_index (assessments align
+    // to it: questionnaire posed on N → graded on N+1).
+    const [assistantRow] = await tx
+      .select({ id: contextMessages.id, turnIndex: contextMessages.turnIndex })
       .from(contextMessages)
-      .where(eq(contextMessages.waveId, ctx.wave.id));
-    const assistantTurnIndex = maxRow?.maxTurn ?? null;
-    if (assistantTurnIndex === null) {
-      // executeTurn always persists user+assistant on success — a null MAX
+      .where(
+        and(
+          eq(contextMessages.waveId, ctx.wave.id),
+          eq(contextMessages.kind, "assistant_response"),
+        ),
+      )
+      .orderBy(desc(contextMessages.turnIndex))
+      .limit(1);
+    if (!assistantRow) {
+      // executeTurn always persists user+assistant on success — absence
       // means something silently skipped persistence. Fail loud.
       throw new Error(
-        `executeWaveMid: no context messages for wave ${ctx.wave.id} after executeTurn`,
+        `executeWaveMid: no assistant_response row for wave ${ctx.wave.id} after executeTurn`,
       );
     }
 
@@ -121,7 +130,8 @@ export async function executeWaveMid(
           tx,
           courseId: ctx.course.id,
           waveId: ctx.wave.id,
-          assistantTurnIndex,
+          assistantMessageId: assistantRow.id,
+          assistantTurnIndex: assistantRow.turnIndex,
           questionnaire: parsed.questionnaire,
           waveTier: ctx.wave.tier,
         })

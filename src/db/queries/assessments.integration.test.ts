@@ -7,6 +7,8 @@ import {
   getAssessmentsByWave,
   getAssessmentsByConcept,
   getAssessmentsByWaveAndConcept,
+  getAssessmentByWaveAndQuestionId,
+  insertOpenAssessments,
   NotFoundError,
 } from "./assessments";
 
@@ -295,6 +297,162 @@ describe("assessments queries", () => {
           xpAwarded: 0,
         }),
       ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 8: insertOpenAssessments — batch path under happy + guard conditions
+  // Direct coverage for the mid-turn batch insert helper. recordAssessment
+  // tests above exercise the equivalent guards on the single-row path, but
+  // the batched code is structurally different (one MAX/scope-check per batch
+  // rather than per row), so it gets its own scenarios.
+  // -------------------------------------------------------------------------
+  it("insertOpenAssessments rejects empty batches", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      await expect(insertOpenAssessments({ waveId: WAVE, turnIndex: 1, rows: [] })).rejects.toThrow(
+        /rows must be non-empty/,
+      );
+    });
+  });
+
+  it("insertOpenAssessments rejects rows whose concept belongs to a different course", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db, { withCourseB: true });
+
+      // Mixed batch: one valid row (CONCEPT in COURSE), one cross-course
+      // (CONCEPT_B in COURSE_B). The batched scope check must reject the whole
+      // batch — partial inserts would corrupt the wave.
+      await expect(
+        insertOpenAssessments({
+          waveId: WAVE,
+          turnIndex: 1,
+          rows: [
+            {
+              conceptId: CONCEPT,
+              questionId: "q-batch-1",
+              question: "q?",
+              assessmentKind: "card_mc",
+            },
+            {
+              conceptId: CONCEPT_B,
+              questionId: "q-batch-2",
+              question: "q?",
+              assessmentKind: "card_mc",
+            },
+          ],
+        }),
+      ).rejects.toThrow(/different courses/);
+
+      // Verify no rows leaked in.
+      const rows = await getAssessmentsByWave(WAVE);
+      expect(rows).toHaveLength(0);
+    });
+  });
+
+  it("insertOpenAssessments rejects a turnIndex below the wave's current max", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      // Seed a turn-5 assessment via the single-row path so the wave's
+      // current MAX is 5.
+      await recordAssessment({
+        waveId: WAVE,
+        conceptId: CONCEPT,
+        turnIndex: 5,
+        question: "seed",
+        questionId: "q-seed",
+        userAnswer: "A",
+        isCorrect: true,
+        qualityScore: 4,
+        assessmentKind: "card_mc",
+        xpAwarded: 20,
+      });
+
+      await expect(
+        insertOpenAssessments({
+          waveId: WAVE,
+          turnIndex: 3,
+          rows: [
+            {
+              conceptId: CONCEPT,
+              questionId: "q-back-1",
+              question: "q?",
+              assessmentKind: "card_mc",
+            },
+          ],
+        }),
+      ).rejects.toThrow(/turnIndex 3 < current max 5/);
+    });
+  });
+
+  it("insertOpenAssessments happy path returns rows with placeholder grading fields", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      const inserted = await insertOpenAssessments({
+        waveId: WAVE,
+        turnIndex: 2,
+        rows: [
+          { conceptId: CONCEPT, questionId: "q-ok-mc", question: "q1?", assessmentKind: "card_mc" },
+          {
+            conceptId: CONCEPT,
+            questionId: "q-ok-ft",
+            question: "q2?",
+            assessmentKind: "card_freetext",
+          },
+        ],
+      });
+
+      expect(inserted).toHaveLength(2);
+      // Placeholder shape — exact values matter so updateAssessmentGrading can
+      // distinguish "ungraded" rows.
+      for (const row of inserted) {
+        expect(row.userAnswer).toBe("");
+        expect(row.isCorrect).toBe(false);
+        expect(row.qualityScore).toBe(0);
+        expect(row.xpAwarded).toBe(0);
+        expect(row.turnIndex).toBe(2);
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 9: getAssessmentByWaveAndQuestionId — null-on-miss + lookup-on-hit
+  // The mid-turn grader leans on the null return to skip stale signals
+  // without confusing real DB errors for misses, so both branches need a test.
+  // -------------------------------------------------------------------------
+  it("getAssessmentByWaveAndQuestionId returns null when the (wave, questionId) pair has no row", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      const row = await getAssessmentByWaveAndQuestionId(WAVE, "q-does-not-exist");
+      expect(row).toBeNull();
+    });
+  });
+
+  it("getAssessmentByWaveAndQuestionId returns the row when the pair exists", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      await recordAssessment({
+        waveId: WAVE,
+        conceptId: CONCEPT,
+        turnIndex: 1,
+        question: "q?",
+        questionId: "q-lookup",
+        userAnswer: "B",
+        isCorrect: true,
+        qualityScore: 4,
+        assessmentKind: "card_mc",
+        xpAwarded: 20,
+      });
+
+      const row = await getAssessmentByWaveAndQuestionId(WAVE, "q-lookup");
+      expect(row).not.toBeNull();
+      expect(row!.questionId).toBe("q-lookup");
+      expect(row!.waveId).toBe(WAVE);
     });
   });
 });

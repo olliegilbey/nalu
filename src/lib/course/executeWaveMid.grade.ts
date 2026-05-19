@@ -49,10 +49,10 @@ export async function gradePriorAnswers(
   params: GradePriorAnswersParams,
 ): Promise<readonly GradedRow[]> {
   if (!params.hasOpenQuestionnaire || params.signals.length === 0) return [];
-  // Sequential loop (not Promise.all) — all writes hit the same transaction
-  // handle; concurrency complicates error attribution without buying anything.
-  // `reduce` would force functional purity but here we need the row -> concept
-  // chain, so a for-of with a builder array is clearest.
+  // Sequential async-reduce — writes hit the same tx handle; concurrency
+  // complicates error attribution without buying anything. Reduce (rather
+  // than for-of with a push-builder) keeps `eslint-plugin-functional` happy
+  // without an escape-hatch comment.
   const accumulated: readonly GradedRow[] = await params.signals.reduce<
     Promise<readonly GradedRow[]>
   >(async (accP, sig) => {
@@ -74,10 +74,11 @@ export async function gradePriorAnswers(
       );
       return acc;
     }
-    // Concept tier drives XP. Tier is immutable post-insert (spec §3) so
-    // reading via the singleton outside the tx is safe — getConceptById
-    // doesn't take tx and we don't need write-after-read visibility here.
-    const concept = await getConceptById(row.conceptId);
+    // Concept tier drives XP. Thread the tx so a concept upserted earlier in
+    // the same transaction is visible — the safer default. Today the only
+    // concept writes happen later (in `insertNewQuestionnaire`), but threading
+    // here removes a footgun if step order is ever rearranged.
+    const concept = await getConceptById(row.conceptId, params.tx);
     // Build the GradedSignal applyAssessmentGrading expects. MC correctness
     // is mechanical: compare the learner's selected letter against the
     // open-questionnaire's `correct` key. Free-text trusts the model's verdict.

@@ -70,10 +70,16 @@ export interface Sm2Update {
  * Exported so callers can look up a single concept without loading the full
  * course list.
  *
+ * Optional `tx` opts the read into a caller's transaction so writes earlier
+ * in the same tx are visible. Visibility (not mutability) is the reason
+ * callers inside a transaction should thread `tx`: `db` (the singleton) is
+ * a separate connection and won't see uncommitted writes from `tx`.
+ *
  * @throws {NotFoundError} if `id` does not match any row.
  */
-export async function getConceptById(id: string): Promise<Concept> {
-  const [row] = await db.select().from(concepts).where(eq(concepts.id, id));
+export async function getConceptById(id: string, tx?: DbOrTx): Promise<Concept> {
+  const exec = tx ?? db;
+  const [row] = await exec.select().from(concepts).where(eq(concepts.id, id));
   if (!row) throw new NotFoundError("concept", id);
   return row;
 }
