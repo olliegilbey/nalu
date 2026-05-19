@@ -93,9 +93,17 @@ export async function getConceptById(id: string, tx?: DbOrTx): Promise<Concept> 
  *
  * Callers that need a stable presentation order should sort client-side;
  * no ORDER BY here keeps the query plan simple.
+ *
+ * Optional `tx` opts the read into a caller's transaction so writes earlier
+ * in the same tx are visible (e.g. SM-2 advances applied in step 2 of
+ * `persistWaveClose` before the tier-advancement check reads concept state).
  */
-export async function getConceptsByCourse(courseId: string): Promise<readonly Concept[]> {
-  return db.select().from(concepts).where(eq(concepts.courseId, courseId));
+export async function getConceptsByCourse(
+  courseId: string,
+  tx?: DbOrTx,
+): Promise<readonly Concept[]> {
+  const exec = tx ?? db;
+  return exec.select().from(concepts).where(eq(concepts.courseId, courseId));
 }
 
 /**
@@ -105,15 +113,21 @@ export async function getConceptsByCourse(courseId: string): Promise<readonly Co
  * Never-reviewed rows (next_review_at = NULL) are excluded by both the
  * index and the `lte` predicate (SQL `<=` returns false for NULL).
  *
+ * Optional `tx` opts the read into a caller's transaction so SM-2 advances
+ * earlier in the same tx are observed (e.g. the Wave-close transaction
+ * captures the next Wave's due-snapshot AFTER applying its own conceptUpdates).
+ *
  * @param courseId - Scopes results to a single course.
  * @param now      - Caller-supplied reference time; inject for deterministic tests.
  */
 export async function getDueConceptsByCourse(
   courseId: string,
   now: Date,
+  tx?: DbOrTx,
 ): Promise<readonly Concept[]> {
+  const exec = tx ?? db;
   return (
-    db
+    exec
       .select()
       .from(concepts)
       .where(

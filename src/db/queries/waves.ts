@@ -208,21 +208,33 @@ export async function openWave(params: OpenWaveParams, tx?: DbOrTx): Promise<Wav
  * `blueprintEmitted` is Zod-validated before the write (parse-before-persist
  * boundary) so a malformed blueprint never reaches the DB.
  *
- * @throws {NotFoundError} if `id` does not match any row (via `getWaveById`).
+ * Optional `tx` opts the UPDATE and the re-fetch into a caller's transaction
+ * so a Wave-close rolls back atomically with sibling writes (e.g. the close
+ * transaction that closes Wave N + opens Wave N+1). Mirrors `openWave`'s
+ * optional-tx pattern. Without tx-awareness, the close UPDATE would commit
+ * via the `db` singleton even when a sibling tx aborts — breaking the
+ * all-or-nothing close guarantee.
+ *
+ * BOTH the UPDATE and the re-fetch must run on the same executor — using the
+ * `db` singleton for the re-fetch after a `tx` UPDATE would query a different
+ * connection that cannot see the uncommitted change.
+ *
+ * @throws {NotFoundError} if `id` does not match any row (via the re-fetch).
  */
-export async function closeWave(id: string, params: CloseWaveParams): Promise<Wave> {
+export async function closeWave(id: string, params: CloseWaveParams, tx?: DbOrTx): Promise<Wave> {
   // Validate JSONB BEFORE the write — never trust caller-supplied JSONB shape.
   const validatedBlueprint = blueprintEmittedSchema.parse(params.blueprintEmitted);
 
   // `::jsonb` cast ensures Postgres stores the value in the jsonb column type
   // even when the driver sends it as a string. COALESCE keeps closed_at
   // sticky across idempotent re-calls. Status scope prevents silent no-op on
-  // already-closed waves (getWaveById below still returns the existing row).
+  // already-closed waves (the re-fetch below still returns the existing row).
   // When the blueprint is null (e.g. course-end Waves), persist SQL NULL —
   // distinguishing "no blueprint emitted" from a JSON `null` value cleanly.
   const blueprintSql =
     validatedBlueprint === null ? sql`NULL` : sql`${JSON.stringify(validatedBlueprint)}::jsonb`;
-  await db.execute(sql`
+  const exec = tx ?? db;
+  await exec.execute(sql`
     UPDATE waves
     SET status = 'closed',
         summary = ${params.summary},
@@ -232,7 +244,10 @@ export async function closeWave(id: string, params: CloseWaveParams): Promise<Wa
       AND status = 'open'
   `);
 
-  // getWaveById throws NotFoundError if the row does not exist; idempotent
-  // for already-closed Waves (returns the existing row unchanged).
-  return getWaveById(id);
+  // Re-fetch on the SAME executor. Inlined (rather than delegating to
+  // `getWaveById`, which always uses the `db` singleton) so the row guard
+  // observes the just-applied UPDATE inside the same tx.
+  const [row] = await exec.select().from(waves).where(eq(waves.id, id));
+  if (!row) throw new NotFoundError("wave", id);
+  return waveRowGuard(row);
 }
