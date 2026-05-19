@@ -3,6 +3,8 @@
 Follow-up work surfaced during MVP development. Each entry names the file,
 the concern, and the conditions under which it should be promoted to a PR.
 
+- [ ] Narrow `makeWaveCloseSchema` to reject `mc-index` close-gradings — the close orchestrator can only grade free-text at close (MC graded mid-turn in `executeWaveMid.grade.ts`). Currently `applyCloseGradings` throws at runtime if the LLM emits an mc-index grading at close. Move the constraint into the Zod schema via a superRefine so the model's response is rejected at parse time and `executeTurn` can retry with a directive.
+
 ## submitBaseline (PR #10 follow-ups)
 
 ### Drop the mid-test model swap in scoping-close live smoke

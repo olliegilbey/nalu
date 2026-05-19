@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { userProfiles, assessments, concepts, waves, courses } from "@/db/schema";
 import { createCourse, setCourseStartingState } from "@/db/queries/courses";
 import { openWave } from "@/db/queries/waves";
-import { appendMessage, getMessagesForWave } from "@/db/queries/contextMessages";
+import { appendMessage, getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts";
 import { insertOpenAssessments } from "@/db/queries/assessments";
 import { WAVE } from "@/lib/config/tuning";
@@ -148,19 +148,22 @@ async function seedOpenFreeTextQuestionnaire(
 /**
  * Build an executeTurn mock that mimics production persistence.
  *
- * The mock writes a user_message at turn 2 / seq 0 and an assistant_response at
- * turn 2 / seq 1. The orchestrator does not currently read the assistant_response
- * back after `executeTurn`, but persisting it keeps the message log realistic
- * for any test that walks it.
+ * The mock allocates the next turn index via `getNextTurnIndex` (matching the
+ * mid-turn integration test) so any context_messages already written by test
+ * setup don't collide. Writes a user_message at seq 0 and an assistant_response
+ * at seq 1 against that turn. The orchestrator doesn't currently read the
+ * assistant_response back after `executeTurn`, but persisting it keeps the
+ * message log realistic for any test that walks it.
  */
 function makeExecuteTurnMock(parsed: WaveCloseTurn) {
   return async <T>(params: ExecuteTurnParams<T>): Promise<ExecuteTurnResult<T>> => {
     if (params.parent.kind !== "wave") {
       throw new Error("test mock: only wave parents supported");
     }
+    const turnIndex = await getNextTurnIndex(params.parent);
     await appendMessage({
       parent: params.parent,
-      turnIndex: 2,
+      turnIndex,
       seq: 0,
       kind: "user_message",
       role: "user",
@@ -168,7 +171,7 @@ function makeExecuteTurnMock(parsed: WaveCloseTurn) {
     });
     await appendMessage({
       parent: params.parent,
-      turnIndex: 2,
+      turnIndex,
       seq: 1,
       kind: "assistant_response",
       role: "assistant",
@@ -286,6 +289,9 @@ describe("executeWaveClose (integration)", () => {
         priorWaveId: waveId,
         blueprint: { topic: "Borrowing rules", openingText: "Welcome to lesson 2." },
       });
+      // Fix 2: orchestrator must surface the new wave's row id so the upstream
+      // `submitWaveTurn` (Task 13) can redirect/refresh the client.
+      expect(result.nextWaveId).toBe(nextWave.id);
 
       // Turn-0 assistant message on Wave N+1 carrying openingText -----------
       const nextWaveMessages = await getMessagesForWave(nextWave.id);
@@ -331,6 +337,7 @@ describe("executeWaveClose (integration)", () => {
         (w) => w.waveNumber === 2,
       )!;
       expect(nextWave.tier).toBe(1);
+      expect(result.nextWaveId).toBe(nextWave.id);
     });
   });
 
@@ -369,6 +376,7 @@ describe("executeWaveClose (integration)", () => {
         (w) => w.waveNumber === 3,
       )!;
       expect(nextWave.tier).toBe(2);
+      expect(result.nextWaveId).toBe(nextWave.id);
     });
   });
 
@@ -433,6 +441,21 @@ describe("executeWaveClose (integration)", () => {
       // XP not incremented.
       const afterCourse = (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!;
       expect(afterCourse.totalXp).toBe(0);
+
+      // Fix 5: executeTurn's user_message + assistant_response rows sit OUTSIDE
+      // `persistWaveClose`'s tx and must survive its rollback. The orchestrator
+      // TSDoc declares this contract; assert it explicitly so a future refactor
+      // that pulls executeTurn into the close tx fails this test loudly.
+      const waveMessages = await getMessagesForWave(waveId);
+      const userRow = waveMessages.find((m) => m.kind === "user_message");
+      const assistantCloseRow = waveMessages.find(
+        (m) => m.kind === "assistant_response" && m.turnIndex > 1,
+      );
+      expect(userRow).toBeDefined();
+      expect(assistantCloseRow).toBeDefined();
+      // Both rows must land on the same turn — the one `getNextTurnIndex`
+      // allocated to executeTurn after the seed questionnaire at turn 1.
+      expect(userRow!.turnIndex).toBe(assistantCloseRow!.turnIndex);
     });
   });
 });

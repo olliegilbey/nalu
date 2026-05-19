@@ -30,27 +30,34 @@ export interface PersistedGradedSignal {
  * payload's verdict + qualityScore. The `conceptTier` comes from the grading
  * item itself (the schema enforces it's in-scope).
  *
- * MC path: defensive skip + log. The close-turn mc-index variant carries no
- * correctness boolean; computing it requires the learner's selected letter
- * (from the submitTurn payload), which the close orchestrator does not yet
- * accept. A future task adds the payload parameter; until then logging the
- * skip keeps the row in placeholder state instead of corrupting it.
+ * MC questions are graded mid-turn (see `executeWaveMid.grade.ts`); receiving
+ * an `mc-index` here means the LLM emitted a contract violation. Future work
+ * (TODO.md) tightens the wave-close schema to drop the mc-index branch via a
+ * superRefine so `executeTurn` can retry with a directive — until then, fail
+ * loud so the orphan assessment row + under-counted SM-2 signal don't slip
+ * through silently.
  */
 export async function applyCloseGradings(
   tx: DbOrTx,
   ctx: LoadedWaveContext,
   parsed: WaveCloseTurn,
 ): Promise<readonly PersistedGradedSignal[]> {
-  // Reduce keeps `eslint-plugin-functional` happy (no for/push); the awaited
-  // accumulator threads results through. Sequential by design — writes share
-  // one tx handle and grading counts at close are tiny (0–1 free-text items).
+  // Reduce keeps `eslint-plugin-functional/immutable-data` happy when we need
+  // to accumulate results; the awaited accumulator threads them through.
+  // Sequential by design — writes share one tx handle and grading counts at
+  // close are tiny (0–1 free-text items). The SM-2 loop in
+  // `persistWaveClose.ts` uses a plain `for…of` because it's purely effectful
+  // (no accumulation), so the reduce-vs-for-of split is driven by whether we
+  // need to thread a value, not by lint policy.
   return parsed.gradings.reduce<Promise<readonly PersistedGradedSignal[]>>(async (accP, g) => {
     const acc = await accP;
     if (g.kind === "mc-index") {
-      process.stderr.write(
-        `[executeWaveClose] mc-index grading at close not yet supported; skipping questionId=${g.questionId}\n`,
+      // Contract violation — MC questions are graded mid-turn, not at close.
+      // The shared `closeGradingItemSchema` permits this branch because it's
+      // reused with scoping; the wave-close orchestrator never grades MC.
+      throw new Error(
+        `[executeWaveClose] mc-index grading at close is a contract violation; questionId=${g.questionId}`,
       );
-      return acc;
     }
     const row = await getAssessmentByWaveAndQuestionId(ctx.wave.id, g.questionId, tx);
     if (!row) {

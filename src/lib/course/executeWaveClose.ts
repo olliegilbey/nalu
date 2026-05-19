@@ -23,6 +23,8 @@ export interface ExecuteWaveCloseResult {
   readonly kind: "close-turn";
   /** Closing chat message the learner sees (`parsed.userMessage`). */
   readonly closingMessage: string;
+  /** Row id of the just-opened Wave N+1. `submitWaveTurn` uses it to redirect/refresh the client. */
+  readonly nextWaveId: string;
   /** Ordinal of the just-opened Wave N+1. */
   readonly nextWaveNumber: number;
   /** Flat completion XP applied to total_xp (always `WAVE.completionXp`). */
@@ -111,6 +113,7 @@ export async function executeWaveClose(
   return {
     kind: "close-turn",
     closingMessage: parsed.userMessage,
+    nextWaveId: persisted.nextWaveId,
     nextWaveNumber: persisted.nextWaveNumber,
     completionXpAwarded: persisted.completionXpAwarded,
     tierAdvancedTo: persisted.tierAdvancedTo,
