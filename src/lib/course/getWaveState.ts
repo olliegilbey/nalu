@@ -10,16 +10,25 @@ import { redactQuestionnaire, type OpenQuestionnaireForClient } from "./redactQu
  * Client-facing projection of a wave's state.
  *
  * Carries:
- *   - `status`: open vs closed — the UI uses this to gate the composer.
- *   - `renderedMessages`: flat (turn_index, seq)-ordered context_messages,
- *     trimmed to the fields the chat scroll renders. The client passes these
- *     to `deriveWaveTurns` (Task 15) which folds them into a `Turn[]`.
+ *   - `status`: active vs closed — the UI uses this to gate the composer.
+ *     DB stores `open` for active waves but the wire shape uses `active` for
+ *     client-side clarity (matches plan §7.2 vocabulary).
+ *   - `messages`: flat (turn_index, seq)-ordered context_messages, filtered
+ *     to the chat-visible kinds (`user_message`, `card_answer`,
+ *     `assistant_response`) and trimmed to the fields the chat scroll renders.
+ *     The client passes these to `deriveWaveTurns` (Task 15) which folds them
+ *     into a `Turn[]`.
  *   - `openQuestionnaire`: redacted shape (no plaintext `correct`); null
  *     when nothing is open.
  *   - `turnsRemaining`: pre-submission count. After the learner posts one
  *     reply, the BACK-END's response carries the post-submission value; this
  *     state's value reflects what the LLM saw on its LAST emission. Used by
  *     the UI to show a "n turns left" hint without round-tripping.
+ *   - `closeResult`: always `null` here. The close result is the *response*
+ *     payload of `submitWaveTurn` (spec §7.2), not a re-readable wave property.
+ *     The field exists on the wire shape for client-side union stability so
+ *     consumers can treat `WaveState` and `submitWaveTurn`'s close payload
+ *     uniformly without conditional property access.
  *
  * No business logic — pure projection over `loadWaveContext` + the message log.
  */
@@ -39,11 +48,23 @@ export interface WaveState {
   readonly courseId: string;
   readonly waveId: string;
   readonly waveNumber: number;
-  readonly tier: number;
-  readonly status: "open" | "closed";
+  readonly currentTier: number;
+  readonly status: "active" | "closed";
   readonly turnsRemaining: number;
-  readonly renderedMessages: readonly RenderedMessage[];
+  readonly messages: readonly RenderedMessage[];
   readonly openQuestionnaire: OpenQuestionnaireForClient | null;
+  /**
+   * Always `null` on `getWaveState`. Present on the type for shape stability
+   * with `submitWaveTurn`'s close payload (spec §7.2): the close result is a
+   * one-shot response, not a re-readable wave property. Client consumers can
+   * thus type-narrow on a single union shape across both endpoints.
+   */
+  readonly closeResult: null | {
+    readonly closingMessage: string;
+    readonly nextWaveNumber: number;
+    readonly completionXpAwarded: number;
+    readonly tierAdvancedTo: number | null;
+  };
 }
 
 /** Input to {@link getWaveState}. `userId` enforces row-level ownership. */
@@ -90,15 +111,24 @@ export async function getWaveState(params: GetWaveStateParams): Promise<WaveStat
 
   // (3) Fetch full message log. Trimmed to the client-facing fields so the
   // wire shape doesn't leak DB-internal columns (createdAt, FKs, etc.).
+  // Filter to the chat-visible kinds (plan §7.2): user_message, card_answer,
+  // and assistant_response. Harness rows (harness_turn_counter,
+  // harness_review_block) and retry-loop rows (failed_assistant_response,
+  // harness_retry_directive) are LLM-Context-only and not rendered to the UI.
   const rows = await getMessagesForWave(wave.id);
-  const renderedMessages: readonly RenderedMessage[] = rows.map((r) => ({
-    id: r.id,
-    turnIndex: r.turnIndex,
-    seq: r.seq,
-    kind: r.kind as ContextMessage["kind"],
-    role: r.role as ContextMessage["role"],
-    content: r.content,
-  }));
+  const messages: readonly RenderedMessage[] = rows
+    .filter(
+      (r) =>
+        r.kind === "user_message" || r.kind === "card_answer" || r.kind === "assistant_response",
+    )
+    .map((r) => ({
+      id: r.id,
+      turnIndex: r.turnIndex,
+      seq: r.seq,
+      kind: r.kind as ContextMessage["kind"],
+      role: r.role as ContextMessage["role"],
+      content: r.content,
+    }));
 
   // (4) Turns-remaining: count rows that mark a learner turn landing. Both
   // `user_message` (chat-text branch) and `card_answer` (questionnaire-answers
@@ -114,14 +144,20 @@ export async function getWaveState(params: GetWaveStateParams): Promise<WaveStat
     ? redactQuestionnaire(ctx.openQuestionnaire)
     : null;
 
+  // Map DB status → wire status: DB column uses "open" for an in-progress
+  // wave; the wire shape (plan §7.2) calls this "active". Closed stays closed.
+  const wireStatus: "active" | "closed" = ctx.wave.status === "closed" ? "closed" : "active";
+
   return {
     courseId: ctx.course.id,
     waveId: ctx.wave.id,
     waveNumber: ctx.wave.waveNumber,
-    tier: ctx.wave.tier,
-    status: ctx.wave.status as "open" | "closed",
+    currentTier: ctx.wave.tier,
+    status: wireStatus,
     turnsRemaining,
-    renderedMessages,
+    messages,
     openQuestionnaire,
+    // closeResult is always null on getWaveState — see WaveState TSDoc.
+    closeResult: null,
   };
 }

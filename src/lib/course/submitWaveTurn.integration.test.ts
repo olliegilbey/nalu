@@ -336,6 +336,40 @@ describe("submitWaveTurn (integration)", () => {
   });
 
   // -------------------------------------------------------------------------
+  // 5b. §7.4: answer count mismatch. The open questionnaire has 1 question;
+  //     the learner submits 2 answers. Reject before LLM dispatch so the
+  //     model never sees a mismatched envelope. Mirrors the "stale id"
+  //     guard's structure — same code, different reason string.
+  // -------------------------------------------------------------------------
+  it("§7.4 answer count mismatch → PRECONDITION_FAILED", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      const { questionnaireMsgId } = await seedOpenMcQuestionnaire(courseId, waveId);
+      const spy = vi.spyOn(executeTurnModule, "executeTurn");
+      const promise = submitWaveTurn({
+        userId: USER_ID,
+        courseId,
+        waveNumber: 1,
+        // Open questionnaire has 1 question (q-mc); send 2 answers to trip the guard.
+        payload: {
+          kind: "questionnaire-answers",
+          questionnaireId: questionnaireMsgId,
+          answers: [
+            { id: "q-mc", kind: "mc", selected: "B" },
+            { id: "q-extra", kind: "mc", selected: "A" },
+          ],
+        },
+      });
+      await expect(promise).rejects.toBeInstanceOf(TRPCError);
+      await expect(promise).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message: "answer count mismatch",
+      });
+      expect(spy).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // 6. Close-turn dispatch: pre-seed (WAVE.turnCount - 1) user_message rows so
   //    consumed = turnCount - 1 → turnsRemaining after this turn = 0. Verify
   //    `executeWaveClose` runs (kind: "close-turn"). We mock executeTurn to

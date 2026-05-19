@@ -98,26 +98,30 @@ describe("getWaveState (integration)", () => {
 
       const state = await getWaveState({ userId: USER_ID, courseId, waveNumber: 1 });
 
-      expect(state.status).toBe("open");
+      // Wire-status mapping: DB "open" → wire "active" (plan §7.2).
+      expect(state.status).toBe("active");
       expect(state.waveId).toBe(waveId);
       expect(state.waveNumber).toBe(1);
-      expect(state.tier).toBe(1);
+      expect(state.currentTier).toBe(1);
       expect(state.turnsRemaining).toBe(WAVE.turnCount - 1);
-      expect(state.renderedMessages).toHaveLength(2);
+      expect(state.messages).toHaveLength(2);
       // Ordering: turn 0 seq 0 first, then seq 1.
-      expect(state.renderedMessages[0]).toMatchObject({
+      expect(state.messages[0]).toMatchObject({
         turnIndex: 0,
         seq: 0,
         kind: "user_message",
         role: "user",
       });
-      expect(state.renderedMessages[1]).toMatchObject({
+      expect(state.messages[1]).toMatchObject({
         turnIndex: 0,
         seq: 1,
         kind: "assistant_response",
         role: "assistant",
       });
       expect(state.openQuestionnaire).toBeNull();
+      // closeResult is always null on getWaveState — the close result is the
+      // *response* payload of submitWaveTurn, not re-readable here.
+      expect(state.closeResult).toBeNull();
     });
   });
 
