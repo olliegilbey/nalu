@@ -198,11 +198,19 @@ export const BASELINE = {
  * structured and chat call unless an explicit override is passed.
  * `defaultTemperature` favours consistency over creativity; raise per-flow
  * only where variety aids learning. `maxRetries` bounds transient-failure
- * retries — the AI SDK handles JSON-parse repair internally.
+ * retries — the AI SDK handles JSON-parse repair internally and applies
+ * exponential backoff between attempts (≈2s, 4s, 8s, 16s, 32s, 64s).
+ *
+ * `maxRetries: 6`: sized to absorb a Cerebras free-tier 30-RPM rate-limit
+ * stall during smoke runs (4 scoping calls × 3 topics + 11 wave calls fired
+ * quasi-serially over ~60s). With 6 attempts the total backoff window is
+ * ~2 minutes — long enough for the RPM bucket to refill, short enough to
+ * fail fast on a genuine outage. Production traffic is bursty but
+ * single-user; this ceiling is for the smoke suite.
  */
 export const LLM = {
   defaultTemperature: 0.3,
-  maxRetries: 3,
+  maxRetries: 6,
 } as const;
 
 /**

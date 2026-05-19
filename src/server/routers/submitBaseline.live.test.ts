@@ -27,6 +27,7 @@ import {
 import { baselineClosedJsonbSchema, type FrameworkJsonb } from "@/lib/types/jsonb";
 import type { BaselineAnswer } from "@/lib/course/submitBaseline";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
+import { pace } from "@/lib/testing/cerebrasPace";
 
 // Gate: skip every test unless both flags are set. Mirrors course.live.test.ts.
 const LIVE = process.env.CEREBRAS_LIVE === "1" && Boolean(process.env.LLM_API_KEY);
@@ -68,10 +69,13 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
         questionId: q.id,
         freetext: TOPIC.answerPool[i % TOPIC.answerPool.length]!,
       }));
+      // Pace before each LLM-bearing call — see `cerebrasPace.ts`.
+      await pace();
       const { framework } = await caller.course.generateFramework({ courseId, responses });
       assertFrameworkStructural(framework);
 
       // 3. generateBaseline
+      await pace();
       const { baseline } = await caller.course.generateBaseline({ courseId });
       assertBaselineStructural(baseline, framework);
 
@@ -96,6 +100,7 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
             } as const),
       );
 
+      await pace();
       const result = await caller.course.submitBaseline({ courseId, answers });
 
       // Live-return-shape assertions.

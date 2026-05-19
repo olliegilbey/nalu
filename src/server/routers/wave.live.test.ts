@@ -41,6 +41,7 @@ import { seedSourceSchema } from "@/lib/types/jsonb";
 import type { BaselineAnswer } from "@/lib/course/submitBaseline";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 import { WAVE } from "@/lib/config/tuning";
+import { pace } from "@/lib/testing/cerebrasPace";
 
 // Gate: skip every test unless both flags are set. Mirrors course.live.test.ts.
 const LIVE = process.env.CEREBRAS_LIVE === "1" && Boolean(process.env.LLM_API_KEY);
@@ -90,9 +91,12 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
         questionId: q.id,
         freetext: TOPIC.answerPool[i % TOPIC.answerPool.length]!,
       }));
+      // Pace before each LLM-bearing call — see `cerebrasPace.ts`.
+      await pace();
       const { framework } = await caller.course.generateFramework({ courseId, responses });
       assertFrameworkStructural(framework);
 
+      await pace();
       const { baseline } = await caller.course.generateBaseline({ courseId });
       assertBaselineStructural(baseline, framework);
 
@@ -111,6 +115,7 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
             } as const),
       );
 
+      await pace();
       const closeScopingResult = await caller.course.submitBaseline({
         courseId,
         answers: baselineAnswers,
@@ -196,6 +201,8 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
               text: "Got it — could you walk me through the next concept with a concrete example?",
             };
 
+        // Pace each wave-turn LLM call to stay under Cerebras 30 RPM.
+        await pace();
         const result = await caller.wave.submitTurn({
           courseId,
           waveNumber: 1,

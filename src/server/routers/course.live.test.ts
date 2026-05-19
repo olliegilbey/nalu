@@ -28,6 +28,7 @@ import {
   assertIdempotency,
 } from "@/lib/testing/scopingInvariants";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
+import { pace } from "@/lib/testing/cerebrasPace";
 
 // ---------------------------------------------------------------------------
 // Gate: skip every test unless both flags are set.
@@ -87,6 +88,8 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
             freetext: topic.answerPool[i % topic.answerPool.length]!,
           }));
 
+          // Pace before each LLM-bearing call — see `cerebrasPace.ts`.
+          await pace();
           const { framework } = await caller.course.generateFramework({ courseId, responses });
 
           assertFrameworkStructural(framework);
@@ -94,6 +97,7 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           // ---------------------------------------------------------------
           // 3. generateBaseline
           // ---------------------------------------------------------------
+          await pace();
           const { baseline } = await caller.course.generateBaseline({ courseId });
 
           assertBaselineStructural(baseline, framework);
@@ -101,6 +105,7 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           // ---------------------------------------------------------------
           // 4. Idempotency — second call must hit DB, not LLM
           // ---------------------------------------------------------------
+          // No pace() here: the cached path skips Cerebras entirely.
           const start = Date.now();
           const { baseline: cached } = await caller.course.generateBaseline({ courseId });
           assertIdempotency(Date.now() - start, `generateBaseline(${topic.slug})`);
