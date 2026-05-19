@@ -46,6 +46,7 @@ import {
 } from "@/lib/testing/scopingInvariants";
 import { seedSourceSchema } from "@/lib/types/jsonb";
 import type { BaselineAnswer } from "@/lib/course/submitBaseline";
+import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 import { __resetEnvCacheForTests } from "@/lib/config";
 import { WAVE } from "@/lib/config/tuning";
 
@@ -298,15 +299,19 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
         );
 
         // plannedConcepts MUST reference at least one of the concept names
-        // the close envelope injected (fresh + due). We don't enforce a
-        // specific count — the model picks a curriculum — only that the
-        // intersection is non-empty if any fresh/due existed. The close
-        // schema's superRefine already enforces tier validity; here we
-        // just ensure the model didn't emit arbitrary unrelated names.
+        // the close envelope injected (fresh + due). The close schema's
+        // superRefine already enforces tier validity; here we ensure the
+        // model didn't emit an empty plan when there's content to teach.
         //
-        // Note: plannedConcepts can legitimately be empty (rare end-of-
-        // course state); we don't fail on that — only assert the field
-        // round-trips cleanly through the schema (.parse above did this).
+        // Wave 1 close: fresh concepts ALWAYS exist (scoping upserts tier-1
+        // concepts), and due-review is empty (no prior reviews). So Wave 1
+        // close is never a consolidation run — plannedConcepts MUST be
+        // non-empty here. Later waves may legitimately produce empty
+        // plannedConcepts; this assertion is Wave-1-specific.
+        expect(
+          wave2Seed.blueprint.plannedConcepts.length,
+          "Wave 2 blueprint references planned concepts (non-consolidation)",
+        ).toBeGreaterThan(0);
 
         // Turn-0 assistant message on Wave 2 must equal the blueprint
         // openingText (persistWaveClose seeds it verbatim — same pattern
@@ -347,6 +352,7 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
             `nextWaveNumber=${close.nextWaveNumber} ` +
             `completionXp=${close.completionXpAwarded}\n`,
         );
+        await emitSmokeFinalSnapshot({ db, courseId, topic: TOPIC.topic });
       } finally {
         // Restore the original model so any later test in the same project
         // run sees the env it expects. Defence-in-depth — vitest forks
@@ -355,7 +361,6 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
         __resetEnvCacheForTests();
       }
     });
-  }, // 10 mid-turns + 1 close + scoping (4 LLM calls) = up to ~15 round-trips.
-  // Cerebras free tier 10-30s per call with retries. 10 minutes is comfortable.
+  }, // Cerebras free tier 10-30s per call with retries. 10 minutes is comfortable. // 10 mid-turns + 1 close + scoping (4 LLM calls) = up to ~15 round-trips.
   600_000);
 });
