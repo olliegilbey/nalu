@@ -125,6 +125,27 @@ export async function getOpenWaveByCourse(courseId: string): Promise<Wave | null
 }
 
 /**
+ * Fetch the Wave for `(courseId, waveNumber)` — the natural addressing scheme
+ * the client uses (URLs carry the ordinal, not the row id). The unique index
+ * `waves_course_wave_number_unique` guarantees at most one match.
+ *
+ * Returns `null` when no row exists; callers (e.g. `submitWaveTurn`,
+ * `getWaveState`) translate that into a TRPC error with the appropriate code.
+ * Returning `null` rather than throwing keeps the query layer's NotFoundError
+ * convention reserved for primary-key lookups.
+ */
+export async function getWaveByCourseAndNumber(
+  courseId: string,
+  waveNumber: number,
+): Promise<Wave | null> {
+  const [row] = await db
+    .select()
+    .from(waves)
+    .where(and(eq(waves.courseId, courseId), eq(waves.waveNumber, waveNumber)));
+  return row ? waveRowGuard(row) : null;
+}
+
+/**
  * List all closed Waves for a course, ordered by `waveNumber` ascending.
  *
  * Ordered asc so consumers can reconstruct the Wave sequence in presentation
