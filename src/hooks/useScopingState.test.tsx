@@ -80,8 +80,10 @@ describe("useScopingState", () => {
     await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
 
     const kinds = result.current.turns.map((t) => t.kind);
-    expect(kinds).toContain("user-topic");
-    expect(kinds).toContain("llm-clarify-intro");
+    // Turn union is phase-agnostic post-Task-15: topic becomes user-text and
+    // clarify-intro becomes assistant-text.
+    expect(kinds).toContain("user-text");
+    expect(kinds).toContain("assistant-text");
     expect(result.current.activeQuestionnaire).not.toBeNull();
     expect(result.current.activeQuestionnaire?.kind).toBe("clarify");
     expect(result.current.activeQuestionnaire?.persistKey).toBe("nalu:scoping:c1:clarify");

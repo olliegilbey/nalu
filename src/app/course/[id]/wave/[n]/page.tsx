@@ -1,19 +1,21 @@
+import { WaveSession } from "@/components/chat/WaveSession";
+
 /**
- * `/course/[id]/wave/[n]` route — static placeholder landing for the post-
- * scoping Move-on CTA. Real teaching loop ships in the next spec.
+ * `/course/[id]/wave/[n]` route — renders the wave teaching loop.
+ *
+ * `n` is the wave ordinal (1-indexed). Invalid path params surface as
+ * NOT_FOUND from `wave.getState` server-side; we guard the parse here so
+ * a non-integer URL segment doesn't reach the hook at all.
  */
 export default async function WavePage({
   params,
 }: {
   readonly params: Promise<{ readonly id: string; readonly n: string }>;
 }) {
-  const { n } = await params;
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-kanagawa-atmos text-foreground">
-      <div className="text-center px-6">
-        <h1 className="text-[28px] font-medium tracking-tight">Wave {n} coming soon</h1>
-        <p className="mt-3 text-fuji-gray text-[14px]">The teaching loop ships in a follow-up.</p>
-      </div>
-    </main>
-  );
+  const { id, n } = await params;
+  const waveNumber = Number.parseInt(n, 10);
+  if (!Number.isInteger(waveNumber) || waveNumber < 1) {
+    return null;
+  }
+  return <WaveSession courseId={id} waveNumber={waveNumber} />;
 }

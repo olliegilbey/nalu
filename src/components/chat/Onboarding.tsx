@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useScopingState } from "@/hooks/useScopingState";
-import { shapeBaselineAnswers } from "@/lib/course/shapeBaselineAnswers";
+import { shapeQuestionnaireAnswers } from "@/lib/course/shapeQuestionnaireAnswers";
 import { shapeClarifyAnswers } from "@/lib/course/shapeClarifyAnswers";
 import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
@@ -32,21 +32,22 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
   const [composerValue, setComposerValue] = useState("");
 
   // Map Turn[] → array of <MessageBubble> / structured renderers.
+  // The scoping flow never emits `assistant-text-with-questionnaire` (that's a
+  // wave-only variant) — we keep the case for exhaustiveness and fall through
+  // to the plain assistant-text rendering so a misplaced row stays renderable.
   const scroll = turns.map((turn, idx) => {
     switch (turn.kind) {
-      case "user-topic":
-      case "user-clarify-answers":
-      case "user-baseline-answers": {
+      case "user-text":
+      case "user-questionnaire-answers": {
         const msg: ChatMessage = { id: `t${idx}`, role: "user", content: turn.content };
         return <MessageBubble key={idx} message={msg} />;
       }
-      case "llm-clarify-intro":
-      case "llm-baseline-intro":
-      case "llm-baseline-close": {
+      case "assistant-text":
+      case "assistant-text-with-questionnaire": {
         const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: turn.content };
         return <MessageBubble key={idx} message={msg} />;
       }
-      case "llm-framework": {
+      case "assistant-text-with-framework": {
         const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: turn.userMessage };
         return (
           <div key={idx}>
@@ -93,7 +94,7 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
             if (activeQuestionnaire.kind === "clarify") {
               submitClarify(shapeClarifyAnswers(answers));
             } else {
-              submitBaselineAnswers(shapeBaselineAnswers(answers));
+              submitBaselineAnswers(shapeQuestionnaireAnswers(answers));
             }
           }}
         />

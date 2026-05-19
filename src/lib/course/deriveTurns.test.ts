@@ -16,12 +16,12 @@ function baseState(overrides: Partial<CourseState>): CourseState {
 }
 
 describe("deriveTurns", () => {
-  it("emits only user-topic when only topic exists", () => {
+  it("emits only user-text (topic) when only topic exists", () => {
     const turns = deriveTurns(baseState({}));
-    expect(turns).toEqual([{ kind: "user-topic", content: "Linear algebra" }]);
+    expect(turns).toEqual([{ kind: "user-text", content: "Linear algebra" }]);
   });
 
-  it("adds llm-clarify-intro when clarification is present", () => {
+  it("adds assistant-text (clarify intro) when clarification is present", () => {
     const turns = deriveTurns(
       baseState({
         clarification: {
@@ -32,12 +32,12 @@ describe("deriveTurns", () => {
       }),
     );
     expect(turns).toEqual([
-      { kind: "user-topic", content: "Linear algebra" },
-      { kind: "llm-clarify-intro", content: "Let's narrow this down." },
+      { kind: "user-text", content: "Linear algebra" },
+      { kind: "assistant-text", content: "Let's narrow this down." },
     ]);
   });
 
-  it("emits user-clarify-answers + llm-framework once framework lands", () => {
+  it("emits user-questionnaire-answers + assistant-text-with-framework once framework lands", () => {
     const turns = deriveTurns(
       baseState({
         clarification: {
@@ -65,19 +65,21 @@ describe("deriveTurns", () => {
 
     const kinds = turns.map((t) => t.kind);
     expect(kinds).toEqual([
-      "user-topic",
-      "llm-clarify-intro",
-      "user-clarify-answers",
-      "llm-framework",
+      "user-text",
+      "assistant-text",
+      "user-questionnaire-answers",
+      "assistant-text-with-framework",
     ]);
-    const userAnswers = turns.find((t) => t.kind === "user-clarify-answers")!;
+    // Find clarify answer turn — it's the user-questionnaire-answers between
+    // the clarify-intro and the framework reveal.
+    const userAnswers = turns.find((t) => t.kind === "user-questionnaire-answers")!;
     expect(userAnswers).toMatchObject({
       content: expect.stringContaining("Why are you learning?"),
     });
     expect(userAnswers).toMatchObject({
       content: expect.stringContaining("to pass an exam"),
     });
-    const framework = turns.find((t) => t.kind === "llm-framework")!;
+    const framework = turns.find((t) => t.kind === "assistant-text-with-framework")!;
     expect(framework).toMatchObject({
       userMessage: "Here's your ladder.",
       tiers: [
@@ -87,7 +89,7 @@ describe("deriveTurns", () => {
     });
   });
 
-  it("adds llm-baseline-intro once baseline questions exist (still scoping)", () => {
+  it("adds assistant-text (baseline intro) once baseline questions exist (still scoping)", () => {
     const turns = deriveTurns(
       baseState({
         clarification: {
@@ -110,12 +112,16 @@ describe("deriveTurns", () => {
       }),
     );
 
-    const intro = turns.find((t) => t.kind === "llm-baseline-intro")!;
-    expect(intro).toEqual({ kind: "llm-baseline-intro", content: "Let's check what you know." });
+    // The baseline-intro is an assistant-text turn. Distinguish it by content
+    // since multiple assistant-text turns exist in the full scoping projection.
+    const intro = turns.find(
+      (t) => t.kind === "assistant-text" && t.content === "Let's check what you know.",
+    )!;
+    expect(intro).toEqual({ kind: "assistant-text", content: "Let's check what you know." });
     expect(turns.find((t) => t.kind === "move-on-cta")).toBeUndefined();
   });
 
-  it("emits user-baseline-answers + close + move-on-cta when scopingResult lands", () => {
+  it("emits user-questionnaire-answers + close + move-on-cta when scopingResult lands", () => {
     const turns = deriveTurns(
       baseState({
         status: "active",
@@ -154,15 +160,18 @@ describe("deriveTurns", () => {
 
     const kinds = turns.map((t) => t.kind);
     expect(kinds).toEqual([
-      "user-topic",
-      "llm-clarify-intro",
-      "user-clarify-answers",
-      "llm-framework",
-      "llm-baseline-intro",
-      "user-baseline-answers",
-      "llm-baseline-close",
+      "user-text",
+      "assistant-text",
+      "user-questionnaire-answers",
+      "assistant-text-with-framework",
+      "assistant-text",
+      "user-questionnaire-answers",
+      "assistant-text",
       "move-on-cta",
     ]);
-    expect(turns.at(-1)).toEqual({ kind: "move-on-cta", nextWaveNumber: 1 });
+    expect(turns.at(-1)).toEqual({
+      kind: "move-on-cta",
+      next: { phase: "wave", n: 1 },
+    });
   });
 });
