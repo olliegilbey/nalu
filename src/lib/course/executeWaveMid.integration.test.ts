@@ -4,7 +4,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles, assessments, concepts } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
-import { openWave } from "@/db/queries/waves";
+import { getWaveById, openWave } from "@/db/queries/waves";
 import { appendMessage, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts";
 import { insertOpenAssessments } from "@/db/queries/assessments";
@@ -12,6 +12,7 @@ import { WAVE } from "@/lib/config/tuning";
 import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
+import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { loadWaveContext } from "./loadWaveContext";
 import { executeWaveMid } from "./executeWaveMid";
 import { buildLearnerInput, type SubmitTurnPayload } from "./buildLearnerInput";
@@ -222,6 +223,16 @@ describe("executeWaveMid (integration)", () => {
       expect(result.gradedSignals).toEqual([]);
       const rows = await db.select().from(assessments).where(eq(assessments.waveId, waveId));
       expect(rows).toHaveLength(0);
+      // Dual-write invariant: assistant emission lands on chat_log too.
+      // Cast to WaveChatLog because chat_log is typed `unknown` on the Drizzle
+      // row (jsonb isn't parameterised; row guard validates on read).
+      const waveRow = await getWaveById(waveId);
+      const last = (waveRow.chatLog as WaveChatLog).at(-1);
+      expect(last).toEqual({
+        role: "assistant",
+        kind: "text",
+        content: parsed.userMessage,
+      });
     });
   });
 
@@ -293,6 +304,15 @@ describe("executeWaveMid (integration)", () => {
       expect(afterMc.repetitionCount).toBe(initialMc.repetitionCount);
       expect(afterFt.easinessFactor).toBe(initialFt.easinessFactor);
       expect(afterFt.repetitionCount).toBe(initialFt.repetitionCount);
+      // Dual-write invariant: assistant emission (text-only this turn) lands
+      // on chat_log too. No `questionnaire` field so the text-only arm fires.
+      const waveRow = await getWaveById(waveId);
+      const last = (waveRow.chatLog as WaveChatLog).at(-1);
+      expect(last).toEqual({
+        role: "assistant",
+        kind: "text",
+        content: parsed.userMessage,
+      });
     });
   });
 
@@ -361,6 +381,18 @@ describe("executeWaveMid (integration)", () => {
       const conceptRows = await db.select().from(concepts).where(eq(concepts.courseId, courseId));
       const conceptNames = conceptRows.map((c) => c.name).sort();
       expect(conceptNames).toEqual(["lifetimes", "moves"]);
+      // Dual-write invariant: assistant emission with a new questionnaire
+      // lands on chat_log as a `text_with_questionnaire` entry whose
+      // questionnaireId matches the projection (both keyed off assistantRow.id).
+      const waveRow = await getWaveById(waveId);
+      const last = (waveRow.chatLog as WaveChatLog).at(-1);
+      expect(last).toMatchObject({
+        role: "assistant",
+        kind: "text_with_questionnaire",
+        content: parsed.userMessage,
+        questionnaireId: result.newQuestionnaire!.questionnaireId,
+        questions: parsed.questionnaire!.questions,
+      });
     });
   });
 

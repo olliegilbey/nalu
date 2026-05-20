@@ -1,11 +1,13 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
+import { appendWaveChatLog } from "@/db/queries/waves";
 import { contextMessages } from "@/db/schema";
 import { executeTurn } from "@/lib/turn/executeTurn";
 import { buildRetryDirective } from "@/lib/turn/retryDirective";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { waveMidTurnSchema, renderWaveTurnEnvelope } from "@/lib/prompts/waveTurn";
+import type { WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 import { type SubmitTurnPayload } from "./buildLearnerInput";
 import type { GradedSignal } from "./applyAssessmentGrading";
 import { buildWaveSeed } from "./buildWaveSeed";
@@ -136,6 +138,20 @@ export async function executeWaveMid(
           waveTier: ctx.wave.tier,
         })
       : null;
+
+    // Dual-write: assistant emission lands on chat_log alongside the
+    // context_messages row executeTurn persisted. Same tx, all-or-nothing.
+    // `questionnaireId` reuses `assistantRow.id` so emit + reload agree.
+    const chatLogEntry: WaveChatLogEntry = parsed.questionnaire
+      ? {
+          role: "assistant",
+          kind: "text_with_questionnaire",
+          questionnaireId: assistantRow.id,
+          content: parsed.userMessage,
+          questions: parsed.questionnaire.questions,
+        }
+      : { role: "assistant", kind: "text", content: parsed.userMessage };
+    await appendWaveChatLog(tx, ctx.wave.id, chatLogEntry);
 
     return { graded, newQuestionnaire };
   });
