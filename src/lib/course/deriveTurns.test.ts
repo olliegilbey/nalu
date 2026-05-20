@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { deriveTurns } from "./deriveTurns";
+import { deriveTurns, formatAnswers } from "./deriveTurns";
 import type { CourseState } from "./getState";
+import type { V3Question, V3Response } from "@/lib/types/jsonb";
 
 function baseState(overrides: Partial<CourseState>): CourseState {
   return {
@@ -173,5 +174,35 @@ describe("deriveTurns", () => {
       kind: "move-on-cta",
       next: { phase: "wave", n: 1 },
     });
+  });
+});
+
+describe("formatAnswers", () => {
+  it("renders MC answers as the chosen option's text", () => {
+    const questions: V3Question[] = [
+      {
+        id: "q1",
+        type: "multiple_choice",
+        prompt: "Color?",
+        options: { A: "red", B: "blue", C: "green", D: "yellow" },
+        correct: "B",
+        freetextRubric: "n/a",
+      },
+    ];
+    const responses: V3Response[] = [{ questionId: "q1", choice: "B" }];
+    expect(formatAnswers(questions, responses)).toBe("1. Color? — blue");
+  });
+
+  it("renders free-text answers verbatim", () => {
+    const questions: V3Question[] = [
+      { id: "q1", type: "free_text", prompt: "Why?", freetextRubric: "n/a" },
+    ];
+    const responses: V3Response[] = [{ questionId: "q1", freetext: "because." }];
+    expect(formatAnswers(questions, responses)).toBe("1. Why? — because.");
+  });
+
+  it("falls back to Q{n} when a response references an unknown question id", () => {
+    const responses: V3Response[] = [{ questionId: "missing", freetext: "x" }];
+    expect(formatAnswers([], responses)).toBe("1. Q1 — x");
   });
 });
