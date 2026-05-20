@@ -62,6 +62,13 @@ export type WaveChatLogEntryForClient =
       readonly questions: readonly WaveQuestionForClient[];
     };
 
+/**
+ * Project the chat_log to its client-safe wire shape.
+ *
+ * Throws on an MC question missing `correct` — chat_log MC questions are
+ * always LLM-graded so the field must be present. Absence indicates a corrupt
+ * row or schema regression; fail loud rather than emit an unrenderable wire.
+ */
 export function redactWaveChatLog(
   entries: readonly WaveChatLogEntry[],
 ): readonly WaveChatLogEntryForClient[] {
