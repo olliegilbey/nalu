@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { WAVE } from "@/lib/config/tuning";
 import { upsertConcept } from "@/db/queries/concepts";
-import { openWave } from "@/db/queries/waves";
+import { appendWaveChatLog, openWave } from "@/db/queries/waves";
 import { appendMessage } from "@/db/queries/contextMessages";
 import {
   baselineClosedJsonbSchema,
@@ -169,6 +169,16 @@ export async function persistScopingClose(
       },
       tx,
     );
+
+    // 5b. Dual-write Wave 1's opening entry to chat_log — the typed JSONB
+    //     store the wave UI reads. Mirror of step 5: that one persists to
+    //     context_messages (LLM replay log), this one persists to chat_log
+    //     (UI projection). Same tx so the two stores can never diverge.
+    await appendWaveChatLog(tx, wave1.id, {
+      role: "assistant",
+      kind: "text",
+      content: parsed.nextUnitBlueprint.openingText,
+    });
 
     // 6. Flip course status, persist starting/current tier + the evolving
     //    summary seed (NOT the immutable summary — that lives only in the

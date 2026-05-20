@@ -3,7 +3,12 @@ import { WAVE } from "@/lib/config/tuning";
 import { persistScopingClose } from "./submitBaseline.persist";
 import { getCourseById } from "@/db/queries/courses";
 import { getConceptsByCourse } from "@/db/queries/concepts";
-import { openWave, getOpenWaveByCourse, getLatestWaveNumberByCourse } from "@/db/queries/waves";
+import {
+  openWave,
+  getOpenWaveByCourse,
+  getLatestWaveNumberByCourse,
+  getWaveByCourseAndNumber,
+} from "@/db/queries/waves";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
 import { FRAMEWORK, PARSED, MERGED, seedScopingCourseAndRun } from "./submitBaseline.fixtures";
 
@@ -84,6 +89,26 @@ describe("persistScopingClose (integration)", () => {
         turnIndex: 0,
         seq: 0,
       });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // chat_log dual-write: Wave 1's chat_log JSONB column is seeded with the
+  // assistant openingText entry inside the same transaction that writes the
+  // `context_messages` row. Mirror of the happy-path block above (steps 4–5).
+  // -------------------------------------------------------------------------
+  it("seeds Wave 1's chat_log with the openingText assistant entry", async () => {
+    await seedScopingCourseAndRun(async (courseId) => {
+      await persistScopingClose({ courseId, parsed: PARSED, merged: MERGED });
+      const wave1 = await getWaveByCourseAndNumber(courseId, 1);
+      if (!wave1) throw new Error("Wave 1 must exist after scoping close");
+      expect(wave1.chatLog).toEqual([
+        {
+          role: "assistant",
+          kind: "text",
+          content: PARSED.nextUnitBlueprint.openingText,
+        },
+      ]);
     });
   });
 
