@@ -113,7 +113,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     );
     if (lastQIdx === -1) return null;
     const lastQ = log[lastQIdx];
-    // Narrow the union for TS — findLastIndex's predicate doesn't propagate.
+    // Re-narrow for TS — findLastIndex predicate guarantees this shape at runtime.
     if (lastQ?.role !== "assistant" || lastQ.kind !== "text_with_questionnaire") return null;
     // Any later `user.answers` entry referencing this questionnaire's id
     // means it's been submitted → no active questionnaire.
