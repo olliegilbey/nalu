@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { waveChatLogEntrySchema, waveChatLogSchema } from "./jsonb";
+import { waveChatLogEntrySchema, waveChatLogSchema } from "./jsonbWaveChatLog";
 
 describe("waveChatLogEntrySchema", () => {
   it("parses a user-text entry", () => {
