@@ -47,6 +47,9 @@ export const waves = pgTable(
     status: text("status").notNull().default("open"),
     summary: text("summary"),
     blueprintEmitted: jsonb("blueprint_emitted"),
+    chatLog: jsonb("chat_log")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp("closed_at", { withTimezone: true }),
   },

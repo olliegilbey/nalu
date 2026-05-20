@@ -50,6 +50,13 @@
       "when": 1779126602135,
       "tag": "0006_add-assessments-question-id",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1779287789278,
+      "tag": "0007_wave_chat_log",
+      "breakpoints": true
     }
   ]
 }

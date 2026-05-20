@@ -1,0 +1,1 @@
+ALTER TABLE "waves" ADD COLUMN "chat_log" jsonb DEFAULT '[]'::jsonb NOT NULL;
