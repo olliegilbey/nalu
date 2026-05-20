@@ -6,13 +6,15 @@ import { db } from "@/db/client";
 import { userProfiles, contextMessages } from "@/db/schema";
 import { createCourse, setCourseStartingState } from "@/db/queries/courses";
 import { openWave } from "@/db/queries/waves";
-import { appendMessage, getNextTurnIndex } from "@/db/queries/contextMessages";
+import { appendMessage, getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts";
+import { getWaveById } from "@/db/queries/waves";
 import { insertOpenAssessments } from "@/db/queries/assessments";
 import { WAVE } from "@/lib/config/tuning";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
+import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { submitWaveTurn } from "./submitWaveTurn";
 import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTurn";
 
@@ -424,6 +426,89 @@ describe("submitWaveTurn (integration)", () => {
         .where(eq(contextMessages.waveId, waveId));
       const userMessageCount = userRows.filter((r) => r.kind === "user_message").length;
       expect(userMessageCount).toBe(WAVE.turnCount);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 7. Durability: when the LLM call fails (executeTurn rejects), the learner's
+  //    chat-text MUST already be persisted to `waves.chat_log`. The
+  //    context_messages user_message row, by contrast, only lands on LLM
+  //    success (inside executeTurn's atomic batch), so the two stores
+  //    intentionally diverge on the failure path — see ARCHITECTURE.md
+  //    "per-store atomicity". Mirrors scoping's pre-LLM persistence pattern
+  //    (`generateFramework.ts`, `submitBaseline.persist.ts`).
+  // -------------------------------------------------------------------------
+  it("persists learner chat-text to chat_log before executeWaveMid runs", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      vi.spyOn(executeTurnModule, "executeTurn").mockRejectedValueOnce(
+        new Error("LLM transport failure"),
+      );
+
+      await expect(
+        submitWaveTurn({
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: { kind: "chat-text", text: "Hello?" },
+        }),
+      ).rejects.toThrow("LLM transport failure");
+
+      // chat_log: learner entry MUST survive the failure (pre-LLM write).
+      const wave = await getWaveById(waveId);
+      const log = wave.chatLog as WaveChatLog;
+      const userEntries = log.filter((e) => e.role === "user" && e.kind === "text");
+      expect(userEntries).toHaveLength(1);
+      expect(userEntries[0]).toEqual({ role: "user", kind: "text", content: "Hello?" });
+
+      // context_messages: user_message row must NOT be written when the LLM
+      // rejected — executeTurn's atomic batch never ran.
+      const ctxRows = await getMessagesForWave(waveId);
+      expect(ctxRows.filter((r) => r.kind === "user_message")).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 8. Same durability invariant for the questionnaire-answers branch:
+  //    learner's submitted answers persist to chat_log pre-LLM so a transport
+  //    failure can't drop them. The `{role: user, kind: answers, ...}` entry
+  //    must contain a `responses` array shaped per WaveChatLogEntry's schema.
+  // -------------------------------------------------------------------------
+  it("persists learner questionnaire-answers to chat_log before executeWaveMid runs", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      const { questionnaireMsgId } = await seedOpenMcQuestionnaire(courseId, waveId);
+      vi.spyOn(executeTurnModule, "executeTurn").mockRejectedValueOnce(
+        new Error("LLM transport failure"),
+      );
+
+      await expect(
+        submitWaveTurn({
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: {
+            kind: "questionnaire-answers",
+            questionnaireId: questionnaireMsgId,
+            answers: [{ id: "q-mc", kind: "mc", selected: "B" }],
+          },
+        }),
+      ).rejects.toThrow("LLM transport failure");
+
+      const wave = await getWaveById(waveId);
+      const log = wave.chatLog as WaveChatLog;
+      const userEntries = log.filter((e) => e.role === "user" && e.kind === "answers");
+      expect(userEntries).toHaveLength(1);
+      expect(userEntries[0]).toEqual({
+        role: "user",
+        kind: "answers",
+        questionnaireId: questionnaireMsgId,
+        responses: [{ questionId: "q-mc", choice: "B" }],
+      });
+
+      // No card_answer rows in context_messages on the failure path.
+      const ctxRows = await getMessagesForWave(waveId);
+      expect(ctxRows.filter((r) => r.kind === "card_answer")).toHaveLength(0);
     });
   });
 });

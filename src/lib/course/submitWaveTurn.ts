@@ -1,7 +1,9 @@
 import { TRPCError } from "@trpc/server";
+import { db } from "@/db/client";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
-import { getWaveByCourseAndNumber } from "@/db/queries/waves";
+import { appendWaveChatLog, getWaveByCourseAndNumber } from "@/db/queries/waves";
 import { WAVE } from "@/lib/config/tuning";
+import type { WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 import { buildLearnerInput, type SubmitTurnPayload } from "./buildLearnerInput";
 import { loadWaveContext } from "./loadWaveContext";
 import { executeWaveMid, type ExecuteWaveMidResult } from "./executeWaveMid";
@@ -128,6 +130,31 @@ export async function submitWaveTurn(params: SubmitWaveTurnParams): Promise<Subm
   const consumed = rows.filter((r) => r.kind === "user_message" || r.kind === "card_answer").length;
   const turnsRemaining = Math.max(0, WAVE.turnCount - (consumed + 1));
   const isCloseTurn = turnsRemaining === 0;
+
+  // Dual-write (learner side): persist the learner's chat_log entry BEFORE
+  // dispatching the LLM call. Mirrors scoping's pre-LLM persistence pattern
+  // (`generateFramework.ts`, `submitBaseline.persist.ts`) — if the LLM
+  // transport fails, the learner's submission survives in `waves.chat_log`
+  // (the UI source of truth) even though `context_messages` (the LLM replay
+  // log) only gains its `user_message` / `card_answer` rows on LLM success
+  // inside executeTurn's atomic batch. The two stores intentionally diverge
+  // on the failure path — see docs/ARCHITECTURE.md ("per-store atomicity").
+  // No enclosing tx here (the executeWaveMid / executeWaveClose tx hasn't
+  // started yet), so we write against the `db` singleton.
+  const learnerEntry: WaveChatLogEntry =
+    params.payload.kind === "chat-text"
+      ? { role: "user", kind: "text", content: params.payload.text }
+      : {
+          role: "user",
+          kind: "answers",
+          questionnaireId: params.payload.questionnaireId,
+          responses: params.payload.answers.map((a) =>
+            a.kind === "mc"
+              ? { questionId: a.id, choice: a.selected }
+              : { questionId: a.id, freetext: a.text },
+          ),
+        };
+  await appendWaveChatLog(db, ctx.wave.id, learnerEntry);
 
   // Render the learner-input envelope once; both mid + close consume the same shape.
   const learnerInput = buildLearnerInput(params.payload, openQuestionnaire);
