@@ -63,7 +63,11 @@ Same two-store split. Same write triggers (typed write before LLM for learner in
 
 ```ts
 // src/lib/types/jsonb.ts — new exports, sit next to ClarificationJsonb / BaselineJsonb
-export const waveChatLogEntrySchema = z.discriminatedUnion("kind", [
+// z.union (not z.discriminatedUnion): the natural discriminator is the
+// (role, kind) pair — kind: "text" appears in both user and assistant arms —
+// and Zod v4 requires single-field discriminator values to be unique across
+// all arms. TS narrowing on role+kind literals still works identically.
+export const waveChatLogEntrySchema = z.union([
   z.object({
     role: z.literal("user"),
     kind: z.literal("text"),

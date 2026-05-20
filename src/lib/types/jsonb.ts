@@ -24,7 +24,7 @@ import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
 
 const v3McOption = z.enum(["A", "B", "C", "D"]);
 
-const v3Question = z.discriminatedUnion("type", [
+export const v3Question = z.discriminatedUnion("type", [
   z.object({
     id: z.string(),
     type: z.literal("free_text"),
@@ -45,7 +45,7 @@ const v3Question = z.discriminatedUnion("type", [
   }),
 ]);
 
-const v3Response = z
+export const v3Response = z
   .object({
     questionId: z.string(),
     choice: v3McOption.optional(),
@@ -54,6 +54,9 @@ const v3Response = z
   .refine((r) => (r.choice === undefined) !== (r.freetext === undefined), {
     message: "response must have exactly one of choice or freetext",
   });
+
+export type V3Question = z.infer<typeof v3Question>;
+export type V3Response = z.infer<typeof v3Response>;
 
 export const clarificationJsonbSchema = z.object({
   /** The model's framing message for this clarification turn. Persisted so cached replay can return the model's exact wording. */
@@ -178,3 +181,54 @@ export type SeedSource = z.infer<typeof seedSourceSchema>;
  * Wave ended without emitting one (e.g. course complete).
  */
 export const blueprintEmittedSchema = blueprintSchema.nullable();
+
+// --- waves.chat_log -----------------------------------------------------
+
+/**
+ * One row in `waves.chat_log` — the typed JSONB store the wave UI reads.
+ *
+ * `Question` / `Response` reused verbatim from the scoping primitives above.
+ * Strictly append-only; the four kinds cover:
+ *  - user text turn (chat-text mode)
+ *  - user questionnaire submission (pre-LLM, paired with assistant emission)
+ *  - assistant text turn (no questionnaire)
+ *  - assistant text turn that opens a new questionnaire
+ *
+ * Uses `z.union` (not `z.discriminatedUnion`) because the natural discriminator
+ * is the `(role, kind)` pair — `kind: "text"` appears in both the user and
+ * assistant arms — and Zod v4 requires single-field discriminator values to be
+ * unique across all arms. TS narrowing on `role` + `kind` literals still works
+ * identically; only Zod's parse-error messages are slightly less specific.
+ *
+ * Mirror of scoping's typed JSONB store (`courses.{clarification|baseline}`);
+ * wave is variable-cardinality so the column is an array. See
+ * `docs/ARCHITECTURE.md` and the spec for why per-row beats per-round.
+ */
+export const waveChatLogEntrySchema = z.union([
+  z.object({
+    role: z.literal("user"),
+    kind: z.literal("text"),
+    content: z.string(),
+  }),
+  z.object({
+    role: z.literal("user"),
+    kind: z.literal("answers"),
+    questionnaireId: z.string(),
+    responses: z.array(v3Response),
+  }),
+  z.object({
+    role: z.literal("assistant"),
+    kind: z.literal("text"),
+    content: z.string(),
+  }),
+  z.object({
+    role: z.literal("assistant"),
+    kind: z.literal("text_with_questionnaire"),
+    questionnaireId: z.string(),
+    content: z.string(),
+    questions: z.array(v3Question),
+  }),
+]);
+export const waveChatLogSchema = z.array(waveChatLogEntrySchema);
+export type WaveChatLogEntry = z.infer<typeof waveChatLogEntrySchema>;
+export type WaveChatLog = z.infer<typeof waveChatLogSchema>;
