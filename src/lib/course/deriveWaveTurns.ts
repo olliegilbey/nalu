@@ -1,62 +1,108 @@
 import type { Turn } from "@/lib/types/turn";
-import type { RenderedMessage } from "./getWaveState";
-import type { OpenQuestionnaireForClient } from "./redactQuestionnaire";
+import { formatAnswers } from "./deriveTurns";
+import type { WaveChatLogEntryForClient } from "./redactWaveChatLog";
+import type { V3Question } from "@/lib/types/jsonb";
 
 /**
- * Project the wave's chat-visible message log + open questionnaire to `Turn[]`.
+ * Project the wave's wire-redacted chat log to `Turn[]` for the chat scroll.
  *
- * Pure function: no DB, no DOM, no LLM. Deterministic given inputs.
+ * Pure. Single linear pass + one `findLastIndex` for the open-questionnaire
+ * id resolution. No DB, no DOM.
  *
- * Algorithm (per-row walk, `messages` already sorted by `(turn_index, seq)`):
- *   - `user_message` → `{ kind: "user-text", content }`
- *   - `card_answer`  → `{ kind: "user-questionnaire-answers", content }`
- *   - `assistant_response` → `{ kind: "assistant-text", content }` —
- *     UNLESS this is the **latest** assistant_response AND `openQuestionnaire`
- *     is non-null AND its `questionnaireId` matches this row's id. In that
- *     case we emit `assistant-text-with-questionnaire`, attaching the
- *     redacted questionnaire so the Composer can render the cards.
+ * Algorithm:
+ *   - The latest `assistant.text_with_questionnaire` whose id has no later
+ *     `user.answers` is the OPEN questionnaire; only that entry emits
+ *     `assistant-text-with-questionnaire`. Closed (already-answered) cards
+ *     fall back to plain `assistant-text` (their prose still renders; the
+ *     Composer never re-shows locked questionnaires).
+ *   - `user.answers` formats via the shared `formatAnswers` helper, looking
+ *     up the matching questionnaire's questions for prompt text. If the
+ *     questionnaire isn't found (corrupt log), the helper falls back to
+ *     `Q{n}` and renders something rather than crashing.
  *
- * Why match by id, not just "any open questionnaire on the latest assistant
- * row": `loadWaveContext` reconstructs the open questionnaire from the latest
- * assistant_response and uses that row's id as `questionnaireId` (see
- * `loadWaveContext.ts:117`). A mismatch should never happen in practice, but
- * if it ever does (e.g. a future refactor) the defensive fallback to plain
- * `assistant-text` keeps the scroll renderable rather than silently dropping
- * the content.
- *
- * `move-on-cta` is NOT emitted here — the wave move-on CTA is driven from
- * `useWaveState`'s `closeResult`, rendered via the Composer's `moveOn` prop.
+ * `move-on-cta` is NOT emitted here — wave move-on is driven by
+ * `useWaveState`'s `closeResult`, not by chat_log.
  */
-export function deriveWaveTurns(
-  messages: readonly RenderedMessage[],
-  openQuestionnaire: OpenQuestionnaireForClient | null,
-): readonly Turn[] {
-  // Find the latest assistant_response index. We only attach the questionnaire
-  // to THAT row (matching `loadWaveContext`'s reconstruction convention).
-  const lastAssistantIdx = messages.findLastIndex((m) => m.kind === "assistant_response");
+export function deriveWaveTurns(log: readonly WaveChatLogEntryForClient[]): readonly Turn[] {
+  // Open questionnaire id = latest text_with_questionnaire whose id has no
+  // later user.answers match. Computed once; used inside the map.
+  const lastQIdx = log.findLastIndex(
+    (e) => e.role === "assistant" && e.kind === "text_with_questionnaire",
+  );
+  // Mirrors findOpenQuestionnaire (server-shape twin); duplicated by design
+  // because the two helpers run on different types (`WaveChatLogEntry` vs
+  // `WaveChatLogEntryForClient`) — see plan T14.
+  const openId = (() => {
+    if (lastQIdx === -1) return null;
+    const cand = log[lastQIdx];
+    // Re-narrow for TS — findLastIndex predicate guarantees this shape at runtime.
+    if (cand?.role !== "assistant" || cand.kind !== "text_with_questionnaire") return null;
+    const answered = log
+      .slice(lastQIdx + 1)
+      .some(
+        (e) =>
+          e.role === "user" && e.kind === "answers" && e.questionnaireId === cand.questionnaireId,
+      );
+    return answered ? null : cand.questionnaireId;
+  })();
 
-  return messages.map((row, idx): Turn => {
-    if (row.kind === "user_message") {
-      return { kind: "user-text", content: row.content };
+  return log.map((entry, idx): Turn => {
+    if (entry.role === "user" && entry.kind === "text") {
+      return { kind: "user-text", content: entry.content };
     }
-    if (row.kind === "card_answer") {
-      return { kind: "user-questionnaire-answers", content: row.content };
+    if (entry.role === "user" && entry.kind === "answers") {
+      // formatAnswers needs `V3Question[]` — the client wire shape has
+      // `correctEnc` instead of `correct`, but the formatter only reads
+      // `prompt`, `type`, and `options`, so a structural projection works.
+      // O(n) scan per user.answers entry → O(n²) overall. Bounded in practice
+      // by WAVE.turnCount (~10-15 entries per wave); a Map would be faster
+      // but isn't worth the line count at this scale.
+      const qEntry = log
+        .slice(0, idx)
+        .find(
+          (e) =>
+            e.role === "assistant" &&
+            e.kind === "text_with_questionnaire" &&
+            e.questionnaireId === entry.questionnaireId,
+        );
+      const questions: readonly V3Question[] =
+        qEntry?.role === "assistant" && qEntry.kind === "text_with_questionnaire"
+          ? qEntry.questions.map((q) =>
+              q.type === "multiple_choice"
+                ? {
+                    id: q.id,
+                    type: "multiple_choice",
+                    prompt: q.prompt,
+                    options: q.options,
+                    freetextRubric: q.freetextRubric,
+                  }
+                : {
+                    id: q.id,
+                    type: "free_text",
+                    prompt: q.prompt,
+                    freetextRubric: q.freetextRubric,
+                  },
+            )
+          : [];
+      return {
+        kind: "user-questionnaire-answers",
+        content: formatAnswers(questions, entry.responses),
+      };
     }
-    // row.kind === "assistant_response"
-    if (
-      idx === lastAssistantIdx &&
-      openQuestionnaire !== null &&
-      openQuestionnaire.questionnaireId === row.id
-    ) {
+    if (entry.role === "assistant" && entry.kind === "text") {
+      return { kind: "assistant-text", content: entry.content };
+    }
+    // entry.role === "assistant" && entry.kind === "text_with_questionnaire"
+    if (entry.questionnaireId === openId) {
       return {
         kind: "assistant-text-with-questionnaire",
-        content: row.content,
+        content: entry.content,
         questionnaire: {
-          questions: openQuestionnaire.questions,
-          questionnaireId: openQuestionnaire.questionnaireId,
+          questionnaireId: entry.questionnaireId,
+          questions: entry.questions,
         },
       };
     }
-    return { kind: "assistant-text", content: row.content };
+    return { kind: "assistant-text", content: entry.content };
   });
 }

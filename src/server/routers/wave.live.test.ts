@@ -177,29 +177,44 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
         await accP;
 
         // Read state to know whether a questionnaire is open and what
-        // shape the answers payload takes.
+        // shape the answers payload takes. Post-T11 the wire ships
+        // `chatLog` only; derive the open questionnaire client-side the
+        // same way `findOpenQuestionnaire` does server-side — find the
+        // latest `text_with_questionnaire` entry that has no later
+        // `user.answers` referencing its questionnaireId.
         const state = await caller.wave.getState({ courseId, waveNumber: 1 });
-        const hadOpenQuestionnaireBefore = state.openQuestionnaire !== null;
+        const lastQEntry = state.chatLog.findLast(
+          (e) => e.role === "assistant" && e.kind === "text_with_questionnaire",
+        );
+        const hadOpenQuestionnaireBefore =
+          lastQEntry !== undefined &&
+          !state.chatLog.some(
+            (e) =>
+              e.role === "user" &&
+              e.kind === "answers" &&
+              e.questionnaireId === lastQEntry.questionnaireId,
+          );
 
-        const payload = state.openQuestionnaire
-          ? {
-              kind: "questionnaire-answers" as const,
-              questionnaireId: state.openQuestionnaire.questionnaireId,
-              answers: state.openQuestionnaire.questions.map((q) =>
-                q.type === "multiple_choice"
-                  ? { id: q.id, kind: "mc" as const, selected: "A" as const }
-                  : {
-                      id: q.id,
-                      kind: "freetext" as const,
-                      text: "Here is my best attempt at the concept — please correct me.",
-                      fromEscape: false,
-                    },
-              ),
-            }
-          : {
-              kind: "chat-text" as const,
-              text: "Got it — could you walk me through the next concept with a concrete example?",
-            };
+        const payload =
+          lastQEntry && hadOpenQuestionnaireBefore
+            ? {
+                kind: "questionnaire-answers" as const,
+                questionnaireId: lastQEntry.questionnaireId,
+                answers: lastQEntry.questions.map((q) =>
+                  q.type === "multiple_choice"
+                    ? { id: q.id, kind: "mc" as const, selected: "A" as const }
+                    : {
+                        id: q.id,
+                        kind: "freetext" as const,
+                        text: "Here is my best attempt at the concept — please correct me.",
+                        fromEscape: false,
+                      },
+                ),
+              }
+            : {
+                kind: "chat-text" as const,
+                text: "Got it — could you walk me through the next concept with a concrete example?",
+              };
 
         // Pace each wave-turn LLM call to stay under Cerebras 30 RPM.
         await pace();

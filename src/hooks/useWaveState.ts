@@ -91,28 +91,46 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     }),
   );
 
-  // Derive Turn[] from the message log + open questionnaire. Pure; safe to
-  // run on every render (memoized for stability across consumer re-renders).
+  // Derive Turn[] from chat_log. Pure; safe to run on every render
+  // (memoized for stability across consumer re-renders).
   const turns = useMemo<readonly Turn[]>(
-    () => (state.data ? deriveWaveTurns(state.data.messages, state.data.openQuestionnaire) : []),
+    () => (state.data ? deriveWaveTurns(state.data.chatLog) : []),
     [state.data],
   );
 
-  // Active questionnaire projection for the Composer. The Composer's
-  // `questionsKey` is a stable identity that triggers Composer state reset
-  // when the question set changes — using `questionnaireId` (the server-side
-  // row id) is the right granularity: a new questionnaire always lands on a
-  // new assistant_response row, so the id changes iff the question set does.
+  // Active questionnaire for the Composer: the latest
+  // `assistant.text_with_questionnaire` whose id has no later
+  // `user.answers` entry in the chat log. Mirrors `useScopingState`'s
+  // derivation pattern — same `ActiveQuestionnaire` shape, same
+  // questionnaireId-as-key identity for Composer state reset.
   const activeQuestionnaire = useMemo<ActiveQuestionnaire | null>(() => {
-    if (!state.data?.openQuestionnaire) return null;
-    const oq = state.data.openQuestionnaire;
+    if (!state.data) return null;
+    const log = state.data.chatLog;
+    // Walk from the tail to find the most recent questionnaire emission;
+    // `findLastIndex` is cleaner than reversing + indexing.
+    const lastQIdx = log.findLastIndex(
+      (e) => e.role === "assistant" && e.kind === "text_with_questionnaire",
+    );
+    if (lastQIdx === -1) return null;
+    const lastQ = log[lastQIdx];
+    // Narrow the union for TS — findLastIndex's predicate doesn't propagate.
+    if (lastQ?.role !== "assistant" || lastQ.kind !== "text_with_questionnaire") return null;
+    // Any later `user.answers` entry referencing this questionnaire's id
+    // means it's been submitted → no active questionnaire.
+    const answered = log
+      .slice(lastQIdx + 1)
+      .some(
+        (e) =>
+          e.role === "user" && e.kind === "answers" && e.questionnaireId === lastQ.questionnaireId,
+      );
+    if (answered) return null;
     return {
       kind: "wave",
-      questions: oq.questions.map(adaptOpenQuestion),
-      questionsKey: oq.questionnaireId,
-      persistKey: `nalu:wave:${courseId}:${waveNumber}`,
+      questions: lastQ.questions.map(adaptOpenQuestion),
+      questionsKey: lastQ.questionnaireId,
+      persistKey: `nalu:wave:${state.data.waveId}:q:${lastQ.questionnaireId}`,
     };
-  }, [state.data, courseId, waveNumber]);
+  }, [state.data]);
 
   const isPending = state.isFetching || submitTurn.isPending;
 
@@ -130,7 +148,9 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     // Echo back the open questionnaire's id (the server validates §7.4 mutual
     // exclusion against it). If there's no open questionnaire, the call would
     // fail server-side — the UI should be gating this path on activeQuestionnaire.
-    const questionnaireId = state.data?.openQuestionnaire?.questionnaireId;
+    // `questionsKey` was set to the questionnaireId in the memo above; reuse
+    // it rather than re-scanning chat_log.
+    const questionnaireId = activeQuestionnaire?.questionsKey;
     if (!questionnaireId) return;
     submitTurn.mutate({
       courseId,

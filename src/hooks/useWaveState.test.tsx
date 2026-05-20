@@ -19,31 +19,30 @@ const submitTurnCalls: { args: unknown }[] = [];
 // eslint-disable-next-line functional/no-let -- test-fixture handler slot
 let latestOnSuccess: ((result: unknown) => void) | undefined;
 
-const stateData = {
+// Default wave-state fixture (chat_log-first wire shape). Individual tests
+// re-assign `currentState` to exercise different chatLog shapes; the
+// `vi.mock("@/lib/trpc", ...)` factory reads from this cell on each query.
+const defaultStateData = {
   courseId: "c1",
   waveId: "w1",
   waveNumber: 1,
   currentTier: 1,
   status: "active" as const,
   turnsRemaining: 9,
-  messages: [
-    {
-      id: "a1",
-      turnIndex: 0,
-      seq: 0,
-      kind: "assistant_response" as const,
-      role: "assistant" as const,
-      content: "Welcome to wave 1.",
-    },
-  ],
-  openQuestionnaire: null,
+  chatLog: [{ role: "assistant", kind: "text", content: "Welcome to wave 1." }] as const,
   closeResult: null,
 };
+
+// Mutable test-fixture cell so individual tests can swap in a different
+// wire payload before rendering. Mirrors the `latestOnSuccess` pattern above.
+// eslint-disable-next-line functional/no-let -- test-fixture state slot
+let currentState: unknown = defaultStateData;
 
 vi.mock("@/lib/trpc", () => {
   const stateOpts = {
     queryKey: ["wave.getState", { courseId: "c1", waveNumber: 1 }] as const,
-    queryFn: async () => stateData,
+    // Read `currentState` lazily so per-test re-assignments are picked up.
+    queryFn: async () => currentState,
   };
   return {
     useTRPC: () => ({
@@ -75,11 +74,12 @@ beforeEach(() => {
   /* eslint-disable functional/immutable-data -- reset test buffers between tests */
   submitTurnCalls.length = 0;
   latestOnSuccess = undefined;
+  currentState = defaultStateData;
   /* eslint-enable functional/immutable-data */
 });
 
 describe("useWaveState", () => {
-  it("derives turns from the message log", async () => {
+  it("derives turns from the chat log", async () => {
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
     await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
     expect(result.current.turns).toEqual([
@@ -87,6 +87,36 @@ describe("useWaveState", () => {
     ]);
     expect(result.current.activeQuestionnaire).toBeNull();
     expect(result.current.closeResult).toBeNull();
+  });
+
+  it("derives activeQuestionnaire from chatLog when a text_with_questionnaire is open", async () => {
+    // Swap in a chat_log with an unanswered questionnaire as the latest assistant entry.
+    currentState = {
+      ...defaultStateData,
+      chatLog: [
+        { role: "assistant", kind: "text", content: "Welcome." },
+        {
+          role: "assistant",
+          kind: "text_with_questionnaire",
+          questionnaireId: "q-1",
+          content: "Try this:",
+          questions: [
+            {
+              id: "qa",
+              type: "multiple_choice",
+              prompt: "?",
+              options: { A: "1", B: "2", C: "3", D: "4" },
+              correctEnc: "enc",
+              freetextRubric: "n/a",
+            },
+          ],
+        },
+      ],
+    };
+
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.activeQuestionnaire).not.toBeNull());
+    expect(result.current.activeQuestionnaire?.questionsKey).toBe("q-1");
   });
 
   it("submitChatText forwards a chat-text payload", async () => {

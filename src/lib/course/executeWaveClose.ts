@@ -10,7 +10,9 @@ import {
 } from "@/lib/spaced-repetition/scheduler";
 import { getConceptsByCourse } from "@/db/queries/concepts";
 import type { FrameworkJsonb } from "@/lib/types/jsonb";
+import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { buildWaveSeed } from "./buildWaveSeed";
+import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
 import { persistWaveClose, type PersistedGradedSignal } from "./persistWaveClose";
 import type { LoadedWaveContext } from "./loadWaveContext";
 
@@ -71,9 +73,13 @@ export async function executeWaveClose(
   // here is safe — Drizzle widens JSONB to `unknown` but the runtime shape is
   // guaranteed.
   const framework = ctx.wave.frameworkSnapshot as FrameworkJsonb;
+  // Open questionnaire is derived from chat_log per the new contract —
+  // `loadWaveContext` no longer carries it. Used here only to scope the
+  // schema's `questionIds` superRefine to the latest open card.
+  const openQuestionnaire = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
   const schema = makeWaveCloseSchema({
     scopeTiers: framework.tiers.map((t) => t.number),
-    questionIds: ctx.openQuestionnaire?.questions.map((q) => q.id) ?? [],
+    questionIds: openQuestionnaire?.questions.map((q) => q.id) ?? [],
     freshConceptNames: fresh.map((c) => c.name),
     reviewDueNames: due.map((c) => c.name),
     existingConceptNames: allConcepts.map((c) => c.name),

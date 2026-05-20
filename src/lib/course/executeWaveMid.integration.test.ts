@@ -4,7 +4,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles, assessments, concepts } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
-import { getWaveById, openWave } from "@/db/queries/waves";
+import { appendWaveChatLog, getWaveById, openWave } from "@/db/queries/waves";
 import { appendMessage, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts";
 import { insertOpenAssessments } from "@/db/queries/assessments";
@@ -15,6 +15,7 @@ import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { loadWaveContext } from "./loadWaveContext";
 import { executeWaveMid } from "./executeWaveMid";
+import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
 import { buildLearnerInput, type SubmitTurnPayload } from "./buildLearnerInput";
 import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTurn";
 
@@ -164,13 +165,24 @@ async function seedOpenQuestionnaire(
       ],
     },
   };
-  await appendMessage({
+  const assistantRow = await appendMessage({
     parent: { kind: "wave", id: waveId },
     turnIndex: 1,
     seq: 0,
     kind: "assistant_response",
     role: "assistant",
     content: JSON.stringify(assistantPayload),
+  });
+  // Mirror the production dual-write: alongside the assistant_response row,
+  // chat_log gets a `text_with_questionnaire` entry whose `questionnaireId`
+  // matches the assistant_response row id. `findOpenQuestionnaire` (the
+  // derivation source after Task 13) reads chat_log, not context_messages.
+  await appendWaveChatLog(db, waveId, {
+    role: "assistant",
+    kind: "text_with_questionnaire",
+    questionnaireId: assistantRow.id,
+    content: assistantPayload.userMessage,
+    questions: assistantPayload.questionnaire!.questions,
   });
   // Mirror the production flow: when the assistant emits a questionnaire, the
   // orchestrator inserts placeholder rows. Seed them here so the grading test
@@ -213,8 +225,9 @@ describe("executeWaveMid (integration)", () => {
         makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
       );
       const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const openQ = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
       const payload: SubmitTurnPayload = { kind: "chat-text", text: "tell me more" };
-      const learnerInput = buildLearnerInput(payload, ctx.openQuestionnaire);
+      const learnerInput = buildLearnerInput(payload, openQ);
 
       const result = await executeWaveMid(ctx, learnerInput, 5, payload);
 
@@ -268,15 +281,16 @@ describe("executeWaveMid (integration)", () => {
         makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
       );
       const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const openQ = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
       const payload: SubmitTurnPayload = {
         kind: "questionnaire-answers",
-        questionnaireId: ctx.openQuestionnaire!.questionnaireId,
+        questionnaireId: openQ!.questionnaireId,
         answers: [
           { id: "q-mc", kind: "mc", selected: "B" }, // matches `correct: "B"`
           { id: "q-ft", kind: "freetext", text: "borrow is a temporary loan", fromEscape: false },
         ],
       };
-      const learnerInput = buildLearnerInput(payload, ctx.openQuestionnaire);
+      const learnerInput = buildLearnerInput(payload, openQ);
 
       const result = await executeWaveMid(ctx, learnerInput, 4, payload);
 
@@ -353,8 +367,9 @@ describe("executeWaveMid (integration)", () => {
         makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
       );
       const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const openQ = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
       const payload: SubmitTurnPayload = { kind: "chat-text", text: "ready" };
-      const learnerInput = buildLearnerInput(payload, ctx.openQuestionnaire);
+      const learnerInput = buildLearnerInput(payload, openQ);
 
       const result = await executeWaveMid(ctx, learnerInput, 6, payload);
 
@@ -409,8 +424,9 @@ describe("executeWaveMid (integration)", () => {
         new ValidationGateFailure("missing_response", "schema invariant violated"),
       );
       const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const openQ = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
       const payload: SubmitTurnPayload = { kind: "chat-text", text: "tell me" };
-      const learnerInput = buildLearnerInput(payload, ctx.openQuestionnaire);
+      const learnerInput = buildLearnerInput(payload, openQ);
 
       await expect(executeWaveMid(ctx, learnerInput, 5, payload)).rejects.toBeInstanceOf(
         ValidationGateFailure,

@@ -7,10 +7,11 @@ import { buildRetryDirective } from "@/lib/turn/retryDirective";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { waveMidTurnSchema, renderWaveTurnEnvelope } from "@/lib/prompts/waveTurn";
-import type { WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
+import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 import { type SubmitTurnPayload } from "./buildLearnerInput";
 import type { GradedSignal } from "./applyAssessmentGrading";
 import { buildWaveSeed } from "./buildWaveSeed";
+import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
 import type { LoadedWaveContext } from "./loadWaveContext";
 import { gradePriorAnswers } from "./executeWaveMid.grade";
 import { insertNewQuestionnaire, type NewQuestionnaireProjection } from "./executeWaveMid.insert";
@@ -65,6 +66,13 @@ export async function executeWaveMid(
   turnsRemaining: number,
   payload: SubmitTurnPayload,
 ): Promise<ExecuteWaveMidResult> {
+  // Resolve open questionnaire once for grading-time lookups (correctLetterMap)
+  // and the gradePriorAnswers `hasOpenQuestionnaire` flag. Derived from
+  // chat_log per the new contract — `loadWaveContext` no longer carries it.
+  // `ctx.wave.chatLog` is `unknown` at the Drizzle JSONB boundary; runtime
+  // shape is enforced upstream by `waveRowGuard`.
+  const openQuestionnaire = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
+
   // Wire-side schema selection mirrors generateBaseline: strong models honour
   // strict-mode and receive the schema via response_format; weak models get
   // it inline in the envelope.
@@ -88,10 +96,22 @@ export async function executeWaveMid(
       `signals=${p.comprehensionSignals?.length ?? 0} questionnaire=${p.questionnaire ? p.questionnaire.questions.length : 0}`,
   });
 
-  // Lookup tables built once, pure functions of payload + ctx. Used inside
-  // the transaction for grading.
+  // Lookup tables built once, pure functions of payload + openQuestionnaire.
+  // Used inside the transaction for grading.
   const answerTextById = buildAnswerTextMap(payload);
-  const correctLetterById = buildCorrectLetterMap(ctx);
+  // Question id → expected MC correct key letter (for MC questions only).
+  // Free-text questions are absent. The grading helper compares each signal's
+  // questionId's correct letter against the learner's `answerTextById` selection.
+  const correctLetterById: ReadonlyMap<string, "A" | "B" | "C" | "D"> = openQuestionnaire
+    ? new Map(
+        openQuestionnaire.questions
+          .filter(
+            (q): q is typeof q & { readonly correct: "A" | "B" | "C" | "D" } =>
+              q.type === "multiple_choice" && q.correct !== undefined,
+          )
+          .map((q) => [q.id, q.correct] as const),
+      )
+    : new Map();
 
   const result = await db.transaction(async (tx) => {
     // Find the assistant_response row just persisted by executeTurn. We need
@@ -122,7 +142,7 @@ export async function executeWaveMid(
       tx,
       waveId: ctx.wave.id,
       signals: parsed.comprehensionSignals ?? [],
-      hasOpenQuestionnaire: ctx.openQuestionnaire !== null,
+      hasOpenQuestionnaire: openQuestionnaire !== null,
       answerTextById,
       correctLetterById,
     });
@@ -166,8 +186,8 @@ export async function executeWaveMid(
 }
 
 // ---------------------------------------------------------------------------
-// Pure lookup-map builders (kept here because they're shared by the grading
-// path and small enough to inline).
+// Pure lookup-map builder (kept here because it's used by the grading path
+// and small enough to inline).
 // ---------------------------------------------------------------------------
 
 /** Question id → learner answer text (MC: selected key letter; free-text: prose). */
@@ -175,22 +195,5 @@ function buildAnswerTextMap(payload: SubmitTurnPayload): ReadonlyMap<string, str
   if (payload.kind === "chat-text") return new Map();
   return new Map(
     payload.answers.map((a) => [a.id, a.kind === "mc" ? a.selected : a.text] as const),
-  );
-}
-
-/**
- * Question id → expected MC correct key letter (for MC questions only).
- * Free-text questions are absent. The grading helper compares each signal's
- * questionId's correct letter against the learner's `answerTextById` selection.
- */
-function buildCorrectLetterMap(ctx: LoadedWaveContext): ReadonlyMap<string, "A" | "B" | "C" | "D"> {
-  if (!ctx.openQuestionnaire) return new Map();
-  return new Map(
-    ctx.openQuestionnaire.questions
-      .filter(
-        (q): q is typeof q & { readonly correct: "A" | "B" | "C" | "D" } =>
-          q.type === "multiple_choice" && q.correct !== undefined,
-      )
-      .map((q) => [q.id, q.correct] as const),
   );
 }

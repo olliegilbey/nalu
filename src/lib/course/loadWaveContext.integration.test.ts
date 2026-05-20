@@ -3,30 +3,27 @@ import { TRPCError } from "@trpc/server";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
-import { createCourse } from "@/db/queries/courses";
+import { createCourse, NotFoundError } from "@/db/queries/courses";
 import { openWave } from "@/db/queries/waves";
-import { appendMessage } from "@/db/queries/contextMessages";
 import { WAVE } from "@/lib/config/tuning";
 import { loadWaveContext } from "./loadWaveContext";
-import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 
 /**
  * Integration tests for `loadWaveContext`.
  *
- * Runs against the real Postgres testcontainer so JSONB validation, FK checks,
- * and message ordering all exercise the same paths as production. Each
- * `withTestDb` call truncates every table first.
+ * Runs against the real Postgres testcontainer so FK checks + the ownership
+ * guard exercise the same code paths as production. Each `withTestDb` call
+ * truncates every table first.
  *
- * Coverage:
- *   1. No assistant_response messages → openQuestionnaire is null.
- *   2. assistant_response with no questionnaire block → null.
- *   3. assistant_response with a questionnaire (no follow-up) → projected record.
- *   4. assistant_response with a questionnaire followed by a card_answer → null
- *      (consumed).
- *   5. Cross-course wave id → FORBIDDEN.
+ * Coverage (post-rewrite — open-questionnaire reconstruction moved out):
+ *   1. Happy path → returns `{ course, wave }` for a valid (user, course, wave).
+ *   2. Course owned by a different user → `NotFoundError` (info-leak-safe).
+ *   3. Cross-course wave id (wave belongs to a sibling course under the same
+ *      owner) → TRPC FORBIDDEN.
  */
 
 const USER_ID = "55555555-5555-5555-5555-555555555555";
+const OTHER_USER_ID = "66666666-6666-6666-6666-666666666666";
 
 const FRAMEWORK = {
   userMessage: "fw",
@@ -69,122 +66,46 @@ async function seedCourseWithOpenWave(): Promise<{
   return { courseId: course.id, waveId: wave.id };
 }
 
-/** Minimal valid WaveMidTurn JSON content with no questionnaire. */
-const MID_NO_QN: WaveMidTurn = {
-  userMessage: "Teaching turn with no questions.",
-};
-
-/** Minimal valid WaveMidTurn JSON content carrying one MC + one free-text. */
-const MID_WITH_QN: WaveMidTurn = {
-  userMessage: "Here are some questions.",
-  questionnaire: {
-    questions: [
-      {
-        id: "q-mc",
-        type: "multiple_choice",
-        prompt: "Pick one",
-        options: { A: "a", B: "b", C: "c", D: "d" },
-        correct: "B",
-        freetextRubric: "rubric-mc",
-      },
-      {
-        id: "q-ft",
-        type: "free_text",
-        prompt: "Explain",
-        freetextRubric: "rubric-ft",
-      },
-    ],
-  },
-};
-
 describe("loadWaveContext (integration)", () => {
-  it("returns openQuestionnaire=null when the wave has no assistant_response", async () => {
+  // -------------------------------------------------------------------------
+  // 1. Happy path. Seed a (user, course, wave) triple and verify the loader
+  //    returns the matching course + wave rows. No questionnaire field on the
+  //    result shape anymore — that concept moved to `findOpenQuestionnaire`
+  //    over typed `waves.chat_log`.
+  // -------------------------------------------------------------------------
+  it("returns { course, wave } for a valid (user, course, wave) triple", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
       const result = await loadWaveContext({ userId: USER_ID, courseId, waveId });
-      expect(result.openQuestionnaire).toBeNull();
       expect(result.wave.id).toBe(waveId);
       expect(result.course.id).toBe(courseId);
     });
   });
 
-  it("returns openQuestionnaire=null when the last assistant_response has no questionnaire", async () => {
+  // -------------------------------------------------------------------------
+  // 2. Ownership check. A course owned by user A must NOT be loadable by
+  //    user B. `getCourseById` throws `NotFoundError` (not `Forbidden`) for
+  //    cross-user reads — that is the info-leak-safe response. We assert the
+  //    raw class here because `loadWaveContext` does not translate it to a
+  //    TRPC code (the router layer does that translation).
+  // -------------------------------------------------------------------------
+  it("throws NotFoundError when the course is owned by a different user", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
-      // Seed one assistant_response that omits the questionnaire block.
-      await appendMessage({
-        parent: { kind: "wave", id: waveId },
-        turnIndex: 1,
-        seq: 0,
-        kind: "assistant_response",
-        role: "assistant",
-        content: JSON.stringify(MID_NO_QN),
-      });
-      const result = await loadWaveContext({ userId: USER_ID, courseId, waveId });
-      expect(result.openQuestionnaire).toBeNull();
+      // Insert a second user that will attempt to access the first user's course.
+      await db.insert(userProfiles).values({ id: OTHER_USER_ID, displayName: "Other" });
+      await expect(
+        loadWaveContext({ userId: OTHER_USER_ID, courseId, waveId }),
+      ).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 
-  it("projects the questionnaire when the latest assistant_response carries one and has no follow-up", async () => {
-    await withTestDb(async () => {
-      const { courseId, waveId } = await seedCourseWithOpenWave();
-      // The message row id IS the questionnaire's identity (see loadWaveContext.ts).
-      const row = await appendMessage({
-        parent: { kind: "wave", id: waveId },
-        turnIndex: 1,
-        seq: 0,
-        kind: "assistant_response",
-        role: "assistant",
-        content: JSON.stringify(MID_WITH_QN),
-      });
-      const result = await loadWaveContext({ userId: USER_ID, courseId, waveId });
-      expect(result.openQuestionnaire).not.toBeNull();
-      expect(result.openQuestionnaire?.questionnaireId).toBe(row.id);
-      expect(result.openQuestionnaire?.questions).toHaveLength(2);
-      // MC question should preserve options + correct key.
-      expect(result.openQuestionnaire?.questions[0]).toMatchObject({
-        id: "q-mc",
-        type: "multiple_choice",
-        options: { A: "a", B: "b", C: "c", D: "d" },
-        correct: "B",
-        freetextRubric: "rubric-mc",
-      });
-      // Free-text question should NOT carry options/correct.
-      expect(result.openQuestionnaire?.questions[1]).toMatchObject({
-        id: "q-ft",
-        type: "free_text",
-        freetextRubric: "rubric-ft",
-      });
-      expect(result.openQuestionnaire?.questions[1]).not.toHaveProperty("options");
-      expect(result.openQuestionnaire?.questions[1]).not.toHaveProperty("correct");
-    });
-  });
-
-  it("returns openQuestionnaire=null once a card_answer follows the latest assistant_response", async () => {
-    await withTestDb(async () => {
-      const { courseId, waveId } = await seedCourseWithOpenWave();
-      await appendMessage({
-        parent: { kind: "wave", id: waveId },
-        turnIndex: 1,
-        seq: 0,
-        kind: "assistant_response",
-        role: "assistant",
-        content: JSON.stringify(MID_WITH_QN),
-      });
-      // Follow-up learner turn — the questionnaire is now consumed.
-      await appendMessage({
-        parent: { kind: "wave", id: waveId },
-        turnIndex: 2,
-        seq: 0,
-        kind: "card_answer",
-        role: "user",
-        content: "<questionnaire_answers>...</questionnaire_answers>",
-      });
-      const result = await loadWaveContext({ userId: USER_ID, courseId, waveId });
-      expect(result.openQuestionnaire).toBeNull();
-    });
-  });
-
+  // -------------------------------------------------------------------------
+  // 3. Cross-course containment. The wave id is real and belongs to courseA;
+  //    the caller passes courseB (same owner). FORBIDDEN here is a real
+  //    condition — both ids exist, but the wave is not a child of the named
+  //    course, so the request must be rejected at the containment boundary.
+  // -------------------------------------------------------------------------
   it("throws FORBIDDEN when the wave id does not belong to the supplied courseId", async () => {
     await withTestDb(async () => {
       await db.insert(userProfiles).values({ id: USER_ID, displayName: "U" });

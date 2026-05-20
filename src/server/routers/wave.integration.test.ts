@@ -4,7 +4,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse, setCourseStartingState } from "@/db/queries/courses";
-import { openWave } from "@/db/queries/waves";
+import { openWave, appendWaveChatLog } from "@/db/queries/waves";
 import { appendMessage, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts";
 import { insertOpenAssessments } from "@/db/queries/assessments";
@@ -157,6 +157,18 @@ async function seedOpenMcQuestionnaire(
     role: "assistant",
     content: JSON.stringify(assistantPayload),
   });
+  // Mirror executeWaveMid's dual-write (T8): chat_log gains the
+  // `text_with_questionnaire` entry whose `questionnaireId` matches the
+  // assistant_response row id. `findOpenQuestionnaire` (the lib-side
+  // open-questionnaire detection) reads chat_log only, so the fixture
+  // must seed both stores to mirror production invariants.
+  await appendWaveChatLog(db, waveId, {
+    role: "assistant",
+    kind: "text_with_questionnaire",
+    questionnaireId: row.id,
+    content: assistantPayload.userMessage,
+    questions: assistantPayload.questionnaire!.questions,
+  });
   await insertOpenAssessments({
     waveId,
     turnIndex: 1,
@@ -200,13 +212,15 @@ describe("wave.getState", () => {
   // -------------------------------------------------------------------------
   // 1. Active wave with one consumed user-turn → router returns the projected
   //    WaveState shape: status='active', currentTier echoed, turnsRemaining
-  //    reflects the message log, messages filtered to chat-visible kinds,
-  //    closeResult always null on getState.
+  //    reflects the chat_log (single source of truth post-T11), chatLog
+  //    contains the redacted entries, closeResult always null on getState.
   // -------------------------------------------------------------------------
   it("returns projected WaveState for an active wave", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
-      // One past turn (user_message + assistant_response). consumed=1.
+      // One past turn — dual-written to both stores to mirror production:
+      // context_messages is the byte-stable LLM replay; chat_log is the
+      // typed UI projection. getWaveState reads chat_log only.
       await appendMessage({
         parent: { kind: "wave", id: waveId },
         turnIndex: 0,
@@ -223,6 +237,16 @@ describe("wave.getState", () => {
         role: "assistant",
         content: JSON.stringify({ userMessage: "hello back" }),
       });
+      await appendWaveChatLog(db, waveId, {
+        role: "user",
+        kind: "text",
+        content: "hi",
+      });
+      await appendWaveChatLog(db, waveId, {
+        role: "assistant",
+        kind: "text",
+        content: "hello back",
+      });
 
       const caller = appRouter.createCaller({ userId: USER_ID });
       const state = await caller.wave.getState({ courseId, waveNumber: 1 });
@@ -231,12 +255,15 @@ describe("wave.getState", () => {
       expect(state.waveId).toBe(waveId);
       expect(state.currentTier).toBe(1);
       expect(state.turnsRemaining).toBe(WAVE.turnCount - 1);
-      // messages filter: only user_message / card_answer / assistant_response
-      // are visible to the client; harness rows are excluded.
-      expect(state.messages).toHaveLength(2);
-      expect(state.messages[0]?.kind).toBe("user_message");
-      expect(state.messages[1]?.kind).toBe("assistant_response");
-      expect(state.openQuestionnaire).toBeNull();
+      // chatLog wire: two redacted entries (user text + assistant text).
+      // No `text_with_questionnaire` present, so no open questionnaire is
+      // derivable from the log.
+      expect(state.chatLog).toHaveLength(2);
+      expect(state.chatLog[0]).toMatchObject({ role: "user", kind: "text" });
+      expect(state.chatLog[1]).toMatchObject({ role: "assistant", kind: "text" });
+      expect(
+        state.chatLog.some((e) => e.role === "assistant" && e.kind === "text_with_questionnaire"),
+      ).toBe(false);
       // closeResult is structurally null on getState — the close payload comes
       // from submitTurn (the field is a documentation handle for client union stability).
       expect(state.closeResult).toBeNull();
@@ -441,6 +468,10 @@ describe("wave.submitTurn", () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
       // Pre-seed (turnCount - 1) past learner turns. No assistant_response after
       // the last user_message → no open questionnaire (chat-text branch open).
+      // Dual-write to both context_messages (LLM replay log) and chat_log
+      // (the UI/turn-budget source) — post-T11 `submitWaveTurn` derives
+      // `consumed` from chat_log, so close-turn dispatch requires the
+      // chat_log user entries to be present.
       // Array.reduce instead of for/let to satisfy `functional/no-let`.
       await Array.from({ length: WAVE.turnCount - 1 }).reduce<Promise<void>>(
         async (accP, _v, i) => {
@@ -452,6 +483,11 @@ describe("wave.submitTurn", () => {
             kind: "user_message",
             role: "user",
             content: `<learner_reply>past turn ${i}</learner_reply>`,
+          });
+          await appendWaveChatLog(db, waveId, {
+            role: "user",
+            kind: "text",
+            content: `past turn ${i}`,
           });
         },
         Promise.resolve(),

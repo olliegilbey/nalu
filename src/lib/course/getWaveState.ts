@@ -1,47 +1,41 @@
 import { TRPCError } from "@trpc/server";
-import { getMessagesForWave } from "@/db/queries/contextMessages";
+import { getCourseById, NotFoundError } from "@/db/queries/courses";
 import { getWaveByCourseAndNumber } from "@/db/queries/waves";
 import { WAVE } from "@/lib/config/tuning";
-import type { ContextMessage } from "@/db/schema";
-import { loadWaveContext } from "./loadWaveContext";
-import { redactQuestionnaire, type OpenQuestionnaireForClient } from "./redactQuestionnaire";
+import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
+import { redactWaveChatLog, type WaveChatLogEntryForClient } from "./redactWaveChatLog";
 
 /**
  * Client-facing projection of a wave's state.
  *
- * Carries:
- *   - `status`: active vs closed — the UI uses this to gate the composer.
- *     DB stores `open` for active waves but the wire shape uses `active` for
- *     client-side clarity (matches plan §7.2 vocabulary).
- *   - `messages`: flat (turn_index, seq)-ordered context_messages, filtered
- *     to the chat-visible kinds (`user_message`, `card_answer`,
- *     `assistant_response`) and trimmed to the fields the chat scroll renders.
- *     The client passes these to `deriveWaveTurns` (Task 15) which folds them
- *     into a `Turn[]`.
- *   - `openQuestionnaire`: redacted shape (no plaintext `correct`); null
- *     when nothing is open.
- *   - `turnsRemaining`: pre-submission count. After the learner posts one
- *     reply, the BACK-END's response carries the post-submission value; this
- *     state's value reflects what the LLM saw on its LAST emission. Used by
- *     the UI to show a "n turns left" hint without round-tripping.
- *   - `closeResult`: always `null` here. The close result is the *response*
- *     payload of `submitWaveTurn` (spec §7.2), not a re-readable wave property.
- *     The field exists on the wire shape for client-side union stability so
- *     consumers can treat `WaveState` and `submitWaveTurn`'s close payload
- *     uniformly without conditional property access.
+ * Post-refactor (Phase C, plan Task 11): the wire shape is the typed JSONB
+ * `waves.chat_log` projected through `redactWaveChatLog`. The previous
+ * `messages` + `openQuestionnaire` envelope-style projection is GONE — there
+ * is no more `loadWaveContext` reconstruction, no `context_messages` read,
+ * and no per-row trimming. The chat scroll in the client renders from
+ * `chatLog` directly. This mirrors scoping's `getState`, which has long
+ * shipped the typed JSONB store (`courses.clarification`, `courses.baseline`)
+ * straight to the UI.
  *
- * No business logic — pure projection over `loadWaveContext` + the message log.
+ * Carries:
+ *   - `status`: active vs closed — the UI gates the composer on this. DB
+ *     stores `open` for active waves but the wire shape uses `active` for
+ *     client-side clarity (plan §7.2 vocabulary).
+ *   - `chatLog`: ordered, redacted projection of `waves.chat_log`. Each
+ *     entry is `WaveChatLogEntryForClient`; MC `correct` keys are replaced
+ *     by questionId-bound `correctEnc` blobs. The client folds these into
+ *     its `Turn[]` via `deriveWaveTurns` (Task 14 will update that helper).
+ *   - `turnsRemaining`: count of user-role entries subtracted from
+ *     `WAVE.turnCount`. The chat_log is the single source of truth for
+ *     "what has the learner submitted" so the count is a one-line filter.
+ *   - `closeResult`: always `null` here. The close result is the *response*
+ *     payload of `submitWaveTurn` (spec §7.2), not a re-readable wave
+ *     property. The field exists on the wire shape for client-side union
+ *     stability so consumers can treat `WaveState` and `submitWaveTurn`'s
+ *     close payload uniformly without conditional property access.
+ *
+ * No business logic — pure projection over the wave row.
  */
-
-/** Trimmed `context_messages` row for the client. */
-export interface RenderedMessage {
-  readonly id: string;
-  readonly turnIndex: number;
-  readonly seq: number;
-  readonly kind: ContextMessage["kind"];
-  readonly role: ContextMessage["role"];
-  readonly content: string;
-}
 
 /** Full wave-state projection returned to the client. */
 export interface WaveState {
@@ -51,8 +45,7 @@ export interface WaveState {
   readonly currentTier: number;
   readonly status: "active" | "closed";
   readonly turnsRemaining: number;
-  readonly messages: readonly RenderedMessage[];
-  readonly openQuestionnaire: OpenQuestionnaireForClient | null;
+  readonly chatLog: readonly WaveChatLogEntryForClient[];
   /**
    * Always `null` on `getWaveState` — close result is the response payload of
    * `submitWaveTurn`, not a re-readable wave property (spec §7.2). The shape
@@ -80,19 +73,24 @@ export interface GetWaveStateParams {
  * Load the full state for one Wave by its ordinal `waveNumber`.
  *
  * Resolution chain:
- *   1. Resolve `(courseId, waveNumber)` → wave row id. NOT_FOUND if absent.
- *   2. Delegate to `loadWaveContext` for ownership + open-questionnaire
- *      reconstruction (it cross-checks course ownership).
- *   3. Fetch the (turn_index, seq)-ordered message log; trim each row.
- *   4. Count consumed user-turn rows. `turnsRemaining` = the value the LLM
- *      saw on its last emission = `max(0, WAVE.turnCount - consumed)`.
+ *   1. Resolve `(courseId, waveNumber)` → wave row. NOT_FOUND if absent.
+ *   2. Fetch the course row and check `userId` ownership. NOT_FOUND on a
+ *      mismatch (the same code used for "no such wave" — we never disclose
+ *      whether the resource exists under another user).
+ *   3. Project `wave.chatLog` (validated by `waveRowGuard` on read) through
+ *      `redactWaveChatLog`.
+ *   4. `turnsRemaining` = `WAVE.turnCount - (user-role entry count)`.
  *
- * NOTE on `turnsRemaining`: this state reflects what the LLM emitted LAST.
- * `submitWaveTurn`'s post-submission value uses `consumed + 1` (after the
- * about-to-land turn). The two values differ by 1 by design.
+ * NOTE on `turnsRemaining`: post-rewrite this is now derived from chat_log
+ * exclusively. The chat_log is dual-written everywhere a user submission
+ * lands (submitWaveTurn pre-LLM persist, executeWaveMid assistant emission,
+ * persistWaveClose summary entry), so the count matches the
+ * envelope-derived value the LLM saw on its last emission. Future cleanup
+ * (Tasks 12, 13) removes the `context_messages` legacy that produced that
+ * count previously.
  */
 export async function getWaveState(params: GetWaveStateParams): Promise<WaveState> {
-  // (1) Resolve waveNumber → wave row id. Use this resolver in both
+  // (1) Resolve waveNumber → wave row. Use this resolver in both
   // `getWaveState` and `submitWaveTurn` so the natural URL addressing scheme
   // (courseId, waveNumber) maps to row ids in one place.
   const wave = await getWaveByCourseAndNumber(params.courseId, params.waveNumber);
@@ -103,62 +101,49 @@ export async function getWaveState(params: GetWaveStateParams): Promise<WaveStat
     });
   }
 
-  // (2) loadWaveContext enforces course ownership + cross-course containment
-  // and reconstructs the latest unanswered questionnaire if one exists.
-  const ctx = await loadWaveContext({
-    userId: params.userId,
-    courseId: params.courseId,
-    waveId: wave.id,
-  });
+  // (2) Ownership check. `getCourseById` throws `NotFoundError` on missing
+  // row OR on a userId mismatch (existence is not disclosed across owners).
+  // Translate both into TRPC NOT_FOUND on the same code path used for "no
+  // such wave" above.
+  try {
+    await getCourseById(params.courseId, params.userId);
+  } catch (err) {
+    if (err instanceof NotFoundError) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: `wave ${params.waveNumber} not found for course ${params.courseId}`,
+      });
+    }
+    throw err;
+  }
 
-  // (3) Fetch full message log. Trimmed to the client-facing fields so the
-  // wire shape doesn't leak DB-internal columns (createdAt, FKs, etc.).
-  // Filter to the chat-visible kinds (plan §7.2): user_message, card_answer,
-  // and assistant_response. Harness rows (harness_turn_counter,
-  // harness_review_block) and retry-loop rows (failed_assistant_response,
-  // harness_retry_directive) are LLM-Context-only and not rendered to the UI.
-  const rows = await getMessagesForWave(wave.id);
-  const messages: readonly RenderedMessage[] = rows
-    .filter(
-      (r) =>
-        r.kind === "user_message" || r.kind === "card_answer" || r.kind === "assistant_response",
-    )
-    .map((r) => ({
-      id: r.id,
-      turnIndex: r.turnIndex,
-      seq: r.seq,
-      kind: r.kind,
-      role: r.role,
-      content: r.content,
-    }));
+  // (3) chat_log is typed `unknown` on the Drizzle row (jsonb isn't
+  // parameterised at the column type; `waveRowGuard` validated the array
+  // shape on read). Cast at the boundary — same pattern used in
+  // `executeWaveMid.integration.test.ts` / `submitWaveTurn.integration.test.ts`.
+  // Task 17 schedules the proper fix at the schema layer.
+  const entries = wave.chatLog as WaveChatLog;
+  const chatLog = redactWaveChatLog(entries);
 
-  // (4) Turns-remaining: count rows that mark a learner turn landing. Both
-  // `user_message` (chat-text branch) and `card_answer` (questionnaire-answers
-  // branch) advance the count by 1; harness rows / retry exhaust do not. This
-  // matches `submitWaveTurn`'s `consumed` calculation exactly.
-  const consumed = rows.filter((r) => r.kind === "user_message" || r.kind === "card_answer").length;
+  // (4) Turns-remaining: count user-role entries. Both `kind: "text"` and
+  // `kind: "answers"` mark a learner submission landing; assistant entries
+  // don't decrement the budget. Mirrors `submitWaveTurn`'s `consumed` count
+  // by construction (chat_log is dual-written on every learner submit).
+  const consumed = entries.filter((e) => e.role === "user").length;
   const turnsRemaining = Math.max(0, WAVE.turnCount - consumed);
-
-  // Open questionnaire → redacted projection (drops `correct`, adds correctEnc).
-  // null when no open questionnaire exists (e.g. closed wave, or learner just
-  // replied to the last one).
-  const openQuestionnaire = ctx.openQuestionnaire
-    ? redactQuestionnaire(ctx.openQuestionnaire)
-    : null;
 
   // Map DB status → wire status: DB column uses "open" for an in-progress
   // wave; the wire shape (plan §7.2) calls this "active". Closed stays closed.
-  const wireStatus: "active" | "closed" = ctx.wave.status === "closed" ? "closed" : "active";
+  const wireStatus: "active" | "closed" = wave.status === "closed" ? "closed" : "active";
 
   return {
-    courseId: ctx.course.id,
-    waveId: ctx.wave.id,
-    waveNumber: ctx.wave.waveNumber,
-    currentTier: ctx.wave.tier,
+    courseId: wave.courseId,
+    waveId: wave.id,
+    waveNumber: wave.waveNumber,
+    currentTier: wave.tier,
     status: wireStatus,
     turnsRemaining,
-    messages,
-    openQuestionnaire,
+    chatLog,
     // closeResult is always null on getWaveState — see WaveState TSDoc.
     closeResult: null,
   };

@@ -5,7 +5,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles, contextMessages } from "@/db/schema";
 import { createCourse, setCourseStartingState } from "@/db/queries/courses";
-import { getWaveById, openWave } from "@/db/queries/waves";
+import { appendWaveChatLog, getWaveById, openWave } from "@/db/queries/waves";
 import { appendMessage, getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts";
 import { insertOpenAssessments } from "@/db/queries/assessments";
@@ -166,6 +166,17 @@ async function seedOpenMcQuestionnaire(
     kind: "assistant_response",
     role: "assistant",
     content: JSON.stringify(assistantPayload),
+  });
+  // Mirror executeWaveMid's dual-write: chat_log gains a
+  // `text_with_questionnaire` entry whose `questionnaireId` matches the
+  // assistant_response row id. `findOpenQuestionnaire` (the new derivation
+  // source) reads chat_log, not context_messages.
+  await appendWaveChatLog(db, waveId, {
+    role: "assistant",
+    kind: "text_with_questionnaire",
+    questionnaireId: row.id,
+    content: assistantPayload.userMessage,
+    questions: assistantPayload.questionnaire!.questions,
   });
   // Match what executeWaveMid would have written when the questionnaire dropped.
   const concept = await upsertConcept({ courseId, name: "ownership", tier: 1 });
@@ -380,9 +391,12 @@ describe("submitWaveTurn (integration)", () => {
   it("close-turn dispatch: consumed = turnCount - 1 → executeWaveClose runs", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
-      // Pre-seed WAVE.turnCount - 1 user_message rows (one per past turn).
-      // No assistant_response after the last user_message → no open
-      // questionnaire to trip §7.4, and the chat-text branch is open.
+      // Pre-seed WAVE.turnCount - 1 past learner turns. `consumed` is now
+      // derived from `waves.chat_log` (user-role entries), not context_messages,
+      // so the chat_log mirror is what drives the close-turn boundary. We seed
+      // both stores to keep parity with what real production turns persist.
+      // No `text_with_questionnaire` entry → no open questionnaire → chat-text
+      // branch is open and §7.4 doesn't trip.
       // Array-reduce instead of for/let to satisfy `functional/no-let`.
       await Array.from({ length: WAVE.turnCount - 1 }).reduce<Promise<void>>(
         async (accP, _v, i) => {
@@ -394,6 +408,11 @@ describe("submitWaveTurn (integration)", () => {
             kind: "user_message",
             role: "user",
             content: `<learner_reply>past turn ${i}</learner_reply>`,
+          });
+          await appendWaveChatLog(db, waveId, {
+            role: "user",
+            kind: "text",
+            content: `past turn ${i}`,
           });
         },
         Promise.resolve(),

@@ -13,7 +13,7 @@ import { submitWaveTurn } from "@/lib/course/submitWaveTurn";
  * return the typed payload. No business logic, no LLM calls, no persistence.
  */
 export const waveRouter = router({
-  /** Restore wave state by ordinal (spec §7.1) — messages, open questionnaire (redacted), turnsRemaining. */
+  /** Restore wave state by ordinal (spec §7.1) — chatLog, turnsRemaining, closeResult. */
   getState: protectedProcedure
     .input(z.object({ courseId: z.string().uuid(), waveNumber: z.number().int().min(1) }))
     .query(({ ctx, input }) =>

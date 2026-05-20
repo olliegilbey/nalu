@@ -1,10 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import { db } from "@/db/client";
-import { getMessagesForWave } from "@/db/queries/contextMessages";
 import { appendWaveChatLog, getWaveByCourseAndNumber } from "@/db/queries/waves";
 import { WAVE } from "@/lib/config/tuning";
-import type { WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
+import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 import { buildLearnerInput, type SubmitTurnPayload } from "./buildLearnerInput";
+import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
 import { loadWaveContext } from "./loadWaveContext";
 import { executeWaveMid, type ExecuteWaveMidResult } from "./executeWaveMid";
 import { executeWaveClose, type ExecuteWaveCloseResult } from "./executeWaveClose";
@@ -83,7 +83,12 @@ export async function submitWaveTurn(params: SubmitWaveTurnParams): Promise<Subm
 
   // (2) §7.4 mutual-exclusion guards. The four checks below are the entire
   // turn-acceptance gate; downstream code assumes them.
-  const { openQuestionnaire } = ctx;
+  // Open questionnaire is derived from chat_log here — loadWaveContext no
+  // longer carries it. The find helper is a single linear scan; cheap.
+  // `ctx.wave.chatLog` is `unknown` at the Drizzle JSONB boundary;
+  // `waveRowGuard` (upstream) has already validated the runtime shape, so
+  // the cast matches the pattern in `getWaveState.ts`.
+  const openQuestionnaire = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
   if (params.payload.kind === "chat-text" && openQuestionnaire !== null) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
@@ -123,11 +128,13 @@ export async function submitWaveTurn(params: SubmitWaveTurnParams): Promise<Subm
   }
 
   // (3) Compute turnsRemaining = the value the LLM will see in THIS turn's
-  // envelope. After this turn's user_message/card_answer rows land, total
-  // consumed = current + 1. WAVE.turnCount is the budget; subtract to get the
-  // remaining count the LLM sees. clamp at 0 so a late close doesn't go negative.
-  const rows = await getMessagesForWave(ctx.wave.id);
-  const consumed = rows.filter((r) => r.kind === "user_message" || r.kind === "card_answer").length;
+  // envelope. Turns consumed = user-role entries in chat_log. After this
+  // turn's executeWaveMid persists its assistant entry + this fn's pre-LLM
+  // user entry, consumed advances by exactly 1. WAVE.turnCount is the budget;
+  // turnsRemaining = budget - (current + about-to-land). Clamp at 0 so a late
+  // close doesn't go negative.
+  // chat_log cast: see comment above for justification.
+  const consumed = (ctx.wave.chatLog as WaveChatLog).filter((e) => e.role === "user").length;
   const turnsRemaining = Math.max(0, WAVE.turnCount - (consumed + 1));
   const isCloseTurn = turnsRemaining === 0;
 

@@ -1,99 +1,106 @@
 import { describe, it, expect } from "vitest";
 import { deriveWaveTurns } from "./deriveWaveTurns";
-import type { RenderedMessage } from "./getWaveState";
-import type { OpenQuestionnaireForClient } from "./redactQuestionnaire";
+import type { WaveChatLogEntryForClient } from "./redactWaveChatLog";
 
-// Convenience factory: builds a RenderedMessage with sensible defaults so each
-// fixture stays focused on what it's testing.
-function msg(
-  partial: Pick<RenderedMessage, "id" | "kind" | "content"> & Partial<RenderedMessage>,
-): RenderedMessage {
-  return {
-    turnIndex: 0,
-    seq: 0,
-    role: partial.kind === "assistant_response" ? "assistant" : "user",
-    ...partial,
-  };
-}
+const userText = (content: string): WaveChatLogEntryForClient => ({
+  role: "user",
+  kind: "text",
+  content,
+});
+const userAnswers = (
+  questionnaireId: string,
+  responses: WaveChatLogEntryForClient extends infer T
+    ? T extends { kind: "answers"; responses: infer R }
+      ? R
+      : never
+    : never,
+): WaveChatLogEntryForClient => ({
+  role: "user",
+  kind: "answers",
+  questionnaireId,
+  responses,
+});
+const assistantText = (content: string): WaveChatLogEntryForClient => ({
+  role: "assistant",
+  kind: "text",
+  content,
+});
+const assistantQ = (
+  questionnaireId: string,
+  content: string,
+  questions: WaveChatLogEntryForClient extends infer T
+    ? T extends { kind: "text_with_questionnaire"; questions: infer Q }
+      ? Q
+      : never
+    : never,
+): WaveChatLogEntryForClient => ({
+  role: "assistant",
+  kind: "text_with_questionnaire",
+  questionnaireId,
+  content,
+  questions,
+});
 
 describe("deriveWaveTurns", () => {
-  it("returns empty array when there are no messages", () => {
-    expect(deriveWaveTurns([], null)).toEqual([]);
+  it("returns empty array on empty log", () => {
+    expect(deriveWaveTurns([])).toEqual([]);
   });
 
-  it("maps user_message → user-text, card_answer → user-questionnaire-answers, assistant_response → assistant-text", () => {
-    const messages: readonly RenderedMessage[] = [
-      msg({ id: "a1", kind: "assistant_response", content: "Welcome to wave 1." }),
-      msg({ id: "u1", kind: "user_message", content: "Tell me more." }),
-      msg({ id: "a2", kind: "assistant_response", content: "Sure — concept X." }),
-      msg({ id: "c1", kind: "card_answer", content: "1. Q — A" }),
-      msg({ id: "a3", kind: "assistant_response", content: "Nice, on to concept Y." }),
+  it("maps user-text → user-text, assistant-text → assistant-text", () => {
+    const log: WaveChatLogEntryForClient[] = [
+      assistantText("Welcome."),
+      userText("Tell me more."),
+      assistantText("Sure."),
     ];
-    const turns = deriveWaveTurns(messages, null);
-    expect(turns).toEqual([
-      { kind: "assistant-text", content: "Welcome to wave 1." },
+    expect(deriveWaveTurns(log)).toEqual([
+      { kind: "assistant-text", content: "Welcome." },
       { kind: "user-text", content: "Tell me more." },
-      { kind: "assistant-text", content: "Sure — concept X." },
-      { kind: "user-questionnaire-answers", content: "1. Q — A" },
-      { kind: "assistant-text", content: "Nice, on to concept Y." },
+      { kind: "assistant-text", content: "Sure." },
     ]);
   });
 
-  it("attaches the openQuestionnaire to the LATEST assistant_response when ids match", () => {
-    const openQ: OpenQuestionnaireForClient = {
-      questionnaireId: "a3",
-      questions: [
+  it("formats user-answers via formatAnswers using the matching questionnaire's questions", () => {
+    const log: WaveChatLogEntryForClient[] = [
+      assistantQ("q-1", "Try this:", [
         {
-          id: "q1",
+          id: "qa",
           type: "multiple_choice",
-          prompt: "2+2?",
-          options: { A: "3", B: "4", C: "5", D: "6" },
+          prompt: "?",
+          options: { A: "1", B: "2", C: "3", D: "4" },
           correctEnc: "enc",
           freetextRubric: "n/a",
         },
-      ],
-    };
-    const messages: readonly RenderedMessage[] = [
-      msg({ id: "a1", kind: "assistant_response", content: "intro" }),
-      msg({ id: "u1", kind: "user_message", content: "ok" }),
-      msg({ id: "a3", kind: "assistant_response", content: "Try this card:" }),
+      ]),
+      userAnswers("q-1", [{ questionId: "qa", choice: "B" }]),
     ];
-    const turns = deriveWaveTurns(messages, openQ);
-
-    expect(turns).toHaveLength(3);
-    // First assistant turn stays plain even though a questionnaire exists —
-    // attachment is restricted to the latest assistant_response.
-    expect(turns[0]).toEqual({ kind: "assistant-text", content: "intro" });
-    expect(turns[1]).toEqual({ kind: "user-text", content: "ok" });
-    expect(turns[2]).toEqual({
-      kind: "assistant-text-with-questionnaire",
-      content: "Try this card:",
-      questionnaire: {
-        questionnaireId: "a3",
-        questions: openQ.questions,
-      },
+    const turns = deriveWaveTurns(log);
+    // The answered questionnaire emits as plain assistant-text (no open Q).
+    expect(turns[0]).toEqual({ kind: "assistant-text", content: "Try this:" });
+    expect(turns[1]).toEqual({
+      kind: "user-questionnaire-answers",
+      content: "1. ? — 2",
     });
   });
 
-  it("emits plain assistant-text when openQuestionnaire id does NOT match the latest assistant row (defensive)", () => {
-    // openQuestionnaire references a row that isn't the latest assistant_response.
-    // The defensive fallback keeps the scroll renderable as plain text.
-    const openQ: OpenQuestionnaireForClient = {
-      questionnaireId: "stale-id",
-      questions: [],
-    };
-    const messages: readonly RenderedMessage[] = [
-      msg({ id: "a-latest", kind: "assistant_response", content: "Latest assistant turn." }),
+  it("emits assistant-text-with-questionnaire for the LATEST unanswered text_with_questionnaire", () => {
+    const log: WaveChatLogEntryForClient[] = [
+      assistantQ("q-1", "Old card", [
+        { id: "qa", type: "free_text", prompt: "Why?", freetextRubric: "n/a" },
+      ]),
+      userAnswers("q-1", [{ questionId: "qa", freetext: "because" }]),
+      assistantQ("q-2", "New card", [
+        { id: "qb", type: "free_text", prompt: "How?", freetextRubric: "n/a" },
+      ]),
     ];
-    const turns = deriveWaveTurns(messages, openQ);
-    expect(turns).toEqual([{ kind: "assistant-text", content: "Latest assistant turn." }]);
-  });
-
-  it("falls back to plain assistant-text when openQuestionnaire is null", () => {
-    const messages: readonly RenderedMessage[] = [
-      msg({ id: "a1", kind: "assistant_response", content: "Just prose, no card." }),
-    ];
-    const turns = deriveWaveTurns(messages, null);
-    expect(turns).toEqual([{ kind: "assistant-text", content: "Just prose, no card." }]);
+    const turns = deriveWaveTurns(log);
+    expect(turns[0]).toEqual({ kind: "assistant-text", content: "Old card" }); // answered → text
+    expect(turns[2]).toEqual({
+      kind: "assistant-text-with-questionnaire",
+      content: "New card",
+      questionnaire: {
+        questionnaireId: "q-2",
+        questions: [{ id: "qb", type: "free_text", prompt: "How?", freetextRubric: "n/a" }],
+      },
+    });
   });
 });
