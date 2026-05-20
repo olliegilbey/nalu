@@ -4,13 +4,14 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles, assessments, concepts, waves, courses } from "@/db/schema";
 import { createCourse, setCourseStartingState } from "@/db/queries/courses";
-import { openWave } from "@/db/queries/waves";
+import { openWave, getWaveByCourseAndNumber } from "@/db/queries/waves";
 import { appendMessage, getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts";
 import { insertOpenAssessments } from "@/db/queries/assessments";
 import { WAVE } from "@/lib/config/tuning";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
+import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { loadWaveContext } from "./loadWaveContext";
 import { executeWaveClose } from "./executeWaveClose";
 import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTurn";
@@ -456,6 +457,51 @@ describe("executeWaveClose (integration)", () => {
       // Both rows must land on the same turn — the one `getNextTurnIndex`
       // allocated to executeTurn after the seed questionnaire at turn 1.
       expect(userRow!.turnIndex).toBe(assistantCloseRow!.turnIndex);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 5. chat_log dual-write: paired with the close-turn assistant_response in
+  //    context_messages (Wave N) and the seed assistant_response on Wave N+1
+  //    turn-0. The wave UI reads chat_log; this test pins the two-store
+  //    invariant for wave-close (mirror of Task 6's scoping → Wave 1 path).
+  // ---------------------------------------------------------------------------
+  it("dual-writes chat_log: closing entry on Wave N, opening on Wave N+1", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave(2);
+      await seedOpenFreeTextQuestionnaire(courseId, waveId);
+
+      const parsed = makeParsedClose();
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
+      );
+
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
+
+      // Closing wave gains the final assistant text entry at the tail of chat_log.
+      // `chatLog` is typed `unknown` on the Drizzle row (jsonb isn't parameterised);
+      // the row guard validates the shape on read, so the cast here is a typing
+      // formality, not a trust-boundary bypass. Mirrors submitBaseline test usage.
+      const closingWave = await getWaveByCourseAndNumber(courseId, 2);
+      if (!closingWave) throw new Error("closing wave must still exist");
+      const closingChatLog = closingWave.chatLog as WaveChatLog;
+      expect(closingChatLog.at(-1)).toEqual({
+        role: "assistant",
+        kind: "text",
+        content: parsed.userMessage,
+      });
+
+      // Next wave starts with a single assistant opening text entry.
+      const nextWave = await getWaveByCourseAndNumber(courseId, 3);
+      if (!nextWave) throw new Error("next wave must exist");
+      expect(nextWave.chatLog).toEqual([
+        {
+          role: "assistant",
+          kind: "text",
+          content: parsed.nextUnitBlueprint.openingText,
+        },
+      ]);
     });
   });
 });

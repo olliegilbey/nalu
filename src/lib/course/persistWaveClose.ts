@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { WAVE } from "@/lib/config/tuning";
-import { closeWave, openWave } from "@/db/queries/waves";
+import { appendWaveChatLog, closeWave, openWave } from "@/db/queries/waves";
 import { getConceptsByCourse, getDueConceptsByCourse } from "@/db/queries/concepts";
 import { appendMessage } from "@/db/queries/contextMessages";
 import { dueConceptsSnapshotSchema, type FrameworkJsonb } from "@/lib/types/jsonb";
@@ -93,6 +93,17 @@ export async function persistWaveClose(
       tx,
     );
 
+    // 3b. Closing assistant entry on Wave N's chat_log — paired with the
+    //     close-turn assistant_response that was persisted by executeTurn in
+    //     the parent executeWaveClose. Same two-store invariant as mid-turn
+    //     (see executeWaveMid): context_messages = LLM replay log;
+    //     chat_log = wave UI's typed source of truth.
+    await appendWaveChatLog(tx, ctx.wave.id, {
+      role: "assistant",
+      kind: "text",
+      content: parsed.userMessage,
+    });
+
     // 4. Gated tier-advancement check. Two gates ORed: scheduled interval
     //    modulo OR consolidation (empty plannedConcepts). The consolidation
     //    gate is the failsafe — a wave that spent its time consolidating
@@ -158,6 +169,15 @@ export async function persistWaveClose(
       },
       tx,
     );
+
+    // 7b. Opening assistant entry on Wave N+1's chat_log. Mirror of step 7's
+    //     context_messages seed: that one is the LLM replay log; this one is
+    //     the wave UI's typed source of truth.
+    await appendWaveChatLog(tx, nextWave.id, {
+      role: "assistant",
+      kind: "text",
+      content: parsed.nextUnitBlueprint.openingText,
+    });
 
     // 8. Bump total_xp by completionXp. Inline raw UPDATE rather than
     //    `incrementCourseXp` (singleton-bound).
