@@ -10,6 +10,7 @@ import {
   type SeedSource,
   type Blueprint,
 } from "@/lib/types/jsonb";
+import { waveChatLogSchema } from "@/lib/types/jsonbWaveChatLog";
 import { NotFoundError } from "./errors";
 
 /**
@@ -50,6 +51,10 @@ export function waveRowGuard(row: Wave): Wave {
     seedSource: seedSourceSchema.parse(row.seedSource),
     // blueprintEmitted is nullable — only validate when populated.
     blueprintEmitted: blueprintEmittedSchema.parse(row.blueprintEmitted),
+    // chat_log is NOT NULL with a default of [], so it's always populated.
+    // Validation here mirrors the trust-boundary discipline of courseRowGuard.
+    // Cast needed because Drizzle types unparameterised JSONB as `unknown`.
+    chatLog: waveChatLogSchema.parse(row.chatLog) as Wave["chatLog"],
   };
 }
 
