@@ -10,7 +10,7 @@ import {
   type SeedSource,
   type Blueprint,
 } from "@/lib/types/jsonb";
-import { waveChatLogSchema } from "@/lib/types/jsonbWaveChatLog";
+import { waveChatLogSchema, type WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 import { NotFoundError } from "./errors";
 
 /**
@@ -276,4 +276,36 @@ export async function closeWave(id: string, params: CloseWaveParams, tx?: DbOrTx
   const [row] = await exec.select().from(waves).where(eq(waves.id, id));
   if (!row) throw new NotFoundError("wave", id);
   return waveRowGuard(row);
+}
+
+// ---------------------------------------------------------------------------
+// chat_log append (typed JSONB store for the wave UI — mirrors scoping's
+// per-stage JSONB columns on `courses`).
+// ---------------------------------------------------------------------------
+
+/**
+ * Append one entry to `waves.chat_log`.
+ *
+ * Uses Postgres JSONB `||` concat so the write is atomic: no read-modify-write
+ * round-trip, no lost-update race when two tx's append in parallel against the
+ * same wave (they serialise on the row lock and apply in commit order).
+ *
+ * `tx` opts the UPDATE into a caller's transaction so the chat_log append
+ * rolls back atomically with sibling writes (e.g. the executeWaveMid tx that
+ * inserts assessment rows + persists context_messages).
+ */
+export async function appendWaveChatLog(
+  exec: DbOrTx,
+  waveId: string,
+  entry: WaveChatLogEntry,
+): Promise<void> {
+  // `::jsonb` cast guarantees Postgres treats the parameter as JSONB even
+  // though the driver sends it as a JSON-encoded string. The array wrap is
+  // required by `||` semantics (append-many).
+  const payload = JSON.stringify([entry]);
+  await exec.execute(sql`
+    UPDATE waves
+    SET chat_log = chat_log || ${payload}::jsonb
+    WHERE id = ${waveId}
+  `);
 }
