@@ -181,7 +181,7 @@ Both blueprint variants carry the extended fields: `topic`, `outline`, `openingT
 
 `src/lib/prompts/teaching.ts` is rewritten. The legacy multi-XML-tag output format is removed; the system prompt declares the single-JSON contract identically to scoping:
 
-```
+```text
 You respond with a single JSON object validated against the provided schema.
 Do not emit XML tags or other framing.
 ```
@@ -190,7 +190,7 @@ Do not emit XML tags or other framing.
 
 A separate `<pedagogy>` block is rejected — pedagogy is part of who Nalu is, not a side-channel rule list. The `ROLE_BLOCK` becomes flowing prose:
 
-```
+```text
 <role>
 You are Nalu, an expert teacher and tutor. You teach in short bite-sized
 lessons — each lesson is about ten turns of dialogue, roughly five minutes
@@ -217,7 +217,7 @@ exact string.
 
 Rendered once at Wave-open into the system prompt, derived from `seed_source.blueprint.plannedConcepts`. Format:
 
-```
+```text
 <planned_concepts>
 - name: "Forces of supply and demand" (tier 2, fresh)
 - name: "Price elasticity basics" (tier 2, review)
@@ -231,7 +231,7 @@ This block is what makes concept-name drift impossible: the model is shown the c
 
 On the final turn the harness appends a sibling block to the user envelope (not the system prompt — Context byte-stability) listing fresh and review-due concepts for the model to choose from when designing Wave N+1's blueprint:
 
-```
+```text
 <concepts_for_next_wave>
 <fresh_at_current_tier>
 - "Concept A"

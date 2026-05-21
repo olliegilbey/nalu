@@ -37,7 +37,7 @@ export async function getFreshConcepts(
   const filtered = all
     .filter((c) => c.tier === currentTier && c.lastReviewedAt === null)
     .map((c) => ({ name: c.name, tier: c.tier, lastQuality: c.lastQualityScore }));
-  return [...filtered].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return filtered.toSorted((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
 /**

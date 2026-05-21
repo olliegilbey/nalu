@@ -39,7 +39,7 @@ This work supersedes TODO entry #26 ("JSON-everywhere refactor for wave context_
 
 After this refactor, the write/read pattern is symmetric across phases:
 
-```
+```text
 Scoping (reference, today):
   executeTurn  ──writes──▶  context_messages.content (XML envelope, LLM replay only)
         │

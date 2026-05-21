@@ -46,6 +46,11 @@ const comprehensionSignalSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
+/**
+ * Zod schema for a mid-Wave model response: required teaching `userMessage`,
+ * plus optional `comprehensionSignals` (prior-answer grading) and
+ * `questionnaire` (1-N new questions). Used as `executeTurn`'s `responseSchema`.
+ */
 export const waveMidTurnSchema = z.object({
   userMessage: z
     .string()
@@ -66,8 +71,10 @@ export const waveMidTurnSchema = z.object({
     ),
 });
 
+/** Parsed mid-Wave model response — the inferred shape of {@link waveMidTurnSchema}. */
 export type WaveMidTurn = z.infer<typeof waveMidTurnSchema>;
 
+/** Inputs to {@link renderWaveTurnEnvelope} — the per-turn mid-Wave user envelope. */
 export interface RenderWaveTurnEnvelopeParams {
   /** Pre-built envelope body (e.g. `<learner_reply>…</learner_reply>` or `<questionnaire_answers>…</questionnaire_answers>`). */
   readonly learnerInput: string;

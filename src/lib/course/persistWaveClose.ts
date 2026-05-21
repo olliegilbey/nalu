@@ -14,6 +14,11 @@ import {
   type PersistedGradedSignal,
 } from "./persistWaveClose.helpers";
 
+/**
+ * Re-exported from `persistWaveClose.helpers` so callers import the
+ * close-turn graded-signal shape (`kind`, `questionId`, `xpAwarded`) from
+ * this module's public surface.
+ */
 export type { PersistedGradedSignal };
 
 /** Inputs to {@link persistWaveClose}. */

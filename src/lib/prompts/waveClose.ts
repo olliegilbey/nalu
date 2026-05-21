@@ -66,8 +66,10 @@ export function makeWaveCloseSchema(params: MakeCloseTurnBaseSchemaParams) {
   );
 }
 
+/** Parsed wave-close model response: the close-turn base plus `conceptUpdates[]`. */
 export type WaveCloseTurn = z.infer<ReturnType<typeof makeWaveCloseSchema>>;
 
+/** Inputs to {@link renderWaveCloseEnvelope} — the close-turn user envelope. */
 export interface RenderWaveCloseEnvelopeParams {
   readonly learnerInput: string;
   /** Pre-rendered `<concepts_for_next_wave>…</concepts_for_next_wave>` block from `scheduler.renderConceptInjection`. */

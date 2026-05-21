@@ -45,7 +45,7 @@ If `context_messages` is honest about what the LLM saw, two needs are still unme
 
 The pattern, in any phase:
 
-```
+```text
 1. updateTypedJsonb(...learner input...)   ← persists durably, before LLM
 2. executeTurn(...)                         ← atomic context_messages batch on success
 3. updateTypedJsonb(...assistant output...) ← persists typed projection
@@ -68,7 +68,7 @@ Scoping and wave share the **primitives** but pick different **column shapes** b
 
 **Scoping** — fixed-cardinality stages (clarify → framework → baseline). One typed JSONB column per stage on `courses`:
 
-```
+```text
 courses.clarification = { userMessage, questions, responses }
 courses.framework     = { userMessage, tiers, estimatedStartingTier, baselineScopeTiers }
 courses.baseline      = { userMessage, questions, responses[, gradings, startingTier, ...] }
@@ -76,7 +76,7 @@ courses.baseline      = { userMessage, questions, responses[, gradings, starting
 
 **Wave** — variable-cardinality turns (up to `WAVE.turnCount` per wave). One JSONB array column on `waves`:
 
-```
+```text
 waves.chat_log = WaveChatLogEntry[]
   // each entry: { role, kind, content?, questionnaireId?, questions?, responses? }
 ```

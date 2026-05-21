@@ -59,3 +59,40 @@ refine `.message` should be teacher-style so the retry attempt can recover.
 
 **Promote when:** any other wave-teaching schema refines land (Task 12+) and
 the refine surface starts paying for itself.
+
+## Concurrency races (deferred — single-user serial MVP)
+
+These are theoretical for the current flow: one learner, one wave, turns
+submitted serially. CodeRabbit flagged them on PR #12; the fixes are
+architectural and not worth landing until concurrent same-wave submissions
+become possible.
+
+### `executeWaveMid` selects the assistant row by `desc(turnIndex)` / `limit(1)`
+
+**Files:** `src/lib/course/executeWaveMid.ts`
+
+After `executeTurn` persists the `assistant_response`, `executeWaveMid`
+re-finds that row with `orderBy(desc(turnIndex)).limit(1)`. Two concurrent
+same-wave submissions could each pick up the _other's_ freshly-written row,
+attaching grading + questionnaire state to the wrong turn.
+
+**Fix:** thread the persisted assistant message id + turnIndex out of
+`executeTurn` directly and select by that id, instead of the desc/limit
+lookup.
+
+**Promote when:** concurrent same-wave submission becomes reachable (e.g.
+multi-device, or background retry that races a live submit).
+
+### `submitWaveTurn` guard→append flow is non-atomic
+
+**Files:** `src/lib/course/submitWaveTurn.ts`
+
+The §7.4 precondition guards run as a load → check → append sequence with no
+row lock. Two concurrent same-wave submissions can both pass the guards on
+the same pre-state and both append, double-accepting a turn.
+
+**Fix:** wrap load → guard → append in one transaction with
+`SELECT ... FOR UPDATE` (or a compare-and-swap) on the wave row so the second
+submission blocks until the first commits, then re-evaluates the guards.
+
+**Promote when:** concurrent same-wave submission becomes reachable.
