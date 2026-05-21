@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
 import { deriveWaveTurns } from "@/lib/course/deriveWaveTurns";
 import { adaptOpenQuestion } from "@/lib/course/adaptQuestionnaire";
+import { useCourseXp } from "./useCourseXp";
 import type { ActiveQuestionnaire } from "./useScopingState";
 import type { Turn } from "@/lib/types/turn";
 import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
@@ -37,6 +38,18 @@ export interface UseWaveStateResult {
    * `closeResult` is null. `null` until the state query resolves.
    */
   readonly status: WaveState["status"] | null;
+  /** Course topic — drives the wave header title. Null until the query resolves. */
+  readonly topic: string | null;
+  /** Wave tier — fallback for client-side MC XP. Null until the query resolves. */
+  readonly currentTier: number | null;
+  /** Running XP total for the course (display counter). */
+  readonly xp: number;
+  /** Bumped on each XP gain — drives the header badge animation. */
+  readonly xpPulseKey: number;
+  /** Amount of the most recent XP gain. */
+  readonly xpGainAmount: number;
+  /** Records exact MC XP from a correct answer. Wired to the Composer. */
+  readonly awardMcXp: (amount: number) => void;
   readonly isPending: boolean;
   readonly submitChatText: (text: string) => void;
   readonly submitQuestionnaireAnswers: (answers: readonly ShapedQuestionnaireAnswer[]) => void;
@@ -52,13 +65,16 @@ export interface UseWaveStateResult {
  * scoping-close, so the scroll is non-empty on first paint.
  *
  * Result `kind` branches:
- * - `mid-turn` → fire one toast per `gradedSignals` entry (XP hint), invalidate.
+ * - `mid-turn` → sum server-graded free-text XP into the badge counter,
+ *   invalidate.
  * - `close-turn` → store `closeResult` so the page can render the move-on CTA;
- *   fire a completion banner; invalidate (so a back-nav sees fresh state).
+ *   add completion XP to the badge, fire the tier-up toast if a tier advanced,
+ *   invalidate (so a back-nav sees fresh state).
  */
 export function useWaveState(courseId: string, waveNumber: number): UseWaveStateResult {
   const trpc = useTRPC();
   const qc = useQueryClient();
+  const courseXp = useCourseXp(courseId);
 
   const stateOpts = trpc.wave.getState.queryOptions({ courseId, waveNumber });
   const state = useQuery(stateOpts);
@@ -75,22 +91,22 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     trpc.wave.submitTurn.mutationOptions({
       onSuccess: (result) => {
         if (result.kind === "mid-turn") {
-          // One toast per graded answer. XP-only — comprehension/quality stays
-          // invisible per spec (`src/components/CLAUDE.md`).
-          for (const sig of result.gradedSignals) {
-            if (sig.xpAwarded > 0) {
-              toast.success(`+${sig.xpAwarded} XP`, { duration: 1500 });
-            }
-          }
+          // Free-text XP is server-graded; sum it into one badge pulse. MC XP
+          // is already counted client-side at confirm time (Composer
+          // onCorrectAnswer) — skip `mc-index` signals to avoid double-counting.
+          const freeTextXp = result.gradedSignals
+            .filter((s) => s.kind === "free-text")
+            .reduce((sum, s) => sum + s.xpAwarded, 0);
+          courseXp.addXp(freeTextXp);
         } else {
-          // close-turn — capture the close result + tier banner.
+          // close-turn — capture the close result + completion XP.
           setCloseResult({
             closingMessage: result.closingMessage,
             nextWaveNumber: result.nextWaveNumber,
             completionXpAwarded: result.completionXpAwarded,
             tierAdvancedTo: result.tierAdvancedTo,
           });
-          toast.success(`Wave complete: +${result.completionXpAwarded} XP`, { duration: 2500 });
+          courseXp.addXp(result.completionXpAwarded);
           if (result.tierAdvancedTo !== null) {
             toast.success(`Tier up → ${result.tierAdvancedTo}`, { duration: 3000 });
           }
@@ -185,6 +201,12 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     closeResult,
     // Server-authoritative status; null until the query resolves.
     status: state.data?.status ?? null,
+    topic: state.data?.topic ?? null,
+    currentTier: state.data?.currentTier ?? null,
+    xp: courseXp.xp,
+    xpPulseKey: courseXp.pulseKey,
+    xpGainAmount: courseXp.gainAmount,
+    awardMcXp: courseXp.addXp,
     isPending,
     submitChatText,
     submitQuestionnaireAnswers,

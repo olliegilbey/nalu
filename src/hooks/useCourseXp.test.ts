@@ -2,49 +2,12 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useCourseXp } from "./useCourseXp";
-
-/**
- * In-memory `Storage` polyfill.
- *
- * Bun + jsdom in this repo exposes a `window.localStorage` object whose
- * methods (`getItem`/`setItem`/`clear`/...) are all `undefined` — Bun's
- * experimental native `--localstorage-file` stub shadows jsdom's working
- * implementation. The hook's `try/catch` survives that gracefully, but a
- * persistence test needs a *real* Storage, so we install one per test.
- */
-class MemoryStorage implements Storage {
-  private store = new Map<string, string>();
-  get length(): number {
-    return this.store.size;
-  }
-  clear(): void {
-    // eslint-disable-next-line functional/immutable-data -- a Storage polyfill is inherently stateful
-    this.store.clear();
-  }
-  getItem(key: string): string | null {
-    return this.store.get(key) ?? null;
-  }
-  key(index: number): string | null {
-    return [...this.store.keys()][index] ?? null;
-  }
-  removeItem(key: string): void {
-    // eslint-disable-next-line functional/immutable-data -- a Storage polyfill is inherently stateful
-    this.store.delete(key);
-  }
-  setItem(key: string, value: string): void {
-    // eslint-disable-next-line functional/immutable-data -- a Storage polyfill is inherently stateful
-    this.store.set(key, String(value));
-  }
-}
+import { installMemoryStorage } from "@/lib/testing/memoryStorage";
 
 beforeEach(() => {
-  // Replace the broken Bun/jsdom stub with a working in-memory Storage.
-  // eslint-disable-next-line functional/immutable-data -- swapping in a working localStorage shim for the test
-  Object.defineProperty(window, "localStorage", {
-    value: new MemoryStorage(),
-    configurable: true,
-    writable: true,
-  });
+  // Bun/jsdom's localStorage stub is broken; install a working in-memory
+  // Storage (fresh per test, so XP totals don't leak). See the module's TSDoc.
+  installMemoryStorage();
 });
 
 describe("useCourseXp", () => {

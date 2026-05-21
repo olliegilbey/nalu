@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
+import { installMemoryStorage } from "@/lib/testing/memoryStorage";
 
 // Mock sonner so we can assert toast calls without dragging the real lib in.
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -26,6 +27,7 @@ let latestOnError: ((err: unknown) => void) | undefined;
 // `vi.mock("@/lib/trpc", ...)` factory reads from this cell on each query.
 const defaultStateData = {
   courseId: "c1",
+  topic: "Test topic",
   waveId: "w1",
   waveNumber: 1,
   currentTier: 1,
@@ -84,6 +86,9 @@ beforeEach(() => {
   latestOnError = undefined;
   currentState = defaultStateData;
   /* eslint-enable functional/immutable-data */
+  // Fresh in-memory localStorage per test — useWaveState now depends on
+  // useCourseXp, and tests sharing courseId "c1" must not leak XP totals.
+  installMemoryStorage();
 });
 
 describe("useWaveState", () => {
@@ -167,6 +172,33 @@ describe("useWaveState", () => {
       completionXpAwarded: 50,
       tierAdvancedTo: 2,
     });
+    await waitFor(() => expect(result.current.xp).toBe(50));
+  });
+
+  it("adds free-text XP to the badge and skips mc-index signals", async () => {
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
+
+    act(() => result.current.submitChatText("an answer"));
+    await waitFor(() => expect(latestOnSuccess).toBeDefined());
+
+    act(() =>
+      latestOnSuccess?.({
+        kind: "mid-turn",
+        gradedSignals: [
+          { kind: "free-text", questionId: "q1", xpAwarded: 30 },
+          { kind: "mc-index", questionId: "q2", xpAwarded: 20 },
+        ],
+      }),
+    );
+
+    await waitFor(() => expect(result.current.xp).toBe(30));
+  });
+
+  it("exposes the course topic and current tier", async () => {
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.topic).toBe("Test topic"));
+    expect(result.current.currentTier).toBe(1);
   });
 
   it("threads the server-authoritative status through the hook", async () => {
