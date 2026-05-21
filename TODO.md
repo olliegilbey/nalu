@@ -96,3 +96,24 @@ the same pre-state and both append, double-accepting a turn.
 submission blocks until the first commits, then re-evaluates the guards.
 
 **Promote when:** concurrent same-wave submission becomes reachable.
+
+### `awaitCerebrasCallSlot` slot acquisition is not serialized
+
+**Files:** `src/lib/llm/cerebrasRateLimit.ts`
+
+`awaitCerebrasCallSlot()` does read-state → `await sleep(...)` → write-state.
+The `await` yields, so two concurrent LLM calls on the _same_ Node instance
+both read the stale `lastDispatchAtMs`, compute the same spacing wait, and
+dispatch together — defeating the 5-RPM floor. This is the in-process twin of
+the already-documented cross-invocation raciness (see the module header in
+`cerebrasRateLimit.ts`): same trigger (two concurrent `generateChat` calls),
+which cannot happen for one learner submitting turns serially.
+
+**Fix:** the proper cross-invocation fix is a shared store (Redis/DB) with
+atomic acquisition; that store serializes within an instance too, subsuming
+this race. A standalone in-process fix (chain each call through a single
+`limiterQueue: Promise<void>`) is ~10 lines but would be discarded by the
+shared-store rewrite — not worth landing separately.
+
+**Promote when:** the shared-store rate limiter is built, OR concurrent
+`generateChat` calls become reachable before then.
