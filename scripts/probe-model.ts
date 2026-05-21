@@ -22,6 +22,24 @@ const PROBE_SCHEMA = z.object({
   count: z.literal(1),
 });
 
+/**
+ * Description-following probe. The deciding question for Nalu's prompt
+ * architecture: does a strict-mode model actually READ field `description`
+ * annotations, or only obey the structural grammar?
+ *
+ * `payload` is a deliberately neutral field name — it implies nothing about
+ * its value. The grammar permits any string. The magic token lives ONLY in
+ * the `.describe()` annotation; the probe's user message never mentions it.
+ * If the model returns the token, the schema's descriptions are demonstrably
+ * in the model's context — not just compiled into the decoder grammar.
+ */
+const DESC_PROBE_MAGIC = "ARTICHOKE-7732";
+const DESC_PROBE_SCHEMA = z.object({
+  payload: z
+    .string()
+    .describe(`Set this field's value to exactly this token and nothing else: ${DESC_PROBE_MAGIC}`),
+});
+
 async function main(): Promise<void> {
   const model = process.env.LLM_MODEL;
   if (!model || model.length === 0) {
@@ -84,6 +102,64 @@ async function main(): Promise<void> {
     console.error(`STRICT FAILED in ${Date.now() - strictStarted}ms`);
     console.error(err);
     process.exit(3);
+  }
+
+  // Description-following probe: does the model READ field `description`
+  // annotations, or only obey the structural grammar? The magic token lives
+  // ONLY in the schema's `.describe()` — neither the system nor the user
+  // message mentions it, and `payload` is a neutral field name. The system
+  // prompt mirrors real Nalu usage (instruct schema-following) so the verdict
+  // generalises to production rather than reflecting a bare-prompt artefact.
+  // A returned token proves descriptions reach and steer the model.
+  const descStarted = Date.now();
+  try {
+    const result = await generateChat(
+      [
+        {
+          role: "system",
+          content:
+            "Reply with a single JSON object that conforms to the response schema you are given. Read each field's description and follow it exactly.",
+        },
+        { role: "user", content: "Return the JSON object." },
+      ],
+      {
+        responseSchema: DESC_PROBE_SCHEMA,
+        responseSchemaName: "desc_probe",
+        // Capability-gate key = the real model under test (env LLM_MODEL).
+        // gpt-oss-120b is registry-marked honorsStrictMode, so the gate opens
+        // and `response_format` is emitted on the wire.
+        modelName: process.env.LLM_MODEL,
+      },
+    );
+    console.log(`DESC-FOLLOWING responded in ${Date.now() - descStarted}ms`);
+    console.log(`  raw response: ${JSON.stringify(result.text)}`);
+    // Defensive parse: strip a markdown code fence if the model wrapped its
+    // JSON in one (strict mode should prevent this — log + recover rather
+    // than crash so the probe still prints a verdict either way).
+    const raw = result.text.trim();
+    const jsonText = raw.startsWith("```")
+      ? raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")
+      : raw;
+    let got = "(unparsed)";
+    try {
+      const parsed = DESC_PROBE_SCHEMA.safeParse(JSON.parse(jsonText));
+      got = parsed.success
+        ? parsed.data.payload
+        : `(schema mismatch: ${JSON.stringify(parsed.error.issues)})`;
+    } catch (parseErr) {
+      got = `(JSON parse failed: ${String(parseErr)})`;
+    }
+    const readsDescriptions = got === DESC_PROBE_MAGIC;
+    console.log(`  expected payload: ${DESC_PROBE_MAGIC}`);
+    console.log(`  got payload:      ${got}`);
+    console.log(
+      `  → strict-mode model ${readsDescriptions ? "DOES" : "DOES NOT"} read field descriptions`,
+    );
+    console.log(`  usage: ${JSON.stringify(result.usage)}`);
+  } catch (err) {
+    console.error(`DESC-FOLLOWING FAILED in ${Date.now() - descStarted}ms`);
+    console.error(err);
+    process.exit(4);
   }
 }
 
