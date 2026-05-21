@@ -14,6 +14,7 @@
     "src/db/queries/contextMessages.ts",
     "src/db/queries/concepts.ts",
     "src/db/queries/assessments.ts",
+    "scripts/inspect-wave.ts",
     "scripts/probe-model.ts"
   ],
   "ignore": [],
