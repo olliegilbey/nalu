@@ -90,4 +90,20 @@ describe("awaitLiveCallSlot", () => {
     const delay = await measure(awaitLiveCallSlot());
     expect(delay).toBe(0);
   });
+
+  it("waits only the remaining spacing when the window is partly elapsed", async () => {
+    process.env.CEREBRAS_LIVE = "1";
+
+    // First call records its dispatch timestamp.
+    await measure(awaitLiveCallSlot());
+
+    // Advance partway through the spacing window — less than minSpacing.
+    const partialElapsed = 1_000;
+    await vi.advanceTimersByTimeAsync(partialElapsed);
+
+    // The next call must wait only the REMAINDER, exercising the
+    // `minSpacing - elapsed` arithmetic directly (not just its boundaries).
+    const delay = await measure(awaitLiveCallSlot());
+    expect(delay).toBe(LLM.liveCallMinSpacingMs - partialElapsed);
+  });
 });
