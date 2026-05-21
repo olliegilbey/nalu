@@ -11,9 +11,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Check, ChevronLeft, ChevronRight, Mic, Plus } from "lucide-react";
-import { toast } from "sonner";
 import { t } from "@/i18n";
 import { playCorrect, playWrong } from "@/lib/sound";
+import { calculateMcXp } from "@/lib/scoring/xp";
 
 export type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
@@ -28,6 +28,8 @@ export function Composer({
   isFirstMessage,
   persistKey,
   moveOn,
+  onCorrectAnswer,
+  waveTier,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -43,6 +45,10 @@ export function Composer({
   persistKey?: string;
   /** When set, replaces the input row with a single advance button. */
   moveOn?: { readonly label: string; readonly onAdvance: () => void };
+  /** Called with exact XP when the learner confirms a correct MC answer. */
+  onCorrectAnswer?: (amount: number) => void;
+  /** Wave tier — fallback for MC XP when a question carries no per-question tier. */
+  waveTier?: number;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const hasQuestions = !!questions && questions.length > 0;
@@ -199,7 +205,10 @@ export function Composer({
     setLocked(true);
     if (isCorrect) {
       playCorrect();
-      toast.success("10 XP Gained", { duration: 1500 });
+      // Exact XP for a correct MC, computed client-side from the question's
+      // tier — the designated `calculateMcXp` instant path. Falls back to the
+      // wave tier, then to tier 1, when no per-question tier is present.
+      onCorrectAnswer?.(calculateMcXp(current.tier ?? waveTier ?? 1, true));
     } else playWrong();
 
     const chosen = current.options[currentPending]!;
