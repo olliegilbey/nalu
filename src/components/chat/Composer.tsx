@@ -119,8 +119,12 @@ export function Composer({
   const canSend = value.trim().length > 0 && !disabled;
   const currentPending = hasQuestions ? (pending[step] ?? null) : null;
   const hasPending = currentPending != null;
-  // "Confirm" mode: question is active, user picked an option, no free text.
-  const confirmMode = hasQuestions && hasPending && value.trim().length === 0;
+  // A step is locked once it has a recorded answer — its option can no longer
+  // be changed and no answer can be resubmitted for it.
+  const stepLocked = hasQuestions && answers[step] != null;
+  // "Confirm" mode: question is active, user picked an option, no free text,
+  // and the step is not already locked.
+  const confirmMode = hasQuestions && hasPending && !stepLocked && value.trim().length === 0;
 
   const current = hasQuestions ? questions![step] : null;
   const total = hasQuestions ? questions!.length : 0;
@@ -167,6 +171,8 @@ export function Composer({
 
   const selectOption = (i: number) => {
     if (!hasQuestions || locked) return;
+    // Once an answer is locked in for this step, it cannot be changed.
+    if (answers[step] != null) return;
     // Tapping selects but does NOT advance. Confirm button locks it in.
     const next = [...pending];
     next[step] = i;
@@ -175,6 +181,8 @@ export function Composer({
 
   const clearPending = () => {
     if (!hasQuestions) return;
+    // Don't clear a locked-in answer.
+    if (answers[step] != null) return;
     if (pending[step] == null) return;
     const next = [...pending];
     next[step] = null;
@@ -310,6 +318,7 @@ export function Composer({
                   {current.options.map((opt, i) => {
                     const isPending = currentPending === i;
                     const fb = feedback[step];
+                    const isLockedAnswer = answers[step] != null;
                     const pulseClass =
                       isPending && fb === "correct"
                         ? " pulse-correct border-spring-green text-foreground"
@@ -320,9 +329,10 @@ export function Composer({
                       <button
                         key={i}
                         onClick={() => selectOption(i)}
-                        disabled={disabled || locked}
+                        disabled={disabled || locked || isLockedAnswer}
                         className={
-                          "group flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 text-[14px] leading-snug transition-all active:scale-[0.99] disabled:opacity-60 border " +
+                          "group flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 text-[14px] leading-snug transition-all active:scale-[0.99] border disabled:cursor-not-allowed " +
+                          (isLockedAnswer && !isPending ? "opacity-40 " : "") +
                           (isPending
                             ? "bg-sumi-3 border-spring-green text-foreground"
                             : "bg-sumi-2 hover:bg-sumi-3 border-sumi-4 hover:border-crystal/50 text-foreground/90") +
@@ -363,6 +373,7 @@ export function Composer({
           ref={ref}
           rows={1}
           value={value}
+          disabled={stepLocked}
           onChange={(e) => {
             if (e.target.value.length > 0) clearPending();
             onChange(e.target.value);
