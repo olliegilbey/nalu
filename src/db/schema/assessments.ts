@@ -31,14 +31,17 @@ import { concepts } from "./concepts";
  * the question text so it can be rendered and audited; `inferred` rows may
  * omit it.
  *
- * `question_id` is the model-generated question id (verbatim from the prompt
- * envelope's `id` field on each question) — nullable because `inferred` rows
- * have no posed question. A partial unique index
- * (`assessments_wave_question_unique`) prevents the mid-turn orchestrator
- * from double-inserting the same model question id within a wave, and a CHECK
+ * `question_id` is the question identifier namespaced per questionnaire as
+ * `${questionnaireId}:${rawId}` via `namespaceQuestionId` — NOT the raw
+ * model-generated id. The model emits short ids (`q1`/`q2`) and restarts
+ * numbering per questionnaire, so raw ids are not wave-unique; namespacing
+ * makes them so. Nullable because `inferred` rows have no posed question.
+ * A partial unique index (`assessments_wave_question_unique`) on
+ * `(wave_id, question_id)` enforces that wave-uniqueness, and a CHECK
  * (`assessments_question_id_required_for_card_kinds`) mirrors the existing
  * `question` invariant: card kinds must carry a `question_id` so the grading
- * step can find the row to update via `getAssessmentByWaveAndQuestionId`.
+ * step can find the row to update via `getAssessmentByWaveAndQuestionId`
+ * (which namespaces its lookup with the same helper).
  */
 export const assessments = pgTable(
   "assessments",
@@ -52,8 +55,9 @@ export const assessments = pgTable(
       .references(() => concepts.id, { onDelete: "cascade" }),
     turnIndex: integer("turn_index").notNull(),
     question: text("question"),
-    // Model-generated question identifier (verbatim from waveMidTurn questionnaire's
-    // per-question `id` field). Nullable to keep `inferred` rows valid; the CHECK
+    // Question identifier namespaced per questionnaire (`${questionnaireId}:${rawId}`
+    // via `namespaceQuestionId`) so model-reused ids don't collide within a wave.
+    // Nullable to keep `inferred` rows valid; the CHECK
     // `assessments_question_id_required_for_card_kinds` enforces presence for card
     // kinds.
     questionId: text("question_id"),
