@@ -69,3 +69,23 @@ export async function incrementUserXp(id: string, amount: number): Promise<void>
     throw new NotFoundError("user_profile", id);
   }
 }
+
+/**
+ * Insert a `user_profiles` row for an authenticated user if one does not
+ * already exist.
+ *
+ * Called from `protectedProcedure` on every authenticated request. A visitor
+ * who just signed in anonymously (see `src/proxy.ts`) has an `auth.users` row
+ * but no `user_profiles` row yet — and `courses.user_id` references
+ * `user_profiles.id`. `onConflictDoNothing` makes repeated calls cheap and
+ * race-safe: first write wins, later calls are no-ops.
+ *
+ * `displayName` is `NOT NULL`; anonymous users have no name, so it defaults
+ * to `"Learner"`.
+ */
+export async function ensureUserProfile(userId: string): Promise<void> {
+  await db
+    .insert(userProfiles)
+    .values({ id: userId, displayName: "Learner" })
+    .onConflictDoNothing({ target: userProfiles.id });
+}

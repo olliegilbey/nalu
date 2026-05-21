@@ -21,6 +21,18 @@ describe("userProfiles queries", () => {
     });
   });
 
+  it("ensureUserProfile creates a row and is idempotent", async () => {
+    await withTestDb(async (db) => {
+      const { ensureUserProfile } = await import("./userProfiles");
+      await ensureUserProfile(ID);
+      // Second call must not throw or duplicate — first-write-wins.
+      await ensureUserProfile(ID);
+      const rows = await db.select().from(userProfiles).where(eq(userProfiles.id, ID));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.displayName).toBe("Learner");
+    });
+  });
+
   it("getUserById throws NotFoundError for missing id", async () => {
     await withTestDb(async () => {
       const { getUserById } = await import("./userProfiles");

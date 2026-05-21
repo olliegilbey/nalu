@@ -1,14 +1,23 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { NotFoundError } from "@/db/queries/errors";
+import { createClient } from "@/lib/supabase/server";
+import { ensureUserProfile } from "@/db/queries";
 
 /**
- * Build the tRPC request context. Dev-stub auth: reads `x-dev-user-id`
- * from the incoming headers and exposes it as `userId` (possibly undefined).
- * Real Supabase Auth lands in a follow-up spec; the seam stays in this
- * function so the swap is local.
+ * Build the tRPC request context. Resolves `userId` (possibly undefined).
+ *
+ * Production: identity comes from the Supabase session cookie that
+ * `src/proxy.ts` mints for every visitor. Non-production keeps the
+ * `x-dev-user-id` dev-stub seam so `just dev` and the test suite need
+ * no Supabase Auth.
  */
 export const createTRPCContext = async (opts: FetchCreateContextFnOptions) => {
+  if (process.env.NODE_ENV === "production") {
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getUser();
+    return { userId: data.user?.id };
+  }
   // headers.get is the Web Fetch API surface — lowercase keys; tRPC-fetch
   // gives us a `Headers` object directly.
   const devUserId = opts.req.headers.get("x-dev-user-id") ?? undefined;
@@ -47,13 +56,16 @@ const mapNotFound = t.middleware(async ({ next }) => {
 });
 
 /**
- * Authenticated procedure. Requires `x-dev-user-id` to be set on the
- * request. Once real auth lands, the body of this middleware swaps to
- * Supabase session resolution; call sites stay unchanged.
+ * Authenticated procedure. In production `ctx.userId` is the Supabase
+ * anonymous user's id; in dev it is the `x-dev-user-id` stub. Either way,
+ * `ensureUserProfile` provisions the `user_profiles` row on demand — a
+ * freshly signed-in anonymous user has an `auth.users` row but no profile
+ * row, and `courses.user_id` references `user_profiles.id`.
  */
-export const protectedProcedure = t.procedure.use(mapNotFound).use(({ ctx, next }) => {
+export const protectedProcedure = t.procedure.use(mapNotFound).use(async ({ ctx, next }) => {
   if (!ctx.userId) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "missing x-dev-user-id header" });
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "no authenticated user" });
   }
+  await ensureUserProfile(ctx.userId);
   return next({ ctx: { ...ctx, userId: ctx.userId } });
 });
