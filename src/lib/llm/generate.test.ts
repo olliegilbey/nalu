@@ -24,10 +24,16 @@ beforeEach(() => {
   vi.stubEnv("LLM_MODEL", "llama-3.3-70b");
 });
 
+// generateChat reads `result.response.headers` to feed the rate limiter,
+// so every mocked generateText result must carry a `response` field —
+// the AI SDK always populates it (headers may be undefined for non-HTTP
+// providers, which the limiter handles gracefully).
+const emptyResponse = { id: "r", timestamp: new Date(0), modelId: "m", messages: [] };
+
 describe("generateChat", () => {
   it("returns text + usage from generateText", async () => {
     const usage = { inputTokens: 5, outputTokens: 2, totalTokens: 7 };
-    generateTextMock.mockResolvedValueOnce({ text: "hello", usage });
+    generateTextMock.mockResolvedValueOnce({ text: "hello", usage, response: emptyResponse });
 
     const result = await generateChat([{ role: "user", content: "hi" }]);
 
@@ -44,7 +50,11 @@ describe("generateChat", () => {
     // Verify that when responseSchema is supplied, generateText receives
     // responseFormat: { type: "json", name, schema } from toCerebrasJsonSchema.
     const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
-    generateTextMock.mockResolvedValueOnce({ text: '{"x":"hi"}', usage });
+    generateTextMock.mockResolvedValueOnce({
+      text: '{"x":"hi"}',
+      usage,
+      response: emptyResponse,
+    });
 
     const schema = z.object({ x: z.string() });
     await generateChat([{ role: "user", content: "hi" }], {
@@ -61,7 +71,11 @@ describe("generateChat", () => {
 
   it("omits responseFormat when no responseSchema supplied", async () => {
     const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
-    generateTextMock.mockResolvedValueOnce({ text: "plain text", usage });
+    generateTextMock.mockResolvedValueOnce({
+      text: "plain text",
+      usage,
+      response: emptyResponse,
+    });
 
     await generateChat([{ role: "user", content: "hi" }]);
 

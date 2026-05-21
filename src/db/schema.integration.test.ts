@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { eq, sql } from "drizzle-orm";
+import { WAVE } from "@/lib/config/tuning";
 import { withTestDb } from "@/db/testing/withTestDb";
 import {
   userProfiles,
@@ -81,7 +82,7 @@ describe("waves constraints", () => {
     frameworkSnapshot: {},
     dueConceptsSnapshot: [],
     seedSource: { kind: "scoping_handoff" },
-    turnBudget: 10,
+    turnBudget: WAVE.turnCount,
   });
 
   it("rejects a wave with non-positive tier (CHECK enforces invariant)", async () => {
@@ -95,7 +96,7 @@ describe("waves constraints", () => {
           frameworkSnapshot: {} as never,
           dueConceptsSnapshot: [] as never,
           seedSource: { kind: "scoping_handoff" } as never,
-          turnBudget: 10,
+          turnBudget: WAVE.turnCount,
         }),
       ).rejects.toMatchObject({ cause: { code: "23514" } });
     });
@@ -162,7 +163,7 @@ describe("context_messages constraints", () => {
         frameworkSnapshot: {},
         dueConceptsSnapshot: [],
         seedSource: { kind: "scoping_handoff" },
-        turnBudget: 10,
+        turnBudget: WAVE.turnCount,
       })
       .returning();
     if (!w) throw new Error("missing wave row");
@@ -322,7 +323,7 @@ describe("assessments constraints", () => {
         frameworkSnapshot: {},
         dueConceptsSnapshot: [],
         seedSource: { kind: "scoping_handoff" },
-        turnBudget: 10,
+        turnBudget: WAVE.turnCount,
       })
       .returning();
     const [c] = await db.insert(concepts).values({ courseId, name: "X", tier: 1 }).returning();

@@ -24,7 +24,7 @@ import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
 
 const v3McOption = z.enum(["A", "B", "C", "D"]);
 
-const v3Question = z.discriminatedUnion("type", [
+export const v3Question = z.discriminatedUnion("type", [
   z.object({
     id: z.string(),
     type: z.literal("free_text"),
@@ -45,7 +45,7 @@ const v3Question = z.discriminatedUnion("type", [
   }),
 ]);
 
-const v3Response = z
+export const v3Response = z
   .object({
     questionId: z.string(),
     choice: v3McOption.optional(),
@@ -54,6 +54,9 @@ const v3Response = z
   .refine((r) => (r.choice === undefined) !== (r.freetext === undefined), {
     message: "response must have exactly one of choice or freetext",
   });
+
+export type V3Question = z.infer<typeof v3Question>;
+export type V3Response = z.infer<typeof v3Response>;
 
 export const clarificationJsonbSchema = z.object({
   /** The model's framing message for this clarification turn. Persisted so cached replay can return the model's exact wording. */
@@ -124,13 +127,27 @@ export type DueConceptsSnapshot = z.infer<typeof dueConceptsSnapshotSchema>;
 // --- waves.seed_source (discriminated union) -------------------------------
 
 /**
+ * One planned concept entry stored inside a Blueprint.
+ * Mirrors the wire shape from `src/lib/prompts/closeTurn.ts`.
+ */
+export const plannedConceptStorageSchema = z.object({
+  name: z.string(),
+  tier: z.number().int().min(1),
+  role: z.enum(["fresh", "review"]),
+});
+
+/**
  * Teaching plan emitted by the LLM on a Wave's final turn.
  * Seeds the next Wave's opening system prompt.
+ *
+ * `plannedConcepts` defaults to `[]` so pre-existing v3 rows (written before
+ * this field was added) can be read without parse failure — additive only.
  */
 export const blueprintSchema = z.object({
   topic: z.string(),
   outline: z.array(z.string()),
   openingText: z.string(),
+  plannedConcepts: z.array(plannedConceptStorageSchema).default([]),
 });
 export type Blueprint = z.infer<typeof blueprintSchema>;
 
@@ -164,3 +181,12 @@ export type SeedSource = z.infer<typeof seedSourceSchema>;
  * Wave ended without emitting one (e.g. course complete).
  */
 export const blueprintEmittedSchema = blueprintSchema.nullable();
+
+// --- waves.chat_log -----------------------------------------------------
+
+/**
+ * Wave chat-log JSONB shapes are defined in `./jsonbWaveChatLog.ts` to keep
+ * both files under the 200-LOC ceiling. They reuse `v3Question` / `v3Response`
+ * from this file by importing back — scoping primitives live with their
+ * canonical definition.
+ */

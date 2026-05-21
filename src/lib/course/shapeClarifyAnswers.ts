@@ -1,4 +1,4 @@
-import type { RawComposerAnswer } from "./shapeBaselineAnswers";
+import type { RawComposerAnswer } from "./shapeQuestionnaireAnswers";
 
 /** One entry in the answer payload submitted to `course.submitClarify`. */
 export interface ShapedClarifyAnswer {
@@ -11,7 +11,7 @@ export interface ShapedClarifyAnswer {
  * `course.submitClarify` payload (always free-text — clarify never has MC).
  *
  * Lives in `src/lib/` so the component layer stays a thin rendering shell;
- * parallels `shapeBaselineAnswers` for symmetry.
+ * parallels `shapeQuestionnaireAnswers` for symmetry.
  */
 export function shapeClarifyAnswers(
   answers: readonly RawComposerAnswer[],

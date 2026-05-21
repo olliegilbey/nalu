@@ -87,6 +87,15 @@ export type Question = z.infer<typeof questionSchema>;
  * the count bounds (clarify: 2–4; baseline: derived from scope tiers).
  * Cerebras strict mode forbids `minItems`/`maxItems` on the wire side, so
  * count enforcement runs Zod-side via `.refine`.
+ *
+ * Question `id`s must be unique WITHIN the questionnaire: responses are matched
+ * back to questions by `id` (`responseSchema.questionId`), and in the teaching
+ * flow each question becomes one `assessments` row keyed on `question_id` —
+ * duplicate ids would make a single answer ambiguous and collide on the
+ * `assessments_wave_question_unique` index (bug_004, intra-questionnaire case).
+ * Cross-questionnaire id reuse is handled separately at insert time by
+ * namespacing (`namespaceQuestionId`); this refine catches only the
+ * within-questionnaire case so `executeTurn` can route it back as a retry.
  */
 export const questionnaireSchema = z
   .object({
@@ -95,12 +104,26 @@ export const questionnaireSchema = z
       .describe(
         "One or more questions. UI shows them one at a time; the learner submits " +
           "the whole questionnaire before the model sees responses. " +
-          "Clarify: 2–4 questions; baseline: count determined by scope tiers.",
+          "Clarify: 2–4 questions; baseline: count determined by scope tiers. " +
+          "Every question's `id` must be unique within this questionnaire.",
       ),
   })
   .refine((q) => q.questions.length >= 1, {
     message: "questionnaire must contain at least one question",
     path: ["questions"],
+  })
+  .superRefine((val, ctx) => {
+    // Unique ids within the questionnaire. A duplicate breaks response matching
+    // and, in teaching, collides two assessment rows on the same question_id.
+    const ids = val.questions.map((q) => q.id);
+    const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+    if (dupes.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["questions"],
+        message: `duplicate question ids within the questionnaire: ${[...new Set(dupes)].join(", ")}. Each question needs a distinct id.`,
+      });
+    }
   });
 
 /** Inferred Questionnaire type — the validated payload returned by the model. */

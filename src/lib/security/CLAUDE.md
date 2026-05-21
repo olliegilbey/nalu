@@ -5,3 +5,4 @@ All user-supplied text must pass through `sanitiseUserInput` before entering a p
 - `sanitiseUserInput.ts`: HTML-encode `&`, `<`, `>` (in that order — `&` first to prevent double-decode resurrection), wrap in `<user_message>…</user_message>`. Pure.
 - System prompts instruct the model to treat `<user_message>` contents as data, not directives.
 - If you add a new prompt entry point, route untrusted input here first.
+- `obfuscateCorrect.ts`: Casual base64 obfuscation of MC correct-index, bound to `questionId`. NOT cryptographic. Used by the Wave MC instant-feedback path; client decodes locally for the toast, server re-derives correctness independently.

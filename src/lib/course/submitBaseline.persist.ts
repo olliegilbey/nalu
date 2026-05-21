@@ -1,7 +1,8 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
+import { WAVE } from "@/lib/config/tuning";
 import { upsertConcept } from "@/db/queries/concepts";
-import { openWave } from "@/db/queries/waves";
+import { appendWaveChatLog, openWave } from "@/db/queries/waves";
 import { appendMessage } from "@/db/queries/contextMessages";
 import {
   baselineClosedJsonbSchema,
@@ -138,9 +139,6 @@ export async function persistScopingClose(
 
     // 4. Open Wave 1 with seed_source.scoping_handoff carrying the blueprint
     //    emitted on this close turn.
-    //    NOTE: turnBudget hardcoded `10` to match every other call site in
-    //    the codebase (no `WAVE_TURN_COUNT` constant exists yet in
-    //    `src/lib/config/tuning.ts`). If/when one is introduced, replace.
     const wave1 = await openWave(
       {
         courseId,
@@ -153,7 +151,7 @@ export async function persistScopingClose(
           kind: "scoping_handoff",
           blueprint: parsed.nextUnitBlueprint,
         },
-        turnBudget: 10,
+        turnBudget: WAVE.turnCount,
       },
       tx,
     );
@@ -171,6 +169,16 @@ export async function persistScopingClose(
       },
       tx,
     );
+
+    // 5b. Dual-write Wave 1's opening entry to chat_log — the typed JSONB
+    //     store the wave UI reads. Mirror of step 5: that one persists to
+    //     context_messages (LLM replay log), this one persists to chat_log
+    //     (UI projection). Same tx so the two stores can never diverge.
+    await appendWaveChatLog(tx, wave1.id, {
+      role: "assistant",
+      kind: "text",
+      content: parsed.nextUnitBlueprint.openingText,
+    });
 
     // 6. Flip course status, persist starting/current tier + the evolving
     //    summary seed (NOT the immutable summary — that lives only in the

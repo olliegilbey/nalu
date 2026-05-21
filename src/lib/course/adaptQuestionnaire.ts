@@ -1,4 +1,6 @@
 import type { Question, McOptionKey } from "@/lib/prompts/questionnaire";
+import type { OpenQuestionForClient } from "./redactQuestionnaire";
+import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
 
 /** Whispers Composer's question shape. Kept in sync with the upstream type. */
 export interface ChoiceQuestion {
@@ -47,4 +49,34 @@ export function adaptQuestionnaire(qs: readonly Question[]): AdaptedQuestionnair
     hasMc && hasFree ? "mixed" : hasMc ? "mc" : "free-text";
 
   return { mode, questions };
+}
+
+/**
+ * Adapt a client-side `OpenQuestionForClient` (wave-flow questionnaire, with
+ * obfuscated `correctEnc` rather than plaintext `correct`) to the Composer's
+ * `ChoiceQuestion`.
+ *
+ * MC branch: decodes the `correctEnc` via `decodeCorrect(id, correctEnc)` —
+ * the encoding is bound to the question id (spec §7.8) so the Composer can
+ * render the instant-feedback toast locally without round-tripping. A failed
+ * decode (`null`) leaves `correctIndex` undefined; the Composer treats that
+ * as "no toast, ask the server" — server-side grading is still authoritative.
+ *
+ * Free-text branch: `options: []`, no `correctIndex` — the Composer renders
+ * the textarea path.
+ *
+ * The discriminated union (`OpenQuestionForClient`) guarantees MC questions
+ * carry `options` + `correctEnc`, so no extra truthy guards are needed.
+ */
+export function adaptOpenQuestion(q: OpenQuestionForClient): ChoiceQuestion {
+  if (q.type === "multiple_choice") {
+    const decoded = decodeCorrect(q.id, q.correctEnc);
+    return {
+      id: q.id,
+      prompt: q.prompt,
+      options: [q.options.A, q.options.B, q.options.C, q.options.D],
+      correctIndex: decoded ?? undefined,
+    };
+  }
+  return { id: q.id, prompt: q.prompt, options: [] };
 }

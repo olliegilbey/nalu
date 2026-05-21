@@ -161,12 +161,13 @@ function validScopingCloseText(): string {
   return JSON.stringify({
     userMessage: "Nice work — your first lesson is ready.",
     gradings: questionIds.map((qid, idx) => ({
+      kind: "free-text",
       questionId: qid,
-      verdict: "correct" as const,
+      verdict: "correct",
       qualityScore: 5,
       conceptName: "test-concept",
       // Alternate tier 1/2 so we exercise both scope tiers; both are in scope.
-      conceptTier: (idx % 2 === 0 ? 1 : 2) as 1 | 2,
+      conceptTier: idx % 2 === 0 ? 1 : 2,
       rationale: "Selected the correct option. Start lesson 1 with a deeper probe.",
     })),
     summary: "Learner shows solid grasp of foundations across the baseline.",
@@ -177,6 +178,7 @@ function validScopingCloseText(): string {
       topic: "Ownership basics",
       outline: ["intro to ownership", "moves vs copies", "borrowing rules"],
       openingText: "Welcome — given your C++ background, let's start with how Rust differs.",
+      plannedConcepts: [],
     },
   });
 }

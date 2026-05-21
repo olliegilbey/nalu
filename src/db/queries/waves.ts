@@ -10,6 +10,7 @@ import {
   type SeedSource,
   type Blueprint,
 } from "@/lib/types/jsonb";
+import { waveChatLogSchema, type WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 import { NotFoundError } from "./errors";
 
 /**
@@ -50,6 +51,10 @@ export function waveRowGuard(row: Wave): Wave {
     seedSource: seedSourceSchema.parse(row.seedSource),
     // blueprintEmitted is nullable — only validate when populated.
     blueprintEmitted: blueprintEmittedSchema.parse(row.blueprintEmitted),
+    // chat_log is NOT NULL with a default of [], so it's always populated.
+    // Validation here mirrors the trust-boundary discipline of courseRowGuard.
+    // Cast needed because Drizzle types unparameterised JSONB as `unknown`.
+    chatLog: waveChatLogSchema.parse(row.chatLog) as Wave["chatLog"],
   };
 }
 
@@ -125,6 +130,27 @@ export async function getOpenWaveByCourse(courseId: string): Promise<Wave | null
 }
 
 /**
+ * Fetch the Wave for `(courseId, waveNumber)` — the natural addressing scheme
+ * the client uses (URLs carry the ordinal, not the row id). The unique index
+ * `waves_course_wave_number_unique` guarantees at most one match.
+ *
+ * Returns `null` when no row exists; callers (e.g. `submitWaveTurn`,
+ * `getWaveState`) translate that into a TRPC error with the appropriate code.
+ * Returning `null` rather than throwing keeps the query layer's NotFoundError
+ * convention reserved for primary-key lookups.
+ */
+export async function getWaveByCourseAndNumber(
+  courseId: string,
+  waveNumber: number,
+): Promise<Wave | null> {
+  const [row] = await db
+    .select()
+    .from(waves)
+    .where(and(eq(waves.courseId, courseId), eq(waves.waveNumber, waveNumber)));
+  return row ? waveRowGuard(row) : null;
+}
+
+/**
  * List all closed Waves for a course, ordered by `waveNumber` ascending.
  *
  * Ordered asc so consumers can reconstruct the Wave sequence in presentation
@@ -152,6 +178,30 @@ export async function getLatestWaveNumberByCourse(courseId: string): Promise<num
     .where(eq(waves.courseId, courseId));
   // `max()` returns null when no rows match; treat as 0.
   return row?.maxWaveNumber ?? 0;
+}
+
+/**
+ * Read just the `chat_log` JSONB column for a Wave, Zod-validated.
+ *
+ * Optional `tx` opts the read into a caller's transaction so an append that
+ * committed before the tx opened (or one made earlier in the same tx) is
+ * visible. Used by `applyCloseGradings`: the learner's close-turn
+ * `user.answers` entry lands on `chat_log` pre-LLM (see `submitWaveTurn`),
+ * AFTER `loadWaveContext` snapshots `ctx.wave.chatLog` — so the close-grading
+ * path must re-read the live column to see the learner's MC click.
+ *
+ * @throws {NotFoundError} if `id` does not match any row.
+ */
+export async function getWaveChatLog(
+  id: string,
+  tx?: DbOrTx,
+): Promise<readonly WaveChatLogEntry[]> {
+  const exec = tx ?? db;
+  const [row] = await exec.select({ chatLog: waves.chatLog }).from(waves).where(eq(waves.id, id));
+  if (!row) throw new NotFoundError("wave", id);
+  // Trust-boundary validation: the JSONB column is `unknown` on the Drizzle
+  // row type; the schema parse is the same discipline as `waveRowGuard`.
+  return waveChatLogSchema.parse(row.chatLog);
 }
 
 // ---------------------------------------------------------------------------
@@ -208,21 +258,33 @@ export async function openWave(params: OpenWaveParams, tx?: DbOrTx): Promise<Wav
  * `blueprintEmitted` is Zod-validated before the write (parse-before-persist
  * boundary) so a malformed blueprint never reaches the DB.
  *
- * @throws {NotFoundError} if `id` does not match any row (via `getWaveById`).
+ * Optional `tx` opts the UPDATE and the re-fetch into a caller's transaction
+ * so a Wave-close rolls back atomically with sibling writes (e.g. the close
+ * transaction that closes Wave N + opens Wave N+1). Mirrors `openWave`'s
+ * optional-tx pattern. Without tx-awareness, the close UPDATE would commit
+ * via the `db` singleton even when a sibling tx aborts — breaking the
+ * all-or-nothing close guarantee.
+ *
+ * BOTH the UPDATE and the re-fetch must run on the same executor — using the
+ * `db` singleton for the re-fetch after a `tx` UPDATE would query a different
+ * connection that cannot see the uncommitted change.
+ *
+ * @throws {NotFoundError} if `id` does not match any row (via the re-fetch).
  */
-export async function closeWave(id: string, params: CloseWaveParams): Promise<Wave> {
+export async function closeWave(id: string, params: CloseWaveParams, tx?: DbOrTx): Promise<Wave> {
   // Validate JSONB BEFORE the write — never trust caller-supplied JSONB shape.
   const validatedBlueprint = blueprintEmittedSchema.parse(params.blueprintEmitted);
 
   // `::jsonb` cast ensures Postgres stores the value in the jsonb column type
   // even when the driver sends it as a string. COALESCE keeps closed_at
   // sticky across idempotent re-calls. Status scope prevents silent no-op on
-  // already-closed waves (getWaveById below still returns the existing row).
+  // already-closed waves (the re-fetch below still returns the existing row).
   // When the blueprint is null (e.g. course-end Waves), persist SQL NULL —
   // distinguishing "no blueprint emitted" from a JSON `null` value cleanly.
   const blueprintSql =
     validatedBlueprint === null ? sql`NULL` : sql`${JSON.stringify(validatedBlueprint)}::jsonb`;
-  await db.execute(sql`
+  const exec = tx ?? db;
+  await exec.execute(sql`
     UPDATE waves
     SET status = 'closed',
         summary = ${params.summary},
@@ -232,7 +294,42 @@ export async function closeWave(id: string, params: CloseWaveParams): Promise<Wa
       AND status = 'open'
   `);
 
-  // getWaveById throws NotFoundError if the row does not exist; idempotent
-  // for already-closed Waves (returns the existing row unchanged).
-  return getWaveById(id);
+  // Re-fetch on the SAME executor. Inlined (rather than delegating to
+  // `getWaveById`, which always uses the `db` singleton) so the row guard
+  // observes the just-applied UPDATE inside the same tx.
+  const [row] = await exec.select().from(waves).where(eq(waves.id, id));
+  if (!row) throw new NotFoundError("wave", id);
+  return waveRowGuard(row);
+}
+
+// ---------------------------------------------------------------------------
+// chat_log append (typed JSONB store for the wave UI — mirrors scoping's
+// per-stage JSONB columns on `courses`).
+// ---------------------------------------------------------------------------
+
+/**
+ * Append one entry to `waves.chat_log`.
+ *
+ * Uses Postgres JSONB `||` concat so the write is atomic: no read-modify-write
+ * round-trip, no lost-update race when two tx's append in parallel against the
+ * same wave (they serialise on the row lock and apply in commit order).
+ *
+ * `tx` opts the UPDATE into a caller's transaction so the chat_log append
+ * rolls back atomically with sibling writes (e.g. the executeWaveMid tx that
+ * inserts assessment rows + persists context_messages).
+ */
+export async function appendWaveChatLog(
+  exec: DbOrTx,
+  waveId: string,
+  entry: WaveChatLogEntry,
+): Promise<void> {
+  // `::jsonb` cast guarantees Postgres treats the parameter as JSONB even
+  // though the driver sends it as a JSON-encoded string. The array wrap is
+  // required by `||` semantics (append-many).
+  const payload = JSON.stringify([entry]);
+  await exec.execute(sql`
+    UPDATE waves
+    SET chat_log = chat_log || ${payload}::jsonb
+    WHERE id = ${waveId}
+  `);
 }

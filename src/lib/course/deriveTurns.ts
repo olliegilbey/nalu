@@ -1,6 +1,6 @@
 import type { Turn } from "@/lib/types/turn";
 import type { CourseState } from "./getState";
-import type { ClarificationJsonb, BaselineJsonb } from "@/lib/types/jsonb";
+import type { V3Question, V3Response } from "@/lib/types/jsonb";
 
 /**
  * Project a `CourseState` to the chat scroll `Turn[]`.
@@ -15,23 +15,23 @@ import type { ClarificationJsonb, BaselineJsonb } from "@/lib/types/jsonb";
  * renders it separately from `useScopingState.activeQuestionnaire`.
  */
 export function deriveTurns(state: CourseState): readonly Turn[] {
-  const turns: Turn[] = [{ kind: "user-topic", content: state.topic }];
+  const turns: Turn[] = [{ kind: "user-text", content: state.topic }];
 
   if (state.clarification) {
-    turns.push({ kind: "llm-clarify-intro", content: state.clarification.userMessage });
+    turns.push({ kind: "assistant-text", content: state.clarification.userMessage });
   }
 
   // Once the framework lands, clarify responses are guaranteed to be saved
   // (generateFramework persists them before calling the LLM — see
-  // src/lib/course/generateFramework.ts:86-92). Emit the user-clarify-answers
+  // src/lib/course/generateFramework.ts:82-92). Emit the user-questionnaire-answers
   // turn from the persisted responses so a reload renders identically.
   if (state.framework && state.clarification) {
     turns.push({
-      kind: "user-clarify-answers",
-      content: concatClarifyAnswers(state.clarification),
+      kind: "user-questionnaire-answers",
+      content: formatAnswers(state.clarification.questions, state.clarification.responses),
     });
     turns.push({
-      kind: "llm-framework",
+      kind: "assistant-text-with-framework",
       userMessage: state.framework.userMessage,
       tiers: state.framework.tiers.map((t) => ({
         number: t.number,
@@ -42,35 +42,41 @@ export function deriveTurns(state: CourseState): readonly Turn[] {
   }
 
   if (state.baseline) {
-    turns.push({ kind: "llm-baseline-intro", content: state.baseline.userMessage });
+    turns.push({ kind: "assistant-text", content: state.baseline.userMessage });
   }
 
   if (state.scopingResult && state.baseline) {
     turns.push({
-      kind: "user-baseline-answers",
-      content: concatBaselineAnswers(state.baseline),
+      kind: "user-questionnaire-answers",
+      content: formatAnswers(state.baseline.questions, state.baseline.responses),
     });
-    turns.push({ kind: "llm-baseline-close", content: state.scopingResult.closingMessage });
-    turns.push({ kind: "move-on-cta", nextWaveNumber: 1 });
+    turns.push({ kind: "assistant-text", content: state.scopingResult.closingMessage });
+    turns.push({ kind: "move-on-cta", next: { phase: "wave", n: 1 } });
   }
 
   return turns;
 }
 
-function concatClarifyAnswers(c: ClarificationJsonb): string {
-  const byId = new Map(c.questions.map((q) => [q.id, q]));
-  return c.responses
-    .map((r, i) => {
-      const q = byId.get(r.questionId);
-      const prompt = q?.prompt ?? `Q${i + 1}`;
-      return `${i + 1}. ${prompt} — ${r.freetext ?? ""}`;
-    })
-    .join("\n");
-}
-
-function concatBaselineAnswers(b: BaselineJsonb): string {
-  const byId = new Map(b.questions.map((q) => [q.id, q]));
-  return b.responses
+/**
+ * Format a `(questions, responses)` pair as a numbered prose list.
+ *
+ * Shared by scoping clarify, scoping baseline, and wave questionnaire answers.
+ * MC responses (`r.choice`) render as the chosen option's text; free-text
+ * responses (`r.freetext`) render verbatim. Missing question lookups fall back
+ * to `Q{n}` so a corrupted response list still produces readable output rather
+ * than a crash.
+ *
+ * Exported (and renamed from the prior `concatBaselineAnswers`) so wave's
+ * `deriveWaveTurns` can reuse it. Clarify's prior dedicated helper
+ * (`concatClarifyAnswers`) is deleted; clarify responses never carry `choice`
+ * so the baseline-shaped formatter handles them identically.
+ */
+export function formatAnswers(
+  questions: readonly V3Question[],
+  responses: readonly V3Response[],
+): string {
+  const byId = new Map(questions.map((q) => [q.id, q]));
+  return responses
     .map((r, i) => {
       const q = byId.get(r.questionId);
       const prompt = q?.prompt ?? `Q${i + 1}`;

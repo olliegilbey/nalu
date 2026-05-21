@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { sql } from "drizzle-orm";
+import { WAVE as WAVE_CONFIG } from "@/lib/config/tuning";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles, courses, scopingPasses, waves } from "@/db/schema";
 import {
@@ -47,7 +48,7 @@ async function seedFixtures(db: Parameters<Parameters<typeof withTestDb>[0]>[0])
     customInstructionsSnapshot: null,
     dueConceptsSnapshot: [],
     seedSource: { kind: "scoping_handoff" },
-    turnBudget: 10,
+    turnBudget: WAVE_CONFIG.turnCount,
   });
 }
 

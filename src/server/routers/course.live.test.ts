@@ -101,6 +101,8 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           // ---------------------------------------------------------------
           // 4. Idempotency — second call must hit DB, not LLM
           // ---------------------------------------------------------------
+          // The cached path skips `generateChat` entirely, so it is unpaced
+          // and fast — which is exactly what `assertIdempotency` checks for.
           const start = Date.now();
           const { baseline: cached } = await caller.course.generateBaseline({ courseId });
           assertIdempotency(Date.now() - start, `generateBaseline(${topic.slug})`);

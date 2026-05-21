@@ -70,10 +70,16 @@ export interface Sm2Update {
  * Exported so callers can look up a single concept without loading the full
  * course list.
  *
+ * Optional `tx` opts the read into a caller's transaction so writes earlier
+ * in the same tx are visible. Visibility (not mutability) is the reason
+ * callers inside a transaction should thread `tx`: `db` (the singleton) is
+ * a separate connection and won't see uncommitted writes from `tx`.
+ *
  * @throws {NotFoundError} if `id` does not match any row.
  */
-export async function getConceptById(id: string): Promise<Concept> {
-  const [row] = await db.select().from(concepts).where(eq(concepts.id, id));
+export async function getConceptById(id: string, tx?: DbOrTx): Promise<Concept> {
+  const exec = tx ?? db;
+  const [row] = await exec.select().from(concepts).where(eq(concepts.id, id));
   if (!row) throw new NotFoundError("concept", id);
   return row;
 }
@@ -87,9 +93,17 @@ export async function getConceptById(id: string): Promise<Concept> {
  *
  * Callers that need a stable presentation order should sort client-side;
  * no ORDER BY here keeps the query plan simple.
+ *
+ * Optional `tx` opts the read into a caller's transaction so writes earlier
+ * in the same tx are visible (e.g. SM-2 advances applied in step 2 of
+ * `persistWaveClose` before the tier-advancement check reads concept state).
  */
-export async function getConceptsByCourse(courseId: string): Promise<readonly Concept[]> {
-  return db.select().from(concepts).where(eq(concepts.courseId, courseId));
+export async function getConceptsByCourse(
+  courseId: string,
+  tx?: DbOrTx,
+): Promise<readonly Concept[]> {
+  const exec = tx ?? db;
+  return exec.select().from(concepts).where(eq(concepts.courseId, courseId));
 }
 
 /**
@@ -99,15 +113,21 @@ export async function getConceptsByCourse(courseId: string): Promise<readonly Co
  * Never-reviewed rows (next_review_at = NULL) are excluded by both the
  * index and the `lte` predicate (SQL `<=` returns false for NULL).
  *
+ * Optional `tx` opts the read into a caller's transaction so SM-2 advances
+ * earlier in the same tx are observed (e.g. the Wave-close transaction
+ * captures the next Wave's due-snapshot AFTER applying its own conceptUpdates).
+ *
  * @param courseId - Scopes results to a single course.
  * @param now      - Caller-supplied reference time; inject for deterministic tests.
  */
 export async function getDueConceptsByCourse(
   courseId: string,
   now: Date,
+  tx?: DbOrTx,
 ): Promise<readonly Concept[]> {
+  const exec = tx ?? db;
   return (
-    db
+    exec
       .select()
       .from(concepts)
       .where(
@@ -202,10 +222,18 @@ export async function upsertConcept(params: UpsertConceptParams, tx?: DbOrTx): P
  * on `db.update().set()`. Re-fetches via `getConceptById` so the returned row
  * goes through Drizzle's camelCase mapping (mirrors the `closeWave` pattern).
  *
+ * Optional `tx` opts the UPDATE and re-fetch into a caller's transaction.
+ * BOTH operations must run on the same executor — using `db` for the re-fetch
+ * after a tx UPDATE would query a different connection that cannot see the
+ * uncommitted change. Mirrors the `upsertConcept` optional-tx pattern.
+ *
  * @throws {NotFoundError} if `id` does not match any row.
  */
-export async function updateConceptSm2(id: string, sm2: Sm2Update): Promise<Concept> {
-  await db.execute(sql`
+export async function updateConceptSm2(id: string, sm2: Sm2Update, tx?: DbOrTx): Promise<Concept> {
+  // Use the caller's transaction handle if supplied, else the singleton.
+  // BOTH the UPDATE and the re-fetch must run on the same executor.
+  const exec = tx ?? db;
+  await exec.execute(sql`
     UPDATE concepts
     SET easiness_factor    = ${sm2.easinessFactor},
         interval_days      = ${sm2.intervalDays},
@@ -218,7 +246,35 @@ export async function updateConceptSm2(id: string, sm2: Sm2Update): Promise<Conc
 
   // Re-fetch via typed Drizzle select for camelCase mapping.
   // Throws NotFoundError if the id was unknown (mirrors getWaveById in waves.ts).
-  return getConceptById(id);
+  // Inlined to share the `exec` handle — getConceptById always uses `db`.
+  const [row] = await exec.select().from(concepts).where(eq(concepts.id, id));
+  if (!row) throw new NotFoundError("concept", id);
+  return row;
+}
+
+/**
+ * Fetch a concept by case-insensitive name within a course.
+ *
+ * Mirrors the unique index `concepts_course_name_lower_unique` on
+ * `(course_id, lower(name))` — at most one row matches. Returns `null` when
+ * absent (NOT a throw) so callers can distinguish "missing concept" from
+ * other failure modes (e.g. `applySm2Update` raises a typed error explaining
+ * the schema-build/persist race that produced the miss).
+ *
+ * Optional `tx` opts the read into a caller's transaction so writes earlier
+ * in the same tx are visible.
+ */
+export async function getConceptByNameForCourse(
+  courseId: string,
+  name: string,
+  tx?: DbOrTx,
+): Promise<Concept | null> {
+  const exec = tx ?? db;
+  const [row] = await exec
+    .select()
+    .from(concepts)
+    .where(and(eq(concepts.courseId, courseId), sql`lower(${concepts.name}) = lower(${name})`));
+  return row ?? null;
 }
 
 /**

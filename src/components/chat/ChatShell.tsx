@@ -36,7 +36,7 @@ export function ChatShell({
   }, [children]);
 
   return (
-    <div className="relative flex flex-col h-[100dvh] bg-kanagawa-atmos text-foreground overflow-hidden noise">
+    <div className="relative flex flex-col h-[100dvh] text-foreground overflow-hidden noise">
       <ChatHeader title={title ?? null} onMenu={() => setMenuOpen(true)} onNew={onNew} />
 
       <SideMenu

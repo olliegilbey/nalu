@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { getModelCapabilities } from "./modelCapabilities";
 
 describe("getModelCapabilities", () => {
-  it("returns honorsStrictMode=false for llama3.1-8b", () => {
-    expect(getModelCapabilities("llama3.1-8b").honorsStrictMode).toBe(false);
+  it("returns honorsStrictMode=true for gpt-oss-120b", () => {
+    expect(getModelCapabilities("gpt-oss-120b").honorsStrictMode).toBe(true);
   });
 
   it("returns honorsStrictMode=true for llama-3.3-70b", () => {
@@ -19,7 +19,7 @@ describe("getModelCapabilities", () => {
   });
 
   it("is case-sensitive — does not normalise model names", () => {
-    // "LLAMA3.1-8B" is NOT in the registry; should get the default (false), not true.
-    expect(getModelCapabilities("LLAMA3.1-8B").honorsStrictMode).toBe(false);
+    // "GPT-OSS-120B" is NOT in the registry; should get the default (false), not true.
+    expect(getModelCapabilities("GPT-OSS-120B").honorsStrictMode).toBe(false);
   });
 });

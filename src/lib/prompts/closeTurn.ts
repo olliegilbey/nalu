@@ -1,10 +1,6 @@
 import { z } from "zod/v4";
 import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
 
-/**
- * Verdict ↔ qualityScore alignment. Mirrors the v3 storage table in
- * `src/lib/types/jsonb.ts` — keep them in sync.
- */
 const VERDICT_QUALITY_BANDS: Readonly<
   Record<"correct" | "partial" | "incorrect", readonly [number, number]>
 > = {
@@ -13,65 +9,98 @@ const VERDICT_QUALITY_BANDS: Readonly<
   incorrect: [0, 1],
 };
 
-/** One grading item — shape shared by scoping-close and (future) wave-end. */
-export const closeGradingItemSchema = z.object({
-  questionId: z
-    .string()
-    .describe(
-      "The id of the question you are grading. Copy verbatim from the question this evaluation refers to.",
+/**
+ * Grading item — discriminated by ANSWER kind, not card kind. An MC question
+ * answered via the free-text escape is graded as free-text because that is
+ * what the model has to evaluate (spec §4.1 rationale).
+ */
+export const closeGradingItemSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("mc-index"),
+    questionId: z
+      .string()
+      .describe("Verbatim question id from the prompt — match the card the learner clicked."),
+    rationale: z
+      .string()
+      .describe(
+        "Two sentences. First: what the click tells you. Second: what to teach next given this signal.",
+      ),
+  }),
+  z.object({
+    kind: z.literal("free-text"),
+    questionId: z
+      .string()
+      .describe("Verbatim question id from the prompt — match the card the learner answered."),
+    verdict: z
+      .enum(["correct", "partial", "incorrect"])
+      .describe(
+        "Judge the learner's text. 'correct' captures the key idea; 'partial' some grasp + missing pieces; 'incorrect' misses or wrong.",
+      ),
+    qualityScore: qualityScoreSchema.describe(
+      "0-5. correct → 4-5, partial → 2-3, incorrect → 0-1.",
     ),
-  verdict: z
-    .enum(["correct", "partial", "incorrect"])
-    .describe(
-      "Judge the learner's answer against the expected answer. Use 'correct' only when the answer captures the key idea; 'partial' when the learner shows some grasp but misses important pieces; 'incorrect' when the answer misses the point or is wrong.",
-    ),
-  qualityScore: qualityScoreSchema.describe(
-    "Score the answer 0-5. 5 = fluent, fully correct. 4 = correct with minor gaps. 3 = mostly right, notable gap. 2 = partial grasp, important errors. 1 = wrong but related. 0 = no understanding. Keep this in band with your verdict (correct → 4-5, partial → 2-3, incorrect → 0-1).",
-  ),
-  conceptName: z
-    .string()
-    .min(1)
-    .describe(
-      "Name the single concept this question probes. Use the noun-phrase a learner would search for, e.g. 'Rust ownership', not 'the idea that values have owners'. Keep names consistent across questions that probe the same concept.",
-    ),
-  conceptTier: z
+    conceptName: z
+      .string()
+      .min(1)
+      .describe("Concept this question probes — verbatim from the prompt's concept list."),
+    conceptTier: z
+      .number()
+      .int()
+      .describe("Tier (level) of the concept; must be within the in-scope tiers from the prompt."),
+    rationale: z
+      .string()
+      .describe(
+        "Two sentences. First: why this verdict given the learner's text. Second: what to teach next.",
+      ),
+  }),
+]);
+
+/** Planned concept entry — surfaces in the blueprint for the next Wave. */
+export const plannedConceptSchema = z.object({
+  name: z.string().min(1).describe("Exact concept name (verbatim from <planned_concepts>)."),
+  tier: z
     .number()
     .int()
-    .describe(
-      "Place the concept at the level a learner needs to reach to grasp it confidently. Use the level numbers from the framework you produced earlier in this conversation. Don't drift outside the framework's level range.",
-    ),
-  rationale: z
-    .string()
-    .describe(
-      "Two sentences. First sentence: name what the learner got right or wrong. Second sentence: what this tells you about where to start teaching them.",
-    ),
-});
-
-/** Blueprint for the following lesson — shared by scoping-close and wave-end. */
-export const blueprintSchema = z.object({
-  topic: z
-    .string()
     .min(1)
     .describe(
-      "Name the focus of the first lesson in 3-7 words. This is the headline the learner sees when they enter the lesson.",
+      "Level (1-indexed) of the concept; must be within the in-scope levels from the prompt.",
     ),
+  role: z
+    .enum(["fresh", "review"])
+    .describe("'review' for SM-2-due concepts (must be in reviewDueNames); 'fresh' for new ones."),
+});
+
+/** Blueprint for the next lesson — shared by scoping-close and wave-close. */
+export const blueprintSchema = z.object({
+  topic: z.string().min(1).describe("Name the next lesson's focus in 3-7 words."),
   outline: z
     .array(z.string().min(1))
     .min(1)
-    .describe(
-      "List the beats of the first lesson, one bullet per beat, 3-6 bullets. Order them in the sequence you'll teach them. Each beat is a phrase, not a sentence.",
-    ),
+    .describe("3-6 beats, phrase per bullet, in teaching order."),
   openingText: z
     .string()
     .min(1)
     .describe(
-      "Write the first message the learner sees when they open lesson 1. 2-4 sentences. Greet them by what you've learned about them, name what you'll teach in this lesson, invite their first response. Conversational, warm, no markdown headers.",
+      "The lesson's first message. Open with a warm 1-2 sentence welcome, then immediately teach the first outline beat — a substantive explanation the learner can actually engage with, not a preview of what is coming. Do NOT ask a question or pose a questionnaire here. End with a light invitation to continue. A short paragraph or two; conversational, warm, no markdown headers.",
     ),
+  plannedConcepts: z
+    .array(plannedConceptSchema)
+    .describe("Concepts you intend to teach this lesson. May be empty for consolidation lessons."),
 });
 
 export interface MakeCloseTurnBaseSchemaParams {
   readonly scopeTiers: readonly number[];
   readonly questionIds: readonly string[];
+  /** Concept names the model may use under role:"fresh". Loose — refine accepts novel names. */
+  readonly freshConceptNames: readonly string[];
+  /** Concept names SM-2-due at close. Strict — role:"review" entries MUST be in this list. */
+  readonly reviewDueNames: readonly string[];
+  /**
+   * Every concept that exists on this course at close time. Used by
+   * `makeWaveCloseSchema` to validate `conceptUpdates[].name`. Empty for
+   * scoping (no concepts exist yet pre-close).
+   */
+  readonly existingConceptNames: readonly string[];
 }
 
 /**
@@ -83,6 +112,7 @@ export interface MakeCloseTurnBaseSchemaParams {
 export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
   const scope = new Set(params.scopeTiers);
   const idSet = new Set(params.questionIds);
+  const reviewDue = new Set(params.reviewDueNames);
 
   return z
     .object({
@@ -90,46 +120,35 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
         .string()
         .min(1)
         .describe(
-          "Write the message the learner sees as the closing of this planning conversation. Acknowledge a specific thing you've learned about them, then signal that their first lesson is ready. 2-3 sentences. Conversational.",
+          "Message the learner sees as the closing of this turn. 2-3 sentences. Conversational.",
         ),
       gradings: z
         .array(closeGradingItemSchema)
-        .describe(
-          "Produce one grading entry per question the learner answered. Cover every question — don't drop any.",
-        ),
-      summary: z
-        .string()
-        .min(1)
-        .describe(
-          "Write a 2-3 sentence summary of where this learner is starting from in this subject, based on how they performed so far. This summary will grow as the course progresses; you're writing its current state.",
-        ),
-      nextUnitBlueprint: blueprintSchema.describe(
-        "The plan for the first lesson. The learner will see `openingText` when they enter that lesson.",
-      ),
+        .describe("One entry per question the learner answered. Cover every id."),
+      summary: z.string().min(1).describe("2-3 sentences capturing where the learner stands now."),
+      nextUnitBlueprint: blueprintSchema,
     })
     .superRefine((val, ctx) => {
-      // 1. Verdict/qualityScore band.
+      // 1. Verdict/qualityScore band — free-text gradings only.
       val.gradings.forEach((g, idx) => {
+        if (g.kind !== "free-text") return;
         const [lo, hi] = VERDICT_QUALITY_BANDS[g.verdict];
         if (g.qualityScore < lo || g.qualityScore > hi) {
           ctx.addIssue({
             code: "custom",
             path: ["gradings", idx, "qualityScore"],
-            message:
-              `grading for ${g.questionId}: verdict='${g.verdict}' requires qualityScore in [${lo}, ${hi}], got ${g.qualityScore}. ` +
-              "Map: correct → 4-5, partial → 2-3, incorrect → 0-1.",
+            message: `grading for ${g.questionId}: verdict='${g.verdict}' requires qualityScore in [${lo}, ${hi}], got ${g.qualityScore}.`,
           });
         }
-        // 2. conceptTier in scope.
         if (!scope.has(g.conceptTier)) {
           ctx.addIssue({
             code: "custom",
             path: ["gradings", idx, "conceptTier"],
-            message: `grading for ${g.questionId}: conceptTier ${g.conceptTier} is outside the framework's level range [${[...scope].join(", ")}].`,
+            message: `grading for ${g.questionId}: conceptTier ${g.conceptTier} is outside [${[...scope].join(", ")}].`,
           });
         }
       });
-      // 3. Unique question ids.
+      // 2. Unique question ids in gradings.
       const ids = val.gradings.map((g) => g.questionId);
       const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
       if (dupes.length > 0) {
@@ -139,7 +158,7 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
           message: `duplicate questionIds in gradings: ${[...new Set(dupes)].join(", ")}`,
         });
       }
-      // 4. Every question covered.
+      // 3. Every question covered.
       const missing = [...idSet].filter((id) => !ids.includes(id));
       if (missing.length > 0) {
         ctx.addIssue({
@@ -148,13 +167,35 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
           message: `gradings missing for question ids: ${missing.join(", ")}`,
         });
       }
-      // 5. No stray ids.
-      const stray = ids.filter((id) => !idSet.has(id));
-      if (stray.length > 0) {
+      // 4. No unknown ids — every graded id must be one the prompt expected.
+      // Without this, a payload covering all expected ids could still smuggle
+      // in a fabricated id and (downstream) earn XP for a non-existent card.
+      const unknown = [...new Set(ids)].filter((id) => !idSet.has(id));
+      if (unknown.length > 0) {
         ctx.addIssue({
           code: "custom",
           path: ["gradings"],
-          message: `gradings include unknown question ids: ${stray.join(", ")}`,
+          message: `gradings include unknown question ids: ${unknown.join(", ")}`,
+        });
+      }
+      // 5. plannedConcepts.role='review' names must be in reviewDueNames.
+      val.nextUnitBlueprint.plannedConcepts.forEach((pc, idx) => {
+        if (pc.role === "review" && !reviewDue.has(pc.name)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["nextUnitBlueprint", "plannedConcepts", idx, "name"],
+            message: `review-role plannedConcept '${pc.name}' not in reviewDueNames [${params.reviewDueNames.join(", ")}].`,
+          });
+        }
+      });
+      // 6. plannedConcepts.name unique (no fresh/review collision).
+      const pcNames = val.nextUnitBlueprint.plannedConcepts.map((pc) => pc.name);
+      const pcDupes = pcNames.filter((n, i) => pcNames.indexOf(n) !== i);
+      if (pcDupes.length > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["nextUnitBlueprint", "plannedConcepts"],
+          message: `duplicate plannedConcept names (fresh/review collision?): ${[...new Set(pcDupes)].join(", ")}`,
         });
       }
     });

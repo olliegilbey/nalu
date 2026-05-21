@@ -63,6 +63,7 @@ export const PARSED: ScopingCloseTurn = {
   // Keep this here as a typed value to match `ScopingCloseTurn`.
   gradings: [
     {
+      kind: "free-text",
       questionId: "b1",
       conceptName: "ownership",
       conceptTier: 2,
@@ -75,6 +76,7 @@ export const PARSED: ScopingCloseTurn = {
     topic: "Ownership basics",
     outline: ["intro", "examples"],
     openingText: "Welcome to lesson 1.",
+    plannedConcepts: [],
   },
 };
 

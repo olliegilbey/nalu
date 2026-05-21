@@ -15,8 +15,13 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">
-        <Providers>{children}</Providers>
+      <body className="min-h-full flex flex-col bg-kanagawa-atmos">
+        {/* Cap the interface to a centered reading-width column. The
+            atmospheric gradient lives on <body> so it fills the whole
+            viewport, including the margins on either side of the column. */}
+        <div className="mx-auto w-full max-w-2xl">
+          <Providers>{children}</Providers>
+        </div>
         <Toaster
           position="top-center"
           toastOptions={{ className: "font-sans text-[13px]" }}

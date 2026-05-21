@@ -1,7 +1,11 @@
 import type { ChoiceQuestion } from "./adaptQuestionnaire";
 
-/** One entry in the answer payload submitted to `course.submitBaseline`. */
-export type ShapedBaselineAnswer =
+/**
+ * One entry in the answer payload submitted to questionnaire-consuming
+ * procedures (`course.submitBaseline`, `wave.submitTurn` with the
+ * `questionnaire-answers` branch). Same wire shape across phases.
+ */
+export type ShapedQuestionnaireAnswer =
   | { readonly id: string; readonly kind: "mc"; readonly selected: "A" | "B" | "C" | "D" }
   | {
       readonly id: string;
@@ -20,7 +24,8 @@ const LETTERS = ["A", "B", "C", "D"] as const;
 
 /**
  * Shape Composer-emitted `{ question, answer }` pairs into the discriminated
- * union the `course.submitBaseline` procedure expects.
+ * union that questionnaire-consuming procedures expect (`submitBaseline` and
+ * `wave.submitTurn`'s `questionnaire-answers` branch share this wire shape).
  *
  * MC vs free-text is disambiguated by matching the answer string against the
  * question's options array — the Composer returns the option text verbatim
@@ -29,9 +34,9 @@ const LETTERS = ["A", "B", "C", "D"] as const;
  *
  * Lives in `src/lib/` so the component layer stays a thin rendering shell.
  */
-export function shapeBaselineAnswers(
+export function shapeQuestionnaireAnswers(
   answers: readonly RawComposerAnswer[],
-): readonly ShapedBaselineAnswer[] {
+): readonly ShapedQuestionnaireAnswer[] {
   return answers.map(({ question, answer }) => {
     const idx = question.options.indexOf(answer);
     // Guard idx against LETTERS.length explicitly — adaptQuestionnaire currently

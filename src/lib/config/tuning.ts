@@ -68,9 +68,16 @@ export const XP = {
     4: 1, // correct and clear — full reward
     5: 1.5, // could teach it — bonus, but bounded
   },
+  // MC correct = equivalent to free-text q=4 (correct and clear). Q=5 stays
+  // reserved for free-text answers where the learner can demonstrate teach-
+  // level depth that a click cannot. Wrong MC clicks still pay 0 via the
+  // q=1 multiplier (BASELINE.mcIncorrectQuality = 1); this multiplier only
+  // applies to the `correct === true` branch in `calculateMcXp`.
+  mcCorrectMultiplier: 1,
 } as const satisfies {
   readonly basePerTier: number;
   readonly qualityMultipliers: Readonly<Record<QualityScore, number>>;
+  readonly mcCorrectMultiplier: number;
 };
 
 /**
@@ -191,9 +198,60 @@ export const BASELINE = {
  * structured and chat call unless an explicit override is passed.
  * `defaultTemperature` favours consistency over creativity; raise per-flow
  * only where variety aids learning. `maxRetries` bounds transient-failure
- * retries — the AI SDK handles JSON-parse repair internally.
+ * retries — the AI SDK handles JSON-parse repair internally and applies
+ * exponential backoff between attempts (≈2s, 4s, 8s, 16s, 32s, 64s).
+ *
+ * `maxRetries: 6`: sized to absorb a Cerebras free-tier 30-RPM rate-limit
+ * stall during smoke runs (4 scoping calls × 3 topics + 11 wave calls fired
+ * quasi-serially over ~60s). With 6 attempts the total backoff window is
+ * ~2 minutes — long enough for the RPM bucket to refill, short enough to
+ * fail fast on a genuine outage. Production traffic is bursty but
+ * single-user; this ceiling is for the smoke suite.
+ *
+ * `minRequestSpacingMs: 13000`: minimum gap (dispatch-to-dispatch) between
+ * consecutive Cerebras API calls, enforced at the `generateChat` call site
+ * by `src/lib/llm/cerebrasRateLimit.ts`. The Cerebras FREE tier caps at
+ * 5 requests/min — a 12.0s exact floor (60s ÷ 5). 13s adds ~1s margin so a
+ * strict server-side sliding window can't trip on clock skew or
+ * response-time variance. Pacing at the call site (rather than per logical
+ * turn) means `executeTurn`'s JSON-validation retries — each a separate API
+ * call — are throttled too. THIS IS THE SINGLE KNOB TO BUMP when upgrading
+ * to a paid Cerebras tier: a paid plan's higher RPM allows a much smaller
+ * spacing (e.g. 600ms at 100 RPM). The rate limiter is a no-op in mocked
+ * unit/integration tests, so this value never slows those suites.
+ *
+ * `lowTokenBudgetThreshold: 10000`: if a prior response's
+ * `x-ratelimit-remaining-tokens-minute` header drops below this, the limiter
+ * waits for the per-minute token bucket to reset before the next call. The
+ * Cerebras free tier allows 30,000 tokens/min; a single large teaching turn
+ * (full Wave context + a verbose structured reply) can consume several
+ * thousand tokens. 10000 leaves comfortable headroom for one such turn
+ * without tripping a mid-turn 429. The same Cerebras API key is shared with
+ * another workload, so the remaining-tokens header reports the
+ * account-wide budget — this backoff absorbs that contention automatically.
  */
 export const LLM = {
   defaultTemperature: 0.3,
-  maxRetries: 3,
+  maxRetries: 6,
+  minRequestSpacingMs: 13_000,
+  lowTokenBudgetThreshold: 10_000,
+} as const;
+
+/**
+ * Wave-loop tunables.
+ * - `turnCount`: fixed length of every teaching Wave (mid-turns 1…turnCount-1,
+ *   close turn at turnsRemaining===0).
+ * - `tierCheckInterval`: gates the close-turn tier-advancement check; smaller
+ *   = more frequent advancement checks. MVP value 2 keeps integration tests
+ *   fast.
+ *   TODO(pre-launch): raise to ~5 once tier-progression UX is validated.
+ * - `completionXp`: flat bonus on Wave close. Motivates finishing a Wave
+ *   without inflating per-question XP scaling — sized at roughly a tier-5
+ *   medium-quality free-text answer, so the per-Wave commitment payoff is
+ *   visible without dwarfing in-Wave grading.
+ */
+export const WAVE = {
+  turnCount: 10,
+  tierCheckInterval: 2,
+  completionXp: 50,
 } as const;

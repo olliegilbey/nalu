@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { WAVE } from "@/lib/config/tuning";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles, courses } from "@/db/schema";
 import { NotFoundError } from "./errors";
@@ -39,6 +40,7 @@ const BLUEPRINT = {
   topic: "Rust borrowing",
   outline: ["What is borrowing?", "Mutable vs immutable references"],
   openingText: "Let's dive into borrowing in Rust.",
+  plannedConcepts: [],
 };
 
 /**
@@ -77,7 +79,7 @@ describe("waves queries", () => {
         customInstructionsSnapshot: null,
         dueConceptsSnapshot: DUE_CONCEPTS_SNAPSHOT,
         seedSource: SEED_SOURCE_WAVE1,
-        turnBudget: 10,
+        turnBudget: WAVE.turnCount,
       });
 
       // Returned row must reflect the inserted values.
@@ -108,7 +110,7 @@ describe("waves queries", () => {
         customInstructionsSnapshot: null,
         dueConceptsSnapshot: DUE_CONCEPTS_SNAPSHOT,
         seedSource: SEED_SOURCE_WAVE1,
-        turnBudget: 10,
+        turnBudget: WAVE.turnCount,
       });
 
       // Second open wave on same course — must be rejected by the DB constraint.
@@ -121,7 +123,7 @@ describe("waves queries", () => {
           customInstructionsSnapshot: null,
           dueConceptsSnapshot: DUE_CONCEPTS_SNAPSHOT,
           seedSource: SEED_SOURCE_WAVE1,
-          turnBudget: 10,
+          turnBudget: WAVE.turnCount,
         }),
       ).rejects.toThrow();
     });
@@ -141,7 +143,7 @@ describe("waves queries", () => {
         customInstructionsSnapshot: null,
         dueConceptsSnapshot: DUE_CONCEPTS_SNAPSHOT,
         seedSource: SEED_SOURCE_WAVE1,
-        turnBudget: 10,
+        turnBudget: WAVE.turnCount,
       });
 
       // Close Wave 1.
@@ -172,7 +174,7 @@ describe("waves queries", () => {
         customInstructionsSnapshot: null,
         dueConceptsSnapshot: DUE_CONCEPTS_SNAPSHOT,
         seedSource: seedSource2,
-        turnBudget: 10,
+        turnBudget: WAVE.turnCount,
       });
 
       // listClosedWavesByCourse must return exactly Wave 1.
@@ -234,7 +236,7 @@ describe("waves queries", () => {
         customInstructionsSnapshot: null,
         dueConceptsSnapshot: DUE_CONCEPTS_SNAPSHOT,
         seedSource: SEED_SOURCE_WAVE1,
-        turnBudget: 10,
+        turnBudget: WAVE.turnCount,
       });
 
       const first = await closeWave(wave.id, { summary: "first", blueprintEmitted: BLUEPRINT });

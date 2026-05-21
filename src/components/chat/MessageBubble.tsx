@@ -93,48 +93,15 @@ export function TypingBubble() {
 }
 
 function WaveSpinner() {
-  // Two curling wave "swooshes" with foam tips, arranged yin-yang style.
-  // Each swoosh: a J-shaped arc + a foam droplet at its crest.
+  // The Nalu wave emblem (vectorized brand artwork at `public/nalu-logo.svg`),
+  // rotated via the shared `wave-spin` keyframes as the assistant's loading
+  // indicator. Background image rather than <img> keeps it purely decorative.
   return (
     <div className="flex items-center h-7" aria-label="nalu is thinking" role="status">
-      <svg
-        viewBox="0 0 40 40"
-        className="h-7 w-7 wave-spin"
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-      >
-        {/* Wave 1 — crystal blue: arcs from lower-left up to a curling crest on the right */}
-        <path
-          d="M6 30 C 6 14, 16 6, 28 10"
-          stroke="var(--crystal-blue)"
-          strokeWidth="3.5"
-          strokeLinecap="round"
-        />
-        <path
-          d="M28 10 C 32 11.5, 32 16, 28 16"
-          stroke="var(--crystal-blue)"
-          strokeWidth="3.5"
-          strokeLinecap="round"
-        />
-        <circle cx="26.5" cy="16" r="1.6" fill="var(--crystal-blue)" />
-
-        {/* Wave 2 — sakura pink: mirrored 180° */}
-        <g transform="rotate(180 20 20)">
-          <path
-            d="M6 30 C 6 14, 16 6, 28 10"
-            stroke="var(--sakura-pink)"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-          />
-          <path
-            d="M28 10 C 32 11.5, 32 16, 28 16"
-            stroke="var(--sakura-pink)"
-            strokeWidth="3.5"
-            strokeLinecap="round"
-          />
-          <circle cx="26.5" cy="16" r="1.6" fill="var(--sakura-pink)" />
-        </g>
-      </svg>
+      <div
+        className="h-7 w-7 wave-spin bg-contain bg-center bg-no-repeat"
+        style={{ backgroundImage: "url('/nalu-logo.svg')" }}
+      />
     </div>
   );
 }

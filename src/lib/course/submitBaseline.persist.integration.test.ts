@@ -1,8 +1,14 @@
 import { describe, it, expect } from "vitest";
+import { WAVE } from "@/lib/config/tuning";
 import { persistScopingClose } from "./submitBaseline.persist";
 import { getCourseById } from "@/db/queries/courses";
 import { getConceptsByCourse } from "@/db/queries/concepts";
-import { openWave, getOpenWaveByCourse, getLatestWaveNumberByCourse } from "@/db/queries/waves";
+import {
+  openWave,
+  getOpenWaveByCourse,
+  getLatestWaveNumberByCourse,
+  getWaveByCourseAndNumber,
+} from "@/db/queries/waves";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
 import { FRAMEWORK, PARSED, MERGED, seedScopingCourseAndRun } from "./submitBaseline.fixtures";
 
@@ -87,6 +93,26 @@ describe("persistScopingClose (integration)", () => {
   });
 
   // -------------------------------------------------------------------------
+  // chat_log dual-write: Wave 1's chat_log JSONB column is seeded with the
+  // assistant openingText entry inside the same transaction that writes the
+  // `context_messages` row. Mirror of the happy-path block above (steps 4–5).
+  // -------------------------------------------------------------------------
+  it("seeds Wave 1's chat_log with the openingText assistant entry", async () => {
+    await seedScopingCourseAndRun(async (courseId) => {
+      await persistScopingClose({ courseId, parsed: PARSED, merged: MERGED });
+      const wave1 = await getWaveByCourseAndNumber(courseId, 1);
+      if (!wave1) throw new Error("Wave 1 must exist after scoping close");
+      expect(wave1.chatLog).toEqual([
+        {
+          role: "assistant",
+          kind: "text",
+          content: PARSED.nextUnitBlueprint.openingText,
+        },
+      ]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Rollback path: pre-existing open Wave 1 forces `openWave` to throw via
   // the partial unique index `waves_one_open_per_course`. The transaction
   // rolls back EVERY write inside the tx — baseline JSONB widen, status flip,
@@ -109,9 +135,10 @@ describe("persistScopingClose (integration)", () => {
             topic: "pre-existing",
             outline: ["x"],
             openingText: "pre-existing opening",
+            plannedConcepts: [],
           },
         },
-        turnBudget: 10,
+        turnBudget: WAVE.turnCount,
       });
 
       // The call must throw — postgres raises a unique-violation, which
