@@ -132,7 +132,7 @@ export type DueConceptsSnapshot = z.infer<typeof dueConceptsSnapshotSchema>;
  */
 export const plannedConceptStorageSchema = z.object({
   name: z.string(),
-  tier: z.number().int(),
+  tier: z.number().int().min(1),
   role: z.enum(["fresh", "review"]),
 });
 

@@ -28,7 +28,9 @@ export const closeGradingItemSchema = z.discriminatedUnion("kind", [
   }),
   z.object({
     kind: z.literal("free-text"),
-    questionId: z.string(),
+    questionId: z
+      .string()
+      .describe("Verbatim question id from the prompt — match the card the learner answered."),
     verdict: z
       .enum(["correct", "partial", "incorrect"])
       .describe(
@@ -56,7 +58,13 @@ export const closeGradingItemSchema = z.discriminatedUnion("kind", [
 /** Planned concept entry — surfaces in the blueprint for the next Wave. */
 export const plannedConceptSchema = z.object({
   name: z.string().min(1).describe("Exact concept name (verbatim from <planned_concepts>)."),
-  tier: z.number().int(),
+  tier: z
+    .number()
+    .int()
+    .min(1)
+    .describe(
+      "Level (1-indexed) of the concept; must be within the in-scope levels from the prompt.",
+    ),
   role: z
     .enum(["fresh", "review"])
     .describe("'review' for SM-2-due concepts (must be in reviewDueNames); 'fresh' for new ones."),
@@ -159,7 +167,18 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
           message: `gradings missing for question ids: ${missing.join(", ")}`,
         });
       }
-      // 4. plannedConcepts.role='review' names must be in reviewDueNames.
+      // 4. No unknown ids — every graded id must be one the prompt expected.
+      // Without this, a payload covering all expected ids could still smuggle
+      // in a fabricated id and (downstream) earn XP for a non-existent card.
+      const unknown = [...new Set(ids)].filter((id) => !idSet.has(id));
+      if (unknown.length > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["gradings"],
+          message: `gradings include unknown question ids: ${unknown.join(", ")}`,
+        });
+      }
+      // 5. plannedConcepts.role='review' names must be in reviewDueNames.
       val.nextUnitBlueprint.plannedConcepts.forEach((pc, idx) => {
         if (pc.role === "review" && !reviewDue.has(pc.name)) {
           ctx.addIssue({
@@ -169,7 +188,7 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
           });
         }
       });
-      // 5. plannedConcepts.name unique (no fresh/review collision).
+      // 6. plannedConcepts.name unique (no fresh/review collision).
       const pcNames = val.nextUnitBlueprint.plannedConcepts.map((pc) => pc.name);
       const pcDupes = pcNames.filter((n, i) => pcNames.indexOf(n) !== i);
       if (pcDupes.length > 0) {

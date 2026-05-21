@@ -78,6 +78,22 @@ describe("makeCloseTurnBaseSchema", () => {
       }),
     ).toThrow(/duplicate/);
   });
+
+  it("rejects gradings containing an unknown questionId", () => {
+    // questionIds = ["b1"]; payload covers b1 but also fabricates a phantom id.
+    // All expected ids are present, so the missing-id check passes — the
+    // unknown-id check must still reject the phantom.
+    const schema = makeCloseTurnBaseSchema(baseParams);
+    expect(() =>
+      schema.parse({
+        ...validPayload,
+        gradings: [
+          validPayload.gradings[0],
+          { ...validPayload.gradings[0], questionId: "phantom" },
+        ],
+      }),
+    ).toThrow(/phantom/);
+  });
 });
 
 describe("makeCloseTurnBaseSchema — extended params", () => {
