@@ -36,13 +36,22 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet, headers) {
           cookiesToSet.forEach(({ name, value }) => {
             request.cookies.set(name, value);
           });
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) => {
             response.cookies.set(name, value, options);
+          });
+          // Forward the cache-control headers `@supabase/ssr` passes alongside
+          // auth cookies (`Cache-Control: private, no-store…`, `Expires: 0`,
+          // `Pragma: no-cache`). Without them a CDN or reverse proxy could
+          // cache a `Set-Cookie` response and replay one visitor's session
+          // token to another — a session-isolation bug. Required by the
+          // cookie-adapter contract (see @supabase/ssr `SetAllCookies` type).
+          Object.entries(headers).forEach(([key, value]) => {
+            response.headers.set(key, value);
           });
         },
       },
@@ -78,6 +87,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 
 export const config = {
   // Run on page routes only. Exclude API routes (the tRPC route reads the
-  // cookie read-only) and static assets.
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  // cookie read-only), Next internals, and the root metadata files
+  // (`favicon.ico`, `icon.png`, `apple-icon.png` — see `src/app/`). Serving
+  // those never needs a session; matching them would mint a throwaway
+  // anonymous user on every crawler/browser asset fetch.
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png).*)"],
 };
