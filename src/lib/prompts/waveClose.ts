@@ -49,6 +49,19 @@ export function makeWaveCloseSchema(params: MakeCloseTurnBaseSchemaParams) {
             });
           }
         });
+        // Unique concept names. A duplicate would make `persistWaveClose`
+        // apply SM-2 twice for one concept (each `applySm2Update` reads the
+        // prior write back through the same tx), silently double-advancing
+        // its review schedule. Mirrors the gradings/plannedConcepts dedupes.
+        const names = val.conceptUpdates.map((u) => u.name);
+        const dupes = names.filter((n, i) => names.indexOf(n) !== i);
+        if (dupes.length > 0) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["conceptUpdates"],
+            message: `duplicate conceptUpdates names: ${[...new Set(dupes)].join(", ")}`,
+          });
+        }
       }),
   );
 }

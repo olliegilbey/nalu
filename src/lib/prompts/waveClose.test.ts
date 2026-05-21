@@ -48,6 +48,33 @@ describe("makeWaveCloseSchema", () => {
       expect(r.error.issues[0]!.message).toContain("Ghost");
     }
   });
+
+  it("rejects duplicate conceptUpdates names (double SM-2 advance guard)", () => {
+    const schema = makeWaveCloseSchema(params);
+    const r = schema.safeParse({
+      ...validBase,
+      conceptUpdates: [
+        { name: "B", qualityScore: 4, reason: "Answered correctly." },
+        { name: "B", qualityScore: 2, reason: "Stumbled on the follow-up." },
+      ],
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues.some((i) => i.message.includes("duplicate conceptUpdates"))).toBe(true);
+    }
+  });
+
+  it("accepts conceptUpdates with distinct names", () => {
+    const schema = makeWaveCloseSchema(params);
+    const r = schema.safeParse({
+      ...validBase,
+      conceptUpdates: [
+        { name: "A", qualityScore: 5, reason: "Explained it unprompted." },
+        { name: "B", qualityScore: 3, reason: "Partial grasp." },
+      ],
+    });
+    expect(r.success).toBe(true);
+  });
 });
 
 describe("renderWaveCloseEnvelope", () => {
