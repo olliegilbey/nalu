@@ -23,21 +23,15 @@ import {
  * `CEREBRAS_LIVE=1` to exercise the active paths, and restore it after.
  */
 describe("cerebrasRateLimit", () => {
-  // Snapshot CEREBRAS_LIVE so each test can set it freely and restore after.
-  const originalCerebrasLive = process.env.CEREBRAS_LIVE;
-
   beforeEach(() => {
     vi.useFakeTimers();
     __resetCerebrasRateLimitStateForTests();
   });
 
   afterEach(() => {
-    // Restore env: delete if it was unset, otherwise put the value back.
-    if (originalCerebrasLive === undefined) {
-      delete process.env.CEREBRAS_LIVE;
-    } else {
-      process.env.CEREBRAS_LIVE = originalCerebrasLive;
-    }
+    // `vi.unstubAllEnvs` restores any CEREBRAS_LIVE stub set in a test —
+    // the idiomatic Vitest approach, no mutable snapshot to track.
+    vi.unstubAllEnvs();
     vi.useRealTimers();
   });
 
@@ -57,7 +51,7 @@ describe("cerebrasRateLimit", () => {
   describe("gating — inert in mocked test context", () => {
     it("no-ops with zero delay when CEREBRAS_LIVE is unset", async () => {
       // VITEST is set by the runner; without CEREBRAS_LIVE the gate is off.
-      delete process.env.CEREBRAS_LIVE;
+      vi.stubEnv("CEREBRAS_LIVE", undefined);
 
       // Two back-to-back calls — neither should incur any delay.
       const firstDelay = await measure(awaitCerebrasCallSlot());
@@ -69,7 +63,7 @@ describe("cerebrasRateLimit", () => {
 
     it('no-ops when CEREBRAS_LIVE is not exactly "1"', async () => {
       // Only the exact string "1" arms the gate — "true"/"0" must not.
-      process.env.CEREBRAS_LIVE = "true";
+      vi.stubEnv("CEREBRAS_LIVE", "true");
 
       const delay = await measure(awaitCerebrasCallSlot());
 
@@ -79,7 +73,7 @@ describe("cerebrasRateLimit", () => {
 
   describe("request spacing — active under CEREBRAS_LIVE=1", () => {
     beforeEach(() => {
-      process.env.CEREBRAS_LIVE = "1";
+      vi.stubEnv("CEREBRAS_LIVE", "1");
     });
 
     it("does not delay the first call (no prior dispatch)", async () => {
@@ -123,7 +117,7 @@ describe("cerebrasRateLimit", () => {
 
   describe("token-budget backoff — active under CEREBRAS_LIVE=1", () => {
     beforeEach(() => {
-      process.env.CEREBRAS_LIVE = "1";
+      vi.stubEnv("CEREBRAS_LIVE", "1");
     });
 
     it("does not wait for the token bucket when no headers have been seen", async () => {

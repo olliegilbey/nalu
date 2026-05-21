@@ -38,18 +38,16 @@ import { LLM } from "@/lib/config/tuning";
 /**
  * Whether the rate limiter should actually pace calls.
  *
- * Active in production and live smoke; a no-op in mocked test suites.
- * Vitest sets `process.env.VITEST` for every project; the live project
- * additionally sets `CEREBRAS_LIVE=1`. So the limiter is inert whenever
- * we're under vitest UNLESS it's the live project — i.e. active when
- * `!VITEST || CEREBRAS_LIVE==="1"`. Production sets neither var, so it is
- * active there too. Env is read at CALL time (not module-load) so a harness
+ * WHY: mocked unit/integration suites must no-op the limiter — a 13s wait
+ * would hang the run. Vitest sets `process.env.VITEST` for every project,
+ * so we treat "under vitest" as inert UNLESS the live-smoke project opted
+ * in with `CEREBRAS_LIVE=1`. Production sets neither var, so it stays
+ * active there. Env is read at CALL time (not module-load) so a harness
  * that sets the vars after import still takes effect.
  */
 function isRateLimiterActive(): boolean {
-  return process.env.VITEST !== "true" && process.env.VITEST !== "1"
-    ? true
-    : process.env.CEREBRAS_LIVE === "1";
+  const underVitest = process.env.VITEST === "true" || process.env.VITEST === "1";
+  return !underVitest || process.env.CEREBRAS_LIVE === "1";
 }
 
 // --- Module-level mutable state -------------------------------------------
