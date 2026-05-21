@@ -64,6 +64,33 @@ describe("redactWaveChatLog", () => {
     expect(ft.prompt).toBe("Why?");
   });
 
+  it("projects the optional per-question tier onto the client question", () => {
+    const result = redactWaveChatLog([
+      {
+        role: "assistant",
+        kind: "text_with_questionnaire",
+        questionnaireId: "q1",
+        content: "Try this:",
+        questions: [
+          {
+            id: "qa",
+            type: "multiple_choice",
+            prompt: "?",
+            options: { A: "1", B: "2", C: "3", D: "4" },
+            correct: "A",
+            freetextRubric: "n/a",
+            tier: 3,
+          },
+        ],
+      },
+    ]);
+    const entry = result[0];
+    if (entry?.role !== "assistant" || entry.kind !== "text_with_questionnaire") {
+      throw new Error("expected a text_with_questionnaire entry");
+    }
+    expect(entry.questions[0]?.tier).toBe(3);
+  });
+
   it("throws if an MC question is missing the correct key", () => {
     const log: WaveChatLogEntry[] = [
       {

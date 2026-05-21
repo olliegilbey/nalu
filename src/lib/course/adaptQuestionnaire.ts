@@ -9,6 +9,8 @@ export interface ChoiceQuestion {
   /** Empty array means free-text-only. */
   readonly options: readonly string[];
   readonly correctIndex?: number;
+  /** Concept tier — drives client-side `calculateMcXp` for correct MC answers. */
+  readonly tier?: number;
 }
 
 const KEY_TO_INDEX: Record<McOptionKey, number> = { A: 0, B: 1, C: 2, D: 3 };
@@ -76,7 +78,8 @@ export function adaptOpenQuestion(q: OpenQuestionForClient): ChoiceQuestion {
       prompt: q.prompt,
       options: [q.options.A, q.options.B, q.options.C, q.options.D],
       correctIndex: decoded ?? undefined,
+      tier: q.tier,
     };
   }
-  return { id: q.id, prompt: q.prompt, options: [] };
+  return { id: q.id, prompt: q.prompt, options: [], tier: q.tier };
 }

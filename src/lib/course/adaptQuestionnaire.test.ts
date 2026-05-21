@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { adaptQuestionnaire } from "./adaptQuestionnaire";
+import { adaptQuestionnaire, adaptOpenQuestion } from "./adaptQuestionnaire";
 import type { Question } from "@/lib/prompts/questionnaire";
 
 describe("adaptQuestionnaire", () => {
@@ -55,6 +55,19 @@ describe("adaptQuestionnaire", () => {
     const r = adaptQuestionnaire(qs);
     expect(r.mode).toBe("free-text");
     expect(r.questions).toEqual([{ id: "f1", prompt: "Why are you learning?", options: [] }]);
+  });
+
+  it("adaptOpenQuestion carries the optional tier through", () => {
+    const adapted = adaptOpenQuestion({
+      id: "q1",
+      type: "multiple_choice",
+      prompt: "?",
+      options: { A: "1", B: "2", C: "3", D: "4" },
+      correctEnc: "unused",
+      freetextRubric: "n/a",
+      tier: 2,
+    });
+    expect(adapted.tier).toBe(2);
   });
 
   it("classifies mode as 'mc' only when every question has options", () => {
