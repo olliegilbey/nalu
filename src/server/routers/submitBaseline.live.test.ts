@@ -24,7 +24,11 @@ import {
   assertFrameworkStructural,
   assertBaselineStructural,
 } from "@/lib/testing/scopingInvariants";
-import { baselineClosedJsonbSchema, type FrameworkJsonb } from "@/lib/types/jsonb";
+import {
+  baselineJsonbSchema,
+  baselineClosedJsonbSchema,
+  type FrameworkJsonb,
+} from "@/lib/types/jsonb";
 import type { BaselineAnswer } from "@/lib/course/submitBaseline";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 import { pace } from "@/lib/testing/cerebrasPace";
@@ -80,9 +84,27 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       assertBaselineStructural(baseline, framework);
 
       // 4. submitBaseline — build one BaselineAnswer per question.
-      //    MC: pick "A" (grading is mechanical; correctness doesn't affect the
-      //    assertion surface — we just need coverage of every qid).
+      //    MC: answer CORRECTLY. The wire `baseline` strips the `correct`
+      //    key (answer keys never reach the client), so read it back from
+      //    the persisted `courses.baseline` JSONB. Answering correctly keeps
+      //    `totalXp > 0` deterministic — blindly picking one key flakes
+      //    ~1/3 of runs: when the model places the right answer off that key
+      //    on every MC question, mechanical XP is 0, and with generic
+      //    free-text answers also scoring 0, `totalXp` is legitimately 0.
       //    free_text: a plausible learner answer from the topic pool.
+      const persistedQuestions = baselineJsonbSchema.parse(
+        (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!.baseline,
+      ).questions as ReadonlyArray<{
+        readonly id: string;
+        readonly type: "multiple_choice" | "free_text";
+        readonly correct?: "A" | "B" | "C" | "D";
+      }>;
+      // questionId → correct option key (MC questions only).
+      const correctById = new Map(
+        persistedQuestions
+          .filter((q) => q.type === "multiple_choice" && q.correct !== undefined)
+          .map((q) => [q.id, q.correct!] as const),
+      );
       const questions = baseline.questions.questions as ReadonlyArray<{
         readonly id: string;
         readonly type: "multiple_choice" | "free_text";
@@ -91,7 +113,7 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       // are still per-entry-immutable via `as const`.
       const answers: BaselineAnswer[] = questions.map((q) =>
         q.type === "multiple_choice"
-          ? ({ id: q.id, kind: "mc", selected: "A" } as const)
+          ? ({ id: q.id, kind: "mc", selected: correctById.get(q.id)! } as const)
           : ({
               id: q.id,
               kind: "freetext",
