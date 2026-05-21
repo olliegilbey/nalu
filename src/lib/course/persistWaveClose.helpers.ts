@@ -8,7 +8,7 @@ import type { ConceptState } from "@/lib/types/scoring";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { applyAssessmentGrading, type GradedSignal } from "./applyAssessmentGrading";
-import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
+import { findOpenQuestionnaire, buildMcCorrectKeyMap } from "./findOpenQuestionnaire";
 import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { LoadedWaveContext } from "./loadWaveContext";
 
@@ -86,17 +86,14 @@ export async function applyCloseGradings(
   // MC grading. `ctx.wave.chatLog` is `unknown` at the Drizzle JSONB boundary;
   // runtime shape is guaranteed by `waveRowGuard` upstream.
   const openQuestionnaire = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
-  // raw id → server-side correct key (MC only) and learner's clicked key.
-  // `clickByQuestionId` reads the live chat_log — see `buildCloseMcChoiceMap`.
-  const correctByQuestionId = new Map(
-    (openQuestionnaire?.questions ?? [])
-      .filter(
-        (q): q is typeof q & { readonly correct: "A" | "B" | "C" | "D" } =>
-          q.type === "multiple_choice" && q.correct !== undefined,
-      )
-      .map((q) => [q.id, q.correct] as const),
-  );
-  // Only fetched when there is an open questionnaire to grade against.
+  // raw id → server-side correct key (MC only). Empty when no questionnaire is
+  // open. Shared with the mid-turn grading path via `buildMcCorrectKeyMap`.
+  const correctByQuestionId = openQuestionnaire
+    ? buildMcCorrectKeyMap(openQuestionnaire)
+    : new Map<string, "A" | "B" | "C" | "D">();
+  // raw id → learner's clicked key. `buildCloseMcChoiceMap` reads the live
+  // `chat_log` (not the snapshot) so the close-turn answer is visible. Only
+  // fetched when there is an open questionnaire to grade against.
   const clickByQuestionId = openQuestionnaire
     ? await buildCloseMcChoiceMap(tx, ctx.wave.id, openQuestionnaire.questionnaireId)
     : new Map<string, "A" | "B" | "C" | "D">();

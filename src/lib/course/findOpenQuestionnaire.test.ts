@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
+import { findOpenQuestionnaire, buildMcCorrectKeyMap } from "./findOpenQuestionnaire";
+import type { OpenQuestionnaireRecord } from "./buildLearnerInput";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 
 describe("findOpenQuestionnaire", () => {
@@ -151,5 +152,69 @@ describe("findOpenQuestionnaire", () => {
     const open = findOpenQuestionnaire(log);
     expect(open?.questionnaireId).toBe("q-new");
     expect(open?.questions).toHaveLength(1);
+  });
+});
+
+describe("buildMcCorrectKeyMap", () => {
+  it("maps MC question ids to correct keys and excludes free-text questions", () => {
+    const record: OpenQuestionnaireRecord = {
+      questionnaireId: "q-1",
+      questions: [
+        {
+          id: "mc-1",
+          type: "multiple_choice",
+          prompt: "?",
+          options: { A: "1", B: "2", C: "3", D: "4" },
+          correct: "B",
+          freetextRubric: "n/a",
+        },
+        {
+          id: "ft-1",
+          type: "free_text",
+          prompt: "explain",
+          freetextRubric: "n/a",
+        },
+        {
+          id: "mc-2",
+          type: "multiple_choice",
+          prompt: "?",
+          options: { A: "1", B: "2", C: "3", D: "4" },
+          correct: "D",
+          freetextRubric: "n/a",
+        },
+      ],
+    };
+    const map = buildMcCorrectKeyMap(record);
+    expect(map.size).toBe(2);
+    expect(map.get("mc-1")).toBe("B");
+    expect(map.get("mc-2")).toBe("D");
+    expect(map.has("ft-1")).toBe(false);
+  });
+
+  it("maps every question when the record is MC-only", () => {
+    const record: OpenQuestionnaireRecord = {
+      questionnaireId: "q-1",
+      questions: [
+        {
+          id: "mc-1",
+          type: "multiple_choice",
+          prompt: "?",
+          options: { A: "1", B: "2", C: "3", D: "4" },
+          correct: "A",
+          freetextRubric: "n/a",
+        },
+      ],
+    };
+    const map = buildMcCorrectKeyMap(record);
+    expect(map.size).toBe(1);
+    expect(map.get("mc-1")).toBe("A");
+  });
+
+  it("returns an empty map when the record has no MC questions", () => {
+    const record: OpenQuestionnaireRecord = {
+      questionnaireId: "q-1",
+      questions: [{ id: "ft-1", type: "free_text", prompt: "why?", freetextRubric: "n/a" }],
+    };
+    expect(buildMcCorrectKeyMap(record).size).toBe(0);
   });
 });

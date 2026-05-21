@@ -11,7 +11,7 @@ import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog
 import { type SubmitTurnPayload } from "./buildLearnerInput";
 import type { GradedSignal } from "./applyAssessmentGrading";
 import { buildWaveSeed } from "./buildWaveSeed";
-import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
+import { findOpenQuestionnaire, buildMcCorrectKeyMap } from "./findOpenQuestionnaire";
 import type { LoadedWaveContext } from "./loadWaveContext";
 import { gradePriorAnswers } from "./executeWaveMid.grade";
 import { insertNewQuestionnaire, type NewQuestionnaireProjection } from "./executeWaveMid.insert";
@@ -103,14 +103,7 @@ export async function executeWaveMid(
   // Free-text questions are absent. The grading helper compares each signal's
   // questionId's correct letter against the learner's `answerTextById` selection.
   const correctLetterById: ReadonlyMap<string, "A" | "B" | "C" | "D"> = openQuestionnaire
-    ? new Map(
-        openQuestionnaire.questions
-          .filter(
-            (q): q is typeof q & { readonly correct: "A" | "B" | "C" | "D" } =>
-              q.type === "multiple_choice" && q.correct !== undefined,
-          )
-          .map((q) => [q.id, q.correct] as const),
-      )
+    ? buildMcCorrectKeyMap(openQuestionnaire)
     : new Map();
 
   const result = await db.transaction(async (tx) => {

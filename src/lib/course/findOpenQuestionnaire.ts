@@ -59,3 +59,28 @@ export function findOpenQuestionnaire(
   });
   return { questionnaireId: cand.questionnaireId, questions };
 }
+
+/**
+ * Build the server-side MC correct-key map for an open questionnaire: raw
+ * question id → its `correct` key letter. Free-text questions (and any MC
+ * question missing a `correct` key) are excluded — they are not mechanically
+ * scorable.
+ *
+ * Pure projection of `OpenQuestionnaireRecord.questions`. Shared by the two
+ * mechanical-grading paths so the typed filter+map lives in exactly one place:
+ * `executeWaveMid` (mid-turn grading) and `applyCloseGradings` in
+ * `persistWaveClose.helpers` (bug_003 close-turn MC grading). If
+ * `OpenQuestionnaireRecord` or the MC key type changes, only this builder moves.
+ */
+export function buildMcCorrectKeyMap(
+  record: OpenQuestionnaireRecord,
+): ReadonlyMap<string, "A" | "B" | "C" | "D"> {
+  return new Map(
+    record.questions
+      .filter(
+        (q): q is typeof q & { readonly correct: "A" | "B" | "C" | "D" } =>
+          q.type === "multiple_choice" && q.correct !== undefined,
+      )
+      .map((q) => [q.id, q.correct] as const),
+  );
+}
