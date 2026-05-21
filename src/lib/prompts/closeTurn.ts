@@ -72,7 +72,9 @@ export const blueprintSchema = z.object({
   openingText: z
     .string()
     .min(1)
-    .describe("2-4 sentence first message. Conversational, warm, no markdown headers."),
+    .describe(
+      "The lesson's first message. Open with a warm 1-2 sentence welcome, then immediately teach the first outline beat — a substantive explanation the learner can actually engage with, not a preview of what is coming. Do NOT ask a question or pose a questionnaire here. End with a light invitation to continue. A short paragraph or two; conversational, warm, no markdown headers.",
+    ),
   plannedConcepts: z
     .array(plannedConceptSchema)
     .describe("Concepts you intend to teach this lesson. May be empty for consolidation lessons."),

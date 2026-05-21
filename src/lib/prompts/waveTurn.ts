@@ -50,7 +50,9 @@ export const waveMidTurnSchema = z.object({
   userMessage: z
     .string()
     .min(1)
-    .describe("The message the learner sees this turn. Teaching prose, ≤250 words."),
+    .describe(
+      "The message the learner sees this turn — teaching prose: explanation, worked examples, conversational tutoring, ≤250 words. Do NOT pose a formal question for the learner to answer here; any question that expects an answer goes in `questionnaire`.",
+    ),
   comprehensionSignals: z
     .array(comprehensionSignalSchema)
     .optional()
@@ -60,7 +62,7 @@ export const waveMidTurnSchema = z.object({
   questionnaire: questionnaireSchema
     .optional()
     .describe(
-      "1-N questions to drop into the conversation. Use sparingly (~1 turn in 3, never twice in a row, alternate types).",
+      "1-N questions to drop into the conversation — the only place for a question that expects a learner answer. Free-text for open synthesis, multiple-choice for quick fact checks. Use sparingly (~1 turn in 3, never twice in a row, alternate types).",
     ),
 });
 

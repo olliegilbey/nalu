@@ -29,7 +29,7 @@ export function makeScopingCloseSchema(params: MakeCloseTurnBaseSchemaParams) {
           .number()
           .int()
           .describe(
-            "Choose the framework level at which lesson 1 should begin teaching. Base it on the learner's performance: where did they show competence, where did they show gaps? Pick the lowest level at which they need real teaching. Stay inside the framework's level range.",
+            "Choose the framework level where lesson 1 begins teaching. Base it strictly on what the learner demonstrated in their baseline answers — not on their stated background or ambitions. When their performance is mixed, partial, or uncertain, choose the lower level: starting a little too easy costs only a few brisk turns and builds momentum, whereas starting too hard loses the learner. Only choose a higher level when they showed clear, consistent competence at the level below it. Stay inside the framework's level range.",
           ),
       })
       .superRefine((val, ctx) => {

@@ -70,7 +70,10 @@ export const frameworkSchema = z
       .positive()
       .describe(
         "[server] Best-guess tier number for the learner's current level, " +
-          "inferred from their clarification answers. A baseline assessment confirms it.",
+          "inferred from their clarification answers. When the answers are ambiguous " +
+          "or suggest a beginner, guess low — the baseline can still place the learner " +
+          "higher, and a low guess keeps the foundational tiers inside the baseline's " +
+          "scope. A baseline assessment confirms it.",
       ),
     baselineScopeTiers: z
       .array(z.int().positive())
