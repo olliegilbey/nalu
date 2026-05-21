@@ -1,6 +1,7 @@
 {
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true,
-    "context-budget-monitor@olliegilbey-plugins": true
+    "context-budget-monitor@olliegilbey-plugins": true,
+    "rot-reducer@olliegilbey-plugins": true
   }
 }
