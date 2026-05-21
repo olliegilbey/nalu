@@ -4,7 +4,7 @@ import { LLM } from "@/lib/config/tuning";
 import { getLlmModel } from "./provider";
 import { toCerebrasJsonSchema } from "./toCerebrasJsonSchema";
 import { getModelCapabilities } from "./modelCapabilities";
-import { awaitLiveCallSlot } from "./liveCallPacing";
+import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "./cerebrasRateLimit";
 import type { LlmMessage, LlmModel, LlmUsage } from "@/lib/types/llm";
 
 /**
@@ -67,12 +67,13 @@ export interface ChatResult {
  * uses to configure the provider). An unrecognised model defaults to
  * `honorsStrictMode: true` — see `modelCapabilities.ts`.
  *
- * Live-smoke pacing: when `CEREBRAS_LIVE === "1"`, the call waits via
- * `awaitLiveCallSlot()` so consecutive calls are spaced ≥
- * `LLM.liveCallMinSpacingMs` apart — keeping the smoke suite under the
- * Cerebras free-tier 30-RPM cap, including `executeTurn`'s validation
- * retries. Outside live smoke (production, CI, unit tests) this is a
- * complete no-op with zero added latency.
+ * Rate limiting: `awaitCerebrasCallSlot()` paces every call to stay under
+ * the Cerebras free-tier limits (5 RPM + 30k tokens/min) — request spacing
+ * plus header-driven token-budget backoff. It runs in production AND live
+ * smoke, including across `executeTurn`'s validation retries (each a
+ * separate API call). After the call returns, the `x-ratelimit-*` response
+ * headers are recorded for the next call to consult. Both are a complete
+ * no-op in mocked unit/integration suites — see `cerebrasRateLimit.ts`.
  */
 export async function generateChat(
   messages: readonly LlmMessage[],
@@ -95,11 +96,11 @@ export async function generateChat(
         })
       : undefined;
 
-  // Live-smoke rate-limit gate. No-op unless CEREBRAS_LIVE=1; in live mode
-  // it blocks until this call is ≥ LLM.liveCallMinSpacingMs after the prior
-  // dispatch, so even executeTurn's back-to-back validation retries stay
-  // under the Cerebras free-tier RPM cap.
-  await awaitLiveCallSlot();
+  // Cerebras rate-limit gate. Blocks until this call is cleared under the
+  // free-tier limits (request spacing + token-budget backoff). No-op in
+  // mocked test suites; active in production and live smoke, so even
+  // executeTurn's back-to-back validation retries stay under the cap.
+  await awaitCerebrasCallSlot();
 
   const result = await generateText({
     model: opts.model ?? getLlmModel(),
@@ -109,5 +110,9 @@ export async function generateChat(
     // Conditionally spread so the key is absent (not undefined) when unused.
     ...(responseFormat !== undefined ? { responseFormat } : {}),
   });
+  // Capture the Cerebras x-ratelimit-* headers so the next call can back
+  // off when the per-minute token budget runs low. `response.headers` is
+  // `Record<string,string> | undefined` (undefined for non-HTTP providers).
+  recordCerebrasRateLimitHeaders(result.response.headers);
   return { text: result.text, usage: result.usage };
 }

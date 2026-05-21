@@ -208,20 +208,33 @@ export const BASELINE = {
  * fail fast on a genuine outage. Production traffic is bursty but
  * single-user; this ceiling is for the smoke suite.
  *
- * `liveCallMinSpacingMs: 2500`: minimum spacing between consecutive LLM
- * API calls, enforced at the `generateChat` call site by
- * `src/lib/llm/liveCallPacing.ts` — but ONLY when `CEREBRAS_LIVE === "1"`
- * (live smoke). The Cerebras free tier caps at ~30 RPM (a 2000ms floor);
- * 2500ms adds margin for clock skew and response-time variance. Pacing at
- * the call site (rather than per logical turn) means `executeTurn`'s
- * JSON-validation retries — each a separate API call — are throttled too,
- * which the old per-turn pacing missed. In production and CI this value is
- * never read; the pacing gate is a complete no-op there.
+ * `minRequestSpacingMs: 13000`: minimum gap (dispatch-to-dispatch) between
+ * consecutive Cerebras API calls, enforced at the `generateChat` call site
+ * by `src/lib/llm/cerebrasRateLimit.ts`. The Cerebras FREE tier caps at
+ * 5 requests/min — a 12.0s exact floor (60s ÷ 5). 13s adds ~1s margin so a
+ * strict server-side sliding window can't trip on clock skew or
+ * response-time variance. Pacing at the call site (rather than per logical
+ * turn) means `executeTurn`'s JSON-validation retries — each a separate API
+ * call — are throttled too. THIS IS THE SINGLE KNOB TO BUMP when upgrading
+ * to a paid Cerebras tier: a paid plan's higher RPM allows a much smaller
+ * spacing (e.g. 600ms at 100 RPM). The rate limiter is a no-op in mocked
+ * unit/integration tests, so this value never slows those suites.
+ *
+ * `lowTokenBudgetThreshold: 10000`: if a prior response's
+ * `x-ratelimit-remaining-tokens-minute` header drops below this, the limiter
+ * waits for the per-minute token bucket to reset before the next call. The
+ * Cerebras free tier allows 30,000 tokens/min; a single large teaching turn
+ * (full Wave context + a verbose structured reply) can consume several
+ * thousand tokens. 10000 leaves comfortable headroom for one such turn
+ * without tripping a mid-turn 429. The same Cerebras API key is shared with
+ * another workload, so the remaining-tokens header reports the
+ * account-wide budget — this backoff absorbs that contention automatically.
  */
 export const LLM = {
   defaultTemperature: 0.3,
   maxRetries: 6,
-  liveCallMinSpacingMs: 2500,
+  minRequestSpacingMs: 13_000,
+  lowTokenBudgetThreshold: 10_000,
 } as const;
 
 /**
