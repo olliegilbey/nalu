@@ -4,6 +4,7 @@ import { LLM } from "@/lib/config/tuning";
 import { getLlmModel } from "./provider";
 import { toCerebrasJsonSchema } from "./toCerebrasJsonSchema";
 import { getModelCapabilities } from "./modelCapabilities";
+import { awaitLiveCallSlot } from "./liveCallPacing";
 import type { LlmMessage, LlmModel, LlmUsage } from "@/lib/types/llm";
 
 /**
@@ -65,6 +66,13 @@ export interface ChatResult {
  * Model name is read from `process.env.LLM_MODEL` (the same source `provider.ts`
  * uses to configure the provider). An unrecognised model defaults to
  * `honorsStrictMode: true` — see `modelCapabilities.ts`.
+ *
+ * Live-smoke pacing: when `CEREBRAS_LIVE === "1"`, the call waits via
+ * `awaitLiveCallSlot()` so consecutive calls are spaced ≥
+ * `LLM.liveCallMinSpacingMs` apart — keeping the smoke suite under the
+ * Cerebras free-tier 30-RPM cap, including `executeTurn`'s validation
+ * retries. Outside live smoke (production, CI, unit tests) this is a
+ * complete no-op with zero added latency.
  */
 export async function generateChat(
   messages: readonly LlmMessage[],
@@ -86,6 +94,12 @@ export async function generateChat(
           name: opts.responseSchemaName ?? "response",
         })
       : undefined;
+
+  // Live-smoke rate-limit gate. No-op unless CEREBRAS_LIVE=1; in live mode
+  // it blocks until this call is ≥ LLM.liveCallMinSpacingMs after the prior
+  // dispatch, so even executeTurn's back-to-back validation retries stay
+  // under the Cerebras free-tier RPM cap.
+  await awaitLiveCallSlot();
 
   const result = await generateText({
     model: opts.model ?? getLlmModel(),

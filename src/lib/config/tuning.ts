@@ -207,10 +207,21 @@ export const BASELINE = {
  * ~2 minutes — long enough for the RPM bucket to refill, short enough to
  * fail fast on a genuine outage. Production traffic is bursty but
  * single-user; this ceiling is for the smoke suite.
+ *
+ * `liveCallMinSpacingMs: 2500`: minimum spacing between consecutive LLM
+ * API calls, enforced at the `generateChat` call site by
+ * `src/lib/llm/liveCallPacing.ts` — but ONLY when `CEREBRAS_LIVE === "1"`
+ * (live smoke). The Cerebras free tier caps at ~30 RPM (a 2000ms floor);
+ * 2500ms adds margin for clock skew and response-time variance. Pacing at
+ * the call site (rather than per logical turn) means `executeTurn`'s
+ * JSON-validation retries — each a separate API call — are throttled too,
+ * which the old per-turn pacing missed. In production and CI this value is
+ * never read; the pacing gate is a complete no-op there.
  */
 export const LLM = {
   defaultTemperature: 0.3,
   maxRetries: 6,
+  liveCallMinSpacingMs: 2500,
 } as const;
 
 /**
