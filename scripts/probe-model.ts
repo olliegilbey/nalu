@@ -125,10 +125,12 @@ async function main(): Promise<void> {
       {
         responseSchema: DESC_PROBE_SCHEMA,
         responseSchemaName: "desc_probe",
-        // Capability-gate key = the real model under test (env LLM_MODEL).
+        // Capability-gate key = the real model under test. Use the validated
+        // non-empty `model` local (narrowed above) rather than re-reading the
+        // `string | undefined` env var.
         // gpt-oss-120b is registry-marked honorsStrictMode, so the gate opens
         // and `response_format` is emitted on the wire.
-        modelName: process.env.LLM_MODEL,
+        modelName: model,
       },
     );
     console.log(`DESC-FOLLOWING responded in ${Date.now() - descStarted}ms`);

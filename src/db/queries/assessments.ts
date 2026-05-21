@@ -182,7 +182,7 @@ export interface UpdateAssessmentGradingParams {
   /** Final correctness verdict (`verdict === "correct"` for free-text). */
   readonly isCorrect: boolean;
   /** LLM-assigned quality score 0-5; for MC use 4/1 (correct/incorrect). */
-  readonly qualityScore: number;
+  readonly qualityScore: QualityScore;
   /** XP awarded — deterministic, computed by `calculateXP` / `calculateMcXp`. */
   readonly xpAwarded: number;
   /**

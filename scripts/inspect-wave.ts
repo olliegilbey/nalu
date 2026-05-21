@@ -24,9 +24,18 @@ function show(content: string): string {
 
 async function main(): Promise<void> {
   const courseId = process.argv[2];
-  const waveNumber = Number(process.argv[3] ?? "1");
   if (!courseId) {
     console.error("usage: inspect-wave <courseId> [waveNumber]");
+    process.exit(1);
+  }
+  // Explicit integer guard: `Number("abc")` yields NaN, which would flow
+  // silently into the SQL `waves.waveNumber` predicate and surface as a
+  // confusing driver-level error. Parse + validate up front instead.
+  const waveNumber = Number.parseInt(process.argv[3] ?? "1", 10);
+  if (!Number.isInteger(waveNumber) || waveNumber < 1) {
+    console.error(
+      "usage: inspect-wave <courseId> [waveNumber]  (waveNumber must be an integer ≥ 1)",
+    );
     process.exit(1);
   }
 

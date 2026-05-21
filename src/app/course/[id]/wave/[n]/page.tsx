@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { WaveSession } from "@/components/chat/WaveSession";
 
 /**
@@ -15,7 +16,10 @@ export default async function WavePage({
   const { id, n } = await params;
   const waveNumber = Number.parseInt(n, 10);
   if (!Number.isInteger(waveNumber) || waveNumber < 1) {
-    return null;
+    // `notFound()` throws — it never returns, so the route renders the
+    // nearest `not-found` boundary with a real HTTP 404 instead of a
+    // blank 200 page.
+    notFound();
   }
   return <WaveSession courseId={id} waveNumber={waveNumber} />;
 }

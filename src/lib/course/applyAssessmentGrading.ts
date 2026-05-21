@@ -1,6 +1,7 @@
 import type { DbOrTx } from "@/db/client";
 import { calculateMcXp, calculateXP } from "@/lib/scoring/xp";
 import { updateAssessmentGrading } from "@/db/queries/assessments";
+import type { QualityScore } from "@/lib/types/spaced-repetition";
 
 /**
  * Two grading signals the harness can receive per assessment row:
@@ -17,7 +18,11 @@ export type GradedSignal =
       readonly kind: "free-text";
       readonly questionId: string;
       readonly verdict: "correct" | "partial" | "incorrect";
-      readonly qualityScore: number;
+      // `QualityScore` (not bare `number`): the value originates at the LLM
+      // trust boundary via `qualityScoreSchema` and flows straight into the
+      // `QualityScore`-typed `updateAssessmentGrading` patch — keep the domain
+      // type intact end-to-end.
+      readonly qualityScore: QualityScore;
     };
 
 /** Inputs to `applyAssessmentGrading`. */

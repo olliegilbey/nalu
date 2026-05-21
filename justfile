@@ -41,7 +41,7 @@ smoke:
 # 1Password reference for LLM_API_KEY resolves. Overrides LLM_MODEL so
 # the .env.local default isn't used. See scripts/probe-model.ts.
 probe-model model:
-    op run --account my.1password.com --env-file=.env.local -- env LLM_MODEL={{model}} bun scripts/probe-model.ts
+    op run --account my.1password.com --env-file=.env.local -- env LLM_MODEL="{{model}}" bun scripts/probe-model.ts
 
 # Run unit tests in watch mode
 test-watch:

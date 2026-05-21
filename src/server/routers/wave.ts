@@ -15,7 +15,7 @@ import { submitWaveTurn } from "@/lib/course/submitWaveTurn";
 export const waveRouter = router({
   /** Restore wave state by ordinal (spec §7.1) — chatLog, turnsRemaining, closeResult. */
   getState: protectedProcedure
-    .input(z.object({ courseId: z.string().uuid(), waveNumber: z.number().int().min(1) }))
+    .input(z.object({ courseId: z.uuid(), waveNumber: z.number().int().min(1) }))
     .query(({ ctx, input }) =>
       getWaveState({ userId: ctx.userId, courseId: input.courseId, waveNumber: input.waveNumber }),
     ),
@@ -24,7 +24,7 @@ export const waveRouter = router({
   submitTurn: protectedProcedure
     .input(
       z.object({
-        courseId: z.string().uuid(),
+        courseId: z.uuid(),
         waveNumber: z.number().int().min(1),
         // Discriminated payload mirrors `SubmitTurnPayload` from
         // `src/lib/course/buildLearnerInput.ts` — the router is the trust

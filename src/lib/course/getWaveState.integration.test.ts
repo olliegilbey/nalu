@@ -171,9 +171,13 @@ describe("getWaveState (integration)", () => {
   it("waveNumber that doesn't exist → TRPC NOT_FOUND", async () => {
     await withTestDb(async () => {
       const { courseId } = await seedCourseWithOpenWave();
-      await expect(
-        getWaveState({ userId: USER_ID, courseId, waveNumber: 99 }),
-      ).rejects.toBeInstanceOf(TRPCError);
+      // Assert both the error type AND the specific code: a bare
+      // `instanceof TRPCError` would pass on the WRONG code (e.g. a
+      // FORBIDDEN ownership error), masking a regression in the
+      // "no such wave" path.
+      const promise = getWaveState({ userId: USER_ID, courseId, waveNumber: 99 });
+      await expect(promise).rejects.toBeInstanceOf(TRPCError);
+      await expect(promise).rejects.toMatchObject({ code: "NOT_FOUND" });
     });
   });
 });
