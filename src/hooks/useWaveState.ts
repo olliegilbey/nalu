@@ -9,6 +9,7 @@ import { adaptOpenQuestion } from "@/lib/course/adaptQuestionnaire";
 import type { ActiveQuestionnaire } from "./useScopingState";
 import type { Turn } from "@/lib/types/turn";
 import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
+import type { WaveState } from "@/lib/course/getWaveState";
 
 /**
  * Close-turn result the page surfaces after the final wave turn lands.
@@ -28,6 +29,14 @@ export interface UseWaveStateResult {
   readonly activeQuestionnaire: ActiveQuestionnaire | null;
   /** Set once a close-turn lands; null otherwise. Cleared on next mount. */
   readonly closeResult: WaveCloseResult | null;
+  /**
+   * Server-authoritative wave lifecycle status. Unlike `closeResult` (which is
+   * transient component state seeded only by the close-turn mutation), this
+   * survives reloads — it comes straight from `wave.getState`. The page uses it
+   * to render a move-on affordance on a *reloaded* closed wave, where
+   * `closeResult` is null. `null` until the state query resolves.
+   */
+  readonly status: WaveState["status"] | null;
   readonly isPending: boolean;
   readonly submitChatText: (text: string) => void;
   readonly submitQuestionnaireAnswers: (answers: readonly ShapedQuestionnaireAnswer[]) => void;
@@ -87,6 +96,15 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
           }
         }
         invalidateState();
+      },
+      // Surface turn failures instead of swallowing them. The most common
+      // cause is submitting into an already-closed wave (server throws
+      // PRECONDITION_FAILED) — e.g. a learner who reloaded a finished wave and
+      // typed into the composer. Without this the rejected mutation produced
+      // no feedback at all and the learner's text vanished silently. Matches
+      // the `toast.error(..., { description })` pattern in `TopicInput.tsx`.
+      onError: (err) => {
+        toast.error("Couldn't submit that turn", { description: err.message });
       },
     }),
   );
@@ -165,6 +183,8 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     turns,
     activeQuestionnaire,
     closeResult,
+    // Server-authoritative status; null until the query resolves.
+    status: state.data?.status ?? null,
     isPending,
     submitChatText,
     submitQuestionnaireAnswers,

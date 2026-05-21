@@ -18,6 +18,8 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const submitTurnCalls: { args: unknown }[] = [];
 // eslint-disable-next-line functional/no-let -- test-fixture handler slot
 let latestOnSuccess: ((result: unknown) => void) | undefined;
+// eslint-disable-next-line functional/no-let -- test-fixture handler slot
+let latestOnError: ((err: unknown) => void) | undefined;
 
 // Default wave-state fixture (chat_log-first wire shape). Individual tests
 // re-assign `currentState` to exercise different chatLog shapes; the
@@ -49,11 +51,15 @@ vi.mock("@/lib/trpc", () => {
       wave: {
         getState: { queryOptions: () => stateOpts },
         submitTurn: {
-          mutationOptions: (o: { onSuccess?: (r: unknown) => void }) => ({
+          mutationOptions: (o: {
+            onSuccess?: (r: unknown) => void;
+            onError?: (e: unknown) => void;
+          }) => ({
             mutationFn: async (args: unknown) => {
               // eslint-disable-next-line functional/immutable-data -- record into test buffer
               submitTurnCalls.push({ args });
               latestOnSuccess = o.onSuccess;
+              latestOnError = o.onError;
               return { kind: "mid-turn" }; // benign default; specific tests override via latestOnSuccess
             },
           }),
@@ -64,6 +70,7 @@ vi.mock("@/lib/trpc", () => {
 });
 
 import { useWaveState } from "./useWaveState";
+import { toast } from "sonner";
 
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -74,6 +81,7 @@ beforeEach(() => {
   /* eslint-disable functional/immutable-data -- reset test buffers between tests */
   submitTurnCalls.length = 0;
   latestOnSuccess = undefined;
+  latestOnError = undefined;
   currentState = defaultStateData;
   /* eslint-enable functional/immutable-data */
 });
@@ -159,5 +167,40 @@ describe("useWaveState", () => {
       completionXpAwarded: 50,
       tierAdvancedTo: 2,
     });
+  });
+
+  it("threads the server-authoritative status through the hook", async () => {
+    // Status starts null (query unresolved), then settles to the wire value.
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    expect(result.current.status).toBeNull();
+    await waitFor(() => expect(result.current.status).toBe("active"));
+  });
+
+  it("exposes status 'closed' for a reloaded closed wave", async () => {
+    // A reloaded closed wave: getState returns status "closed" and no
+    // closeResult. The page derives the move-on affordance from `status`.
+    currentState = { ...defaultStateData, status: "closed" as const };
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("closed"));
+    expect(result.current.closeResult).toBeNull();
+  });
+
+  it("surfaces an error toast when a turn submission rejects", async () => {
+    // Submitting into an already-closed wave rejects server-side. The onError
+    // handler must turn that into a visible toast instead of failing silently.
+    // Driven by hand (like the onSuccess test) — the tRPC stub's
+    // `mutationOptions` only forwards `mutationFn`, so react-query never runs
+    // the registered callbacks; we capture and invoke them directly.
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
+
+    act(() => result.current.submitChatText("continue"));
+    await waitFor(() => expect(latestOnError).toBeDefined());
+
+    act(() => latestOnError?.(new Error("wave is closed")));
+    expect(toast.error).toHaveBeenCalledWith(
+      "Couldn't submit that turn",
+      expect.objectContaining({ description: "wave is closed" }),
+    );
   });
 });

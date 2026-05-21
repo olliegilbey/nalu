@@ -14,10 +14,13 @@ import type { Turn } from "@/lib/types/turn";
 /**
  * Drives the wave teaching chat scroll + Composer mode (spec §7).
  *
- * Parallel to `Onboarding.tsx`. Reads turns/activeQuestionnaire/closeResult
- * from `useWaveState`; maps `Turn[]` to bubble JSX. The Composer enters
+ * Parallel to `Onboarding.tsx`. Reads turns/activeQuestionnaire/closeResult/
+ * status from `useWaveState`; maps `Turn[]` to bubble JSX. The Composer enters
  * question mode whenever an open questionnaire is present; chat-text mode
- * otherwise; move-on mode once `closeResult` is set.
+ * otherwise; move-on mode whenever the wave is closed (either the transient
+ * `closeResult` from this tab's close-turn, or a server-reported
+ * `status === "closed"` after a reload). The move-on branch replaces the input
+ * row entirely, so a finished wave never presents a live-but-dead composer.
  */
 export function WaveSession({
   courseId,
@@ -31,6 +34,7 @@ export function WaveSession({
     turns,
     activeQuestionnaire,
     closeResult,
+    status,
     isPending,
     submitChatText,
     submitQuestionnaireAnswers,
@@ -42,12 +46,23 @@ export function WaveSession({
   // future variant addition becomes a compile-time error here.
   const scroll = turns.map((turn, idx) => renderTurn(turn, idx));
 
-  // Move-on CTA appears once the close-turn result has landed. The Composer's
-  // moveOn prop replaces the input row with a single advance button.
-  const moveOn = closeResult
+  // Move-on CTA: shown whenever the wave is finished, NOT only when the
+  // transient `closeResult` is present. `closeResult` is component-local state
+  // seeded solely by the close-turn mutation in *this* tab — it is gone after a
+  // reload. The server-authoritative `status` survives reloads, so a learner
+  // who revisits a finished wave (Cmd+R, tab restore, browser-back) still gets
+  // a working path to the next wave.
+  //
+  // Target wave number: prefer `closeResult.nextWaveNumber` (the real id the
+  // close-turn computed); on a reloaded closed wave that's unavailable, so fall
+  // back to the ordinal `waveNumber + 1` — waves are 1-indexed consecutively
+  // and the `/course/[id]/wave/[n]` route resolves by ordinal.
+  const nextWaveNumber = closeResult?.nextWaveNumber ?? waveNumber + 1;
+  const isClosed = closeResult !== null || status === "closed";
+  const moveOn = isClosed
     ? {
-        label: t<string>("moveOn.toWave").replace("{n}", String(closeResult.nextWaveNumber)),
-        onAdvance: () => router.push(`/course/${courseId}/wave/${closeResult.nextWaveNumber}`),
+        label: t<string>("moveOn.toWave").replace("{n}", String(nextWaveNumber)),
+        onAdvance: () => router.push(`/course/${courseId}/wave/${nextWaveNumber}`),
       }
     : undefined;
 
