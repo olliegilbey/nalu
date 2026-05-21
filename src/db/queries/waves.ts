@@ -180,6 +180,30 @@ export async function getLatestWaveNumberByCourse(courseId: string): Promise<num
   return row?.maxWaveNumber ?? 0;
 }
 
+/**
+ * Read just the `chat_log` JSONB column for a Wave, Zod-validated.
+ *
+ * Optional `tx` opts the read into a caller's transaction so an append that
+ * committed before the tx opened (or one made earlier in the same tx) is
+ * visible. Used by `applyCloseGradings`: the learner's close-turn
+ * `user.answers` entry lands on `chat_log` pre-LLM (see `submitWaveTurn`),
+ * AFTER `loadWaveContext` snapshots `ctx.wave.chatLog` — so the close-grading
+ * path must re-read the live column to see the learner's MC click.
+ *
+ * @throws {NotFoundError} if `id` does not match any row.
+ */
+export async function getWaveChatLog(
+  id: string,
+  tx?: DbOrTx,
+): Promise<readonly WaveChatLogEntry[]> {
+  const exec = tx ?? db;
+  const [row] = await exec.select({ chatLog: waves.chatLog }).from(waves).where(eq(waves.id, id));
+  if (!row) throw new NotFoundError("wave", id);
+  // Trust-boundary validation: the JSONB column is `unknown` on the Drizzle
+  // row type; the schema parse is the same discipline as `waveRowGuard`.
+  return waveChatLogSchema.parse(row.chatLog);
+}
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------

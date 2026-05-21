@@ -168,6 +168,101 @@ async function seedOpenFreeTextQuestionnaire(
 }
 
 /**
+ * Seed an OPEN MC questionnaire on the wave plus its placeholder `card_mc`
+ * assessment row. Does NOT write the learner's answer — that must land AFTER
+ * `loadWaveContext` snapshots `ctx.wave.chatLog` (see `appendCloseMcAnswer`),
+ * because in production `submitWaveTurn` appends it post-snapshot.
+ *
+ * bug_003: a questionnaire posed on the FINAL mid-turn has no later mid-turn,
+ * so its MC question is answered — and graded — at close.
+ *
+ * Returns the `questionnaireId` (so the test can append the matching answer),
+ * the concept id, and the namespaced stored `question_id`.
+ */
+async function seedOpenMcQuestionnaire(
+  courseId: string,
+  waveId: string,
+  opts: { readonly correct: "A" | "B" | "C" | "D"; readonly conceptName?: string },
+): Promise<{
+  readonly conceptId: string;
+  readonly questionId: string;
+  readonly questionnaireId: string;
+}> {
+  const conceptName = opts.conceptName ?? "ownership";
+  const concept = await upsertConcept({ courseId, name: conceptName, tier: 1 });
+  const assistantPayload = {
+    userMessage: "Final question:",
+    questionnaire: {
+      questions: [
+        {
+          id: "q-mc",
+          type: "multiple_choice" as const,
+          prompt: "Which keyword transfers ownership?",
+          options: { A: "let", B: "move", C: "ref", D: "copy" },
+          correct: opts.correct,
+          freetextRubric: "rubric",
+          conceptName,
+          tier: 1,
+        },
+      ],
+    },
+  };
+  const assistantRow = await appendMessage({
+    parent: { kind: "wave", id: waveId },
+    turnIndex: 1,
+    seq: 0,
+    kind: "assistant_response",
+    role: "assistant",
+    content: JSON.stringify(assistantPayload),
+  });
+  // chat_log carries the assistant's `text_with_questionnaire` entry —
+  // `findOpenQuestionnaire` reads it for the server-side `correct` key.
+  await appendWaveChatLog(db, waveId, {
+    role: "assistant",
+    kind: "text_with_questionnaire",
+    questionnaireId: assistantRow.id,
+    content: assistantPayload.userMessage,
+    questions: assistantPayload.questionnaire.questions,
+  });
+  // Placeholder `card_mc` row the mid-turn flow would have inserted.
+  const questionId = namespaceQuestionId(assistantRow.id, "q-mc");
+  await insertOpenAssessments({
+    waveId,
+    turnIndex: 1,
+    rows: [
+      {
+        conceptId: concept.id,
+        questionId,
+        question: assistantPayload.questionnaire.questions[0]!.prompt,
+        assessmentKind: "card_mc",
+      },
+    ],
+  });
+  return { conceptId: concept.id, questionId, questionnaireId: assistantRow.id };
+}
+
+/**
+ * Append the learner's close-turn MC click to the LIVE `chat_log`. Production
+ * `submitWaveTurn` does this pre-LLM, AFTER `loadWaveContext` has snapshotted
+ * `ctx.wave.chatLog` — so tests must call this between `loadWaveContext` and
+ * `executeWaveClose` to faithfully reproduce the bug_003 path: the snapshot
+ * still sees the questionnaire as OPEN; `applyCloseGradings` re-reads the live
+ * column to find the click.
+ */
+async function appendCloseMcAnswer(
+  waveId: string,
+  questionnaireId: string,
+  clicked: "A" | "B" | "C" | "D",
+): Promise<void> {
+  await appendWaveChatLog(db, waveId, {
+    role: "user",
+    kind: "answers",
+    questionnaireId,
+    responses: [{ questionId: "q-mc", choice: clicked }],
+  });
+}
+
+/**
  * Build an executeTurn mock that mimics production persistence.
  *
  * The mock allocates the next turn index via `getNextTurnIndex` (matching the
@@ -527,6 +622,118 @@ describe("executeWaveClose (integration)", () => {
           content: parsed.nextUnitBlueprint.openingText,
         },
       ]);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 6. bug_003: an MC questionnaire posed on the FINAL mid-turn is answered at
+  //    close. The model emits a `mc-index` close grading for it. Previously
+  //    `applyCloseGradings` hard-threw on `mc-index`, bricking the wave with an
+  //    unrecoverable 500. The fix grades it mechanically against the persisted
+  //    correct key — correct click → isCorrect=true, XP>0, wave closes.
+  // ---------------------------------------------------------------------------
+  it("bug_003: grades a correct close-turn mc-index click mechanically and closes the wave", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave(2);
+      const { conceptId, questionId, questionnaireId } = await seedOpenMcQuestionnaire(
+        courseId,
+        waveId,
+        { correct: "B" },
+      );
+
+      // Model emits an mc-index grading (what it MUST emit — the close schema's
+      // coverage superRefine forces a grading for `q-mc`, and the learner's
+      // answer was rendered `kind="mc-index"`).
+      const parsed = makeParsedClose({
+        gradings: [{ kind: "mc-index", questionId: "q-mc", rationale: "clicked B. teach next." }],
+        conceptUpdates: [
+          { name: "ownership", qualityScore: 4, reason: "Clicked the right option." },
+        ],
+      });
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
+      );
+
+      // Snapshot ctx BEFORE the answer lands — mirrors submitWaveTurn ordering.
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      // Learner clicks the correct option (B). Lands on the live chat_log after
+      // the snapshot, exactly as submitWaveTurn does pre-LLM.
+      await appendCloseMcAnswer(waveId, questionnaireId, "B");
+      // Before the fix this throws (the `mc-index` branch hard-throws); after it
+      // resolves and closes the wave.
+      const result = await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
+
+      expect(result.kind).toBe("close-turn");
+      expect(result.gradedSignals).toHaveLength(1);
+      expect(result.gradedSignals[0]).toMatchObject({ kind: "mc-index", questionId: "q-mc" });
+      expect(result.gradedSignals[0]!.xpAwarded).toBeGreaterThan(0);
+
+      // Assessment row graded mechanically: B == correct B → isCorrect=true,
+      // qualityScore=4 (MC-correct convention), XP>0.
+      const assessmentRow = (
+        await db.select().from(assessments).where(eq(assessments.questionId, questionId))
+      )[0]!;
+      expect(assessmentRow.isCorrect).toBe(true);
+      expect(assessmentRow.qualityScore).toBe(4);
+      expect(assessmentRow.xpAwarded).toBeGreaterThan(0);
+      // The learner's clicked key is persisted onto the row's user_answer.
+      expect(assessmentRow.userAnswer).toBe("B");
+
+      // Wave N closed, Wave N+1 opened — the wave is no longer bricked.
+      const closedWave = (await db.select().from(waves).where(eq(waves.id, waveId)))[0]!;
+      expect(closedWave.status).toBe("closed");
+      // Concept SM-2 still advanced from conceptUpdates.
+      const afterConcept = (await db.select().from(concepts).where(eq(concepts.id, conceptId)))[0]!;
+      expect(afterConcept.lastQualityScore).toBe(4);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 7. bug_003: a WRONG close-turn MC click. The model's `mc-index` grading is
+  //    NOT trusted for correctness — the server computes it from the persisted
+  //    correct key. Wrong click → isCorrect=false, 0 XP. The wave still closes.
+  // ---------------------------------------------------------------------------
+  it("bug_003: grades a wrong close-turn mc-index click as incorrect, zero XP, wave still closes", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave(2);
+      const { questionId, questionnaireId } = await seedOpenMcQuestionnaire(courseId, waveId, {
+        correct: "B",
+      });
+
+      const parsed = makeParsedClose({
+        gradings: [{ kind: "mc-index", questionId: "q-mc", rationale: "clicked D. reteach." }],
+        conceptUpdates: [
+          { name: "ownership", qualityScore: 1, reason: "Picked the wrong option." },
+        ],
+      });
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
+      );
+
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      // Learner clicks D — wrong (correct is B). The model's grading is NOT
+      // trusted for correctness; the server computes D != B server-side.
+      await appendCloseMcAnswer(waveId, questionnaireId, "D");
+      const result = await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
+
+      expect(result.kind).toBe("close-turn");
+      expect(result.gradedSignals[0]).toMatchObject({
+        kind: "mc-index",
+        questionId: "q-mc",
+        xpAwarded: 0,
+      });
+
+      // Server-computed correctness: D != correct B → isCorrect=false, q=1, 0 XP.
+      const assessmentRow = (
+        await db.select().from(assessments).where(eq(assessments.questionId, questionId))
+      )[0]!;
+      expect(assessmentRow.isCorrect).toBe(false);
+      expect(assessmentRow.qualityScore).toBe(1);
+      expect(assessmentRow.xpAwarded).toBe(0);
+      expect(assessmentRow.userAnswer).toBe("D");
+
+      const closedWave = (await db.select().from(waves).where(eq(waves.id, waveId)))[0]!;
+      expect(closedWave.status).toBe("closed");
     });
   });
 });

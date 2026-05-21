@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import type { DbOrTx } from "@/db/client";
 import { getAssessmentByWaveAndQuestionId } from "@/db/queries/assessments";
+import { getConceptById } from "@/db/queries/concepts";
+import { getWaveChatLog } from "@/db/queries/waves";
 import { checkTierAdvancement } from "@/lib/scoring/progression";
 import type { ConceptState } from "@/lib/types/scoring";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
@@ -27,24 +29,52 @@ export interface PersistedGradedSignal {
 }
 
 /**
+ * Build the learner's MC-click map from the live `chat_log`: raw question id →
+ * selected key letter (only `user.answers` responses with a `choice` targeting
+ * the open questionnaire).
+ *
+ * Reads the LIVE column via the tx — not `ctx.wave.chatLog`, which
+ * `loadWaveContext` snapshots before `submitWaveTurn` appends the close-turn
+ * answer. The append committed before this tx opened, so it is visible here.
+ */
+async function buildCloseMcChoiceMap(
+  tx: DbOrTx,
+  waveId: string,
+  openQuestionnaireId: string,
+): Promise<ReadonlyMap<string, "A" | "B" | "C" | "D">> {
+  const liveLog = await getWaveChatLog(waveId, tx);
+  const entries = liveLog.flatMap((e) =>
+    e.role === "user" && e.kind === "answers" && e.questionnaireId === openQuestionnaireId
+      ? e.responses
+          .filter(
+            (r): r is typeof r & { readonly choice: "A" | "B" | "C" | "D" } =>
+              r.choice !== undefined,
+          )
+          .map((r) => [r.questionId, r.choice] as const)
+      : [],
+  );
+  return new Map(entries);
+}
+
+/**
  * Apply each close-grading to the corresponding assessment row.
  *
  * Free-text path: route through `applyAssessmentGrading` with the parsed
- * payload's verdict + qualityScore. The `conceptTier` comes from the grading
- * item itself (the schema enforces it's in-scope).
+ * payload's verdict + qualityScore. `conceptTier` comes from the grading item.
  *
- * MC questions are graded mid-turn (see `executeWaveMid.grade.ts`); receiving
- * an `mc-index` here means the LLM emitted a contract violation. Future work
- * (TODO.md) tightens the wave-close schema to drop the mc-index branch via a
- * superRefine so `executeTurn` can retry with a directive — until then, fail
- * loud so the orphan assessment row + under-counted SM-2 signal don't slip
- * through silently.
+ * MC path (bug_003): a questionnaire posed on the final mid-turn has no later
+ * mid-turn, so its MC questions are answered — and graded — at close. The model
+ * emits an `mc-index` grading (the coverage refine forces a grading; the click
+ * renders `kind="mc-index"`). We grade it MECHANICALLY: the model's grading is
+ * trusted only for *which* question, never for correctness. `correct` is
+ * computed server-side — learner's persisted click (live `chat_log`) vs the
+ * questionnaire's persisted `correct` key — mirroring `executeWaveMid.grade.ts`.
+ * Honours the core design principle: the LLM never controls scoring.
  *
  * The stored `question_id` column is namespaced per questionnaire
- * (`namespaceQuestionId`), but the model grades using the RAW `q.id` it saw in
- * the close-turn prompt's `questionIds`. We re-derive the namespace prefix from
- * the open questionnaire's id (the same one `executeWaveClose` fed the schema)
- * so the row lookup hits; the surfaced `questionId` stays raw for the client.
+ * (`namespaceQuestionId`), but the model grades using the RAW `q.id`. We
+ * re-derive the namespace prefix from the open questionnaire's id so the row
+ * lookup hits; the surfaced `questionId` stays raw for the client.
  */
 export async function applyCloseGradings(
   tx: DbOrTx,
@@ -52,9 +82,24 @@ export async function applyCloseGradings(
   parsed: WaveCloseTurn,
 ): Promise<readonly PersistedGradedSignal[]> {
   // Re-derive the open questionnaire being graded — its id namespaces the
-  // stored `question_id` lookup. `ctx.wave.chatLog` is `unknown` at the Drizzle
-  // JSONB boundary; runtime shape is guaranteed by `waveRowGuard` upstream.
+  // stored `question_id` lookup AND carries the server-side `correct` keys for
+  // MC grading. `ctx.wave.chatLog` is `unknown` at the Drizzle JSONB boundary;
+  // runtime shape is guaranteed by `waveRowGuard` upstream.
   const openQuestionnaire = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
+  // raw id → server-side correct key (MC only) and learner's clicked key.
+  // `clickByQuestionId` reads the live chat_log — see `buildCloseMcChoiceMap`.
+  const correctByQuestionId = new Map(
+    (openQuestionnaire?.questions ?? [])
+      .filter(
+        (q): q is typeof q & { readonly correct: "A" | "B" | "C" | "D" } =>
+          q.type === "multiple_choice" && q.correct !== undefined,
+      )
+      .map((q) => [q.id, q.correct] as const),
+  );
+  // Only fetched when there is an open questionnaire to grade against.
+  const clickByQuestionId = openQuestionnaire
+    ? await buildCloseMcChoiceMap(tx, ctx.wave.id, openQuestionnaire.questionnaireId)
+    : new Map<string, "A" | "B" | "C" | "D">();
   // Reduce keeps `eslint-plugin-functional/immutable-data` happy when we need
   // to accumulate results; the awaited accumulator threads them through.
   // Sequential by design — writes share one tx handle and grading counts at
@@ -64,14 +109,6 @@ export async function applyCloseGradings(
   // need to thread a value, not by lint policy.
   return parsed.gradings.reduce<Promise<readonly PersistedGradedSignal[]>>(async (accP, g) => {
     const acc = await accP;
-    if (g.kind === "mc-index") {
-      // Contract violation — MC questions are graded mid-turn, not at close.
-      // The shared `closeGradingItemSchema` permits this branch because it's
-      // reused with scoping; the wave-close orchestrator never grades MC.
-      throw new Error(
-        `[executeWaveClose] mc-index grading at close is a contract violation; questionId=${g.questionId}`,
-      );
-    }
     // Namespace the raw `g.questionId` with the open questionnaire's id to hit
     // the stored row. If no questionnaire is open there is nothing to grade —
     // fall through to the null-row skip below (the model emitted a stale id).
@@ -84,6 +121,33 @@ export async function applyCloseGradings(
         `[executeWaveClose] no assessment row for wave=${ctx.wave.id} questionId=${g.questionId}; skipping\n`,
       );
       return acc;
+    }
+    if (g.kind === "mc-index") {
+      // bug_003: grade MC mechanically — see this function's TSDoc.
+      const click = clickByQuestionId.get(g.questionId);
+      const correctKey = correctByQuestionId.get(g.questionId);
+      if (click === undefined || correctKey === undefined) {
+        // No persisted click or no `correct` key — not mechanically scorable.
+        // Skip + log rather than corrupt the row with an unverifiable verdict.
+        process.stderr.write(
+          `[executeWaveClose] mc-index grading for questionId=${g.questionId} but no learner click / correct key; skipping\n`,
+        );
+        return acc;
+      }
+      // Concept tier drives MC XP — MC carries no tier on the wire (unlike
+      // free-text), so read it from the row's concept (mirrors the mid-turn path).
+      const concept = await getConceptById(row.conceptId, tx);
+      const applied = await applyAssessmentGrading({
+        assessmentId: row.id,
+        conceptTier: concept.tier,
+        signal: { kind: "mc-index", questionId: g.questionId, correct: click === correctKey },
+        tx,
+        userAnswer: click,
+      });
+      return [
+        ...acc,
+        { kind: applied.kind, questionId: applied.questionId, xpAwarded: applied.xpAwarded },
+      ];
     }
     const applied = await applyAssessmentGrading({
       assessmentId: row.id,
