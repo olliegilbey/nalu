@@ -381,7 +381,11 @@ export async function insertOpenAssessments(
 }
 
 /**
- * Look up a single assessment row by wave + model-generated question id.
+ * Look up a single assessment row by wave + question id.
+ *
+ * `questionId` is the namespaced form (`${questionnaireId}:${rawId}` — see
+ * `namespaceQuestionId`), matching how the column is written; callers must
+ * namespace the model's raw id before calling.
  *
  * Returns `null` (NOT throw) on miss so the mid-turn orchestrator can
  * distinguish "model graded a question we don't have a row for" (defensive
