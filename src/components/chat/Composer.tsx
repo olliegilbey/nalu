@@ -122,14 +122,20 @@ export function Composer({
   // "Confirm" mode: question is active, user picked an option, no free text.
   const confirmMode = hasQuestions && hasPending && value.trim().length === 0;
 
+  const current = hasQuestions ? questions![step] : null;
+  const total = hasQuestions ? questions!.length : 0;
+
+  // Placeholder is dynamic by interaction type: an MC question keeps "or type
+  // your own answer" (options exist to pick instead); a free-text question
+  // uses a plain "type your answer"; otherwise it is the first-message or
+  // continue prompt.
   const placeholder = hasQuestions
-    ? t<string>("composer.placeholderAnswering")
+    ? current && current.options.length > 0
+      ? t<string>("composer.placeholderAnswering")
+      : t<string>("composer.placeholderAnswerFree")
     : isFirstMessage
       ? t<string>("composer.placeholderFirst")
       : t<string>("composer.placeholderContinue");
-
-  const current = hasQuestions ? questions![step] : null;
-  const total = hasQuestions ? questions!.length : 0;
 
   const advanceAfterAnswer = (answer: string) => {
     if (!hasQuestions) return;
@@ -247,12 +253,19 @@ export function Composer({
         <div className="mb-3 animate-message-in">
           {/* Header: counter + prev/next */}
           <div className="flex items-center justify-between mb-2 px-1">
-            <div className="flex items-center gap-2">
-              <span className="h-1 w-1 rounded-full" style={{ background: "var(--carp-yellow)" }} />
-              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-fuji-gray">
-                {t<string>("composer.chooseLabel")}
-              </span>
-            </div>
+            {current.options.length > 0 ? (
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-1 w-1 rounded-full"
+                  style={{ background: "var(--carp-yellow)" }}
+                />
+                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-fuji-gray">
+                  {t<string>("composer.chooseLabel")}
+                </span>
+              </div>
+            ) : (
+              <div />
+            )}
             <div className="flex items-center gap-1">
               <button
                 aria-label={t<string>("composer.prev")}
@@ -292,7 +305,7 @@ export function Composer({
               <p className="px-1 mb-2 text-[14px] leading-snug text-foreground/90 font-medium">
                 {current.prompt}
               </p>
-              {current.options.length > 0 ? (
+              {current.options.length > 0 && (
                 <div className="grid grid-cols-1 gap-1.5">
                   {current.options.map((opt, i) => {
                     const isPending = currentPending === i;
@@ -333,10 +346,6 @@ export function Composer({
                     );
                   })}
                 </div>
-              ) : (
-                <p className="px-1 text-[12px] text-fuji-gray italic">
-                  {t<string>("composer.placeholderAnswering")}
-                </p>
               )}
             </div>
           </div>
