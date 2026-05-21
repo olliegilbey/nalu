@@ -532,4 +532,103 @@ describe("submitWaveTurn (integration)", () => {
       expect(ctxRows.filter((r) => r.kind === "card_answer")).toHaveLength(0);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // 9. bug_001: pre-LLM chat_log append is idempotent on retry. The first
+  //    submit's LLM dispatch fails (orphaning the learner chat-text entry in
+  //    chat_log); the learner retries the SAME submission. The retry must NOT
+  //    double-append — exactly one `user.text` entry must exist, so `consumed`
+  //    (and therefore turnsRemaining / the close-turn boundary) stays correct.
+  // -------------------------------------------------------------------------
+  it("retry after LLM failure does not double-append chat-text to chat_log", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      // First attempt: LLM dispatch rejects → learner entry is orphaned.
+      vi.spyOn(executeTurnModule, "executeTurn").mockRejectedValueOnce(
+        new Error("LLM transport failure"),
+      );
+      await expect(
+        submitWaveTurn({
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: { kind: "chat-text", text: "explain ownership" },
+        }),
+      ).rejects.toThrow("LLM transport failure");
+
+      // Retry the identical submission: the LLM now succeeds.
+      const parsed: WaveMidTurn = { userMessage: "Sure." };
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeMidTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
+      );
+      const result = await submitWaveTurn({
+        userId: USER_ID,
+        courseId,
+        waveNumber: 1,
+        payload: { kind: "chat-text", text: "explain ownership" },
+      });
+      expect(result.kind).toBe("mid-turn");
+
+      // chat_log MUST hold exactly one learner entry — the orphan was reused.
+      const wave = await getWaveById(waveId);
+      const log = wave.chatLog as WaveChatLog;
+      const userEntries = log.filter((e) => e.role === "user" && e.kind === "text");
+      expect(userEntries).toHaveLength(1);
+      // turnsRemaining unaffected: consumed = 1 → WAVE.turnCount - (1 + ...).
+      if (result.kind !== "mid-turn") throw new Error("expected mid-turn");
+      expect(result.turnsRemaining).toBe(WAVE.turnCount - 1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 10. bug_001: questionnaire-answers retry after LLM failure. The orphaned
+  //     `user.answers` entry must not block `findOpenQuestionnaire` on retry —
+  //     the retry must succeed (not throw PRECONDITION_FAILED "no open
+  //     questionnaire") and chat_log must hold exactly one `user.answers`.
+  // -------------------------------------------------------------------------
+  it("retry after LLM failure does not double-append questionnaire-answers or orphan the questionnaire", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      const { questionnaireMsgId } = await seedOpenMcQuestionnaire(courseId, waveId);
+      const answersPayload = {
+        kind: "questionnaire-answers" as const,
+        questionnaireId: questionnaireMsgId,
+        answers: [{ id: "q-mc", kind: "mc" as const, selected: "B" as const }],
+      };
+
+      // First attempt: LLM dispatch rejects → learner answers entry orphaned.
+      vi.spyOn(executeTurnModule, "executeTurn").mockRejectedValueOnce(
+        new Error("LLM transport failure"),
+      );
+      await expect(
+        submitWaveTurn({ userId: USER_ID, courseId, waveNumber: 1, payload: answersPayload }),
+      ).rejects.toThrow("LLM transport failure");
+
+      // Retry the identical submission: the LLM now succeeds + grades the MC.
+      const parsed: WaveMidTurn = {
+        userMessage: "Right!",
+        comprehensionSignals: [{ kind: "mc-index", questionId: "q-mc", rationale: "got it" }],
+      };
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeMidTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
+      );
+      // The retry MUST NOT throw PRECONDITION_FAILED — findOpenQuestionnaire
+      // must still see Q as open (the orphan must not have closed it).
+      const result = await submitWaveTurn({
+        userId: USER_ID,
+        courseId,
+        waveNumber: 1,
+        payload: answersPayload,
+      });
+      expect(result.kind).toBe("mid-turn");
+      if (result.kind !== "mid-turn") throw new Error("expected mid-turn");
+      expect(result.gradedSignals).toHaveLength(1);
+
+      // chat_log MUST hold exactly one learner answers entry.
+      const wave = await getWaveById(waveId);
+      const log = wave.chatLog as WaveChatLog;
+      const userAnswers = log.filter((e) => e.role === "user" && e.kind === "answers");
+      expect(userAnswers).toHaveLength(1);
+    });
+  });
 });
