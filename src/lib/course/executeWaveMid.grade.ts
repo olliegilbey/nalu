@@ -2,6 +2,7 @@ import type { DbOrTx } from "@/db/client";
 import { getAssessmentByWaveAndQuestionId } from "@/db/queries/assessments";
 import { getConceptById } from "@/db/queries/concepts";
 import { applyAssessmentGrading, type GradedSignal } from "./applyAssessmentGrading";
+import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 
 /**
@@ -29,8 +30,16 @@ export interface GradePriorAnswersParams {
   readonly waveId: string;
   /** The model-emitted signals to grade — may be empty. */
   readonly signals: NonNullable<WaveMidTurn["comprehensionSignals"]>;
-  /** Gate: no open questionnaire ⇒ signals are advisory only (no row to update). */
-  readonly hasOpenQuestionnaire: boolean;
+  /**
+   * Id of the open questionnaire being graded (its `assistant_response` row id),
+   * or null when none is open. Used to re-derive the namespaced `question_id`
+   * the insert path stored (`namespaceQuestionId`) — the model emits the RAW
+   * `q.id` in its signals because that is what it sees in the prompt, so the
+   * stored-row lookup must re-apply the same namespace prefix. Doubles as the
+   * `hasOpenQuestionnaire` gate: null ⇒ signals are advisory only (no row to
+   * update).
+   */
+  readonly openQuestionnaireId: string | null;
   /** Question id → learner answer text (set if learner answered this turn). */
   readonly answerTextById: ReadonlyMap<string, string>;
   /** Question id → expected MC correct key letter (MC questions only). */
@@ -48,7 +57,9 @@ export interface GradePriorAnswersParams {
 export async function gradePriorAnswers(
   params: GradePriorAnswersParams,
 ): Promise<readonly GradedRow[]> {
-  if (!params.hasOpenQuestionnaire || params.signals.length === 0) return [];
+  if (params.openQuestionnaireId === null || params.signals.length === 0) return [];
+  // Narrow for the closure below — `openQuestionnaireId` is non-null past the gate.
+  const questionnaireId = params.openQuestionnaireId;
   // Sequential async-reduce — writes hit the same tx handle; concurrency
   // complicates error attribution without buying anything. Reduce (rather
   // than for-of with a push-builder) keeps `eslint-plugin-functional` happy
@@ -57,7 +68,11 @@ export async function gradePriorAnswers(
     Promise<readonly GradedRow[]>
   >(async (accP, sig) => {
     const acc = await accP;
-    const row = await getAssessmentByWaveAndQuestionId(params.waveId, sig.questionId, params.tx);
+    // The model emits the RAW `q.id` it saw in the prompt; the stored row keys
+    // on the namespaced form (`namespaceQuestionId`), so re-derive it for the
+    // lookup. The raw id is still what we surface to the client below.
+    const storedQuestionId = namespaceQuestionId(questionnaireId, sig.questionId);
+    const row = await getAssessmentByWaveAndQuestionId(params.waveId, storedQuestionId, params.tx);
     if (!row) {
       // Model referenced a questionId we don't have. Skip + log.
       process.stderr.write(

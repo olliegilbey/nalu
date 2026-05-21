@@ -15,6 +15,7 @@ import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { submitWaveTurn } from "./submitWaveTurn";
+import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTurn";
 
 /**
@@ -178,7 +179,9 @@ async function seedOpenMcQuestionnaire(
     content: assistantPayload.userMessage,
     questions: assistantPayload.questionnaire!.questions,
   });
-  // Match what executeWaveMid would have written when the questionnaire dropped.
+  // Match what executeWaveMid would have written when the questionnaire
+  // dropped: the stored `question_id` is namespaced by the questionnaire's
+  // assistant_response row id (`namespaceQuestionId`, bug_004 fix).
   const concept = await upsertConcept({ courseId, name: "ownership", tier: 1 });
   await insertOpenAssessments({
     waveId,
@@ -186,7 +189,7 @@ async function seedOpenMcQuestionnaire(
     rows: [
       {
         conceptId: concept.id,
-        questionId: "q-mc",
+        questionId: namespaceQuestionId(row.id, "q-mc"),
         question: "Pick",
         assessmentKind: "card_mc",
       },

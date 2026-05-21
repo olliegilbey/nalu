@@ -3,6 +3,7 @@ import { insertOpenAssessments } from "@/db/queries/assessments";
 import { upsertConcept } from "@/db/queries/concepts";
 import { encodeCorrect } from "@/lib/security/obfuscateCorrect";
 import { KEY_TO_INDEX } from "./buildLearnerInput";
+import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { Questionnaire } from "@/lib/prompts/questionnaire";
 
 /**
@@ -63,7 +64,15 @@ export interface InsertNewQuestionnaireParams {
  *     adding a schema-layer superRefine to waveMidTurnSchema).
  *   - Upserts the concept at `q.tier ?? waveTier` (immutable post-first-sight).
  *   - Maps to one assessment row with `assessment_kind = card_mc|card_freetext`,
- *     placeholder grading fields, and the model-generated `q.id` as `question_id`.
+ *     placeholder grading fields, and `${assistantMessageId}:${q.id}` as
+ *     `question_id` (namespaced — see `namespaceQuestionId`).
+ *
+ * The stored `question_id` is namespaced per questionnaire so the partial
+ * unique index `assessments_wave_question_unique` (keyed on
+ * `(wave_id, question_id)`, NOT `turn_index`) cannot collide when the model
+ * reuses simple ids like `q1` across the ~2-3 questionnaires a wave drops
+ * (bug_004). The model and client still see the raw `q.id`; only the DB column
+ * and the grading-path lookups use the namespaced form.
  *
  * `questionnaireId` is the just-persisted `assistant_response` row id. This
  * matches what `loadWaveContext` reconstructs (`loadWaveContext.ts:117`), so
@@ -107,13 +116,20 @@ export async function insertNewQuestionnaire(
   // --- Batch insert assessment rows ----------------------------------------
   // One round-trip via `insertOpenAssessments`. The kind discriminator picks
   // card_mc vs card_freetext from the question's type literal.
+  //
+  // `questionId` is namespaced by the emitting questionnaire's id
+  // (`assistantMessageId`). This makes both intra-questionnaire (two questions
+  // sharing `q.id` in one batch) and cross-turn (a later questionnaire reusing
+  // `q1`) collisions on `assessments_wave_question_unique` structurally
+  // impossible — see `namespaceQuestionId`. The grading paths re-derive the
+  // same key from the open questionnaire's id.
   await insertOpenAssessments(
     {
       waveId: params.waveId,
       turnIndex: params.assistantTurnIndex,
       rows: resolved.map(({ q, conceptId }) => ({
         conceptId,
-        questionId: q.id,
+        questionId: namespaceQuestionId(params.assistantMessageId, q.id),
         question: q.prompt,
         assessmentKind: q.type === "multiple_choice" ? "card_mc" : "card_freetext",
       })),

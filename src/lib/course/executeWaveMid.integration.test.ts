@@ -16,6 +16,7 @@ import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { loadWaveContext } from "./loadWaveContext";
 import { executeWaveMid } from "./executeWaveMid";
 import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
+import { namespaceQuestionId } from "./namespaceQuestionId";
 import { buildLearnerInput, type SubmitTurnPayload } from "./buildLearnerInput";
 import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTurn";
 
@@ -129,15 +130,23 @@ function makeExecuteTurnMock(parsed: WaveMidTurn) {
 
 /**
  * Seed an open questionnaire (1 MC + 1 free-text) on the wave by writing an
- * assistant_response at turn 1. Also inserts placeholder assessment rows that
- * map back to the same question ids via `insertOpenAssessments`.
+ * assistant_response at turn 1. Also inserts placeholder assessment rows whose
+ * stored `question_id` is namespaced by the assistant row id
+ * (`namespaceQuestionId`) — matching what `insertNewQuestionnaire` does in
+ * production, so the grading-path lookups resolve them.
  *
- * Returns the concept ids so tests can assert SM-2 fields aren't mutated.
+ * Returns the concept ids (for SM-2 assertions) and the namespaced
+ * `question_id` values so tests can query the rows back directly.
  */
 async function seedOpenQuestionnaire(
   courseId: string,
   waveId: string,
-): Promise<{ readonly mcConceptId: string; readonly ftConceptId: string }> {
+): Promise<{
+  readonly mcConceptId: string;
+  readonly ftConceptId: string;
+  readonly mcQuestionId: string;
+  readonly ftQuestionId: string;
+}> {
   const conceptMc = await upsertConcept({ courseId, name: "ownership", tier: 1 });
   const conceptFt = await upsertConcept({ courseId, name: "borrowing", tier: 1 });
   const assistantPayload: WaveMidTurn = {
@@ -185,27 +194,30 @@ async function seedOpenQuestionnaire(
     questions: assistantPayload.questionnaire!.questions,
   });
   // Mirror the production flow: when the assistant emits a questionnaire, the
-  // orchestrator inserts placeholder rows. Seed them here so the grading test
-  // has rows to update.
+  // orchestrator inserts placeholder rows with `question_id` namespaced by the
+  // assistant_response row id (`namespaceQuestionId`) so the grading lookups
+  // resolve. The raw model ids stay `q-mc`/`q-ft` on chat_log above.
+  const mcQuestionId = namespaceQuestionId(assistantRow.id, "q-mc");
+  const ftQuestionId = namespaceQuestionId(assistantRow.id, "q-ft");
   await insertOpenAssessments({
     waveId,
     turnIndex: 1,
     rows: [
       {
         conceptId: conceptMc.id,
-        questionId: "q-mc",
+        questionId: mcQuestionId,
         question: "Pick the rule",
         assessmentKind: "card_mc",
       },
       {
         conceptId: conceptFt.id,
-        questionId: "q-ft",
+        questionId: ftQuestionId,
         question: "Explain borrowing",
         assessmentKind: "card_freetext",
       },
     ],
   });
-  return { mcConceptId: conceptMc.id, ftConceptId: conceptFt.id };
+  return { mcConceptId: conceptMc.id, ftConceptId: conceptFt.id, mcQuestionId, ftQuestionId };
 }
 
 describe("executeWaveMid (integration)", () => {
@@ -258,7 +270,10 @@ describe("executeWaveMid (integration)", () => {
   it("questionnaire-answers → grading + XP + userAnswer applied, no SM-2 mutation", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
-      const { mcConceptId, ftConceptId } = await seedOpenQuestionnaire(courseId, waveId);
+      const { mcConceptId, ftConceptId, mcQuestionId, ftQuestionId } = await seedOpenQuestionnaire(
+        courseId,
+        waveId,
+      );
       // Capture initial SM-2 state — must be identical post-mid-turn (SM-2
       // only mutates at Wave close, spec §3 decisions).
       const initialMc = (await db.select().from(concepts).where(eq(concepts.id, mcConceptId)))[0]!;
@@ -295,9 +310,13 @@ describe("executeWaveMid (integration)", () => {
       const result = await executeWaveMid(ctx, learnerInput, 4, payload);
 
       expect(result.gradedSignals).toHaveLength(2);
+      // gradedSignals surface the RAW model id (what the client matches on),
+      // even though the stored row is keyed on the namespaced id.
+      expect(result.gradedSignals.map((s) => s.questionId).sort()).toEqual(["q-ft", "q-mc"]);
       // MC row: B vs correct=B → correct=true; xp = calculateMcXp(tier=1, true).
+      // Rows are queried by the NAMESPACED `question_id` the insert path stored.
       const mcRow = (
-        await db.select().from(assessments).where(eq(assessments.questionId, "q-mc"))
+        await db.select().from(assessments).where(eq(assessments.questionId, mcQuestionId))
       )[0]!;
       expect(mcRow.isCorrect).toBe(true);
       expect(mcRow.qualityScore).toBe(4);
@@ -305,7 +324,7 @@ describe("executeWaveMid (integration)", () => {
       expect(mcRow.userAnswer).toBe("B");
       // Free-text row: partial verdict, q=3 → not isCorrect, xp from calculateXP(1,3).
       const ftRow = (
-        await db.select().from(assessments).where(eq(assessments.questionId, "q-ft"))
+        await db.select().from(assessments).where(eq(assessments.questionId, ftQuestionId))
       )[0]!;
       expect(ftRow.isCorrect).toBe(false);
       expect(ftRow.qualityScore).toBe(3);
@@ -387,11 +406,18 @@ describe("executeWaveMid (integration)", () => {
         type: "free_text",
       });
       expect(result.newQuestionnaire!.questions[1]).not.toHaveProperty("correctEnc");
-      // Two assessment rows persisted with matching question_ids.
+      // Two assessment rows persisted. The stored `question_id` is namespaced
+      // by the assistant_response row id (`namespaceQuestionId`) — the
+      // projection still surfaces the raw `q-new-*` ids to the client.
       const rows = await db.select().from(assessments).where(eq(assessments.waveId, waveId));
       expect(rows).toHaveLength(2);
+      const qnId = result.newQuestionnaire!.questionnaireId;
       const qids = rows.map((r) => r.questionId).sort();
-      expect(qids).toEqual(["q-new-ft", "q-new-mc"]);
+      expect(qids).toEqual(
+        [namespaceQuestionId(qnId, "q-new-ft"), namespaceQuestionId(qnId, "q-new-mc")].sort(),
+      );
+      // Every stored id is namespaced — none is the bare model id.
+      expect(rows.every((r) => r.questionId?.startsWith(`${qnId}:`))).toBe(true);
       // Concepts upserted with the names from the questionnaire.
       const conceptRows = await db.select().from(concepts).where(eq(concepts.courseId, courseId));
       const conceptNames = conceptRows.map((c) => c.name).sort();
@@ -412,7 +438,83 @@ describe("executeWaveMid (integration)", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 4. ValidationGateFailure contract: retry logic lives INSIDE executeTurn;
+  // 4. bug_004 regression: the model reuses the SAME raw id (`q1`) across two
+  //    questionnaires in one wave. Pre-fix, both rows tried to write
+  //    `(wave_id, 'q1')` → the second turn 500s on the partial unique index
+  //    `assessments_wave_question_unique`. Post-fix, each row's stored
+  //    `question_id` is namespaced by its emitting assistant_response id, so
+  //    both turns persist cleanly.
+  // ---------------------------------------------------------------------------
+  it("cross-turn id reuse: two questionnaires both using 'q1' persist without colliding", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+
+      // Helper: one mid-turn that emits a single free-text question id `q1`.
+      const makeQ1Turn = (prompt: string, conceptName: string): WaveMidTurn => ({
+        userMessage: prompt,
+        questionnaire: {
+          questions: [
+            {
+              id: "q1",
+              type: "free_text",
+              prompt,
+              freetextRubric: "rubric",
+              conceptName,
+              tier: 1,
+            },
+          ],
+        },
+      });
+
+      // --- Turn 1: emit a questionnaire using `q1`. -------------------------
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeExecuteTurnMock(
+          makeQ1Turn("First check", "ownership"),
+        ) as unknown as typeof executeTurnModule.executeTurn,
+      );
+      const ctx1 = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const openQ1 = findOpenQuestionnaire(ctx1.wave.chatLog as WaveChatLog);
+      const payload1: SubmitTurnPayload = { kind: "chat-text", text: "ready" };
+      const result1 = await executeWaveMid(ctx1, buildLearnerInput(payload1, openQ1), 6, payload1);
+      expect(result1.newQuestionnaire).not.toBeNull();
+
+      // --- Turn 2: emit ANOTHER questionnaire, ALSO using `q1`. -------------
+      // Pre-fix this throws a 23505 unique-constraint violation. The mock is
+      // re-spied so turn 2 returns its own payload.
+      vi.restoreAllMocks();
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeExecuteTurnMock(
+          makeQ1Turn("Second check", "borrowing"),
+        ) as unknown as typeof executeTurnModule.executeTurn,
+      );
+      const ctx2 = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const openQ2 = findOpenQuestionnaire(ctx2.wave.chatLog as WaveChatLog);
+      const payload2: SubmitTurnPayload = { kind: "chat-text", text: "next" };
+      // Must NOT throw — the regression is a hard 500 here pre-fix.
+      const result2 = await executeWaveMid(ctx2, buildLearnerInput(payload2, openQ2), 5, payload2);
+      expect(result2.newQuestionnaire).not.toBeNull();
+
+      // Both questionnaires persisted: two assessment rows on the wave, each
+      // surfacing the raw `q1` to the client but stored under distinct
+      // namespaced `question_id`s keyed off their emitting questionnaire.
+      const rows = await db.select().from(assessments).where(eq(assessments.waveId, waveId));
+      expect(rows).toHaveLength(2);
+      const storedIds = rows.map((r) => r.questionId).sort();
+      expect(new Set(storedIds).size).toBe(2);
+      expect(storedIds).toEqual(
+        [
+          namespaceQuestionId(result1.newQuestionnaire!.questionnaireId, "q1"),
+          namespaceQuestionId(result2.newQuestionnaire!.questionnaireId, "q1"),
+        ].sort(),
+      );
+      // The client-facing projection keeps the raw model id for both.
+      expect(result1.newQuestionnaire!.questions[0]!.id).toBe("q1");
+      expect(result2.newQuestionnaire!.questions[0]!.id).toBe("q1");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 5. ValidationGateFailure contract: retry logic lives INSIDE executeTurn;
   //    once it gives up, the failure propagates untouched. executeWaveMid
   //    must (a) re-raise the original error and (b) never open the persistence
   //    transaction (no partial writes).

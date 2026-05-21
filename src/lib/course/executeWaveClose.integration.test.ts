@@ -4,7 +4,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles, assessments, concepts, waves, courses } from "@/db/schema";
 import { createCourse, setCourseStartingState } from "@/db/queries/courses";
-import { openWave, getWaveByCourseAndNumber } from "@/db/queries/waves";
+import { openWave, getWaveByCourseAndNumber, appendWaveChatLog } from "@/db/queries/waves";
 import { appendMessage, getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts";
 import { insertOpenAssessments } from "@/db/queries/assessments";
@@ -14,6 +14,7 @@ import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { loadWaveContext } from "./loadWaveContext";
 import { executeWaveClose } from "./executeWaveClose";
+import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTurn";
 
 /**
@@ -94,16 +95,22 @@ async function seedCourseWithOpenWave(
 
 /**
  * Seed an open questionnaire on the wave AND its placeholder assessment row.
- * Returns the concept id so the test can inspect SM-2 state pre/post-close.
+ * Returns the concept id (for SM-2 assertions) and the namespaced
+ * `question_id` so tests can query the row back directly.
  *
  * Mirrors `seedOpenQuestionnaire` in `executeWaveMid.integration.test.ts` but
- * close-turn focused: only one free-text question is needed.
+ * close-turn focused: only one free-text question is needed. Writes BOTH the
+ * `context_messages` assistant_response AND the `chat_log`
+ * `text_with_questionnaire` entry — `findOpenQuestionnaire` (used by
+ * `executeWaveClose` and now `applyCloseGradings`) derives the open
+ * questionnaire from `chat_log`, and its `questionnaireId` namespaces the
+ * stored `question_id` (`namespaceQuestionId`).
  */
 async function seedOpenFreeTextQuestionnaire(
   courseId: string,
   waveId: string,
   conceptName = "ownership",
-): Promise<{ readonly conceptId: string }> {
+): Promise<{ readonly conceptId: string; readonly questionId: string }> {
   const concept = await upsertConcept({ courseId, name: conceptName, tier: 1 });
   // Seed the assistant_response so loadWaveContext reconstructs `openQuestionnaire`.
   const assistantPayload = {
@@ -121,7 +128,7 @@ async function seedOpenFreeTextQuestionnaire(
       ],
     },
   };
-  await appendMessage({
+  const assistantRow = await appendMessage({
     parent: { kind: "wave", id: waveId },
     turnIndex: 1,
     seq: 0,
@@ -129,21 +136,35 @@ async function seedOpenFreeTextQuestionnaire(
     role: "assistant",
     content: JSON.stringify(assistantPayload),
   });
+  // Mirror the production dual-write: chat_log carries a `text_with_questionnaire`
+  // entry whose `questionnaireId` matches the assistant_response row id.
+  // `findOpenQuestionnaire` reads chat_log; `applyCloseGradings` re-derives the
+  // namespaced `question_id` from this id.
+  await appendWaveChatLog(db, waveId, {
+    role: "assistant",
+    kind: "text_with_questionnaire",
+    questionnaireId: assistantRow.id,
+    content: assistantPayload.userMessage,
+    questions: assistantPayload.questionnaire.questions,
+  });
   // Insert the placeholder assessment row the mid-turn flow would have written.
-  // The close transaction updates it via applyAssessmentGrading.
+  // The stored `question_id` is namespaced by the questionnaire id — matching
+  // `insertNewQuestionnaire` in production. The close transaction updates it
+  // via applyAssessmentGrading.
+  const questionId = namespaceQuestionId(assistantRow.id, "q-close");
   await insertOpenAssessments({
     waveId,
     turnIndex: 1,
     rows: [
       {
         conceptId: concept.id,
-        questionId: "q-close",
+        questionId,
         question: "Explain ownership in one sentence",
         assessmentKind: "card_freetext",
       },
     ],
   });
-  return { conceptId: concept.id };
+  return { conceptId: concept.id, questionId };
 }
 
 /**
@@ -238,7 +259,7 @@ describe("executeWaveClose (integration)", () => {
   it("happy path: grades free-text, advances SM-2, closes Wave N, opens Wave N+1 with completion XP", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave(2);
-      const { conceptId } = await seedOpenFreeTextQuestionnaire(courseId, waveId);
+      const { conceptId, questionId } = await seedOpenFreeTextQuestionnaire(courseId, waveId);
       const initialConcept = (
         await db.select().from(concepts).where(eq(concepts.id, conceptId))
       )[0]!;
@@ -257,12 +278,15 @@ describe("executeWaveClose (integration)", () => {
       expect(result.nextWaveNumber).toBe(3);
       expect(result.completionXpAwarded).toBe(WAVE.completionXp);
       expect(result.gradedSignals).toHaveLength(1);
+      // gradedSignals surface the RAW model id (`q-close`), even though the
+      // stored row is keyed on the namespaced `question_id`.
       expect(result.gradedSignals[0]).toMatchObject({ kind: "free-text", questionId: "q-close" });
       expect(result.gradedSignals[0]!.xpAwarded).toBeGreaterThan(0);
 
-      // Assessment row updated: verdict + quality_score persisted -----------
+      // Assessment row updated: verdict + quality_score persisted. Queried by
+      // the NAMESPACED `question_id` the seed/insert path stored.
       const assessmentRow = (
-        await db.select().from(assessments).where(eq(assessments.questionId, "q-close"))
+        await db.select().from(assessments).where(eq(assessments.questionId, questionId))
       )[0]!;
       expect(assessmentRow.isCorrect).toBe(true);
       expect(assessmentRow.qualityScore).toBe(5);
@@ -391,7 +415,7 @@ describe("executeWaveClose (integration)", () => {
   it("rolls back on (course_id, wave_number) unique violation when N+1 slot is taken", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave(2);
-      const { conceptId } = await seedOpenFreeTextQuestionnaire(courseId, waveId);
+      const { conceptId, questionId } = await seedOpenFreeTextQuestionnaire(courseId, waveId);
       const initialConcept = (
         await db.select().from(concepts).where(eq(concepts.id, conceptId))
       )[0]!;
@@ -430,9 +454,10 @@ describe("executeWaveClose (integration)", () => {
       // Wave N (2) must still be OPEN — the close was rolled back.
       const waveRow = (await db.select().from(waves).where(eq(waves.id, waveId)))[0]!;
       expect(waveRow.status).toBe("open");
-      // Assessment row was NOT updated past placeholder grading.
+      // Assessment row was NOT updated past placeholder grading. Queried by
+      // the namespaced `question_id`.
       const assessmentRow = (
-        await db.select().from(assessments).where(eq(assessments.questionId, "q-close"))
+        await db.select().from(assessments).where(eq(assessments.questionId, questionId))
       )[0]!;
       expect(assessmentRow.qualityScore).toBe(0);
       // Concept SM-2 unchanged.

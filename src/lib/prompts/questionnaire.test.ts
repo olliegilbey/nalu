@@ -96,6 +96,32 @@ describe("questionnaireSchema + responsesSchema", () => {
     expect(() => questionnaireSchema.parse({ questions: [] })).toThrow();
   });
 
+  it("rejects duplicate question ids within one questionnaire (bug_004 intra-questionnaire)", () => {
+    // Two questions sharing `q1` would map to two assessment rows with an
+    // identical `(wave_id, question_id)` even after namespacing — namespacing
+    // only disambiguates ACROSS questionnaires. This superRefine catches it at
+    // parse time so executeTurn can retry rather than 500 on the unique index.
+    expect(() =>
+      questionnaireSchema.parse({
+        questions: [
+          { id: "q1", type: "free_text", prompt: "first", freetextRubric: "r" },
+          { id: "q1", type: "free_text", prompt: "second", freetextRubric: "r" },
+        ],
+      }),
+    ).toThrow(/duplicate question ids/i);
+  });
+
+  it("accepts a multi-question questionnaire with distinct ids", () => {
+    expect(() =>
+      questionnaireSchema.parse({
+        questions: [
+          { id: "q1", type: "free_text", prompt: "first", freetextRubric: "r" },
+          { id: "q2", type: "free_text", prompt: "second", freetextRubric: "r" },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
   it("accepts a responses wrapper", () => {
     expect(() =>
       responsesSchema.parse({ responses: [{ questionId: "q1", choice: "A" }] }),

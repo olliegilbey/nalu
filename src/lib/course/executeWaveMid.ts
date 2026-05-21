@@ -142,7 +142,9 @@ export async function executeWaveMid(
       tx,
       waveId: ctx.wave.id,
       signals: parsed.comprehensionSignals ?? [],
-      hasOpenQuestionnaire: openQuestionnaire !== null,
+      // The open questionnaire's id namespaces the stored `question_id` lookup
+      // (`namespaceQuestionId`) and gates grading (null ⇒ advisory only).
+      openQuestionnaireId: openQuestionnaire?.questionnaireId ?? null,
       answerTextById,
       correctLetterById,
     });

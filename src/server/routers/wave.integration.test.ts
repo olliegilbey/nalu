@@ -8,6 +8,7 @@ import { openWave, appendWaveChatLog } from "@/db/queries/waves";
 import { appendMessage, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts";
 import { insertOpenAssessments } from "@/db/queries/assessments";
+import { namespaceQuestionId } from "@/lib/course/namespaceQuestionId";
 import { WAVE } from "@/lib/config/tuning";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
@@ -169,13 +170,16 @@ async function seedOpenMcQuestionnaire(
     content: assistantPayload.userMessage,
     questions: assistantPayload.questionnaire!.questions,
   });
+  // Stored `question_id` is namespaced by the questionnaire's assistant_response
+  // row id (`namespaceQuestionId`) — matches `insertNewQuestionnaire` in
+  // production so the grading-path lookup resolves (bug_004 fix).
   await insertOpenAssessments({
     waveId,
     turnIndex: 1,
     rows: [
       {
         conceptId: concept.id,
-        questionId: "q-mc",
+        questionId: namespaceQuestionId(row.id, "q-mc"),
         question: "Pick",
         assessmentKind: "card_mc",
       },

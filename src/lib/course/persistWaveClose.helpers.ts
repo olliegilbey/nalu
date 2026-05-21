@@ -4,7 +4,10 @@ import { getAssessmentByWaveAndQuestionId } from "@/db/queries/assessments";
 import { checkTierAdvancement } from "@/lib/scoring/progression";
 import type { ConceptState } from "@/lib/types/scoring";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
+import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { applyAssessmentGrading, type GradedSignal } from "./applyAssessmentGrading";
+import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
+import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { LoadedWaveContext } from "./loadWaveContext";
 
 /**
@@ -36,12 +39,22 @@ export interface PersistedGradedSignal {
  * superRefine so `executeTurn` can retry with a directive — until then, fail
  * loud so the orphan assessment row + under-counted SM-2 signal don't slip
  * through silently.
+ *
+ * The stored `question_id` column is namespaced per questionnaire
+ * (`namespaceQuestionId`), but the model grades using the RAW `q.id` it saw in
+ * the close-turn prompt's `questionIds`. We re-derive the namespace prefix from
+ * the open questionnaire's id (the same one `executeWaveClose` fed the schema)
+ * so the row lookup hits; the surfaced `questionId` stays raw for the client.
  */
 export async function applyCloseGradings(
   tx: DbOrTx,
   ctx: LoadedWaveContext,
   parsed: WaveCloseTurn,
 ): Promise<readonly PersistedGradedSignal[]> {
+  // Re-derive the open questionnaire being graded — its id namespaces the
+  // stored `question_id` lookup. `ctx.wave.chatLog` is `unknown` at the Drizzle
+  // JSONB boundary; runtime shape is guaranteed by `waveRowGuard` upstream.
+  const openQuestionnaire = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
   // Reduce keeps `eslint-plugin-functional/immutable-data` happy when we need
   // to accumulate results; the awaited accumulator threads them through.
   // Sequential by design — writes share one tx handle and grading counts at
@@ -59,7 +72,13 @@ export async function applyCloseGradings(
         `[executeWaveClose] mc-index grading at close is a contract violation; questionId=${g.questionId}`,
       );
     }
-    const row = await getAssessmentByWaveAndQuestionId(ctx.wave.id, g.questionId, tx);
+    // Namespace the raw `g.questionId` with the open questionnaire's id to hit
+    // the stored row. If no questionnaire is open there is nothing to grade —
+    // fall through to the null-row skip below (the model emitted a stale id).
+    const storedQuestionId = openQuestionnaire
+      ? namespaceQuestionId(openQuestionnaire.questionnaireId, g.questionId)
+      : g.questionId;
+    const row = await getAssessmentByWaveAndQuestionId(ctx.wave.id, storedQuestionId, tx);
     if (!row) {
       process.stderr.write(
         `[executeWaveClose] no assessment row for wave=${ctx.wave.id} questionId=${g.questionId}; skipping\n`,

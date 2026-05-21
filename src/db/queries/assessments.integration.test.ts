@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { WAVE as WAVE_CONFIG } from "@/lib/config/tuning";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles, courses, waves, concepts } from "@/db/schema";
+import { namespaceQuestionId } from "@/lib/course/namespaceQuestionId";
 import {
   recordAssessment,
   getAssessmentsByWave,
@@ -453,6 +454,96 @@ describe("assessments queries", () => {
       expect(row).not.toBeNull();
       expect(row!.questionId).toBe("q-lookup");
       expect(row!.waveId).toBe(WAVE);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 10: bug_004 — the partial unique index `assessments_wave_question_unique`
+  // keys on `(wave_id, question_id)` only (NOT turn_index). Two rows in the same
+  // wave sharing a `question_id` collide regardless of turn. This pins both the
+  // collision (raw reuse) and the fix (namespacing makes ids distinct).
+  // -------------------------------------------------------------------------
+  it("rejects two rows in the same wave that share a raw question_id (cross-turn collision)", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      // Turn 3: a questionnaire emits `q1`.
+      await recordAssessment({
+        waveId: WAVE,
+        conceptId: CONCEPT,
+        turnIndex: 3,
+        question: "first q1",
+        questionId: "q1",
+        userAnswer: "A",
+        isCorrect: true,
+        qualityScore: 4,
+        assessmentKind: "card_freetext",
+        xpAwarded: 10,
+      });
+
+      // Turn 6: a DIFFERENT questionnaire restarts numbering and emits `q1`
+      // again. Same `(wave_id, 'q1')` → the partial unique index rejects it.
+      // This is the bug_004 failure mode — an uncaught 23505 that 500s the turn.
+      await expect(
+        recordAssessment({
+          waveId: WAVE,
+          conceptId: CONCEPT,
+          turnIndex: 6,
+          question: "second q1",
+          questionId: "q1",
+          userAnswer: "B",
+          isCorrect: false,
+          qualityScore: 1,
+          assessmentKind: "card_freetext",
+          xpAwarded: 0,
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
+  it("namespaced question_ids let the same raw id coexist across questionnaires in a wave", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      // Two questionnaires (distinct emitting-message ids) both using raw `q1`.
+      // `namespaceQuestionId` prefixes each with its questionnaire id, so the
+      // stored values differ and the unique index is satisfied — this is the
+      // bug_004 fix in `insertNewQuestionnaire`.
+      const idA = namespaceQuestionId("11111111-1111-1111-1111-111111111111", "q1");
+      const idB = namespaceQuestionId("22222222-2222-2222-2222-222222222222", "q1");
+      expect(idA).not.toBe(idB);
+
+      await insertOpenAssessments({
+        waveId: WAVE,
+        turnIndex: 3,
+        rows: [
+          {
+            conceptId: CONCEPT,
+            questionId: idA,
+            question: "first q1",
+            assessmentKind: "card_freetext",
+          },
+        ],
+      });
+      // Second questionnaire at a later turn — must NOT collide.
+      await insertOpenAssessments({
+        waveId: WAVE,
+        turnIndex: 6,
+        rows: [
+          {
+            conceptId: CONCEPT,
+            questionId: idB,
+            question: "second q1",
+            assessmentKind: "card_freetext",
+          },
+        ],
+      });
+
+      const rows = await getAssessmentsByWave(WAVE);
+      expect(rows).toHaveLength(2);
+      // Each namespaced id resolves to exactly its own row.
+      expect((await getAssessmentByWaveAndQuestionId(WAVE, idA))!.question).toBe("first q1");
+      expect((await getAssessmentByWaveAndQuestionId(WAVE, idB))!.question).toBe("second q1");
     });
   });
 });
