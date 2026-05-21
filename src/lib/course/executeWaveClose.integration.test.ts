@@ -9,6 +9,7 @@ import { appendMessage, getMessagesForWave, getNextTurnIndex } from "@/db/querie
 import { upsertConcept } from "@/db/queries/concepts";
 import { insertOpenAssessments } from "@/db/queries/assessments";
 import { WAVE } from "@/lib/config/tuning";
+import { calculateXP } from "@/lib/scoring/xp";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
@@ -110,8 +111,9 @@ async function seedOpenFreeTextQuestionnaire(
   courseId: string,
   waveId: string,
   conceptName = "ownership",
+  conceptTier = 1,
 ): Promise<{ readonly conceptId: string; readonly questionId: string }> {
-  const concept = await upsertConcept({ courseId, name: conceptName, tier: 1 });
+  const concept = await upsertConcept({ courseId, name: conceptName, tier: conceptTier });
   // Seed the assistant_response so loadWaveContext reconstructs `openQuestionnaire`.
   const assistantPayload = {
     userMessage: "Final question:",
@@ -734,6 +736,60 @@ describe("executeWaveClose (integration)", () => {
 
       const closedWave = (await db.select().from(waves).where(eq(waves.id, waveId)))[0]!;
       expect(closedWave.status).toBe("closed");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 8. Scoring boundary: free-text XP must use the DB concept tier, NOT the
+  //    LLM-emitted `g.conceptTier`. Seed a tier-2 concept, but have the close
+  //    payload claim `conceptTier: 1`. XP scales linearly with tier
+  //    (XP = tier × basePerTier × multiplier), so the only way to award the
+  //    tier-2 value is to read the tier from the persisted concept row.
+  //    This is the anti-gaming boundary: the LLM never influences XP.
+  // ---------------------------------------------------------------------------
+  it("free-text XP uses the DB concept tier, not the LLM-emitted conceptTier", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave(2);
+      // Concept is persisted at tier 2 — the authoritative tier for XP.
+      const { questionId } = await seedOpenFreeTextQuestionnaire(courseId, waveId, "ownership", 2);
+
+      // The close payload claims tier 1 (still in-scope [1,2], so it passes the
+      // wire schema). If the LLM value leaked into scoring, XP would be the
+      // tier-1 amount; the DB-derived tier-2 lookup must win.
+      const parsed = makeParsedClose({
+        gradings: [
+          {
+            kind: "free-text",
+            questionId: "q-close",
+            verdict: "correct",
+            qualityScore: 5,
+            conceptName: "ownership",
+            conceptTier: 1, // LLM lies low to suppress XP — must be ignored.
+            rationale: "captured it. move on.",
+          },
+        ],
+      });
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
+      );
+
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const result = await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
+
+      // Expected XP for the DB tier (2) at qualityScore 5. Computed via the
+      // pure scoring function so this stays in lockstep with tuning changes.
+      const dbTierXp = calculateXP(2, 5);
+      const llmTierXp = calculateXP(1, 5);
+      // Sanity: the two tiers must produce DIFFERENT XP, else the test proves
+      // nothing. (calculateXP is linear in tier, so this always holds.)
+      expect(dbTierXp).not.toBe(llmTierXp);
+
+      // Awarded XP reflects the DB tier (2), NOT the LLM-emitted tier (1).
+      expect(result.gradedSignals[0]!.xpAwarded).toBe(dbTierXp);
+      const assessmentRow = (
+        await db.select().from(assessments).where(eq(assessments.questionId, questionId))
+      )[0]!;
+      expect(assessmentRow.xpAwarded).toBe(dbTierXp);
     });
   });
 });
