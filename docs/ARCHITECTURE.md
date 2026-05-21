@@ -23,6 +23,18 @@ At write time, the parsed model output drives **one** fan-out: render envelope �
 
 The atomicity rule is what makes replay trivial: walk rows in `(turn_index, seq)` order, every pair was actually seen by the LLM.
 
+## The system prompt is recomputed, never persisted
+
+`context_messages` stores only `user` / `assistant` / `tool` rows — the schema CHECK constraint forbids `role='system'`. The system prompt is **rebuilt fresh on every LLM call** from seed columns (`courses` / `waves` rows) by the pure renderers (`renderTeachingSystem`, `renderScopingSystem`).
+
+It is byte-stable across a session's turns not because it is stored, but because the renderer is pure: identical seed in → identical bytes out. The conversation is byte-stable by _persistence_ (the same rows replayed); the system prompt is byte-stable by _purity_.
+
+**What this means when you edit a prompt:**
+
+- Editing a _rendering function_ — the system prompt or a per-turn envelope (`renderTeachingSystem`, `renderWaveTurnEnvelope`, `buildLearnerInput`, …) — takes effect on the **next turn of existing sessions**. No new course needed; dev-server hot-reload is enough.
+- Editing something whose _output is persisted_ — a wave's `openingText`, the framework, the starting tier, baseline gradings — only affects **new runs**. That output was frozen into a row at the turn that produced it; existing sessions keep the old value.
+- Changing the system prompt shifts the cache prefix from byte 0, so the first turn after the edit is a full prompt-cache miss; caching re-establishes on the new prefix from the turn after.
+
 ## The two-store split — why typed JSONB exists
 
 If `context_messages` is honest about what the LLM saw, two needs are still unmet:
