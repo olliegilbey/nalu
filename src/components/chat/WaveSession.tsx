@@ -8,6 +8,7 @@ import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
 import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
+import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
 import { t } from "@/i18n";
 import type { Turn } from "@/lib/types/turn";
 
@@ -35,12 +36,23 @@ export function WaveSession({
     activeQuestionnaire,
     closeResult,
     status,
+    topic,
+    currentTier,
+    xp,
+    xpPulseKey,
+    xpGainAmount,
+    awardMcXp,
     isPending,
     submitChatText,
     submitQuestionnaireAnswers,
   } = useWaveState(courseId, waveNumber);
 
   const [composerValue, setComposerValue] = useState("");
+  // Optimistic user message: rendered immediately on submit so the learner's
+  // input appears at once, before the server round-trip. Only shown while a
+  // turn is in flight; once `isPending` clears, the refetched `turns` already
+  // contain the real entry, so a stale value here is simply not rendered.
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 
   // Map Turn[] → scroll JSX. The switch is exhaustive over Turn's kinds so a
   // future variant addition becomes a compile-time error here.
@@ -68,8 +80,12 @@ export function WaveSession({
 
   return (
     <ChatShell
-      title={null}
+      title={topic}
       onNew={() => router.push("/")}
+      xp={xp}
+      xpPulseKey={xpPulseKey}
+      xpGainAmount={xpGainAmount}
+      showXp
       composer={
         <Composer
           value={composerValue}
@@ -79,23 +95,30 @@ export function WaveSession({
             // already filters empty strings (it disables the send button).
             const text = composerValue.trim();
             if (text.length === 0) return;
+            setPendingMessage(text);
             submitChatText(text);
             setComposerValue("");
           }}
           disabled={isPending}
           questions={activeQuestionnaire ? [...activeQuestionnaire.questions] : null}
           persistKey={activeQuestionnaire?.persistKey}
+          waveTier={currentTier ?? undefined}
+          onCorrectAnswer={awardMcXp}
           moveOn={moveOn}
           onComplete={(answers) => {
             if (!activeQuestionnaire) return;
             // Domain-shape mapper lives in `src/lib/` so this component stays
             // a thin rendering shell.
+            setPendingMessage(formatComposerAnswers(answers));
             submitQuestionnaireAnswers(shapeQuestionnaireAnswers(answers));
           }}
         />
       }
     >
       {scroll}
+      {isPending && pendingMessage && (
+        <MessageBubble message={{ id: "pending", role: "user", content: pendingMessage }} />
+      )}
       {isPending && <TypingBubble />}
     </ChatShell>
   );
