@@ -40,6 +40,8 @@ import { redactWaveChatLog, type WaveChatLogEntryForClient } from "./redactWaveC
 /** Full wave-state projection returned to the client. */
 export interface WaveState {
   readonly courseId: string;
+  /** Course topic — populates the wave header title. */
+  readonly topic: string;
   readonly waveId: string;
   readonly waveNumber: number;
   readonly currentTier: number;
@@ -101,21 +103,20 @@ export async function getWaveState(params: GetWaveStateParams): Promise<WaveStat
     });
   }
 
-  // (2) Ownership check. `getCourseById` throws `NotFoundError` on missing
-  // row OR on a userId mismatch (existence is not disclosed across owners).
-  // Translate both into TRPC NOT_FOUND on the same code path used for "no
-  // such wave" above.
-  try {
-    await getCourseById(params.courseId, params.userId);
-  } catch (err) {
-    if (err instanceof NotFoundError) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: `wave ${params.waveNumber} not found for course ${params.courseId}`,
-      });
-    }
-    throw err;
-  }
+  // (2) Ownership check. `getCourseById` throws `NotFoundError` on a missing
+  // row OR a userId mismatch (existence is not disclosed across owners). The
+  // course row is retained — its `topic` populates the wave header title.
+  const course = await getCourseById(params.courseId, params.userId).catch(
+    (err: unknown): never => {
+      if (err instanceof NotFoundError) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `wave ${params.waveNumber} not found for course ${params.courseId}`,
+        });
+      }
+      throw err;
+    },
+  );
 
   // (3) chat_log is typed `unknown` on the Drizzle row (jsonb isn't
   // parameterised at the column type; `waveRowGuard` validated the array
@@ -138,6 +139,7 @@ export async function getWaveState(params: GetWaveStateParams): Promise<WaveStat
 
   return {
     courseId: wave.courseId,
+    topic: course.topic,
     waveId: wave.id,
     waveNumber: wave.waveNumber,
     currentTier: wave.tier,
