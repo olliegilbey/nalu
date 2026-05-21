@@ -57,24 +57,16 @@ export function learnerEntryAlreadyAppended(log: WaveChatLog, entry: WaveChatLog
   return responsesEqual(trailing.responses, entry.responses);
 }
 
+/** The `responses` array shape from a learner `answers` chat-log entry. */
+type AnswerResponses = Extract<WaveChatLogEntry, { kind: "answers" }>["responses"];
+
 /**
  * Order-sensitive structural equality for two `answers` `responses` arrays.
  *
  * Each response is `{ questionId, choice? | freetext? }` (exactly one of
  * `choice` / `freetext` per `v3Response`). Compares length then field-by-field.
  */
-function responsesEqual(
-  a: readonly {
-    readonly questionId: string;
-    readonly choice?: string;
-    readonly freetext?: string;
-  }[],
-  b: readonly {
-    readonly questionId: string;
-    readonly choice?: string;
-    readonly freetext?: string;
-  }[],
-): boolean {
+function responsesEqual(a: AnswerResponses, b: AnswerResponses): boolean {
   if (a.length !== b.length) return false;
   return a.every((ra, i) => {
     const rb = b[i];
