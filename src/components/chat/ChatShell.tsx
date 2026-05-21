@@ -20,11 +20,19 @@ export function ChatShell({
   children,
   composer,
   onNew,
+  xp,
+  xpPulseKey,
+  xpGainAmount,
+  showXp,
 }: {
   readonly title?: string | null;
   readonly children: ReactNode;
   readonly composer: ReactNode;
   readonly onNew: () => void;
+  readonly xp?: number;
+  readonly xpPulseKey?: number;
+  readonly xpGainAmount?: number;
+  readonly showXp?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -37,7 +45,15 @@ export function ChatShell({
 
   return (
     <div className="relative flex flex-col h-[100dvh] text-foreground overflow-hidden noise">
-      <ChatHeader title={title ?? null} onMenu={() => setMenuOpen(true)} onNew={onNew} />
+      <ChatHeader
+        title={title ?? null}
+        onMenu={() => setMenuOpen(true)}
+        onNew={onNew}
+        xp={xp}
+        xpPulseKey={xpPulseKey}
+        xpGainAmount={xpGainAmount}
+        showXp={showXp}
+      />
 
       <SideMenu
         open={menuOpen}
