@@ -8,6 +8,7 @@ import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
 import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
+import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
 import { t } from "@/i18n";
 import type { Turn } from "@/lib/types/turn";
 
@@ -35,12 +36,30 @@ export function WaveSession({
     activeQuestionnaire,
     closeResult,
     status,
+    topic,
+    currentTier,
+    xp,
+    xpPulseKey,
+    xpGainAmount,
+    awardMcXp,
     isPending,
     submitChatText,
     submitQuestionnaireAnswers,
   } = useWaveState(courseId, waveNumber);
 
   const [composerValue, setComposerValue] = useState("");
+  // Optimistic user message. `turnCountAtSubmit` is the `turns.length` captured
+  // at submit: the bubble shows while `turns` has not grown past it (server
+  // round-trip not yet landed, or it failed) and hides the instant the real
+  // turn appears — so it never duplicates the real turn, and it survives an
+  // error rather than vanishing with `isPending`.
+  const [optimistic, setOptimistic] = useState<{
+    readonly content: string;
+    readonly turnCountAtSubmit: number;
+  } | null>(null);
+  // The questionnaire key just submitted — its question card is hidden from the
+  // Composer immediately, rather than lingering until the server round-trip.
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
   // Map Turn[] → scroll JSX. The switch is exhaustive over Turn's kinds so a
   // future variant addition becomes a compile-time error here.
@@ -68,8 +87,12 @@ export function WaveSession({
 
   return (
     <ChatShell
-      title={null}
+      title={topic}
       onNew={() => router.push("/")}
+      xp={xp}
+      xpPulseKey={xpPulseKey}
+      xpGainAmount={xpGainAmount}
+      showXp
       composer={
         <Composer
           value={composerValue}
@@ -79,23 +102,46 @@ export function WaveSession({
             // already filters empty strings (it disables the send button).
             const text = composerValue.trim();
             if (text.length === 0) return;
+            setOptimistic({ content: text, turnCountAtSubmit: turns.length });
             submitChatText(text);
             setComposerValue("");
           }}
           disabled={isPending}
-          questions={activeQuestionnaire ? [...activeQuestionnaire.questions] : null}
+          questions={
+            activeQuestionnaire && activeQuestionnaire.questionsKey !== dismissedKey
+              ? [...activeQuestionnaire.questions]
+              : null
+          }
           persistKey={activeQuestionnaire?.persistKey}
+          waveTier={currentTier ?? undefined}
+          onCorrectAnswer={awardMcXp}
           moveOn={moveOn}
           onComplete={(answers) => {
             if (!activeQuestionnaire) return;
-            // Domain-shape mapper lives in `src/lib/` so this component stays
-            // a thin rendering shell.
-            submitQuestionnaireAnswers(shapeQuestionnaireAnswers(answers));
+            // Optimistic bubble + dismiss the question card at once. Domain-shape
+            // mapper lives in `src/lib/` so this component stays a thin shell.
+            setOptimistic({
+              content: formatComposerAnswers(answers),
+              turnCountAtSubmit: turns.length,
+            });
+            setDismissedKey(activeQuestionnaire.questionsKey);
+            // On submit failure, un-dismiss the question card and drop the
+            // optimistic bubble. The Composer restores the learner's answers
+            // from its localStorage buffer, so they only re-do the final step.
+            submitQuestionnaireAnswers(shapeQuestionnaireAnswers(answers), {
+              onError: () => {
+                setDismissedKey(null);
+                setOptimistic(null);
+              },
+            });
           }}
         />
       }
     >
       {scroll}
+      {optimistic && turns.length === optimistic.turnCountAtSubmit && (
+        <MessageBubble message={{ id: "pending", role: "user", content: optimistic.content }} />
+      )}
       {isPending && <TypingBubble />}
     </ChatShell>
   );

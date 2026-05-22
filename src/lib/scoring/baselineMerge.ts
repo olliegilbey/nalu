@@ -24,11 +24,20 @@ export interface MergeAndComputeXpParams {
 export interface MergeAndComputeXpResult {
   readonly gradings: readonly StoredGrading[];
   readonly totalXp: number;
+  /**
+   * XP subtotal for free-text (LLM-graded) baseline questions only — i.e.
+   * `totalXp` minus the mechanical-MC contribution. The client needs this
+   * separately: correct MC answers are scored instantly client-side
+   * (`calculateMcXp`), so the post-close badge must add ONLY the free-text
+   * portion or MC XP would be counted twice.
+   */
+  readonly freeTextXp: number;
 }
 
 /**
  * Merge LLM and mechanical gradings into one canonically-ordered list and
- * compute total XP for the baseline.
+ * compute total XP for the baseline, plus a free-text-only subtotal the
+ * client uses to avoid double-counting instantly-scored MC answers.
  *
  * Lives under `src/lib/scoring/` because it is a pure scoring/aggregation
  * function — no IO, no DB. The orchestrator (`src/lib/course/submitBaseline`)
@@ -90,5 +99,18 @@ export function mergeAndComputeXp(params: MergeAndComputeXpParams): MergeAndComp
     0,
   );
 
-  return { gradings: merged, totalXp };
+  // Free-text subtotal: same XP formula, but restricted to questions with no
+  // mechanical (MC-click) grading. A question is free-text iff its id is not
+  // in `mechanicalGradings` — this also correctly includes a freetext-escape
+  // answer on an MC question, which is LLM-graded rather than mechanical.
+  const mechanicalQids = new Set(params.mechanicalGradings.map((g) => g.questionId));
+  const freeTextXp = merged.reduce(
+    (sum, g) =>
+      mechanicalQids.has(g.questionId)
+        ? sum
+        : sum + calculateXP(params.parsed.startingTier, g.qualityScore),
+    0,
+  );
+
+  return { gradings: merged, totalXp, freeTextXp };
 }

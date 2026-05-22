@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
+import { formatMutationError } from "@/lib/errors";
 import { deriveTurns } from "@/lib/course/deriveTurns";
 import { adaptQuestionnaire, type ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import type { Turn } from "@/lib/types/turn";
@@ -30,9 +32,12 @@ export interface UseScopingStateResult {
   readonly turns: readonly Turn[];
   readonly activeQuestionnaire: ActiveQuestionnaire | null;
   readonly scopingResult: CourseState["scopingResult"];
+  /** Course topic — drives the chat header title. Null until the query resolves. */
+  readonly topic: string | null;
   readonly isPending: boolean;
   readonly submitClarify: (
     answers: ReadonlyArray<{ readonly questionId: string; readonly freetext: string }>,
+    opts?: { readonly onError?: () => void },
   ) => void;
   readonly submitBaselineAnswers: (
     answers: ReadonlyArray<
@@ -44,6 +49,12 @@ export interface UseScopingStateResult {
           readonly fromEscape: boolean;
         }
     >,
+    // `onSuccess` carries the free-text XP subtotal so the caller can pop the
+    // header badge; `onError` lets it recover its optimistic UI. Both optional.
+    opts?: {
+      readonly onError?: () => void;
+      readonly onSuccess?: (result: { readonly freeTextXpAwarded: number }) => void;
+    },
   ) => void;
 }
 
@@ -68,13 +79,27 @@ export function useScopingState(courseId: string): UseScopingStateResult {
   const invalidateState = () => qc.invalidateQueries({ queryKey: stateOpts.queryKey });
 
   const generateFramework = useMutation(
-    trpc.course.generateFramework.mutationOptions({ onSuccess: invalidateState }),
+    trpc.course.generateFramework.mutationOptions({
+      onSuccess: invalidateState,
+      onError: (err) => {
+        toast.error("Couldn't build your course outline", {
+          description: formatMutationError(err),
+        });
+      },
+    }),
   );
   const generateBaseline = useMutation(
     trpc.course.generateBaseline.mutationOptions({ onSuccess: invalidateState }),
   );
   const submitBaseline = useMutation(
-    trpc.course.submitBaseline.mutationOptions({ onSuccess: invalidateState }),
+    trpc.course.submitBaseline.mutationOptions({
+      onSuccess: invalidateState,
+      onError: (err) => {
+        toast.error("Couldn't save your answers", {
+          description: formatMutationError(err),
+        });
+      },
+    }),
   );
 
   const turns = useMemo(() => (state.data ? deriveTurns(state.data) : []), [state.data]);
@@ -126,10 +151,13 @@ export function useScopingState(courseId: string): UseScopingStateResult {
           // Clear the guard on error so a user retry (refetch/remount) can fire
           // again. Without this, a single LLM failure would suppress baseline
           // generation for this course until the page is fully reloaded.
-          onError: () => {
+          onError: (err) => {
             if (baselineDispatchedFor.current === dispatchedCourseId) {
               baselineDispatchedFor.current = null;
             }
+            toast.error("Couldn't create your baseline quiz", {
+              description: formatMutationError(err),
+            });
           },
         },
       );
@@ -142,23 +170,30 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     generateBaseline.isPending ||
     submitBaseline.isPending;
 
-  const submitClarify: UseScopingStateResult["submitClarify"] = (answers) => {
+  const submitClarify: UseScopingStateResult["submitClarify"] = (answers, opts) => {
     // tRPC infers a mutable array shape; our public interface uses readonly.
     // Inputs are structurally identical, so cast through `never` (mirrors
-    // submitBaselineAnswers below).
-    generateFramework.mutate({ courseId, responses: answers as never });
+    // submitBaselineAnswers below). The per-call `onError` lets the caller
+    // recover its optimistic UI on failure — the mutation-level toast still fires.
+    generateFramework.mutate({ courseId, responses: answers as never }, { onError: opts?.onError });
   };
 
-  const submitBaselineAnswers: UseScopingStateResult["submitBaselineAnswers"] = (answers) => {
+  const submitBaselineAnswers: UseScopingStateResult["submitBaselineAnswers"] = (answers, opts) => {
     // tRPC infers a mutable array shape; our public interface uses readonly.
     // Inputs are structurally identical, so cast through `never` (per plan).
-    submitBaseline.mutate({ courseId, answers: answers as never });
+    // The mutation-level `onSuccess` (invalidateState) still runs first;
+    // react-query then invokes this per-call `onSuccess` with the result.
+    submitBaseline.mutate(
+      { courseId, answers: answers as never },
+      { onError: opts?.onError, onSuccess: opts?.onSuccess },
+    );
   };
 
   return {
     turns,
     activeQuestionnaire,
     scopingResult: state.data?.scopingResult ?? null,
+    topic: state.data?.topic ?? null,
     isPending,
     submitClarify,
     submitBaselineAnswers,

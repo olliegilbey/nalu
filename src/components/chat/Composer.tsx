@@ -11,12 +11,22 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Check, ChevronLeft, ChevronRight, Mic, Plus } from "lucide-react";
-import { toast } from "sonner";
 import { t } from "@/i18n";
-import { playCorrect, playWrong } from "@/lib/sound";
+import { playWrong } from "@/lib/sound";
+import { calculateMcXp } from "@/lib/scoring/xp";
+import { parseQuestionnaireBuffer } from "@/lib/course/parseQuestionnaireBuffer";
 
 export type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
+
+/** Read a localStorage key, returning null if storage is unavailable. */
+function safeGetItem(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
 
 export function Composer({
   value,
@@ -28,6 +38,8 @@ export function Composer({
   isFirstMessage,
   persistKey,
   moveOn,
+  onCorrectAnswer,
+  waveTier,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -43,6 +55,10 @@ export function Composer({
   persistKey?: string;
   /** When set, replaces the input row with a single advance button. */
   moveOn?: { readonly label: string; readonly onAdvance: () => void };
+  /** Called with exact XP when the learner confirms a correct MC answer. */
+  onCorrectAnswer?: (amount: number) => void;
+  /** Wave tier — fallback for MC XP when a question carries no per-question tier. */
+  waveTier?: number;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const hasQuestions = !!questions && questions.length > 0;
@@ -54,6 +70,10 @@ export function Composer({
     [questions],
   );
   const [answers, setAnswers] = useState<(string | null)[]>([]);
+  // Per-question free-text drafts, indexed alongside `questions`. Free-text
+  // answers stay editable on revisit (unlike MC, which locks on confirm), so
+  // their text lives here rather than in the single parent-owned `value`.
+  const [drafts, setDrafts] = useState<string[]>([]);
   const [step, setStep] = useState(0);
   const [slideDir, setSlideDir] = useState<"next" | "prev" | "none">("none");
   // Index of the option the user has tapped but not yet confirmed, per step.
@@ -63,73 +83,96 @@ export function Composer({
   // While true, the option grid is locked (during the pulse).
   const [locked, setLocked] = useState(false);
 
-  // Hydrate persisted answers/step from localStorage on mount or when persistKey
-  // changes. SSR-safe.
-  useEffect(() => {
-    if (!persistKey || typeof window === "undefined" || !hasQuestions) return;
-    try {
-      const raw = window.localStorage.getItem(persistKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as {
-        readonly questionsKey?: string;
-        readonly answers?: (string | null)[];
-        readonly step?: number;
-      };
-      if (parsed.questionsKey !== questionsKey) return;
-      if (parsed.answers && parsed.answers.length === questions!.length) {
-        setAnswers(parsed.answers);
-      }
-      if (typeof parsed.step === "number" && parsed.step >= 0 && parsed.step < questions!.length) {
-        setStep(parsed.step);
-      }
-    } catch {
-      // Malformed buffer — ignore.
+  // The textarea's value: a per-question draft while a questionnaire is
+  // active, otherwise the parent-owned chat-input string. `setInputValue`
+  // routes writes to the matching store.
+  const inputValue = hasQuestions ? (drafts[step] ?? "") : value;
+  const setInputValue = (v: string) => {
+    if (hasQuestions) {
+      const next = [...drafts];
+      next[step] = v;
+      setDrafts(next);
+    } else {
+      onChange(v);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [persistKey, questionsKey]);
+  };
 
+  // Initialise per-question state whenever the question set changes. Tries to
+  // restore a persisted buffer (refresh-resilient); falls back to blank.
+  //
+  // This is ONE effect by design. It was formerly two — a hydrate effect and a
+  // reset effect — and React ran the reset second, so its blank fill clobbered
+  // the hydrate's restore. Merging removes the ordering bug: restore-or-blank
+  // is now a single decision. SSR-safe.
+  useEffect(() => {
+    if (!hasQuestions) return;
+    const len = questions!.length;
+    const restored = parseQuestionnaireBuffer(
+      persistKey && typeof window !== "undefined" ? safeGetItem(persistKey) : null,
+      questionsKey,
+      len,
+    );
+    setAnswers(restored ? [...restored.answers] : Array(len).fill(null));
+    setDrafts(restored ? [...restored.drafts] : Array(len).fill(""));
+    setStep(restored ? restored.step : 0);
+    setPending(Array(len).fill(null));
+    setFeedback(Array(len).fill(null));
+    setSlideDir("none");
+    setLocked(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questionsKey]);
+
+  // Persist the questionnaire buffer to localStorage on every change. Defined
+  // AFTER the init effect so that, on mount, init reads localStorage before
+  // this writes — the restore is never lost. SSR-safe.
   useEffect(() => {
     if (!persistKey || typeof window === "undefined" || !hasQuestions) return;
     try {
-      window.localStorage.setItem(persistKey, JSON.stringify({ questionsKey, answers, step }));
+      window.localStorage.setItem(
+        persistKey,
+        JSON.stringify({ questionsKey, answers, step, drafts }),
+      );
     } catch {
       // Quota / disabled — ignore.
     }
-  }, [persistKey, questionsKey, answers, step, hasQuestions]);
-
-  useEffect(() => {
-    if (hasQuestions) {
-      setAnswers(Array(questions!.length).fill(null));
-      setPending(Array(questions!.length).fill(null));
-      setFeedback(Array(questions!.length).fill(null));
-      setStep(0);
-      setSlideDir("none");
-      setLocked(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [questionsKey]);
+  }, [persistKey, questionsKey, answers, step, drafts, hasQuestions]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = "0px";
     el.style.height = Math.min(el.scrollHeight, 160) + "px";
-  }, [value]);
+  }, [inputValue]);
 
-  const canSend = value.trim().length > 0 && !disabled;
+  const canSend = inputValue.trim().length > 0 && !disabled;
   const currentPending = hasQuestions ? (pending[step] ?? null) : null;
   const hasPending = currentPending != null;
-  // "Confirm" mode: question is active, user picked an option, no free text.
-  const confirmMode = hasQuestions && hasPending && value.trim().length === 0;
-
-  const placeholder = hasQuestions
-    ? t<string>("composer.placeholderAnswering")
-    : isFirstMessage
-      ? t<string>("composer.placeholderFirst")
-      : t<string>("composer.placeholderContinue");
+  // A step is locked once it has a recorded answer — its option can no longer
+  // be changed and no answer can be resubmitted for it.
+  const stepLocked = hasQuestions && answers[step] != null;
+  // "Confirm" mode: question is active, user picked an option, no free text,
+  // and the step is not already locked.
+  const confirmMode = hasQuestions && hasPending && !stepLocked && inputValue.trim().length === 0;
 
   const current = hasQuestions ? questions![step] : null;
   const total = hasQuestions ? questions!.length : 0;
+
+  // A free-text question (no options) never locks its textarea — its answer
+  // stays editable on revisit. MC questions still lock on confirm.
+  const currentIsFreeText = !!current && current.options.length === 0;
+  const textareaLocked = stepLocked && !currentIsFreeText;
+
+  // Placeholder is dynamic by interaction type: an MC question keeps "or type
+  // your own answer" (options exist to pick instead); a free-text question
+  // uses a plain "type your answer"; otherwise it is the first-message or
+  // continue prompt.
+  const placeholder = hasQuestions
+    ? current && current.options.length > 0
+      ? t<string>("composer.placeholderAnswering")
+      : t<string>("composer.placeholderAnswerFree")
+    : isFirstMessage
+      ? t<string>("composer.placeholderFirst")
+      : t<string>("composer.placeholderContinue");
 
   const advanceAfterAnswer = (answer: string) => {
     if (!hasQuestions) return;
@@ -140,14 +183,22 @@ export function Composer({
     // Find the next unanswered question, otherwise complete.
     const nextUnanswered = next.findIndex((a, i) => i !== step && a == null);
     if (next.every((a) => a != null)) {
-      if (persistKey && typeof window !== "undefined") {
-        try {
-          window.localStorage.removeItem(persistKey);
-        } catch {
-          /* ignore */
-        }
-      }
-      onComplete?.(questions!.map((q, i) => ({ question: q, answer: next[i]! })));
+      // The localStorage buffer is deliberately NOT cleared here. Its most
+      // recent write (made just before this final answer) holds every answer
+      // bar the last — so if the parent's submit fails and re-shows this
+      // questionnaire, the Composer restores that buffer and the learner only
+      // re-does the final step. On a successful submit the buffer is an orphan:
+      // keyed and length-validated, it is never re-matched.
+      onComplete?.(
+        questions!.map((q, i) => ({
+          question: q,
+          // Free-text questions stay editable, so the live draft — not the
+          // answer recorded at send time — is the source of truth, picking up
+          // any back-edits. Fall back to the recorded answer if the draft was
+          // blanked. MC questions use the recorded option text.
+          answer: q.options.length === 0 ? drafts[i]?.trim() || next[i]! : next[i]!,
+        })),
+      );
       return;
     }
     if (step < total - 1) {
@@ -161,6 +212,8 @@ export function Composer({
 
   const selectOption = (i: number) => {
     if (!hasQuestions || locked) return;
+    // Once an answer is locked in for this step, it cannot be changed.
+    if (answers[step] != null) return;
     // Tapping selects but does NOT advance. Confirm button locks it in.
     const next = [...pending];
     next[step] = i;
@@ -169,6 +222,8 @@ export function Composer({
 
   const clearPending = () => {
     if (!hasQuestions) return;
+    // Don't clear a locked-in answer.
+    if (answers[step] != null) return;
     if (pending[step] == null) return;
     const next = [...pending];
     next[step] = null;
@@ -184,8 +239,12 @@ export function Composer({
     setFeedback(fb);
     setLocked(true);
     if (isCorrect) {
-      playCorrect();
-      toast.success("10 XP Gained", { duration: 1500 });
+      // Exact XP for a correct MC, computed client-side from the question's
+      // tier — the designated `calculateMcXp` instant path. Falls back to the
+      // wave tier, then to tier 1, when no per-question tier is present.
+      // `onCorrectAnswer` routes through `useCourseXp.addXp`, which plays the
+      // correct-answer sound centrally — no direct `playCorrect()` here.
+      onCorrectAnswer?.(calculateMcXp(current.tier ?? waveTier ?? 1, true));
     } else playWrong();
 
     const chosen = current.options[currentPending]!;
@@ -215,9 +274,8 @@ export function Composer({
     }
     if (!canSend) return;
     if (hasQuestions) {
-      const answer = value.trim();
-      onChange("");
-      // Typing a free-text answer counts as the chosen answer for this step.
+      const answer = inputValue.trim();
+      // Keep the draft — a free-text answer stays editable on revisit.
       clearPending();
       advanceAfterAnswer(answer);
     } else {
@@ -247,12 +305,19 @@ export function Composer({
         <div className="mb-3 animate-message-in">
           {/* Header: counter + prev/next */}
           <div className="flex items-center justify-between mb-2 px-1">
-            <div className="flex items-center gap-2">
-              <span className="h-1 w-1 rounded-full" style={{ background: "var(--carp-yellow)" }} />
-              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-fuji-gray">
-                {t<string>("composer.chooseLabel")}
-              </span>
-            </div>
+            {current.options.length > 0 ? (
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-1 w-1 rounded-full"
+                  style={{ background: "var(--carp-yellow)" }}
+                />
+                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-fuji-gray">
+                  {t<string>("composer.chooseLabel")}
+                </span>
+              </div>
+            ) : (
+              <div />
+            )}
             <div className="flex items-center gap-1">
               <button
                 aria-label={t<string>("composer.prev")}
@@ -292,11 +357,12 @@ export function Composer({
               <p className="px-1 mb-2 text-[14px] leading-snug text-foreground/90 font-medium">
                 {current.prompt}
               </p>
-              {current.options.length > 0 ? (
+              {current.options.length > 0 && (
                 <div className="grid grid-cols-1 gap-1.5">
                   {current.options.map((opt, i) => {
                     const isPending = currentPending === i;
                     const fb = feedback[step];
+                    const isLockedAnswer = answers[step] != null;
                     const pulseClass =
                       isPending && fb === "correct"
                         ? " pulse-correct border-spring-green text-foreground"
@@ -307,9 +373,10 @@ export function Composer({
                       <button
                         key={i}
                         onClick={() => selectOption(i)}
-                        disabled={disabled || locked}
+                        disabled={disabled || locked || isLockedAnswer}
                         className={
-                          "group flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 text-[14px] leading-snug transition-all active:scale-[0.99] disabled:opacity-60 border " +
+                          "group flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 text-[14px] leading-snug transition-all active:scale-[0.99] border disabled:cursor-not-allowed " +
+                          (isLockedAnswer && !isPending ? "opacity-40 " : "") +
                           (isPending
                             ? "bg-sumi-3 border-spring-green text-foreground"
                             : "bg-sumi-2 hover:bg-sumi-3 border-sumi-4 hover:border-crystal/50 text-foreground/90") +
@@ -333,10 +400,6 @@ export function Composer({
                     );
                   })}
                 </div>
-              ) : (
-                <p className="px-1 text-[12px] text-fuji-gray italic">
-                  {t<string>("composer.placeholderAnswering")}
-                </p>
               )}
             </div>
           </div>
@@ -353,10 +416,11 @@ export function Composer({
         <textarea
           ref={ref}
           rows={1}
-          value={value}
+          value={inputValue}
+          disabled={textareaLocked}
           onChange={(e) => {
             if (e.target.value.length > 0) clearPending();
-            onChange(e.target.value);
+            setInputValue(e.target.value);
           }}
           onFocus={() => {
             // Returning to free-text drops the pending MC selection.

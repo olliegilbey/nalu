@@ -93,6 +93,9 @@ export const MERGED: MergeAndComputeXpResult = {
     },
   ],
   totalXp: 50,
+  // This fixture's only grading is free-text (no mechanical MC), so the
+  // free-text subtotal equals the total.
+  freeTextXp: 50,
 };
 
 /**

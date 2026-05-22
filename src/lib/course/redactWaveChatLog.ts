@@ -36,12 +36,16 @@ export type WaveQuestionForClient =
       /** Base64-obfuscated correct index, bound to `id`. NOT cryptographic. */
       readonly correctEnc: string;
       readonly freetextRubric: string;
+      /** Concept tier — drives client-side `calculateMcXp`. Optional on the source. */
+      readonly tier?: number;
     }
   | {
       readonly id: string;
       readonly type: "free_text";
       readonly prompt: string;
       readonly freetextRubric: string;
+      /** Concept tier — present for symmetry; free-text XP is server-graded. */
+      readonly tier?: number;
     };
 
 /** Wire-safe projection of one `WaveChatLogEntry`. */
@@ -92,6 +96,7 @@ export function redactWaveChatLog(
           options: q.options,
           correctEnc: encodeCorrect(q.id, KEY_TO_INDEX[q.correct]),
           freetextRubric: q.freetextRubric,
+          tier: q.tier,
         };
       }
       return {
@@ -99,6 +104,7 @@ export function redactWaveChatLog(
         type: "free_text",
         prompt: q.prompt,
         freetextRubric: q.freetextRubric,
+        tier: q.tier,
       };
     });
 

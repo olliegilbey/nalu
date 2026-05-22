@@ -88,4 +88,9 @@ describe("useScopingState", () => {
     expect(result.current.activeQuestionnaire?.kind).toBe("clarify");
     expect(result.current.activeQuestionnaire?.persistKey).toBe("nalu:scoping:c1:clarify");
   });
+
+  it("exposes the course topic", async () => {
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+    await waitFor(() => expect(result.current.topic).toBe("T"));
+  });
 });
