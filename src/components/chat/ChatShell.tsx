@@ -36,10 +36,19 @@ export function ChatShell({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Last-observed scroll content height. `children` is a fresh array on every
+  // parent render — including on every Composer keystroke — so this effect runs
+  // constantly. A keystroke doesn't change the message content, so `scrollHeight`
+  // is unchanged and we skip the scroll. Without this guard the smooth-scroll
+  // animation was re-triggered on each keystroke, making the chat visibly bob
+  // up and down while typing a multi-line message.
+  const lastScrollHeight = useRef(0);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    if (el.scrollHeight === lastScrollHeight.current) return;
+    lastScrollHeight.current = el.scrollHeight;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [children]);
 

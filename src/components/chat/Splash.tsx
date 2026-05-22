@@ -19,23 +19,24 @@ export function Splash({ onStart }: { readonly onStart: () => void }) {
           </div>
 
           <h1 className="text-3xl font-semibold leading-tight tracking-tight">
-            Hi, I&apos;m Ollie — welcome to <span className="text-crystal">nalu</span>.
+            Hi, I&apos;m Ollie - welcome to <span className="text-crystal">nalu</span>.
           </h1>
 
           <div className="space-y-4 text-[15px] leading-relaxed text-fuji-gray">
             <p>
-              A little side project of mine — think{" "}
-              <span className="text-foreground">Duolingo, but for anything</span> you want to learn.
+              A little side project of mine - think{" "}
+              <strong className="font-medium text-foreground">Duolingo, but for anything</strong>{" "}
+              you want to learn.
             </p>
             <p>
-              The prompting and model aren&apos;t finished yet, but this should give you a real feel
-              for where it&apos;s heading.
+              The prompting and model are WIP, but this should give you a real feel for where
+              it&apos;s heading.
             </p>
             <p>
-              Unlike a regular chatbot, nalu has a{" "}
-              <span className="text-foreground">progression system</span> that tracks how
-              you&apos;re doing, adapts to your answers, and gamifies the journey — structure a
-              plain chat just doesn&apos;t have.
+              Nalu is an AI learning app with a{" "}
+              <strong className="font-medium text-foreground">real progression system</strong> that
+              tracks a learner&apos;s understanding and gamifies the journey, rather than the
+              stateless back-and-forth of a plain chatbot.
             </p>
           </div>
         </div>
