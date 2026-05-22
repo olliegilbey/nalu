@@ -183,13 +183,12 @@ export function Composer({
     // Find the next unanswered question, otherwise complete.
     const nextUnanswered = next.findIndex((a, i) => i !== step && a == null);
     if (next.every((a) => a != null)) {
-      if (persistKey && typeof window !== "undefined") {
-        try {
-          window.localStorage.removeItem(persistKey);
-        } catch {
-          /* ignore */
-        }
-      }
+      // The localStorage buffer is deliberately NOT cleared here. Its most
+      // recent write (made just before this final answer) holds every answer
+      // bar the last — so if the parent's submit fails and re-shows this
+      // questionnaire, the Composer restores that buffer and the learner only
+      // re-does the final step. On a successful submit the buffer is an orphan:
+      // keyed and length-validated, it is never re-matched.
       onComplete?.(
         questions!.map((q, i) => ({
           question: q,

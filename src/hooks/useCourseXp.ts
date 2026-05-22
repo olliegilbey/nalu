@@ -60,6 +60,9 @@ export function useCourseXp(courseId: string): UseCourseXpResult {
     (amount: number) => {
       if (!Number.isFinite(amount) || amount <= 0) return;
       const rounded = Math.round(amount);
+      // A positive amount that rounds to 0 (e.g. 0.4) is not a whole-XP gain —
+      // skip the pulse and the redundant write, per the `addXp` contract.
+      if (rounded <= 0) return;
       setXp((prev) => {
         const next = prev + rounded;
         if (typeof window !== "undefined") {

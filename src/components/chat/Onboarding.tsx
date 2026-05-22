@@ -117,10 +117,17 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
               turnCountAtSubmit: turns.length,
             });
             setDismissedKey(activeQuestionnaire.questionsKey);
+            // On submit failure, un-dismiss the question card and drop the
+            // optimistic bubble. The Composer restores the learner's answers
+            // from its localStorage buffer, so they only re-do the final step.
+            const onError = () => {
+              setDismissedKey(null);
+              setOptimistic(null);
+            };
             if (activeQuestionnaire.kind === "clarify") {
-              submitClarify(shapeClarifyAnswers(answers));
+              submitClarify(shapeClarifyAnswers(answers), { onError });
             } else {
-              submitBaselineAnswers(shapeQuestionnaireAnswers(answers));
+              submitBaselineAnswers(shapeQuestionnaireAnswers(answers), { onError });
             }
           }}
         />

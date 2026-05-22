@@ -4,6 +4,18 @@ import { Menu, SquarePen, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { t } from "@/i18n";
 
+/**
+ * Top chat bar: menu button, title-or-wordmark, an optional XP badge, and the
+ * new-chat button.
+ *
+ * @param onNew - Invoked when the new-chat button is pressed.
+ * @param onMenu - Invoked when the menu button is pressed.
+ * @param title - Conversation title; when null/omitted the app wordmark shows.
+ * @param xp - Accumulated course XP shown in the badge.
+ * @param xpPulseKey - Bumped on each XP gain to trigger the badge animation.
+ * @param xpGainAmount - Amount of the most recent gain, shown in the floater.
+ * @param showXp - Render the XP badge even at 0 XP.
+ */
 export function ChatHeader({
   onNew,
   onMenu,
@@ -75,28 +87,38 @@ export function ChatHeader({
  * to "land". Timings must match the `xp-badge-pop` / `xp-gain-float` keyframes.
  */
 function XpBadge({ xp, pulseKey, gain }: { xp: number; pulseKey: number; gain: number }) {
-  const [displayed, setDisplayed] = useState(xp);
+  // The badge normally shows the live `xp` — a pure derivation, so an `xp`
+  // change from localStorage hydration is reflected immediately. `frozen`
+  // overrides it only during a gain pulse: it holds the pre-gain total while
+  // the "+N XP" floater rises, then releases (back to `xp`) as the floater
+  // lands, so the number appears to "catch" the floater.
+  const [frozen, setFrozen] = useState<number | null>(null);
   const [pulsing, setPulsing] = useState(false);
-  const firstRender = useRef(true);
+  // The previous render's `xp` — the pre-gain total a pulse freezes.
+  const prevXp = useRef(xp);
 
+  // Pulse effect. Declared BEFORE the prevXp tracker below so it still sees
+  // the PREVIOUS render's `xp` (a gain bumps `xp` and `pulseKey` together).
   useEffect(() => {
-    if (firstRender.current) {
-      firstRender.current = false;
-      setDisplayed(xp);
-      return;
-    }
     if (pulseKey === 0) return;
+    setFrozen(prevXp.current);
     setPulsing(true);
     const landAt = 520;
     const endAt = 900;
-    const t1 = window.setTimeout(() => setDisplayed(xp), landAt);
+    const t1 = window.setTimeout(() => setFrozen(null), landAt);
     const t2 = window.setTimeout(() => setPulsing(false), endAt);
     return () => {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pulseKey]);
+
+  // Track the latest `xp` for the next pulse's pre-gain freeze.
+  useEffect(() => {
+    prevXp.current = xp;
+  });
+
+  const displayed = frozen ?? xp;
 
   return (
     <div className="relative">

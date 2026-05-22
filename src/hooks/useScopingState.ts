@@ -37,6 +37,7 @@ export interface UseScopingStateResult {
   readonly isPending: boolean;
   readonly submitClarify: (
     answers: ReadonlyArray<{ readonly questionId: string; readonly freetext: string }>,
+    opts?: { readonly onError?: () => void },
   ) => void;
   readonly submitBaselineAnswers: (
     answers: ReadonlyArray<
@@ -48,6 +49,7 @@ export interface UseScopingStateResult {
           readonly fromEscape: boolean;
         }
     >,
+    opts?: { readonly onError?: () => void },
   ) => void;
 }
 
@@ -163,17 +165,18 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     generateBaseline.isPending ||
     submitBaseline.isPending;
 
-  const submitClarify: UseScopingStateResult["submitClarify"] = (answers) => {
+  const submitClarify: UseScopingStateResult["submitClarify"] = (answers, opts) => {
     // tRPC infers a mutable array shape; our public interface uses readonly.
     // Inputs are structurally identical, so cast through `never` (mirrors
-    // submitBaselineAnswers below).
-    generateFramework.mutate({ courseId, responses: answers as never });
+    // submitBaselineAnswers below). The per-call `onError` lets the caller
+    // recover its optimistic UI on failure — the mutation-level toast still fires.
+    generateFramework.mutate({ courseId, responses: answers as never }, { onError: opts?.onError });
   };
 
-  const submitBaselineAnswers: UseScopingStateResult["submitBaselineAnswers"] = (answers) => {
+  const submitBaselineAnswers: UseScopingStateResult["submitBaselineAnswers"] = (answers, opts) => {
     // tRPC infers a mutable array shape; our public interface uses readonly.
     // Inputs are structurally identical, so cast through `never` (per plan).
-    submitBaseline.mutate({ courseId, answers: answers as never });
+    submitBaseline.mutate({ courseId, answers: answers as never }, { onError: opts?.onError });
   };
 
   return {

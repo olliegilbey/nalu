@@ -22,7 +22,7 @@
  * per-line below with justifications rather than blanket-ignored.
  */
 class MemoryStorage implements Storage {
-  private store = new Map<string, string>();
+  private readonly store = new Map<string, string>();
   get length(): number {
     return this.store.size;
   }

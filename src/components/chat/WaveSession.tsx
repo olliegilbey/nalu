@@ -125,7 +125,15 @@ export function WaveSession({
               turnCountAtSubmit: turns.length,
             });
             setDismissedKey(activeQuestionnaire.questionsKey);
-            submitQuestionnaireAnswers(shapeQuestionnaireAnswers(answers));
+            // On submit failure, un-dismiss the question card and drop the
+            // optimistic bubble. The Composer restores the learner's answers
+            // from its localStorage buffer, so they only re-do the final step.
+            submitQuestionnaireAnswers(shapeQuestionnaireAnswers(answers), {
+              onError: () => {
+                setDismissedKey(null);
+                setOptimistic(null);
+              },
+            });
           }}
         />
       }

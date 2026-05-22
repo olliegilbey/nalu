@@ -53,7 +53,10 @@ export interface UseWaveStateResult {
   readonly awardMcXp: (amount: number) => void;
   readonly isPending: boolean;
   readonly submitChatText: (text: string) => void;
-  readonly submitQuestionnaireAnswers: (answers: readonly ShapedQuestionnaireAnswer[]) => void;
+  readonly submitQuestionnaireAnswers: (
+    answers: readonly ShapedQuestionnaireAnswer[],
+    opts?: { readonly onError?: () => void },
+  ) => void;
 }
 
 /**
@@ -181,6 +184,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
 
   const submitQuestionnaireAnswers: UseWaveStateResult["submitQuestionnaireAnswers"] = (
     answers,
+    opts,
   ) => {
     // Echo back the open questionnaire's id (the server validates §7.4 mutual
     // exclusion against it). If there's no open questionnaire, the call would
@@ -189,13 +193,18 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     // it rather than re-scanning chat_log.
     const questionnaireId = activeQuestionnaire?.questionsKey;
     if (!questionnaireId) return;
-    submitTurn.mutate({
-      courseId,
-      waveNumber,
-      // tRPC infers a mutable array shape; our public interface uses readonly.
-      // Inputs are structurally identical (mirrors useScopingState's pattern).
-      payload: { kind: "questionnaire-answers", questionnaireId, answers: answers as never },
-    });
+    submitTurn.mutate(
+      {
+        courseId,
+        waveNumber,
+        // tRPC infers a mutable array shape; our public interface uses readonly.
+        // Inputs are structurally identical (mirrors useScopingState's pattern).
+        payload: { kind: "questionnaire-answers", questionnaireId, answers: answers as never },
+      },
+      // Per-call `onError` lets WaveSession re-show the questionnaire card and
+      // clear its optimistic bubble on failure; the mutation-level toast still fires.
+      { onError: opts?.onError },
+    );
   };
 
   return {
