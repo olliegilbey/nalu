@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod/v4";
 import { toCerebrasJsonSchema, toSchemaJsonString } from "./toCerebrasJsonSchema";
+import { clarifySchema } from "@/lib/prompts/clarify";
+import { frameworkSchema } from "@/lib/prompts/framework";
+import { waveMidTurnSchema } from "@/lib/prompts/waveTurn";
 
 describe("toCerebrasJsonSchema", () => {
   it("strips minItems/maxItems on arrays", () => {
@@ -185,5 +188,50 @@ describe("toCerebrasJsonSchema", () => {
       }),
     });
     expect(() => toCerebrasJsonSchema(deep, { name: "mySchema" })).toThrow(/mySchema/);
+  });
+
+  // --- Cerebras strict-mode validity over real production schemas ---
+  // Guards against a schema construct that z.toJSONSchema would turn into
+  // something Cerebras strict mode rejects with a 400: a dangling $ref, a
+  // missing additionalProperties, or a non-object root.
+
+  /**
+   * Recursively assert a JSON Schema node satisfies Cerebras strict mode:
+   * no $ref / $defs / $anchor anywhere, and every object node declares
+   * `additionalProperties: false`.
+   */
+  function assertCerebrasStrictValid(node: unknown, path = "$"): void {
+    if (Array.isArray(node)) {
+      node.forEach((child, i) => assertCerebrasStrictValid(child, `${path}[${i}]`));
+      return;
+    }
+    if (typeof node !== "object" || node === null) return;
+    const obj = node as Record<string, unknown>;
+    for (const forbidden of ["$ref", "$defs", "$anchor"]) {
+      expect(
+        obj,
+        `${path}: "${forbidden}" is forbidden in Cerebras strict mode`,
+      ).not.toHaveProperty(forbidden);
+    }
+    if (obj["type"] === "object") {
+      expect(
+        obj["additionalProperties"],
+        `${path}: every object node needs additionalProperties:false`,
+      ).toBe(false);
+    }
+    for (const [key, value] of Object.entries(obj)) {
+      assertCerebrasStrictValid(value, `${path}.${key}`);
+    }
+  }
+
+  it.each<[string, z.ZodType<unknown>]>([
+    ["clarify", clarifySchema],
+    ["framework", frameworkSchema],
+    ["wave_mid_turn", waveMidTurnSchema],
+  ])("produces a Cerebras-strict-valid schema for %s", (name, schema) => {
+    const out = toCerebrasJsonSchema(schema, { name });
+    // Cerebras strict mode requires an object at the root.
+    expect(out.schema).toMatchObject({ type: "object" });
+    assertCerebrasStrictValid(out.schema);
   });
 });
