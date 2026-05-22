@@ -1,21 +1,17 @@
 /**
  * Read-only production-DB inspector for debugging Nalu LLM-pipeline failures.
+ * A `.claude/` debugging tool, never imported by the app; SELECT only.
  *
- * It is a `.claude/` debugging tool, never imported by the app; SELECT only.
- *
- * Connection: reads `DATABASE_URL` from `.env.local`, which `bun` auto-loads
- * from the project root. That URL points at the pooled (PgBouncer) production
- * Supabase endpoint, so `prepare: false` is required — prepared statements do
- * not survive PgBouncer's per-transaction connection binding.
+ * Connection: reads `DATABASE_URL` from `.env.local` (auto-loaded by `bun`).
+ * That URL is the pooled (PgBouncer) production Supabase endpoint, so
+ * `prepare: false` is required — prepared statements don't survive PgBouncer.
  *
  * Usage (run from the project root so bun loads .env.local):
  *   bun .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts [flags]
  *
- * `--minutes N` (default 30): overview window, N minutes back from now.
- * `--since <ISO>`: overview window from an absolute timestamp; wins over
- *   `--minutes`. Use it for incidents older than a convenient lookback.
- * `--course <uuid>`: drill into one course, printing every context_messages
- *   row with a content preview for the SKILL.md decision tree.
+ * `--minutes N` (default 30): overview window, N minutes back.
+ * `--since <ISO>`: absolute timestamp; wins over `--minutes` for older incidents.
+ * `--course <uuid>`: drill into one course, printing every context_messages row.
  */
 /* eslint-disable no-console -- standalone CLI debugging tool: stdout (console.log / console.table) IS the output, unlike app code in src/ */
 import postgres from "postgres";
@@ -98,13 +94,11 @@ if (courseId) {
   }
 
   // --- scoping-close lifecycle: did submitBaseline complete? -------------
-  // submitBaseline persists the learner's answers into the baseline JSONB
-  // BEFORE its LLM call; then, on success, persistScopingClose widens that
-  // JSONB, opens Wave 1, upserts concepts, and flips status to 'active' — all
-  // one transaction. A transport failure on the close LLM call leaves the
-  // answers saved but none of the rest: baseline NOT widened, 0 waves,
-  // 0 concepts, status still 'scoping', no new context_messages turn.
-  // `jsonb_typeof` guard: a malformed JSONB row yields NULL, not a query crash.
+  // submitBaseline persists answers BEFORE the LLM call; persistScopingClose
+  // then widens the JSONB, opens Wave 1, upserts concepts, and flips status to
+  // 'active' — one transaction. A close-call transport failure leaves answers
+  // saved but none of the rest (baseline NOT widened, 0 waves, status='scoping').
+  // `jsonb_typeof` guard: malformed JSONB → NULL, not a query crash.
   const baselineShape = await sql`
     SELECT baseline ? 'startingTier' AS widened,
            baseline ? 'responses'   AS has_responses,
