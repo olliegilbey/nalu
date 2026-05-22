@@ -11,7 +11,7 @@
  *
  * @param err - The error thrown by a tRPC mutation, or anything else.
  * @returns A single-line description, e.g.
- *   `"HTTP 429 · TOO_MANY_REQUESTS — Rate limit exceeded"`. Falls back to the
+ *   `"HTTP 429 · TOO_MANY_REQUESTS: Rate limit exceeded"`. Falls back to the
  *   bare message when no code/status is present.
  */
 export function formatMutationError(err: unknown): string {
@@ -29,7 +29,7 @@ export function formatMutationError(err: unknown): string {
     typeof code === "string" ? code : null,
   ].filter((tag): tag is string => tag !== null);
 
-  return tags.length > 0 ? `${tags.join(" · ")} — ${message}` : message;
+  return tags.length > 0 ? `${tags.join(" · ")}: ${message}` : message;
 }
 
 /** Read a property off an unknown value, or `undefined` if it is not an object. */
