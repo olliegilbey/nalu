@@ -60,8 +60,8 @@ export interface InsertNewQuestionnaireParams {
 /**
  * Insert placeholder assessment rows for a new questionnaire and project to
  * the client-safe shape. Each question:
- *   - REQUIRES `conceptName` (we throw clearly if absent — TODO.md tracks
- *     adding a schema-layer superRefine to waveMidTurnSchema).
+ *   - REQUIRES `conceptName` (`waveMidTurnSchema`'s superRefine guarantees it;
+ *     the throw below is a defensive backstop).
  *   - Upserts the concept at `q.tier ?? waveTier` (immutable post-first-sight).
  *   - Maps to one assessment row with `assessment_kind = card_mc|card_freetext`,
  *     placeholder grading fields, and `${assistantMessageId}:${q.id}` as
@@ -98,10 +98,10 @@ export async function insertNewQuestionnaire(
   >(async (accP, q) => {
     const acc = await accP;
     if (!q.conceptName) {
-      // waveMidTurn questions must carry conceptName so we know which
-      // concept to upsert + bind grading to. The shared base questionSchema
-      // permits absence (clarify questions have none), so the invariant is
-      // application-layer here. TODO.md tracks a schema-layer superRefine.
+      // Defensive backstop: `waveMidTurnSchema`'s superRefine already requires
+      // conceptName on every questionnaire question, so an omission is caught
+      // upstream as a retryable ValidationGateFailure. This throw only fires if
+      // that guard regresses — fail loud rather than upsert a nameless concept.
       throw new Error(
         `executeWaveMid: questionnaire question id=${q.id} missing required conceptName`,
       );
@@ -145,9 +145,9 @@ export async function insertNewQuestionnaire(
   const questions = params.questionnaire.questions.map((q) => {
     if (q.type === "multiple_choice") {
       if (q.correct === undefined) {
-        // Graded MC must have a correct key — schema permits absence for
-        // clarify-style elicitation, which doesn't happen in wave teaching.
-        // Fail loud rather than emit a useless projection.
+        // Defensive backstop: `waveMidTurnSchema`'s superRefine already requires
+        // `correct` on every MC question; this throw only fires if that guard
+        // regresses. Fail loud rather than emit a useless projection.
         throw new Error(`executeWaveMid: MC question id=${q.id} missing required correct key`);
       }
       return {
