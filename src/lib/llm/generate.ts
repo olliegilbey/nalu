@@ -69,12 +69,14 @@ export interface ChatResult {
  * `honorsStrictMode: true` — see `modelCapabilities.ts`.
  *
  * Rate limiting: `awaitCerebrasCallSlot()` paces every call to stay under
- * the Cerebras free-tier limits (5 RPM + 30k tokens/min) — request spacing
- * plus header-driven token-budget backoff. It runs in production AND live
- * smoke, including across `executeTurn`'s validation retries (each a
- * separate API call). After the call returns, the `x-ratelimit-*` response
- * headers are recorded for the next call to consult. Both are a complete
- * no-op in mocked unit/integration suites — see `cerebrasRateLimit.ts`.
+ * the Cerebras free-tier PER-MINUTE limits (5 RPM + 30k tokens/min) via
+ * request spacing plus header-driven token-budget backoff. The 1M
+ * tokens/day cap is not header-observable and is NOT enforced here — see
+ * `cerebrasRateLimit.ts`. It runs in production AND live smoke, including
+ * across `executeTurn`'s validation retries (each a separate API call).
+ * After the call returns, the `x-ratelimit-*` response headers are
+ * recorded for the next call to consult. Both are a complete no-op in
+ * mocked unit/integration suites.
  */
 export async function generateChat(
   messages: readonly LlmMessage[],

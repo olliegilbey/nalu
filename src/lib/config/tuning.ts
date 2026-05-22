@@ -201,12 +201,13 @@ export const BASELINE = {
  * retries — the AI SDK handles JSON-parse repair internally and applies
  * exponential backoff between attempts (≈2s, 4s, 8s, 16s, 32s, 64s).
  *
- * `maxRetries: 6`: sized to absorb a Cerebras free-tier 30-RPM rate-limit
- * stall during smoke runs (4 scoping calls × 3 topics + 11 wave calls fired
- * quasi-serially over ~60s). With 6 attempts the total backoff window is
- * ~2 minutes — long enough for the RPM bucket to refill, short enough to
- * fail fast on a genuine outage. Production traffic is bursty but
- * single-user; this ceiling is for the smoke suite.
+ * `maxRetries: 6`: sized to absorb a Cerebras free-tier 5-RPM rate-limit
+ * stall during smoke runs (4 scoping calls × 3 topics + 11 wave calls,
+ * paced ~13s apart by the rate limiter — roughly 5 min of quasi-serial
+ * traffic). With 6 attempts the total backoff window is ~2 minutes — long
+ * enough for the 5-RPM bucket to refill several slots, short enough to fail
+ * fast on a genuine outage. Production traffic is bursty but single-user;
+ * this ceiling is for the smoke suite.
  *
  * `minRequestSpacingMs: 13000`: minimum gap (dispatch-to-dispatch) between
  * consecutive Cerebras API calls, enforced at the `generateChat` call site
