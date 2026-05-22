@@ -79,6 +79,23 @@ describe("makeCloseTurnBaseSchema", () => {
     ).toThrow(/duplicate/);
   });
 
+  it("directs the model to an empty array when no questionnaire was answered", () => {
+    // A chat-text close turn has no open questionnaire, so questionIds is
+    // empty and the model must emit gradings:[]. Any grading entry is then
+    // "unknown" — but the refine message must explicitly tell the model to
+    // emit an empty array, not merely list the ids, or the retry has nothing
+    // actionable to act on. Regression: live-smoke wave-close re-graded
+    // questions from earlier in the wave.
+    const schema = makeCloseTurnBaseSchema({ ...baseParams, questionIds: [] });
+    const result = schema.safeParse(validPayload);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const msg = result.error.issues.map((i) => i.message).join(" ");
+      expect(msg).toMatch(/no questionnaire/i);
+      expect(msg).toMatch(/empty array/i);
+    }
+  });
+
   it("rejects gradings containing an unknown questionId", () => {
     // questionIds = ["b1"]; payload covers b1 but also fabricates a phantom id.
     // All expected ids are present, so the missing-id check passes — the
