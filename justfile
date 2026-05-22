@@ -6,13 +6,11 @@
 # read DIRECT_URL / DEV_USER_ID directly from process.env.
 set dotenv-filename := ".env.local"
 
-# Start dev server.
-# Wrapped in `op run` so 1Password `op://` references in `.env.local`
-# (notably LLM_API_KEY) are resolved before Next reads them — otherwise
-# Cerebras returns 401. Mirrors the smoke recipe; requires `op signin`
-# once per shell.
+# `.env.local` holds plain values loaded via `set dotenv-filename` above
+# (no `op://` refs), so no `op`/1Password is needed here.
+# Start the dev server.
 dev:
-    op run --account my.1password.com --env-file=.env.local -- bun run dev
+    bun run dev
 
 # Production build
 build:
@@ -28,20 +26,20 @@ test-int:
 
 # Live Cerebras smoke test — opt-in only. Calls real Cerebras + real Postgres.
 # Never runs in `just check` or CI. Gated by CEREBRAS_LIVE=1 at the describe
-# level; LLM_API_KEY is resolved from 1Password via `op run` so the secret
-# never lands on disk. `.env.local` holds an `op://` reference, not the key
-# itself. Requires `op signin` once per shell.
+# level. Env (incl. LLM_API_KEY) loads from `.env.local` via the `set
+# dotenv-filename` above — `.env.local` holds plain values, so this runs
+# fully unattended with no `op`/1Password prompt.
 #
 # Runs against whatever `LLM_MODEL` is set in `.env.local` (current default:
 # gpt-oss-120b). No mid-test model swaps.
 smoke:
-    CEREBRAS_LIVE=1 op run --account my.1password.com --env-file=.env.local -- bun run test:live
+    CEREBRAS_LIVE=1 bun run test:live
 
-# One-shot probe for a Cerebras model. Wraps with `op run` so the
-# 1Password reference for LLM_API_KEY resolves. Overrides LLM_MODEL so
-# the .env.local default isn't used. See scripts/probe-model.ts.
+# One-shot probe for a Cerebras model. Overrides LLM_MODEL so the
+# `.env.local` default isn't used; LLM_API_KEY and the rest load from
+# `.env.local` via `set dotenv-filename` above. See scripts/probe-model.ts.
 probe-model model:
-    op run --account my.1password.com --env-file=.env.local -- env LLM_MODEL="{{model}}" bun scripts/probe-model.ts
+    env LLM_MODEL="{{model}}" bun scripts/probe-model.ts
 
 # Run unit tests in watch mode
 test-watch:

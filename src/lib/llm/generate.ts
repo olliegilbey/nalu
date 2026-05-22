@@ -1,11 +1,12 @@
-import { generateText } from "ai";
+import { generateText, wrapLanguageModel } from "ai";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import type { z } from "zod/v4";
 import { LLM } from "@/lib/config/tuning";
 import { getLlmModel } from "./provider";
 import { toCerebrasJsonSchema } from "./toCerebrasJsonSchema";
 import { getModelCapabilities } from "./modelCapabilities";
 import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "./cerebrasRateLimit";
-import type { LlmMessage, LlmModel, LlmUsage } from "@/lib/types/llm";
+import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 
 /**
  * Options common to the chat wrapper. All optional — `tuning.LLM`
@@ -18,7 +19,7 @@ export interface GenerateOptions {
   /** Transport-level retries on transient errors. Default: `LLM.maxRetries`. */
   readonly maxRetries?: number;
   /** Override the model for a single call (testing, capability routing). */
-  readonly model?: LlmModel;
+  readonly model?: LanguageModelV3;
   /**
    * Model name override for capability lookup. Set this alongside `model`
    * when the override is a different model than `process.env.LLM_MODEL`,
@@ -68,12 +69,14 @@ export interface ChatResult {
  * `honorsStrictMode: true` — see `modelCapabilities.ts`.
  *
  * Rate limiting: `awaitCerebrasCallSlot()` paces every call to stay under
- * the Cerebras free-tier limits (5 RPM + 30k tokens/min) — request spacing
- * plus header-driven token-budget backoff. It runs in production AND live
- * smoke, including across `executeTurn`'s validation retries (each a
- * separate API call). After the call returns, the `x-ratelimit-*` response
- * headers are recorded for the next call to consult. Both are a complete
- * no-op in mocked unit/integration suites — see `cerebrasRateLimit.ts`.
+ * the Cerebras free-tier PER-MINUTE limits (5 RPM + 30k tokens/min) via
+ * request spacing plus header-driven token-budget backoff. The 1M
+ * tokens/day cap is not header-observable and is NOT enforced here — see
+ * `cerebrasRateLimit.ts`. It runs in production AND live smoke, including
+ * across `executeTurn`'s validation retries (each a separate API call).
+ * After the call returns, the `x-ratelimit-*` response headers are
+ * recorded for the next call to consult. Both are a complete no-op in
+ * mocked unit/integration suites.
  */
 export async function generateChat(
   messages: readonly LlmMessage[],
@@ -86,9 +89,9 @@ export async function generateChat(
   const modelName = opts.modelName ?? process.env.LLM_MODEL ?? "(default)";
   const capabilities = getModelCapabilities(modelName);
 
-  // Build the responseFormat only when a schema is provided AND the model
-  // will actually honour it. Spreading undefined into generateText would
-  // send `responseFormat: undefined`, which some SDK versions treat as an error.
+  // Build the Cerebras response_format only when a schema is provided AND the
+  // model honours strict-mode decoding. Weak models get the schema inline in
+  // the user envelope instead (handled at the prompt-assembly layer).
   const responseFormat =
     opts.responseSchema !== undefined && capabilities.honorsStrictMode
       ? toCerebrasJsonSchema(opts.responseSchema, {
@@ -102,13 +105,27 @@ export async function generateChat(
   // executeTurn's back-to-back validation retries stay under the cap.
   await awaitCerebrasCallSlot();
 
+  // generateText silently drops a top-level `responseFormat` arg; setting it
+  // via a middleware transformParams hook is the supported way to reach
+  // callOptions.responseFormat, which the openai-compatible provider then
+  // emits as a strict json_schema response_format on the wire.
+  const baseModel = opts.model ?? getLlmModel();
+  const model =
+    responseFormat !== undefined
+      ? wrapLanguageModel({
+          model: baseModel,
+          middleware: {
+            specificationVersion: "v3",
+            transformParams: async ({ params }) => ({ ...params, responseFormat }),
+          },
+        })
+      : baseModel;
+
   const result = await generateText({
-    model: opts.model ?? getLlmModel(),
+    model,
     messages: [...messages],
     temperature: opts.temperature ?? LLM.defaultTemperature,
     maxRetries: opts.maxRetries ?? LLM.maxRetries,
-    // Conditionally spread so the key is absent (not undefined) when unused.
-    ...(responseFormat !== undefined ? { responseFormat } : {}),
   });
   // Capture the Cerebras x-ratelimit-* headers so the next call can back
   // off when the per-minute token budget runs low. `response.headers` is

@@ -124,7 +124,9 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
         ),
       gradings: z
         .array(closeGradingItemSchema)
-        .describe("One entry per question the learner answered. Cover every id."),
+        .describe(
+          "Grade only questions the learner answered in THIS closing turn; earlier turns are already graded. Emit an empty array if they answered none this turn.",
+        ),
       summary: z.string().min(1).describe("2-3 sentences capturing where the learner stands now."),
       nextUnitBlueprint: blueprintSchema,
     })
@@ -175,7 +177,14 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
         ctx.addIssue({
           code: "custom",
           path: ["gradings"],
-          message: `gradings include unknown question ids: ${unknown.join(", ")}`,
+          // When no questionnaire was answered this turn (a chat-text close
+          // turn), `questionIds` is empty so every grading reads as unknown.
+          // Give the model an actionable directive — emit [] — instead of a
+          // bare id list it cannot otherwise act on. See closeTurn.test.ts.
+          message:
+            idSet.size === 0
+              ? `No questionnaire was answered in this closing turn, so gradings must be an empty array. Grade only questions answered this turn; questions from earlier turns were already graded.`
+              : `gradings include unknown question ids: ${unknown.join(", ")}`,
         });
       }
       // 5. plannedConcepts.role='review' names must be in reviewDueNames.

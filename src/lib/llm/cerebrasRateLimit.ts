@@ -5,8 +5,9 @@ import { LLM } from "@/lib/config/tuning";
  *
  * WHY: every LLM call funnels through `generateChat` → `generateText`.
  * Cerebras's FREE tier caps at 5 requests/min (a 12.0s floor), 30,000
- * tokens/min, and 1M tokens/hour. Exceeding any → HTTP 429. The turn
- * runner `executeTurn` validates each model reply and RETRIES on a schema
+ * tokens/min, 1M tokens/hour, and 1M tokens/day. Exceeding any → HTTP 429.
+ * The turn runner `executeTurn` validates each model reply and RETRIES on
+ * a schema
  * failure — each retry is another back-to-back `generateChat` call. A flaky
  * model turns one logical turn into 2–6 actual API calls in a tight burst,
  * which blows past 5 RPM → 429 → the AI SDK exhausts its transport-retry
@@ -17,6 +18,13 @@ import { LLM } from "@/lib/config/tuning";
  * the ACCOUNT-WIDE remaining budget. The same API key is shared with another
  * workload, so the token-budget backoff here absorbs that contention
  * automatically — Nalu waits when the shared bucket runs low.
+ *
+ * LIMITATION: Cerebras reports token budget only per-MINUTE
+ * (`x-ratelimit-*-tokens-minute`); there is NO per-day token header. So this
+ * limiter cannot see — and does not enforce — the 1M tokens/DAY cap.
+ * Exhausting it across repeated smoke runs still yields a hard 429
+ * ("Tokens per day limit exceeded"). Enforcing TPD would need cumulative
+ * `usage` accounting in a persistent cross-process store (future work).
  *
  * Two responsibilities, both consumed by `generateChat`:
  *   - `awaitCerebrasCallSlot()` — BEFORE `generateText`: enforces request

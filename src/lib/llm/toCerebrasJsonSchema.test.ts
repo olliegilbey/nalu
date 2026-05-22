@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod/v4";
 import { toCerebrasJsonSchema, toSchemaJsonString } from "./toCerebrasJsonSchema";
+import { clarifySchema } from "@/lib/prompts/clarify";
+import { frameworkSchema } from "@/lib/prompts/framework";
+import { waveMidTurnSchema } from "@/lib/prompts/waveTurn";
+import { makeWaveCloseSchema } from "@/lib/prompts/waveClose";
+import { makeScopingCloseSchema } from "@/lib/prompts/scopingClose";
+import type { MakeCloseTurnBaseSchemaParams } from "@/lib/prompts/closeTurn";
 
 describe("toCerebrasJsonSchema", () => {
   it("strips minItems/maxItems on arrays", () => {
@@ -137,9 +143,27 @@ describe("toCerebrasJsonSchema", () => {
     // Should not throw — structural depth is only 3 (root > questions items > mc/open object).
     const out = toCerebrasJsonSchema(schema, { name: "questionnaire" });
     expect(out.name).toBe("questionnaire");
-    // Discriminated unions emit anyOf/oneOf — ensure they survived stripping.
+    // Cerebras strict mode rejects `oneOf`; a discriminated union must be
+    // rewritten to the supported `anyOf` (its branches survive intact).
     const s = JSON.stringify(out);
     expect(s).toMatch(/choices|hint/);
+    expect(s).not.toContain('"oneOf"');
+    expect(s).toContain('"anyOf"');
+  });
+
+  it("flattens allOf from an intersection schema into a single object", () => {
+    // `base.and(extra)` → z.intersection → z.toJSONSchema emits { allOf: [...] }.
+    // Cerebras strict mode rejects allOf with a 400; the intersected object
+    // schemas must be merged into one flat object.
+    const schema = z.object({ a: z.string() }).and(z.object({ b: z.number() }));
+    const out = toCerebrasJsonSchema(schema, { name: "intersection" });
+    expect(JSON.stringify(out)).not.toContain('"allOf"');
+    // Both branches' properties merge onto one object root.
+    expect(out.schema).toMatchObject({ type: "object", additionalProperties: false });
+    expect(out.schema.properties).toHaveProperty("a");
+    expect(out.schema.properties).toHaveProperty("b");
+    // `required` is the union of both branches.
+    expect(out.schema.required).toEqual(expect.arrayContaining(["a", "b"]));
   });
 
   it("attaches the supplied name", () => {
@@ -185,5 +209,68 @@ describe("toCerebrasJsonSchema", () => {
       }),
     });
     expect(() => toCerebrasJsonSchema(deep, { name: "mySchema" })).toThrow(/mySchema/);
+  });
+
+  // --- Cerebras strict-mode validity over real production schemas ---
+  // Guards against a schema construct that z.toJSONSchema would turn into
+  // something Cerebras strict mode rejects with a 400: a dangling $ref, a
+  // missing additionalProperties, a non-object root, a `oneOf` (Cerebras
+  // supports `anyOf` only; `toCerebrasJsonSchema` rewrites `oneOf` to it),
+  // or an `allOf` (from z.intersection — Cerebras rejects it outright;
+  // `toCerebrasJsonSchema` flattens it into one merged object).
+
+  /**
+   * Recursively assert a JSON Schema node satisfies Cerebras strict mode:
+   * no $ref / $defs / $anchor / oneOf / allOf anywhere, and every object
+   * node declares `additionalProperties: false`.
+   */
+  function assertCerebrasStrictValid(node: unknown, path = "$"): void {
+    if (Array.isArray(node)) {
+      node.forEach((child, i) => assertCerebrasStrictValid(child, `${path}[${i}]`));
+      return;
+    }
+    if (typeof node !== "object" || node === null) return;
+    const obj = node as Record<string, unknown>;
+    for (const forbidden of ["$ref", "$defs", "$anchor", "oneOf", "allOf"]) {
+      expect(
+        obj,
+        `${path}: "${forbidden}" is forbidden in Cerebras strict mode`,
+      ).not.toHaveProperty(forbidden);
+    }
+    if (obj["type"] === "object") {
+      expect(
+        obj["additionalProperties"],
+        `${path}: every object node needs additionalProperties:false`,
+      ).toBe(false);
+    }
+    for (const [key, value] of Object.entries(obj)) {
+      assertCerebrasStrictValid(value, `${path}.${key}`);
+    }
+  }
+
+  // Minimal params for the close-turn schema factories. Only runtime values
+  // (refine messages, allowed ids/names) depend on these — the JSON Schema
+  // *shape* does not — so trivial fixtures suffice to exercise the guard.
+  const closeParams: MakeCloseTurnBaseSchemaParams = {
+    scopeTiers: [1, 2, 3],
+    questionIds: ["q1"],
+    freshConceptNames: ["c1"],
+    reviewDueNames: [],
+    existingConceptNames: ["c1"],
+  };
+
+  it.each<[string, z.ZodType<unknown>]>([
+    ["clarify", clarifySchema],
+    ["framework", frameworkSchema],
+    ["wave_mid_turn", waveMidTurnSchema],
+    // Close-turn schemas are `base.and(extra)` intersections — the exact
+    // shape that emits `allOf`. They are the regression target here.
+    ["wave_close", makeWaveCloseSchema(closeParams)],
+    ["scoping_close", makeScopingCloseSchema(closeParams)],
+  ])("produces a Cerebras-strict-valid schema for %s", (name, schema) => {
+    const out = toCerebrasJsonSchema(schema, { name });
+    // Cerebras strict mode requires an object at the root.
+    expect(out.schema).toMatchObject({ type: "object" });
+    assertCerebrasStrictValid(out.schema);
   });
 });

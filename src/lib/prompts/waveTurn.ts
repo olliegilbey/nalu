@@ -51,25 +51,61 @@ const comprehensionSignalSchema = z.discriminatedUnion("kind", [
  * plus optional `comprehensionSignals` (prior-answer grading) and
  * `questionnaire` (1-N new questions). Used as `executeTurn`'s `responseSchema`.
  */
-export const waveMidTurnSchema = z.object({
-  userMessage: z
-    .string()
-    .min(1)
-    .describe(
-      "The message the learner sees this turn — teaching prose: explanation, worked examples, conversational tutoring, ≤250 words. Do NOT pose a formal question for the learner to answer here; any question that expects an answer goes in `questionnaire`.",
-    ),
-  comprehensionSignals: z
-    .array(comprehensionSignalSchema)
-    .optional()
-    .describe(
-      "Per-question grading of any open questions the learner just answered. Omit for pure teaching turns.",
-    ),
-  questionnaire: questionnaireSchema
-    .optional()
-    .describe(
-      "1-N questions to drop into the conversation — the only place for a question that expects a learner answer. Free-text for open synthesis, multiple-choice for quick fact checks. Use sparingly (~1 turn in 3, never twice in a row, alternate types).",
-    ),
-});
+export const waveMidTurnSchema = z
+  .object({
+    userMessage: z
+      .string()
+      .min(1)
+      .describe(
+        "The message the learner sees this turn. Teaching prose: explanation, worked examples, conversational tutoring, ≤250 words.",
+      ),
+    comprehensionSignals: z
+      .array(comprehensionSignalSchema)
+      .optional()
+      .describe(
+        "Per-question grading of any open questions the learner just answered. Omit for pure teaching turns.",
+      ),
+    questionnaire: questionnaireSchema
+      .optional()
+      .describe(
+        "Optional graded concept-check: 1-N questions, each assessing one concept. EVERY question must carry `conceptName` (an existing concept name or a new one); EVERY multiple-choice question must also carry `correct`.",
+      ),
+  })
+  .superRefine((val, ctx) => {
+    // A teaching `questionnaire` question is a graded concept-check: each one
+    // becomes an `assessments` row keyed on a `concept`, and SM-2 scheduling,
+    // XP, and tier progression all depend on that link. The shared
+    // `questionSchema` leaves `conceptName` and MC `correct` optional because
+    // clarify reuses the same shape with no grading; the wave-mid stage
+    // tightens it here, mirroring `makeBaselineSchema`'s stage-level
+    // superRefine. Without this, an omission passes validation and then
+    // crashes `insertNewQuestionnaire` with an unrecoverable 500 — this turns
+    // it into a retryable `ValidationGateFailure` directive instead.
+    if (!val.questionnaire) return;
+    val.questionnaire.questions.forEach((q, idx) => {
+      // `!q.conceptName?.trim()` rejects undefined, "", and whitespace-only
+      // values, mirroring the `insertNewQuestionnaire` backstop. A blank
+      // conceptName is a valid `z.string()` but would upsert a nameless
+      // concept downstream, so the schema gate catches it here as a retryable
+      // `ValidationGateFailure` rather than letting it slip through to a 500.
+      if (!q.conceptName?.trim()) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["questionnaire", "questions", idx, "conceptName"],
+          message: `question ${q.id} is missing required conceptName. Every teaching-quiz question must name the concept it assesses (reuse an existing concept name or introduce a new one). For an open or reflective question you do NOT want graded, ask it in your teaching prose instead.`,
+        });
+      }
+      // MC must carry `correct` so the client can score the click without a
+      // round-trip and the grading path has a key to compare against.
+      if (q.type === "multiple_choice" && q.correct === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["questionnaire", "questions", idx, "correct"],
+          message: `MC question ${q.id} is missing required correct key. Every teaching multiple-choice question must mark which option (A, B, C, or D) is correct.`,
+        });
+      }
+    });
+  });
 
 /** Parsed mid-Wave model response — the inferred shape of {@link waveMidTurnSchema}. */
 export type WaveMidTurn = z.infer<typeof waveMidTurnSchema>;

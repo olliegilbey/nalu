@@ -1,6 +1,6 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { getEnv } from "@/lib/config";
-import type { LlmModel } from "@/lib/types/llm";
 
 /**
  * Single swap-point for the underlying LLM provider.
@@ -14,7 +14,7 @@ import type { LlmModel } from "@/lib/types/llm";
  * Lazily constructed: env vars are validated on first call, not at
  * import time, so client bundles and test harnesses don't blow up.
  */
-export function getLlmModel(): LlmModel {
+export function getLlmModel(): LanguageModelV3 {
   const env = getEnv();
   const provider = createOpenAICompatible({
     name: "nalu-llm",

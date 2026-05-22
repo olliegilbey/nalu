@@ -6,6 +6,7 @@
       "name": "nalu",
       "dependencies": {
         "@ai-sdk/openai-compatible": "2.0.41",
+        "@ai-sdk/provider": "3.0.8",
         "@radix-ui/react-dialog": "^1.1.15",
         "@supabase/ssr": "^0.10.3",
         "@supabase/supabase-js": "^2.106.1",
