@@ -32,8 +32,19 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
   } = useScopingState(courseId);
 
   const [composerValue, setComposerValue] = useState("");
-  // Optimistic user message — see WaveSession for the rationale.
-  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  // Optimistic user message. `turnCountAtSubmit` is the `turns.length` captured
+  // at submit: the bubble shows while `turns` has not grown past it (server
+  // round-trip not yet landed, or it failed) and hides the instant the real
+  // turn appears. This prevents a duplicate during the framework→baseline gap
+  // (the real turn lands while baseline is still dispatching) and keeps the
+  // bubble visible on error.
+  const [optimistic, setOptimistic] = useState<{
+    readonly content: string;
+    readonly turnCountAtSubmit: number;
+  } | null>(null);
+  // The questionnaire key just submitted — its question card is hidden from the
+  // Composer immediately, rather than lingering until the server round-trip.
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
   // Map Turn[] → array of <MessageBubble> / structured renderers.
   // The scoping flow never emits `assistant-text-with-questionnaire` (that's a
@@ -88,15 +99,24 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
             setComposerValue("");
           }}
           disabled={isPending}
-          questions={activeQuestionnaire ? [...activeQuestionnaire.questions] : null}
+          questions={
+            activeQuestionnaire && activeQuestionnaire.questionsKey !== dismissedKey
+              ? [...activeQuestionnaire.questions]
+              : null
+          }
           persistKey={activeQuestionnaire?.persistKey}
           moveOn={moveOn}
           onComplete={(answers) => {
             if (!activeQuestionnaire) return;
             // Render the submitted answers optimistically before the server
-            // round-trip lands. Domain-shape mappers live in `src/lib/course/`
-            // so this component stays a thin rendering shell.
-            setPendingMessage(formatComposerAnswers(answers));
+            // round-trip lands, and dismiss the question card from the Composer
+            // at once. Domain-shape mappers live in `src/lib/course/` so this
+            // component stays a thin rendering shell.
+            setOptimistic({
+              content: formatComposerAnswers(answers),
+              turnCountAtSubmit: turns.length,
+            });
+            setDismissedKey(activeQuestionnaire.questionsKey);
             if (activeQuestionnaire.kind === "clarify") {
               submitClarify(shapeClarifyAnswers(answers));
             } else {
@@ -107,8 +127,8 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
       }
     >
       {scroll}
-      {isPending && pendingMessage && (
-        <MessageBubble message={{ id: "pending", role: "user", content: pendingMessage }} />
+      {optimistic && turns.length === optimistic.turnCountAtSubmit && (
+        <MessageBubble message={{ id: "pending", role: "user", content: optimistic.content }} />
       )}
       {isPending && <TypingBubble />}
     </ChatShell>
