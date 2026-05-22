@@ -6,13 +6,11 @@
 # read DIRECT_URL / DEV_USER_ID directly from process.env.
 set dotenv-filename := ".env.local"
 
-# Start dev server.
-# Wrapped in `op run` so 1Password `op://` references in `.env.local`
-# (notably LLM_API_KEY) are resolved before Next reads them — otherwise
-# Cerebras returns 401. Mirrors the smoke recipe; requires `op signin`
-# once per shell.
+# `.env.local` holds plain values loaded via `set dotenv-filename` above
+# (no `op://` refs), so no `op`/1Password is needed here.
+# Start the dev server.
 dev:
-    op run --account my.1password.com --env-file=.env.local -- bun run dev
+    bun run dev
 
 # Production build
 build:
@@ -37,11 +35,11 @@ test-int:
 smoke:
     CEREBRAS_LIVE=1 bun run test:live
 
-# One-shot probe for a Cerebras model. Wraps with `op run` so the
-# 1Password reference for LLM_API_KEY resolves. Overrides LLM_MODEL so
-# the .env.local default isn't used. See scripts/probe-model.ts.
+# One-shot probe for a Cerebras model. Overrides LLM_MODEL so the
+# `.env.local` default isn't used; LLM_API_KEY and the rest load from
+# `.env.local` via `set dotenv-filename` above. See scripts/probe-model.ts.
 probe-model model:
-    op run --account my.1password.com --env-file=.env.local -- env LLM_MODEL="{{model}}" bun scripts/probe-model.ts
+    env LLM_MODEL="{{model}}" bun scripts/probe-model.ts
 
 # Run unit tests in watch mode
 test-watch:
