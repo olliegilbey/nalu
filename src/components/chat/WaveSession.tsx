@@ -48,11 +48,18 @@ export function WaveSession({
   } = useWaveState(courseId, waveNumber);
 
   const [composerValue, setComposerValue] = useState("");
-  // Optimistic user message: rendered immediately on submit so the learner's
-  // input appears at once, before the server round-trip. Only shown while a
-  // turn is in flight; once `isPending` clears, the refetched `turns` already
-  // contain the real entry, so a stale value here is simply not rendered.
-  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  // Optimistic user message. `turnCountAtSubmit` is the `turns.length` captured
+  // at submit: the bubble shows while `turns` has not grown past it (server
+  // round-trip not yet landed, or it failed) and hides the instant the real
+  // turn appears — so it never duplicates the real turn, and it survives an
+  // error rather than vanishing with `isPending`.
+  const [optimistic, setOptimistic] = useState<{
+    readonly content: string;
+    readonly turnCountAtSubmit: number;
+  } | null>(null);
+  // The questionnaire key just submitted — its question card is hidden from the
+  // Composer immediately, rather than lingering until the server round-trip.
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
   // Map Turn[] → scroll JSX. The switch is exhaustive over Turn's kinds so a
   // future variant addition becomes a compile-time error here.
@@ -95,29 +102,37 @@ export function WaveSession({
             // already filters empty strings (it disables the send button).
             const text = composerValue.trim();
             if (text.length === 0) return;
-            setPendingMessage(text);
+            setOptimistic({ content: text, turnCountAtSubmit: turns.length });
             submitChatText(text);
             setComposerValue("");
           }}
           disabled={isPending}
-          questions={activeQuestionnaire ? [...activeQuestionnaire.questions] : null}
+          questions={
+            activeQuestionnaire && activeQuestionnaire.questionsKey !== dismissedKey
+              ? [...activeQuestionnaire.questions]
+              : null
+          }
           persistKey={activeQuestionnaire?.persistKey}
           waveTier={currentTier ?? undefined}
           onCorrectAnswer={awardMcXp}
           moveOn={moveOn}
           onComplete={(answers) => {
             if (!activeQuestionnaire) return;
-            // Domain-shape mapper lives in `src/lib/` so this component stays
-            // a thin rendering shell.
-            setPendingMessage(formatComposerAnswers(answers));
+            // Optimistic bubble + dismiss the question card at once. Domain-shape
+            // mapper lives in `src/lib/` so this component stays a thin shell.
+            setOptimistic({
+              content: formatComposerAnswers(answers),
+              turnCountAtSubmit: turns.length,
+            });
+            setDismissedKey(activeQuestionnaire.questionsKey);
             submitQuestionnaireAnswers(shapeQuestionnaireAnswers(answers));
           }}
         />
       }
     >
       {scroll}
-      {isPending && pendingMessage && (
-        <MessageBubble message={{ id: "pending", role: "user", content: pendingMessage }} />
+      {optimistic && turns.length === optimistic.turnCountAtSubmit && (
+        <MessageBubble message={{ id: "pending", role: "user", content: optimistic.content }} />
       )}
       {isPending && <TypingBubble />}
     </ChatShell>
