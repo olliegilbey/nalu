@@ -117,3 +117,52 @@ shared-store rewrite — not worth landing separately.
 
 **Promote when:** the shared-store rate limiter is built, OR concurrent
 `generateChat` calls become reachable before then.
+
+## Anonymous auth follow-ups
+
+### Exclude root metadata files from the proxy matcher
+
+**Files:** `src/proxy.ts` (`config.matcher`)
+
+The matcher `["/((?!api|_next/static|_next/image|favicon.ico).*)"]` excludes
+API routes and `_next` assets but not root metadata files. Today none exist,
+so there is nothing to exclude.
+
+**Fix:** when `robots.txt`, `sitemap.xml`, or similar public root files are
+added, extend the negative-lookahead so crawler hits don't trigger a Supabase
+`getUser()` round-trip and mint throwaway anonymous accounts.
+
+**Promote when:** the first root metadata file is added.
+
+### Periodic cleanup of session-less anonymous users
+
+**Files:** Supabase `auth.users` (no app file yet)
+
+Two near-simultaneous first visits can each call `signInAnonymously()`; the
+losing cookie is discarded, leaving a stray `auth.users` row with no live
+session and (since `ensureUserProfile` only runs on an authenticated request)
+possibly no `user_profiles` row. Harmless functionally, but the table grows.
+
+**Fix:** a scheduled job deleting anonymous users with no session activity
+past a cutoff (Supabase exposes `last_sign_in_at` / `is_anonymous`).
+
+**Promote when:** anonymous-user row count becomes non-trivial in production.
+
+### Graceful not-found state for `/course/[id]`
+
+**Files:** `src/app/course/[id]/page.tsx`
+
+When `course.getState` returns `NOT_FOUND`, the course page renders the chat
+shell and spins forever — no error message, no redirect. `getState` is
+ownership-scoped (`getCourseById(courseId, userId)`), so this is reachable in
+normal use now that every visitor has a distinct anonymous identity: opening a
+bookmarked course URL on a different browser/device, after cookies are cleared
+or the session cookie expires, or following a URL shared by someone else. Not
+a security issue — the 404 is the ownership check working correctly — purely a
+dead-end UX. Surfaced by the anonymous-auth production smoke.
+
+**Fix:** handle the `getState` query error — render a "course not found" state
+(offer to start a new course) or redirect to `/`.
+
+**Promote when:** next UX pass, or before course-URL sharing becomes a real
+flow.
