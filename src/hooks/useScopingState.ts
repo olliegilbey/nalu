@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
+import { formatMutationError } from "@/lib/errors";
 import { deriveTurns } from "@/lib/course/deriveTurns";
 import { adaptQuestionnaire, type ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import type { Turn } from "@/lib/types/turn";
@@ -70,13 +72,27 @@ export function useScopingState(courseId: string): UseScopingStateResult {
   const invalidateState = () => qc.invalidateQueries({ queryKey: stateOpts.queryKey });
 
   const generateFramework = useMutation(
-    trpc.course.generateFramework.mutationOptions({ onSuccess: invalidateState }),
+    trpc.course.generateFramework.mutationOptions({
+      onSuccess: invalidateState,
+      onError: (err) => {
+        toast.error("Couldn't build your course outline", {
+          description: formatMutationError(err),
+        });
+      },
+    }),
   );
   const generateBaseline = useMutation(
     trpc.course.generateBaseline.mutationOptions({ onSuccess: invalidateState }),
   );
   const submitBaseline = useMutation(
-    trpc.course.submitBaseline.mutationOptions({ onSuccess: invalidateState }),
+    trpc.course.submitBaseline.mutationOptions({
+      onSuccess: invalidateState,
+      onError: (err) => {
+        toast.error("Couldn't save your answers", {
+          description: formatMutationError(err),
+        });
+      },
+    }),
   );
 
   const turns = useMemo(() => (state.data ? deriveTurns(state.data) : []), [state.data]);
@@ -128,10 +144,13 @@ export function useScopingState(courseId: string): UseScopingStateResult {
           // Clear the guard on error so a user retry (refetch/remount) can fire
           // again. Without this, a single LLM failure would suppress baseline
           // generation for this course until the page is fully reloaded.
-          onError: () => {
+          onError: (err) => {
             if (baselineDispatchedFor.current === dispatchedCourseId) {
               baselineDispatchedFor.current = null;
             }
+            toast.error("Couldn't create your baseline quiz", {
+              description: formatMutationError(err),
+            });
           },
         },
       );
