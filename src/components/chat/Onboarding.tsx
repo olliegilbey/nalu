@@ -9,6 +9,7 @@ import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
 import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
+import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
 import { t } from "@/i18n";
 
 /**
@@ -24,12 +25,15 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
     turns,
     activeQuestionnaire,
     scopingResult,
+    topic,
     isPending,
     submitClarify,
     submitBaselineAnswers,
   } = useScopingState(courseId);
 
   const [composerValue, setComposerValue] = useState("");
+  // Optimistic user message — see WaveSession for the rationale.
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 
   // Map Turn[] → array of <MessageBubble> / structured renderers.
   // The scoping flow never emits `assistant-text-with-questionnaire` (that's a
@@ -71,7 +75,7 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
 
   return (
     <ChatShell
-      title={null}
+      title={topic}
       onNew={() => router.push("/")}
       composer={
         <Composer
@@ -89,8 +93,10 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
           moveOn={moveOn}
           onComplete={(answers) => {
             if (!activeQuestionnaire) return;
-            // Domain-shape mappers live in `src/lib/course/` so this
-            // component stays a thin rendering shell.
+            // Render the submitted answers optimistically before the server
+            // round-trip lands. Domain-shape mappers live in `src/lib/course/`
+            // so this component stays a thin rendering shell.
+            setPendingMessage(formatComposerAnswers(answers));
             if (activeQuestionnaire.kind === "clarify") {
               submitClarify(shapeClarifyAnswers(answers));
             } else {
@@ -101,6 +107,9 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
       }
     >
       {scroll}
+      {isPending && pendingMessage && (
+        <MessageBubble message={{ id: "pending", role: "user", content: pendingMessage }} />
+      )}
       {isPending && <TypingBubble />}
     </ChatShell>
   );

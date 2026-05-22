@@ -30,6 +30,8 @@ export interface UseScopingStateResult {
   readonly turns: readonly Turn[];
   readonly activeQuestionnaire: ActiveQuestionnaire | null;
   readonly scopingResult: CourseState["scopingResult"];
+  /** Course topic — drives the chat header title. Null until the query resolves. */
+  readonly topic: string | null;
   readonly isPending: boolean;
   readonly submitClarify: (
     answers: ReadonlyArray<{ readonly questionId: string; readonly freetext: string }>,
@@ -159,6 +161,7 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     turns,
     activeQuestionnaire,
     scopingResult: state.data?.scopingResult ?? null,
+    topic: state.data?.topic ?? null,
     isPending,
     submitClarify,
     submitBaselineAnswers,
