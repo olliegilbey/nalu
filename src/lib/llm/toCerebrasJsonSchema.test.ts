@@ -140,9 +140,12 @@ describe("toCerebrasJsonSchema", () => {
     // Should not throw — structural depth is only 3 (root > questions items > mc/open object).
     const out = toCerebrasJsonSchema(schema, { name: "questionnaire" });
     expect(out.name).toBe("questionnaire");
-    // Discriminated unions emit anyOf/oneOf — ensure they survived stripping.
+    // Cerebras strict mode rejects `oneOf`; a discriminated union must be
+    // rewritten to the supported `anyOf` (its branches survive intact).
     const s = JSON.stringify(out);
     expect(s).toMatch(/choices|hint/);
+    expect(s).not.toContain('"oneOf"');
+    expect(s).toContain('"anyOf"');
   });
 
   it("attaches the supplied name", () => {
@@ -193,12 +196,13 @@ describe("toCerebrasJsonSchema", () => {
   // --- Cerebras strict-mode validity over real production schemas ---
   // Guards against a schema construct that z.toJSONSchema would turn into
   // something Cerebras strict mode rejects with a 400: a dangling $ref, a
-  // missing additionalProperties, or a non-object root.
+  // missing additionalProperties, a non-object root, or a `oneOf` (Cerebras
+  // supports `anyOf` only; `toCerebrasJsonSchema` rewrites `oneOf` to it).
 
   /**
    * Recursively assert a JSON Schema node satisfies Cerebras strict mode:
-   * no $ref / $defs / $anchor anywhere, and every object node declares
-   * `additionalProperties: false`.
+   * no $ref / $defs / $anchor / oneOf anywhere, and every object node
+   * declares `additionalProperties: false`.
    */
   function assertCerebrasStrictValid(node: unknown, path = "$"): void {
     if (Array.isArray(node)) {
@@ -207,7 +211,7 @@ describe("toCerebrasJsonSchema", () => {
     }
     if (typeof node !== "object" || node === null) return;
     const obj = node as Record<string, unknown>;
-    for (const forbidden of ["$ref", "$defs", "$anchor"]) {
+    for (const forbidden of ["$ref", "$defs", "$anchor", "oneOf"]) {
       expect(
         obj,
         `${path}: "${forbidden}" is forbidden in Cerebras strict mode`,

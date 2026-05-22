@@ -63,8 +63,8 @@ export function toCerebrasJsonSchema<T>(
     );
   }
 
-  const stripped = stripForbidden(raw);
-  const serialised = JSON.stringify(stripped);
+  const cleaned = cleanForCerebras(raw);
+  const serialised = JSON.stringify(cleaned);
   if (serialised.length > MAX_CHARS) {
     throw new Error(
       `toCerebrasJsonSchema(${opts.name}): schema is ${serialised.length} chars, exceeds Cerebras ${MAX_CHARS}-char strict-mode budget`,
@@ -74,8 +74,8 @@ export function toCerebrasJsonSchema<T>(
     type: "json",
     name: opts.name,
     description: opts.description,
-    // Cast is safe: `raw` is always an object, so `stripForbidden(raw)` is too.
-    schema: stripped as JSONSchema7,
+    // Cast is safe: `raw` is always an object, so `cleanForCerebras(raw)` is too.
+    schema: cleaned as JSONSchema7,
   };
 }
 
@@ -151,18 +151,25 @@ function schemaObjectDepth(node: unknown, depth = 0): number {
 }
 
 /**
- * Recursively walk the schema, deleting forbidden keywords.
+ * Recursively transform a JSON Schema into its Cerebras-strict-mode form:
+ * deletes forbidden keywords, and rewrites `oneOf` to `anyOf`.
+ *
+ * Cerebras strict mode rejects `oneOf` outright with a 400
+ * (`wrong_api_format`); `anyOf` is the supported equivalent. The rewrite is
+ * exact here because Zod's discriminated unions carry a literal discriminator
+ * that keeps the branches mutually exclusive regardless of oneOf-vs-anyOf.
+ *
  * Pure function — returns a new value, mutates nothing.
  * Returns `unknown` because leaf nodes may be primitives.
  */
-function stripForbidden(node: unknown): unknown {
+function cleanForCerebras(node: unknown): unknown {
   if (typeof node !== "object" || node === null) return node;
-  if (Array.isArray(node)) return node.map(stripForbidden);
+  if (Array.isArray(node)) return node.map(cleanForCerebras);
 
   const obj = node as Record<string, unknown>;
   return Object.fromEntries(
     Object.entries(obj)
       .filter(([k]) => !FORBIDDEN_KEYWORDS.includes(k as (typeof FORBIDDEN_KEYWORDS)[number]))
-      .map(([k, v]) => [k, stripForbidden(v)]),
+      .map(([k, v]) => [k === "oneOf" ? "anyOf" : k, cleanForCerebras(v)]),
   );
 }
