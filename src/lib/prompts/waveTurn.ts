@@ -57,7 +57,7 @@ export const waveMidTurnSchema = z
       .string()
       .min(1)
       .describe(
-        "The message the learner sees this turn. Teaching prose: explanation, worked examples, conversational tutoring, ≤250 words. Graded concept-checks go in `questionnaire`, not here, but an open, reflective, or conversational question you do NOT want graded (e.g. 'how did that feel?', 'what would you try next?') belongs here in the prose; the learner replies in chat.",
+        "The message the learner sees this turn. Teaching prose: explanation, worked examples, conversational tutoring, ≤250 words.",
       ),
     comprehensionSignals: z
       .array(comprehensionSignalSchema)
@@ -68,7 +68,7 @@ export const waveMidTurnSchema = z
     questionnaire: questionnaireSchema
       .optional()
       .describe(
-        "Optional graded concept-check: 1-N questions, each assessing one concept. EVERY question must carry `conceptName` (an existing concept name or a new one); EVERY multiple-choice question must also carry `correct`. Free-text for open synthesis, multiple-choice for quick fact checks. Use sparingly (~1 turn in 3, never twice in a row, alternate types). Conversational or reflective questions you do not want graded do NOT belong here. Ask those in `userMessage` prose.",
+        "Optional graded concept-check: 1-N questions, each assessing one concept. EVERY question must carry `conceptName` (an existing concept name or a new one); EVERY multiple-choice question must also carry `correct`.",
       ),
   })
   .superRefine((val, ctx) => {
