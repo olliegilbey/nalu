@@ -28,14 +28,14 @@ test-int:
 
 # Live Cerebras smoke test — opt-in only. Calls real Cerebras + real Postgres.
 # Never runs in `just check` or CI. Gated by CEREBRAS_LIVE=1 at the describe
-# level; LLM_API_KEY is resolved from 1Password via `op run` so the secret
-# never lands on disk. `.env.local` holds an `op://` reference, not the key
-# itself. Requires `op signin` once per shell.
+# level. Env (incl. LLM_API_KEY) loads from `.env.local` via the `set
+# dotenv-filename` above — `.env.local` holds plain values, so this runs
+# fully unattended with no `op`/1Password prompt.
 #
 # Runs against whatever `LLM_MODEL` is set in `.env.local` (current default:
 # gpt-oss-120b). No mid-test model swaps.
 smoke:
-    CEREBRAS_LIVE=1 op run --account my.1password.com --env-file=.env.local -- bun run test:live
+    CEREBRAS_LIVE=1 bun run test:live
 
 # One-shot probe for a Cerebras model. Wraps with `op run` so the
 # 1Password reference for LLM_API_KEY resolves. Overrides LLM_MODEL so
