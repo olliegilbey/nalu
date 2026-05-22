@@ -97,11 +97,12 @@ export async function insertNewQuestionnaire(
     >
   >(async (accP, q) => {
     const acc = await accP;
-    if (!q.conceptName) {
+    if (!q.conceptName?.trim()) {
       // Defensive backstop: `waveMidTurnSchema`'s superRefine already requires
-      // conceptName on every questionnaire question, so an omission is caught
-      // upstream as a retryable ValidationGateFailure. This throw only fires if
-      // that guard regresses — fail loud rather than upsert a nameless concept.
+      // a non-blank conceptName on every questionnaire question, so an omission
+      // is caught upstream as a retryable ValidationGateFailure. This throw only
+      // fires if that guard regresses: fail loud rather than upsert a nameless
+      // concept.
       throw new Error(
         `executeWaveMid: questionnaire question id=${q.id} missing required conceptName`,
       );

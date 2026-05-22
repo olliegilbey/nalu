@@ -94,6 +94,27 @@ describe("waveMidTurnSchema", () => {
     expect(r.success).toBe(false);
   });
 
+  it("rejects a questionnaire question with a whitespace-only conceptName", () => {
+    // `"   "` is a truthy `z.string()` value, so a presence-only check would
+    // let it through; the trim-aware gate must reject it before it becomes a
+    // concept named only whitespace.
+    const r = waveMidTurnSchema.safeParse({
+      userMessage: "Try this.",
+      questionnaire: {
+        questions: [
+          {
+            id: "q1",
+            type: "free_text",
+            prompt: "What would you adjust?",
+            freetextRubric: "Looks for a concrete fix.",
+            conceptName: "   ",
+          },
+        ],
+      },
+    });
+    expect(r.success).toBe(false);
+  });
+
   it("rejects a questionnaire multiple-choice question missing conceptName", () => {
     const r = waveMidTurnSchema.safeParse({
       userMessage: "Quick check.",

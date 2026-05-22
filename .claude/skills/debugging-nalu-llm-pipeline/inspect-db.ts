@@ -1,26 +1,21 @@
 /**
  * Read-only production-DB inspector for debugging Nalu LLM-pipeline failures.
  *
- * This is a DEBUGGING TOOL, not application code — it lives under `.claude/`
- * and is never imported by the app. It issues SELECT statements only.
+ * It is a `.claude/` debugging tool, never imported by the app; SELECT only.
  *
  * Connection: reads `DATABASE_URL` from `.env.local`, which `bun` auto-loads
  * from the project root. That URL points at the pooled (PgBouncer) production
  * Supabase endpoint, so `prepare: false` is required — prepared statements do
  * not survive PgBouncer's per-transaction connection binding.
  *
- * Usage (run from the project root):
- *   bun .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts --minutes 30
- *   bun .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts --since 2026-05-21T19:00:00Z
- *   bun .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts --course <uuid>
+ * Usage (run from the project root so bun loads .env.local):
+ *   bun .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts [flags]
  *
- * `--minutes N` (default 30): overview window — looks back N minutes from now.
- * `--since <ISO>`: overview window from an absolute timestamp. Use this for an
- *   incident older than a convenient `--minutes` lookback (it wins over
- *   `--minutes` when both are given).
- * `--course <uuid>`: drill into one course — prints every context_messages row
- *   with a content preview, so you can read the actual prompts and the failed
- *   model replies that the SKILL.md decision tree refers to.
+ * `--minutes N` (default 30): overview window, N minutes back from now.
+ * `--since <ISO>`: overview window from an absolute timestamp; wins over
+ *   `--minutes`. Use it for incidents older than a convenient lookback.
+ * `--course <uuid>`: drill into one course, printing every context_messages
+ *   row with a content preview for the SKILL.md decision tree.
  */
 /* eslint-disable no-console -- standalone CLI debugging tool: stdout (console.log / console.table) IS the output, unlike app code in src/ */
 import postgres from "postgres";
@@ -44,6 +39,10 @@ const flag = (name: string): string | undefined => {
 const courseId = flag("--course");
 const sinceArg = flag("--since");
 const minutes = Number(flag("--minutes") ?? 30);
+if (!Number.isFinite(minutes) || minutes <= 0) {
+  console.error("Invalid --minutes value: expected a positive number");
+  process.exit(1);
+}
 
 // Lower time bound for the overview queries. `--since` (an absolute ISO
 // timestamp) wins when given — reach for it when the incident is older than a
@@ -105,11 +104,14 @@ if (courseId) {
   // one transaction. A transport failure on the close LLM call leaves the
   // answers saved but none of the rest: baseline NOT widened, 0 waves,
   // 0 concepts, status still 'scoping', no new context_messages turn.
+  // `jsonb_typeof` guard: a malformed JSONB row yields NULL, not a query crash.
   const baselineShape = await sql`
     SELECT baseline ? 'startingTier' AS widened,
            baseline ? 'responses'   AS has_responses,
-           jsonb_array_length(baseline->'responses') AS n_responses,
-           jsonb_array_length(baseline->'questions') AS n_questions
+           CASE WHEN jsonb_typeof(baseline->'responses') = 'array'
+                THEN jsonb_array_length(baseline->'responses') END AS n_responses,
+           CASE WHEN jsonb_typeof(baseline->'questions') = 'array'
+                THEN jsonb_array_length(baseline->'questions') END AS n_questions
     FROM courses WHERE id = ${courseId}`;
   console.log("\n=== BASELINE JSONB SHAPE (widened = submitBaseline closed) ===");
   console.table(baselineShape);
@@ -120,7 +122,8 @@ if (courseId) {
   // latter is a POST-PERSIST failure (see SKILL.md Step 4).
   const waves = await sql`
     SELECT id, wave_number, tier, status,
-           jsonb_array_length(chat_log) AS chatlog_entries,
+           CASE WHEN jsonb_typeof(chat_log) = 'array'
+                THEN jsonb_array_length(chat_log) END AS chatlog_entries,
            opened_at, closed_at
     FROM waves WHERE course_id = ${courseId}
     ORDER BY wave_number`;

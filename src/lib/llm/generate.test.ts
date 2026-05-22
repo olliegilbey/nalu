@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { z } from "zod/v4";
 import { MockLanguageModelV3 } from "ai/test";
 import { generateChat } from "./generate";
@@ -6,9 +6,15 @@ import { LLM } from "@/lib/config/tuning";
 
 // generateChat builds a Cerebras response_format only for models that honour
 // strict-mode decoding (see modelCapabilities.ts). Pin a honouring model so
-// the schema-wiring assertions are exercised. vi.stubEnv auto-restores.
+// the schema-wiring assertions are exercised.
 beforeEach(() => {
   vi.stubEnv("LLM_MODEL", "gpt-oss-120b");
+});
+
+// vi.stubEnv does not auto-restore (the Vitest configs do not enable
+// `unstubEnvs`), so restore explicitly to stop the LLM_MODEL stub leaking.
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 /**

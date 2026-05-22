@@ -83,11 +83,12 @@ export const waveMidTurnSchema = z
     // it into a retryable `ValidationGateFailure` directive instead.
     if (!val.questionnaire) return;
     val.questionnaire.questions.forEach((q, idx) => {
-      // `!q.conceptName` (not `=== undefined`) so this exactly mirrors the
-      // `insertNewQuestionnaire` backstop — an empty-string conceptName is a
-      // valid `z.string()` value but the backstop rejects it, so the schema
-      // must too, or "" slips through to a 500.
-      if (!q.conceptName) {
+      // `!q.conceptName?.trim()` rejects undefined, "", and whitespace-only
+      // values, mirroring the `insertNewQuestionnaire` backstop. A blank
+      // conceptName is a valid `z.string()` but would upsert a nameless
+      // concept downstream, so the schema gate catches it here as a retryable
+      // `ValidationGateFailure` rather than letting it slip through to a 500.
+      if (!q.conceptName?.trim()) {
         ctx.addIssue({
           code: "custom",
           path: ["questionnaire", "questions", idx, "conceptName"],

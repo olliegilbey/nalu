@@ -6,7 +6,7 @@ import { getLlmModel } from "./provider";
 import { toCerebrasJsonSchema } from "./toCerebrasJsonSchema";
 import { getModelCapabilities } from "./modelCapabilities";
 import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "./cerebrasRateLimit";
-import type { LlmMessage, LlmModel, LlmUsage } from "@/lib/types/llm";
+import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 
 /**
  * Options common to the chat wrapper. All optional — `tuning.LLM`
@@ -19,7 +19,7 @@ export interface GenerateOptions {
   /** Transport-level retries on transient errors. Default: `LLM.maxRetries`. */
   readonly maxRetries?: number;
   /** Override the model for a single call (testing, capability routing). */
-  readonly model?: LlmModel;
+  readonly model?: LanguageModelV3;
   /**
    * Model name override for capability lookup. Set this alongside `model`
    * when the override is a different model than `process.env.LLM_MODEL`,
@@ -111,10 +111,7 @@ export async function generateChat(
   const model =
     responseFormat !== undefined
       ? wrapLanguageModel({
-          // baseModel is always a constructed model instance here: getLlmModel
-          // builds one, and every caller passes one. The LanguageModel union's
-          // string-id member never occurs at runtime, so the V3 cast is safe.
-          model: baseModel as LanguageModelV3,
+          model: baseModel,
           middleware: {
             specificationVersion: "v3",
             transformParams: async ({ params }) => ({ ...params, responseFormat }),

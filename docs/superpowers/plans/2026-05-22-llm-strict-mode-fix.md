@@ -405,13 +405,13 @@ The directory guide says "Vercel AI SDK v5" (it is v6) and describes `responseFo
 
 Read `src/lib/llm/CLAUDE.md`. Find:
 
-```
+```text
 Single LLM integration point for the entire application. Built on the Vercel AI SDK v5 (`ai` + `@ai-sdk/openai-compatible`); nothing outside this directory imports `ai` directly.
 ```
 
 Replace `v5` with `v6`:
 
-```
+```text
 Single LLM integration point for the entire application. Built on the Vercel AI SDK v6 (`ai` + `@ai-sdk/openai-compatible`); nothing outside this directory imports `ai` directly.
 ```
 
@@ -419,13 +419,13 @@ Single LLM integration point for the entire application. Built on the Vercel AI 
 
 Find:
 
-```
+```text
 - `generate.ts` wraps the SDK: `generateChat` (→ `generateText`) for all LLM calls. When `responseSchema` is supplied, enables Cerebras strict-mode constrained decoding via `responseFormat: { type: "json_schema", strict: true }`; otherwise plain text. Applies `tuning.LLM` defaults; forwards `usage`.
 ```
 
 Replace it with:
 
-```
+```text
 - `generate.ts` wraps the SDK: `generateChat` (→ `generateText`) for all LLM calls. When `responseSchema` is supplied (and the model honours strict-mode), wraps the model with a `transformParams` middleware that sets `callOptions.responseFormat`, so the openai-compatible provider emits a strict `json_schema` `response_format`; otherwise plain text. Applies `tuning.LLM` defaults; forwards `usage`.
 ```
 
