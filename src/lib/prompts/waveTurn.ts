@@ -57,7 +57,7 @@ export const waveMidTurnSchema = z
       .string()
       .min(1)
       .describe(
-        "The message the learner sees this turn — teaching prose: explanation, worked examples, conversational tutoring, ≤250 words. Graded concept-checks go in `questionnaire`, not here — but an open, reflective, or conversational question you do NOT want graded (e.g. 'how did that feel?', 'what would you try next?') belongs here in the prose; the learner replies in chat.",
+        "The message the learner sees this turn. Teaching prose: explanation, worked examples, conversational tutoring, ≤250 words. Graded concept-checks go in `questionnaire`, not here, but an open, reflective, or conversational question you do NOT want graded (e.g. 'how did that feel?', 'what would you try next?') belongs here in the prose; the learner replies in chat.",
       ),
     comprehensionSignals: z
       .array(comprehensionSignalSchema)
@@ -68,7 +68,7 @@ export const waveMidTurnSchema = z
     questionnaire: questionnaireSchema
       .optional()
       .describe(
-        "Optional graded concept-check: 1-N questions, each assessing one concept. EVERY question must carry `conceptName` (an existing concept name or a new one); EVERY multiple-choice question must also carry `correct`. Free-text for open synthesis, multiple-choice for quick fact checks. Use sparingly (~1 turn in 3, never twice in a row, alternate types). Conversational or reflective questions you do not want graded do NOT belong here — ask those in `userMessage` prose.",
+        "Optional graded concept-check: 1-N questions, each assessing one concept. EVERY question must carry `conceptName` (an existing concept name or a new one); EVERY multiple-choice question must also carry `correct`. Free-text for open synthesis, multiple-choice for quick fact checks. Use sparingly (~1 turn in 3, never twice in a row, alternate types). Conversational or reflective questions you do not want graded do NOT belong here. Ask those in `userMessage` prose.",
       ),
   })
   .superRefine((val, ctx) => {
@@ -83,11 +83,15 @@ export const waveMidTurnSchema = z
     // it into a retryable `ValidationGateFailure` directive instead.
     if (!val.questionnaire) return;
     val.questionnaire.questions.forEach((q, idx) => {
-      if (q.conceptName === undefined) {
+      // `!q.conceptName` (not `=== undefined`) so this exactly mirrors the
+      // `insertNewQuestionnaire` backstop — an empty-string conceptName is a
+      // valid `z.string()` value but the backstop rejects it, so the schema
+      // must too, or "" slips through to a 500.
+      if (!q.conceptName) {
         ctx.addIssue({
           code: "custom",
           path: ["questionnaire", "questions", idx, "conceptName"],
-          message: `question ${q.id} is missing required conceptName — every teaching-quiz question must name the concept it assesses (reuse an existing concept name or introduce a new one). For an open or reflective question you do NOT want graded, ask it in your teaching prose instead.`,
+          message: `question ${q.id} is missing required conceptName. Every teaching-quiz question must name the concept it assesses (reuse an existing concept name or introduce a new one). For an open or reflective question you do NOT want graded, ask it in your teaching prose instead.`,
         });
       }
       // MC must carry `correct` so the client can score the click without a
@@ -96,7 +100,7 @@ export const waveMidTurnSchema = z
         ctx.addIssue({
           code: "custom",
           path: ["questionnaire", "questions", idx, "correct"],
-          message: `MC question ${q.id} is missing required correct key — every teaching multiple-choice question must mark which option (A, B, C, or D) is correct.`,
+          message: `MC question ${q.id} is missing required correct key. Every teaching multiple-choice question must mark which option (A, B, C, or D) is correct.`,
         });
       }
     });

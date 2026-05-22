@@ -73,6 +73,27 @@ describe("waveMidTurnSchema", () => {
     }
   });
 
+  it("rejects a questionnaire question with an empty-string conceptName", () => {
+    // `questionSchema.conceptName` is `z.string().optional()`, so "" is a valid
+    // value — but `insertNewQuestionnaire`'s backstop is `!q.conceptName`, which
+    // rejects "". The superRefine must agree, or "" slips through to a 500.
+    const r = waveMidTurnSchema.safeParse({
+      userMessage: "Try this.",
+      questionnaire: {
+        questions: [
+          {
+            id: "q1",
+            type: "free_text",
+            prompt: "What would you adjust?",
+            freetextRubric: "Looks for a concrete fix.",
+            conceptName: "",
+          },
+        ],
+      },
+    });
+    expect(r.success).toBe(false);
+  });
+
   it("rejects a questionnaire multiple-choice question missing conceptName", () => {
     const r = waveMidTurnSchema.safeParse({
       userMessage: "Quick check.",
