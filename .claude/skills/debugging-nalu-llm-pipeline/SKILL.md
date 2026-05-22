@@ -61,7 +61,7 @@ bun .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts --course <uuid>    
 
 **Size the window to the incident.** `--minutes` looks back from _now_; for anything older than ~30 min, pass a larger `--minutes` or use `--since <ISO>` — otherwise the overview shows nothing and you misdiagnose.
 
-The overview's scoping-passes table carries the diagnosis directly via its `msgs` / `failed` / `ok` columns (see Step 4). The `--course` mode prints every `context_messages` row with a content preview — how you recover **the actual prompts and the failed model replies** — plus the scoping-close lifecycle tables (baseline JSONB shape, waves, concepts) needed for submitBaseline failures.
+The overview's scoping-passes table carries the diagnosis directly via its `msgs` / `failed` / `ok` columns (see Step 4). The `--course` mode prints every `context_messages` row with a content preview — how you recover **the actual prompts and the failed model replies** — plus the scoping-close lifecycle tables (baseline JSONB shape, waves with `chatlog_entries`, concepts) and the **wave teaching turns** — everything needed for submitBaseline and wave-turn failures.
 
 ## Step 4 — Read DB state: the diagnosis decision tree
 
@@ -112,6 +112,12 @@ The tree above is per-**turn**, not per-pass: one scoping pass holds every scopi
 | a fresh turn with a `failed_assistant_response` trail                                                   | the close call **schema-failed**                                                |
 
 Recovery for a transport-failed close: it is **safe to retry** — `submitBaseline` re-reads state and is idempotent, and `persistScopingClose` is a single transaction (no partial commit). Resubmitting the baseline finishes the course once the transport blip clears.
+
+### Post-persist failures (wave teaching turns)
+
+A third class, beyond transport and schema. `executeTurn` commits its `context_messages` batch atomically and returns — but the lib step does **more** afterward, in a separate transaction: `executeWaveMid` / `executeWaveClose` grade answers, insert `assessments`, upsert concepts, and append the assistant entry to `waves.chat_log`. If that post-LLM work throws, the turn **500s even though `context_messages` shows a clean `assistant_response`** — so the decision tree's "succeeded" leaf is not the end of the story for a wave turn.
+
+The tell: `inspect-db.ts --course` prints WAVE CONTEXT MESSAGES plus a `chatlog_entries` count per wave. A turn with a committed `assistant_response` that is **not** reflected in `chat_log` (the count is short) is a post-persist failure — the LLM replay log and the UI log have diverged. The error is a thrown `Error` surfaced verbatim in the 500's `message` (e.g. `executeWaveMid: questionnaire question id=q2 missing required conceptName`), and `data.path` is `wave.submitTurn`. Read the lib step — `executeWaveMid` plus its `.grade.ts` / `.insert.ts` — for the `throw`. The LLM call itself succeeded; the bug is in deterministic post-LLM persistence.
 
 ## Step 5 — Cross-reference
 

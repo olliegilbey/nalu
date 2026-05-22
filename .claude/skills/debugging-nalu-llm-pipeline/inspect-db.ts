@@ -114,12 +114,37 @@ if (courseId) {
   console.log("\n=== BASELINE JSONB SHAPE (widened = submitBaseline closed) ===");
   console.table(baselineShape);
 
+  // `chatlog_entries` is the UI log length. Compare it against the wave's
+  // `assistant_response` rows below: `context_messages` is the LLM replay log,
+  // `chat_log` is the UI log, and a turn present in the former but not the
+  // latter is a POST-PERSIST failure (see SKILL.md Step 4).
   const waves = await sql`
-    SELECT id, wave_number, tier, status, opened_at, closed_at
+    SELECT id, wave_number, tier, status,
+           jsonb_array_length(chat_log) AS chatlog_entries,
+           opened_at, closed_at
     FROM waves WHERE course_id = ${courseId}
     ORDER BY wave_number`;
   console.log(`\n=== WAVES (${waves.length}) ===`);
   console.table(waves);
+
+  // Wave teaching turns. A turn whose `executeTurn` committed a clean
+  // `assistant_response` here — yet is not reflected in `chatlog_entries`
+  // above — is a POST-PERSIST failure: executeWaveMid/Close threw AFTER
+  // executeTurn's atomic batch (grading, assessments, or the chat_log append).
+  const waveMsgs = await sql`
+    SELECT w.wave_number, cm.turn_index, cm.seq, cm.kind, cm.role,
+           length(cm.content) AS len, cm.created_at, cm.content
+    FROM context_messages cm
+    JOIN waves w ON w.id = cm.wave_id
+    WHERE w.course_id = ${courseId}
+    ORDER BY w.wave_number, cm.turn_index, cm.seq`;
+  console.log(`\n=== WAVE CONTEXT MESSAGES (${waveMsgs.length} rows) ===`);
+  for (const m of waveMsgs) {
+    console.log(
+      `\n[wave ${m.wave_number} turn ${m.turn_index} seq ${m.seq}] ${m.kind} (${m.role}) — ${m.len} chars — ${m.created_at.toISOString()}`,
+    );
+    console.log("  " + preview(m.content as string, 400));
+  }
 
   const concepts = await sql`
     SELECT count(*)::int AS concept_count FROM concepts WHERE course_id = ${courseId}`;
