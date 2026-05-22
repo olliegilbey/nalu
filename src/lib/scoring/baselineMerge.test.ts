@@ -100,6 +100,36 @@ describe("mergeAndComputeXp", () => {
     expect(merged.gradings).toEqual([mechanical]);
     // XP follows the mechanical quality, not the LLM's qualityScore=0.
     expect(merged.totalXp).toBe(calculateXP(2, BASELINE.mcCorrectQuality));
+    // The LLM emitted a grading for this MC qid, but it's still a mechanical
+    // question — it must not leak into the free-text subtotal.
+    expect(merged.freeTextXp).toBe(0);
+  });
+
+  // `freeTextXp` is the subtotal the client needs after a baseline close.
+  // MC XP is counted instantly client-side (Composer `calculateMcXp`), so the
+  // server return must carry the free-text XP ONLY — returning the full total
+  // would double-count MC. A question is free-text iff it has no mechanical
+  // (MC-click) grading; that includes a freetext-escape answer on an MC
+  // question (LLM-graded, not mechanical).
+  it("computes freeTextXp over LLM-graded questions only, excluding mechanical MC", () => {
+    const merged = mergeAndComputeXp({
+      parsed: { gradings: [llmGrading("b2", "borrows", 3)], startingTier: 2 },
+      mechanicalGradings: [mcGrading("b1", "ownership", 2)],
+      baselineQuestionIds: ["b1", "b2"],
+      scopeTiers: [1, 2, 3],
+    });
+    // Only b2 (free-text) contributes; b1 (mechanical MC) is excluded.
+    expect(merged.freeTextXp).toBe(calculateXP(2, 5));
+  });
+
+  it("returns freeTextXp 0 when every baseline question is mechanical MC", () => {
+    const merged = mergeAndComputeXp({
+      parsed: { gradings: [], startingTier: 2 },
+      mechanicalGradings: [mcGrading("b1", "ownership", 2), mcGrading("b2", "borrows", 3)],
+      baselineQuestionIds: ["b1", "b2"],
+      scopeTiers: [1, 2, 3],
+    });
+    expect(merged.freeTextXp).toBe(0);
   });
 
   it("throws on conceptTier outside scopeTiers", () => {

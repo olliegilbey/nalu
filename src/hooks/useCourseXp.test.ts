@@ -1,13 +1,19 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useCourseXp } from "./useCourseXp";
 import { installMemoryStorage } from "@/lib/testing/memoryStorage";
+import { playCorrect } from "@/lib/sound";
+
+// `addXp` plays the correct-answer sound on every confirmed gain (the
+// centralised XP-sound path). Mock WebAudio away and spy on the call.
+vi.mock("@/lib/sound", () => ({ playCorrect: vi.fn() }));
 
 beforeEach(() => {
   // Bun/jsdom's localStorage stub is broken; install a working in-memory
   // Storage (fresh per test, so XP totals don't leak). See the module's TSDoc.
   installMemoryStorage();
+  vi.mocked(playCorrect).mockClear();
 });
 
 describe("useCourseXp", () => {
@@ -50,5 +56,21 @@ describe("useCourseXp", () => {
     act(() => result.current.addXp(15));
     const other = renderHook(() => useCourseXp("c2"));
     expect(other.result.current.xp).toBe(0);
+  });
+
+  it("plays the correct-answer sound on a confirmed XP gain", () => {
+    const { result } = renderHook(() => useCourseXp("c1"));
+    act(() => result.current.addXp(10));
+    expect(playCorrect).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not play a sound when the amount is non-positive or rounds to zero", () => {
+    const { result } = renderHook(() => useCourseXp("c1"));
+    act(() => {
+      result.current.addXp(0);
+      result.current.addXp(-5);
+      result.current.addXp(0.4);
+    });
+    expect(playCorrect).not.toHaveBeenCalled();
   });
 });

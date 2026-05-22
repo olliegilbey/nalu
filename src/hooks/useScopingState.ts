@@ -49,7 +49,12 @@ export interface UseScopingStateResult {
           readonly fromEscape: boolean;
         }
     >,
-    opts?: { readonly onError?: () => void },
+    // `onSuccess` carries the free-text XP subtotal so the caller can pop the
+    // header badge; `onError` lets it recover its optimistic UI. Both optional.
+    opts?: {
+      readonly onError?: () => void;
+      readonly onSuccess?: (result: { readonly freeTextXpAwarded: number }) => void;
+    },
   ) => void;
 }
 
@@ -176,7 +181,12 @@ export function useScopingState(courseId: string): UseScopingStateResult {
   const submitBaselineAnswers: UseScopingStateResult["submitBaselineAnswers"] = (answers, opts) => {
     // tRPC infers a mutable array shape; our public interface uses readonly.
     // Inputs are structurally identical, so cast through `never` (per plan).
-    submitBaseline.mutate({ courseId, answers: answers as never }, { onError: opts?.onError });
+    // The mutation-level `onSuccess` (invalidateState) still runs first;
+    // react-query then invokes this per-call `onSuccess` with the result.
+    submitBaseline.mutate(
+      { courseId, answers: answers as never },
+      { onError: opts?.onError, onSuccess: opts?.onSuccess },
+    );
   };
 
   return {

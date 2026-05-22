@@ -72,8 +72,8 @@ export interface UseWaveStateResult {
  * - `mid-turn` → sum server-graded free-text XP into the badge counter,
  *   invalidate.
  * - `close-turn` → store `closeResult` so the page can render the move-on CTA;
- *   add completion XP to the badge, fire the tier-up toast if a tier advanced,
- *   invalidate (so a back-nav sees fresh state).
+ *   add completion XP + final-turn free-text XP to the badge, fire the tier-up
+ *   toast if a tier advanced, invalidate (so a back-nav sees fresh state).
  */
 export function useWaveState(courseId: string, waveNumber: number): UseWaveStateResult {
   const trpc = useTRPC();
@@ -110,7 +110,16 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
             completionXpAwarded: result.completionXpAwarded,
             tierAdvancedTo: result.tierAdvancedTo,
           });
-          courseXp.addXp(result.completionXpAwarded);
+          // Free-text answered on the wave's FINAL turn is server-graded too —
+          // mirror the mid-turn branch and fold its XP into the same pulse as
+          // completion XP. Skip `mc-index` signals: MC on the close turn is
+          // already counted client-side (Composer onCorrectAnswer) — summing it
+          // here would double-count. Without this, final-turn free-text XP was
+          // silently dropped on the client (the badge never moved).
+          const freeTextXp = result.gradedSignals
+            .filter((s) => s.kind === "free-text")
+            .reduce((sum, s) => sum + s.xpAwarded, 0);
+          courseXp.addXp(result.completionXpAwarded + freeTextXp);
           if (result.tierAdvancedTo !== null) {
             toast.success(`Tier up → ${result.tierAdvancedTo}`, { duration: 3000 });
           }

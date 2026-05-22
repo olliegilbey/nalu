@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { playCorrect } from "@/lib/sound";
 
 /**
  * Per-course XP counter, backed by localStorage.
@@ -63,6 +64,11 @@ export function useCourseXp(courseId: string): UseCourseXpResult {
       // A positive amount that rounds to 0 (e.g. 0.4) is not a whole-XP gain —
       // skip the pulse and the redundant write, per the `addXp` contract.
       if (rounded <= 0) return;
+      // Every confirmed XP gain plays the correct-answer sound. Centralised
+      // here (rather than at each call site) so the badge animation and the
+      // sound stay coupled: MC answers, free-text grading, and wave-completion
+      // XP all flow through `addXp`. The Composer no longer plays it directly.
+      playCorrect();
       setXp((prev) => {
         const next = prev + rounded;
         if (typeof window !== "undefined") {

@@ -138,7 +138,14 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
             if (activeQuestionnaire.kind === "clarify") {
               submitClarify(shapeClarifyAnswers(answers), { onError });
             } else {
-              submitBaselineAnswers(shapeQuestionnaireAnswers(answers), { onError });
+              submitBaselineAnswers(shapeQuestionnaireAnswers(answers), {
+                onError,
+                // Free-text baseline answers are graded server-side; pop the
+                // header badge with that subtotal on success. MC XP is already
+                // counted instantly via `onCorrectAnswer`, so the subtotal
+                // deliberately excludes it (no double-count).
+                onSuccess: (result) => courseXp.addXp(result.freeTextXpAwarded),
+              });
             }
           }}
         />

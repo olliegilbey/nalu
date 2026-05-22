@@ -28,6 +28,14 @@ export interface SubmitBaselineResult {
   readonly userMessage: string;
   /** Newly-opened Wave 1 id — useful for the router's next redirect target. */
   readonly wave1Id: string;
+  /**
+   * Free-text baseline XP the client adds to the header badge on submit
+   * success. Excludes MC XP — correct MC answers are scored instantly
+   * client-side (`calculateMcXp`), so returning the full total would
+   * double-count. Zero on an idempotent replay (see `buildCachedPayload`):
+   * the XP was already persisted and surfaced on the original close.
+   */
+  readonly freeTextXpAwarded: number;
 }
 
 /**
@@ -225,7 +233,7 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
       parsed,
       merged,
     });
-    return { userMessage: parsed.userMessage, wave1Id };
+    return { userMessage: parsed.userMessage, wave1Id, freeTextXpAwarded: merged.freeTextXp };
   } catch (err) {
     const refreshed = await getCourseById(course.id, params.userId);
     if (refreshed.status !== "active") throw err;
@@ -256,5 +264,8 @@ async function buildCachedPayload(
   if (!wave1) {
     throw new Error(`submitBaseline: 'active' course ${courseId} has no open Wave 1`);
   }
-  return { userMessage: baseline.userMessage, wave1Id: wave1.id };
+  // freeTextXpAwarded is 0 on replay: this course already closed, its XP is
+  // persisted, and the client's badge counter already absorbed it on the
+  // original close. A non-zero value here would double-add on a retry.
+  return { userMessage: baseline.userMessage, wave1Id: wave1.id, freeTextXpAwarded: 0 };
 }

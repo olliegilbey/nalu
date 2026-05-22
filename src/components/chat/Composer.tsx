@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, Check, ChevronLeft, ChevronRight, Mic, Plus } from "lucide-react";
 import { t } from "@/i18n";
-import { playCorrect, playWrong } from "@/lib/sound";
+import { playWrong } from "@/lib/sound";
 import { calculateMcXp } from "@/lib/scoring/xp";
 import { parseQuestionnaireBuffer } from "@/lib/course/parseQuestionnaireBuffer";
 
@@ -239,10 +239,11 @@ export function Composer({
     setFeedback(fb);
     setLocked(true);
     if (isCorrect) {
-      playCorrect();
       // Exact XP for a correct MC, computed client-side from the question's
       // tier — the designated `calculateMcXp` instant path. Falls back to the
       // wave tier, then to tier 1, when no per-question tier is present.
+      // `onCorrectAnswer` routes through `useCourseXp.addXp`, which plays the
+      // correct-answer sound centrally — no direct `playCorrect()` here.
       onCorrectAnswer?.(calculateMcXp(current.tier ?? waveTier ?? 1, true));
     } else playWrong();
 
