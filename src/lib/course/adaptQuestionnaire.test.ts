@@ -24,8 +24,35 @@ describe("adaptQuestionnaire", () => {
         prompt: "What is 2+2?",
         options: ["3", "4", "5", "6"],
         correctIndex: 1,
+        tier: 1,
       },
     ]);
+  });
+
+  it("carries the optional tier through for MC and free-text questions", () => {
+    const qs: readonly Question[] = [
+      {
+        id: "m1",
+        type: "multiple_choice",
+        prompt: "p",
+        options: { A: "1", B: "2", C: "3", D: "4" },
+        correct: "A",
+        freetextRubric: "n/a",
+        conceptName: "c",
+        tier: 3,
+      },
+      {
+        id: "f1",
+        type: "free_text",
+        prompt: "p2",
+        freetextRubric: "n/a",
+        conceptName: "c2",
+        tier: 4,
+      },
+    ];
+    const r = adaptQuestionnaire(qs);
+    expect(r.questions[0]!.tier).toBe(3);
+    expect(r.questions[1]!.tier).toBe(4);
   });
 
   it("leaves correctIndex undefined when `correct` is absent (clarify-style MC)", () => {

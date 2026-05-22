@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useScopingState } from "@/hooks/useScopingState";
+import { useCourseXp } from "@/hooks/useCourseXp";
 import { shapeQuestionnaireAnswers } from "@/lib/course/shapeQuestionnaireAnswers";
 import { shapeClarifyAnswers } from "@/lib/course/shapeClarifyAnswers";
 import { ChatShell } from "./ChatShell";
@@ -30,6 +31,11 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
     submitClarify,
     submitBaselineAnswers,
   } = useScopingState(courseId);
+  // Per-course XP display counter — surfaces the header XP badge during
+  // scoping so learners feel the reward loop from their first correct baseline
+  // answer. localStorage-backed and keyed by courseId, so the running total
+  // carries into the wave flow (whose `useWaveState` reads the same counter).
+  const courseXp = useCourseXp(courseId);
 
   const [composerValue, setComposerValue] = useState("");
   // Optimistic user message. `turnCountAtSubmit` is the `turns.length` captured
@@ -88,6 +94,10 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
     <ChatShell
       title={topic}
       onNew={() => router.push("/")}
+      xp={courseXp.xp}
+      xpPulseKey={courseXp.pulseKey}
+      xpGainAmount={courseXp.gainAmount}
+      showXp
       composer={
         <Composer
           value={composerValue}
@@ -105,6 +115,7 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
               : null
           }
           persistKey={activeQuestionnaire?.persistKey}
+          onCorrectAnswer={courseXp.addXp}
           moveOn={moveOn}
           onComplete={(answers) => {
             if (!activeQuestionnaire) return;

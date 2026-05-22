@@ -40,9 +40,12 @@ export function adaptQuestionnaire(qs: readonly Question[]): AdaptedQuestionnair
         prompt: q.prompt,
         options: [q.options.A, q.options.B, q.options.C, q.options.D],
         correctIndex: q.correct !== undefined ? KEY_TO_INDEX[q.correct] : undefined,
+        // Carried through so the Composer's `calculateMcXp` can award exact XP
+        // for a correct MC answer — including in the scoping baseline flow.
+        tier: q.tier,
       };
     }
-    return { id: q.id, prompt: q.prompt, options: [] };
+    return { id: q.id, prompt: q.prompt, options: [], tier: q.tier };
   });
 
   const hasMc = qs.some((q) => q.type === "multiple_choice");
