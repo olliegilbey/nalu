@@ -78,7 +78,7 @@ export function ChatShell({
         }}
       />
 
-      <main ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 space-y-5">
+      <main ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 space-y-5 no-scrollbar">
         {children}
       </main>
 
