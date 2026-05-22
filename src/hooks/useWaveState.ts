@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
+import { formatMutationError } from "@/lib/errors";
 import { deriveWaveTurns } from "@/lib/course/deriveWaveTurns";
 import { adaptOpenQuestion } from "@/lib/course/adaptQuestionnaire";
 import { useCourseXp } from "./useCourseXp";
@@ -120,7 +121,9 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
       // no feedback at all and the learner's text vanished silently. Matches
       // the `toast.error(..., { description })` pattern in `TopicInput.tsx`.
       onError: (err) => {
-        toast.error("Couldn't submit that turn", { description: err.message });
+        toast.error("Couldn't submit that turn", {
+          description: formatMutationError(err),
+        });
       },
     }),
   );

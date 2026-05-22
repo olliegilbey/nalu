@@ -5,6 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
+import { formatMutationError } from "@/lib/errors";
 import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
 import { EmptyState } from "./EmptyState";
@@ -33,7 +34,9 @@ export function TopicInput() {
         router.push(`/course/${result.courseId}`);
       },
       onError: (err) => {
-        toast.error("Couldn't start your course", { description: err.message });
+        toast.error("Couldn't start your course", {
+          description: formatMutationError(err),
+        });
         // Submission failed — drop the optimistic view so the learner can retry.
         setSubmittedTopic(null);
       },
