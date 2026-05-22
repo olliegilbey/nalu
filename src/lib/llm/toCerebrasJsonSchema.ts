@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import type { JSONSchema7 } from "ai";
 
 /**
  * Keywords Cerebras strict-mode `response_format` rejects (per its docs).
@@ -39,7 +40,7 @@ export interface CerebrasResponseFormat {
   readonly type: "json";
   readonly name: string;
   readonly description?: string;
-  readonly schema: Record<string, unknown>;
+  readonly schema: JSONSchema7;
 }
 
 /**
@@ -74,7 +75,7 @@ export function toCerebrasJsonSchema<T>(
     name: opts.name,
     description: opts.description,
     // Cast is safe: `raw` is always an object, so `stripForbidden(raw)` is too.
-    schema: stripped as Record<string, unknown>,
+    schema: stripped as JSONSchema7,
   };
 }
 
