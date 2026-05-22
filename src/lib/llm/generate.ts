@@ -1,4 +1,5 @@
-import { generateText } from "ai";
+import { generateText, wrapLanguageModel } from "ai";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import type { z } from "zod/v4";
 import { LLM } from "@/lib/config/tuning";
 import { getLlmModel } from "./provider";
@@ -86,9 +87,9 @@ export async function generateChat(
   const modelName = opts.modelName ?? process.env.LLM_MODEL ?? "(default)";
   const capabilities = getModelCapabilities(modelName);
 
-  // Build the responseFormat only when a schema is provided AND the model
-  // will actually honour it. Spreading undefined into generateText would
-  // send `responseFormat: undefined`, which some SDK versions treat as an error.
+  // Build the Cerebras response_format only when a schema is provided AND the
+  // model honours strict-mode decoding. Weak models get the schema inline in
+  // the user envelope instead (handled at the prompt-assembly layer).
   const responseFormat =
     opts.responseSchema !== undefined && capabilities.honorsStrictMode
       ? toCerebrasJsonSchema(opts.responseSchema, {
@@ -102,13 +103,30 @@ export async function generateChat(
   // executeTurn's back-to-back validation retries stay under the cap.
   await awaitCerebrasCallSlot();
 
+  // generateText silently drops a top-level `responseFormat` arg; setting it
+  // via a middleware transformParams hook is the supported way to reach
+  // callOptions.responseFormat, which the openai-compatible provider then
+  // emits as a strict json_schema response_format on the wire.
+  const baseModel = opts.model ?? getLlmModel();
+  const model =
+    responseFormat !== undefined
+      ? wrapLanguageModel({
+          // baseModel is always a constructed model instance here: getLlmModel
+          // builds one, and every caller passes one. The LanguageModel union's
+          // string-id member never occurs at runtime, so the V3 cast is safe.
+          model: baseModel as LanguageModelV3,
+          middleware: {
+            specificationVersion: "v3",
+            transformParams: async ({ params }) => ({ ...params, responseFormat }),
+          },
+        })
+      : baseModel;
+
   const result = await generateText({
-    model: opts.model ?? getLlmModel(),
+    model,
     messages: [...messages],
     temperature: opts.temperature ?? LLM.defaultTemperature,
     maxRetries: opts.maxRetries ?? LLM.maxRetries,
-    // Conditionally spread so the key is absent (not undefined) when unused.
-    ...(responseFormat !== undefined ? { responseFormat } : {}),
   });
   // Capture the Cerebras x-ratelimit-* headers so the next call can back
   // off when the per-minute token budget runs low. `response.headers` is

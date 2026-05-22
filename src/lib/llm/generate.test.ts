@@ -1,87 +1,80 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { z } from "zod/v4";
-
-// Mock the `ai` module so we never dispatch real network calls. We
-// assert wiring: defaults applied, responseFormat threaded, usage propagated.
-const generateTextMock = vi.fn();
-
-vi.mock("ai", () => ({
-  generateText: (args: unknown) => generateTextMock(args),
-}));
-
-// Stub the provider so we don't need env vars wired.
-vi.mock("./provider", () => ({
-  getLlmModel: () => ({ __stub: "model" }),
-}));
-
+import { MockLanguageModelV3 } from "ai/test";
 import { generateChat } from "./generate";
 import { LLM } from "@/lib/config/tuning";
 
-// Ensure tests run against a model that honours strict-mode so responseFormat
-// assertions are meaningful. `vi.stubEnv` is the idiomatic Vitest approach —
-// no mutable let, automatically restored between tests.
+// generateChat builds a Cerebras response_format only for models that honour
+// strict-mode decoding (see modelCapabilities.ts). Pin a honouring model so
+// the schema-wiring assertions are exercised. vi.stubEnv auto-restores.
 beforeEach(() => {
-  vi.stubEnv("LLM_MODEL", "llama-3.3-70b");
+  vi.stubEnv("LLM_MODEL", "gpt-oss-120b");
 });
 
-// generateChat reads `result.response.headers` to feed the rate limiter,
-// so every mocked generateText result must carry a `response` field —
-// the AI SDK always populates it (headers may be undefined for non-HTTP
-// providers, which the limiter handles gracefully).
-const emptyResponse = { id: "r", timestamp: new Date(0), modelId: "m", messages: [] };
+/**
+ * A MockLanguageModelV3 that returns `text` and records every doGenerate
+ * call into `.doGenerateCalls`. The assertions below inspect those recorded
+ * call options: that is the real payload reaching the provider, after the
+ * middleware has transformed the params. The doGenerate result shape follows
+ * the AI SDK v6 language-model-v3 spec (see
+ * node_modules/ai/docs/03-ai-sdk-core/55-testing.mdx).
+ */
+function mockModel(text: string): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doGenerate: async () => ({
+      content: [{ type: "text", text }],
+      finishReason: { unified: "stop", raw: undefined },
+      usage: {
+        inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+        outputTokens: { total: 20, text: 20, reasoning: undefined },
+      },
+      warnings: [],
+    }),
+  });
+}
 
 describe("generateChat", () => {
-  it("returns text + usage from generateText", async () => {
-    const usage = { inputTokens: 5, outputTokens: 2, totalTokens: 7 };
-    generateTextMock.mockResolvedValueOnce({ text: "hello", usage, response: emptyResponse });
+  it("returns the model text and usage", async () => {
+    const model = mockModel("hello");
 
-    const result = await generateChat([{ role: "user", content: "hi" }]);
+    const result = await generateChat([{ role: "user", content: "hi" }], { model });
 
-    expect(result).toEqual({ text: "hello", usage });
-    expect(generateTextMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        temperature: LLM.defaultTemperature,
-        maxRetries: LLM.maxRetries,
-      }),
-    );
+    expect(result.text).toBe("hello");
+    expect(result.usage).toBeDefined();
   });
 
-  it("passes responseSchema through as responseFormat with type json", async () => {
-    // Verify that when responseSchema is supplied, generateText receives
-    // responseFormat: { type: "json", name, schema } from toCerebrasJsonSchema.
-    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
-    generateTextMock.mockResolvedValueOnce({
-      text: '{"x":"hi"}',
-      usage,
-      response: emptyResponse,
-    });
+  it("applies the tuning default temperature to the model call", async () => {
+    const model = mockModel("hello");
 
-    const schema = z.object({ x: z.string() });
+    await generateChat([{ role: "user", content: "hi" }], { model });
+
+    expect(model.doGenerateCalls[0]?.temperature).toBe(LLM.defaultTemperature);
+  });
+
+  it("sends the schema to the model as a strict json response_format", async () => {
+    const model = mockModel('{"x":"hi"}');
+
     await generateChat([{ role: "user", content: "hi" }], {
-      responseSchema: schema,
+      model,
+      responseSchema: z.object({ x: z.string() }),
       responseSchemaName: "test",
     });
 
-    // at(-1) avoids an index-possibly-undefined error without non-null assertions.
-    const capturedArgs = generateTextMock.mock.calls.at(-1)?.[0];
-    // Must carry a responseFormat that satisfies the Cerebras wire shape.
-    expect(capturedArgs.responseFormat).toMatchObject({ type: "json", name: "test" });
-    expect(capturedArgs.responseFormat.schema).toBeDefined();
+    // The middleware must have set callOptions.responseFormat: this is the
+    // value the openai-compatible provider turns into a strict json_schema.
+    const responseFormat = model.doGenerateCalls[0]?.responseFormat;
+    expect(responseFormat?.type).toBe("json");
+    expect(responseFormat).toMatchObject({ type: "json", name: "test" });
+    expect(responseFormat).toHaveProperty("schema");
   });
 
-  it("omits responseFormat when no responseSchema supplied", async () => {
-    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
-    generateTextMock.mockResolvedValueOnce({
-      text: "plain text",
-      usage,
-      response: emptyResponse,
-    });
+  it("sets no json response_format when no schema is supplied", async () => {
+    const model = mockModel("plain text");
 
-    await generateChat([{ role: "user", content: "hi" }]);
+    await generateChat([{ role: "user", content: "hi" }], { model });
 
-    // at(-1) avoids an index-possibly-undefined error without non-null assertions.
-    const capturedArgs = generateTextMock.mock.calls.at(-1)?.[0];
-    // responseFormat must NOT be present when no schema given.
-    expect(capturedArgs.responseFormat).toBeUndefined();
+    // generateText may default responseFormat to {type:"text"} or leave it
+    // unset; either way it must not be a json schema payload.
+    expect(model.doGenerateCalls[0]?.responseFormat?.type).not.toBe("json");
   });
 });
