@@ -152,12 +152,18 @@ function schemaObjectDepth(node: unknown, depth = 0): number {
 
 /**
  * Recursively transform a JSON Schema into its Cerebras-strict-mode form:
- * deletes forbidden keywords, and rewrites `oneOf` to `anyOf`.
+ * deletes forbidden keywords, rewrites `oneOf` to `anyOf`, and flattens
+ * `allOf` intersections into a single merged object.
  *
  * Cerebras strict mode rejects `oneOf` outright with a 400
  * (`wrong_api_format`); `anyOf` is the supported equivalent. The rewrite is
  * exact here because Zod's discriminated unions carry a literal discriminator
  * that keeps the branches mutually exclusive regardless of oneOf-vs-anyOf.
+ *
+ * Cerebras strict mode likewise rejects `allOf` (400 `wrong_api_format`,
+ * "Extra top level keys found"). Zod emits `allOf` for `z.intersection`
+ * (`base.and(extra)` — used by the close-turn schemas, since their refined
+ * base cannot take `.extend()`). See {@link flattenAllOf}.
  *
  * Pure function — returns a new value, mutates nothing.
  * Returns `unknown` because leaf nodes may be primitives.
@@ -167,9 +173,42 @@ function cleanForCerebras(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(cleanForCerebras);
 
   const obj = node as Record<string, unknown>;
-  return Object.fromEntries(
+  const cleaned = Object.fromEntries(
     Object.entries(obj)
       .filter(([k]) => !FORBIDDEN_KEYWORDS.includes(k as (typeof FORBIDDEN_KEYWORDS)[number]))
       .map(([k, v]) => [k === "oneOf" ? "anyOf" : k, cleanForCerebras(v)]),
   );
+  // Flatten after recursion so the `allOf` members are already cleaned.
+  return Array.isArray(cleaned["allOf"]) ? flattenAllOf(cleaned) : cleaned;
+}
+
+/**
+ * Merge an `allOf` array of object-schemas into one flat object node.
+ *
+ * Every `allOf` Nalu produces is `[objectWithProps, objectWithProps]` — a
+ * `z.intersection` of two `z.object`s with disjoint properties — so a plain
+ * merge is exact: union the `properties`, union the `required`, and force the
+ * canonical strict-mode object shape (`type:"object"`,
+ * `additionalProperties:false`). Non-object intersections are not generated
+ * anywhere in the codebase, so they are deliberately not handled.
+ *
+ * @param node - a cleaned node whose `allOf` is a non-empty array of objects.
+ */
+function flattenAllOf(node: Record<string, unknown>): Record<string, unknown> {
+  const { allOf, ...rest } = node;
+  const members = allOf as ReadonlyArray<Record<string, unknown>>;
+  const mergedProperties = members.reduce<Record<string, unknown>>(
+    (acc, member) => ({ ...acc, ...((member["properties"] as Record<string, unknown>) ?? {}) }),
+    {},
+  );
+  const mergedRequired = members.flatMap((member) =>
+    Array.isArray(member["required"]) ? (member["required"] as readonly string[]) : [],
+  );
+  return {
+    ...rest,
+    type: "object",
+    properties: mergedProperties,
+    required: [...new Set(mergedRequired)],
+    additionalProperties: false,
+  };
 }
