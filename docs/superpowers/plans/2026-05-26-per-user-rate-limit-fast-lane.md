@@ -168,13 +168,13 @@ Note on semantics: the existing tests run _without_ a userIdStore context, which
 
 Find on line 107:
 
-```
+```text
  *   2. Request spacing — wait so this dispatch is ≥ `LLM.minRequestSpacingMs`
 ```
 
 Replace with:
 
-```
+```text
  *   2. Request spacing — wait so this dispatch is ≥ `LLM.slowLaneSpacingMs`
 ```
 
@@ -438,7 +438,7 @@ export function __resetCerebrasRateLimitStateForTests(): void {
 
 - [ ] Update the module TSDoc at the top of `cerebrasRateLimit.ts` (around lines 3-44) to mention the per-user dimension. Find the paragraph starting `Two responsibilities, both consumed by \`generateChat\`:`and update the section just before it. Specifically, after the line ending`Nalu waits when the shared bucket runs low.`, insert a new paragraph:
 
-```
+```text
  *
  * Per-user fast/slow lane: each call reads the active userId from
  * `userIdStore` (Node AsyncLocalStorage, populated by `protectedProcedure`

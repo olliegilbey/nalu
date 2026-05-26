@@ -181,10 +181,15 @@ export async function awaitCerebrasCallSlot(): Promise<void> {
 
   // Increment the per-user counter ONLY when a userId is in scope. Calls
   // outside a tRPC request (smoke / CLI / background) don't consume any
-  // user's fast-lane budget.
+  // user's fast-lane budget. Re-read at increment time so concurrent
+  // calls that interleaved with our `await` above don't lose increments
+  // — `get`+`set` within one synchronous frame is atomic in Node's
+  // single-threaded event loop (the documented lane-choice race at the
+  // top of this function still stands; this only fixes lost updates).
   if (userId !== undefined) {
+    const current = callCountByUser.get(userId) ?? 0;
     // eslint-disable-next-line functional/immutable-data -- rate-limiter per-user counter
-    callCountByUser.set(userId, count + 1);
+    callCountByUser.set(userId, current + 1);
   }
 }
 
