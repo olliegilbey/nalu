@@ -104,7 +104,7 @@ function sleep(ms: number): Promise<void> {
  *   1. Token-budget backoff — if the last-seen remaining per-minute token
  *      budget is below `LLM.lowTokenBudgetThreshold`, wait until the stored
  *      bucket-reset time. Skipped when no headers have been seen yet.
- *   2. Request spacing — wait so this dispatch is ≥ `LLM.minRequestSpacingMs`
+ *   2. Request spacing — wait so this dispatch is ≥ `LLM.slowLaneSpacingMs`
  *      after the previous one (the 5-RPM floor).
  *
  * A complete no-op (returns immediately) when `isRateLimiterActive()` is
@@ -132,7 +132,7 @@ export async function awaitCerebrasCallSlot(): Promise<void> {
 
   // Gate 2 — request spacing. Wait the remainder of the min-spacing window
   // since the previous dispatch. Negative/zero when enough time has passed.
-  const spacingWaitMs = LLM.minRequestSpacingMs - (Date.now() - lastDispatchAtMs);
+  const spacingWaitMs = LLM.slowLaneSpacingMs - (Date.now() - lastDispatchAtMs);
   if (spacingWaitMs > 0) {
     await sleep(spacingWaitMs);
   }

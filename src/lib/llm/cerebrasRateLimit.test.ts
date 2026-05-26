@@ -87,14 +87,14 @@ describe("cerebrasRateLimit", () => {
 
       // Second call made immediately after — must wait the full spacing.
       const secondDelay = await measure(awaitCerebrasCallSlot());
-      expect(secondDelay).toBe(LLM.minRequestSpacingMs);
+      expect(secondDelay).toBe(LLM.slowLaneSpacingMs);
     });
 
     it("does not delay when more than min-spacing has already elapsed", async () => {
       await measure(awaitCerebrasCallSlot());
 
       // Advance the fake clock well past the spacing window.
-      await vi.advanceTimersByTimeAsync(LLM.minRequestSpacingMs + 1_000);
+      await vi.advanceTimersByTimeAsync(LLM.slowLaneSpacingMs + 1_000);
 
       // The next call's slot is already clear — it must not wait.
       const delay = await measure(awaitCerebrasCallSlot());
@@ -111,7 +111,7 @@ describe("cerebrasRateLimit", () => {
       // The next call must wait only the REMAINDER, exercising the
       // `minSpacing - elapsed` arithmetic directly (not just its boundaries).
       const delay = await measure(awaitCerebrasCallSlot());
-      expect(delay).toBe(LLM.minRequestSpacingMs - partialElapsed);
+      expect(delay).toBe(LLM.slowLaneSpacingMs - partialElapsed);
     });
   });
 
@@ -136,7 +136,7 @@ describe("cerebrasRateLimit", () => {
       });
 
       // Advance past the spacing window so request spacing contributes 0.
-      await vi.advanceTimersByTimeAsync(LLM.minRequestSpacingMs + 1_000);
+      await vi.advanceTimersByTimeAsync(LLM.slowLaneSpacingMs + 1_000);
 
       // Healthy budget → no token wait, and spacing already elapsed → 0.
       const delay = await measure(awaitCerebrasCallSlot());
@@ -154,8 +154,8 @@ describe("cerebrasRateLimit", () => {
 
       // Advance past the request-spacing window so the only remaining wait
       // is the token-bucket backoff — isolates the token gate cleanly.
-      await vi.advanceTimersByTimeAsync(LLM.minRequestSpacingMs + 1_000);
-      const elapsedSinceRecord = LLM.minRequestSpacingMs + 1_000;
+      await vi.advanceTimersByTimeAsync(LLM.slowLaneSpacingMs + 1_000);
+      const elapsedSinceRecord = LLM.slowLaneSpacingMs + 1_000;
 
       // The acquire must wait the remainder of the 25s reset window.
       const delay = await measure(awaitCerebrasCallSlot());
@@ -170,7 +170,7 @@ describe("cerebrasRateLimit", () => {
       });
 
       // Advance well past both the reset window and the spacing window.
-      await vi.advanceTimersByTimeAsync(LLM.minRequestSpacingMs + 10_000);
+      await vi.advanceTimersByTimeAsync(LLM.slowLaneSpacingMs + 10_000);
 
       // Low budget but the reset deadline already passed → no wait.
       const delay = await measure(awaitCerebrasCallSlot());
@@ -188,7 +188,7 @@ describe("cerebrasRateLimit", () => {
       // Immediate next call: no token gate (state stayed null), so only the
       // request-spacing wait applies.
       const delay = await measure(awaitCerebrasCallSlot());
-      expect(delay).toBe(LLM.minRequestSpacingMs);
+      expect(delay).toBe(LLM.slowLaneSpacingMs);
     });
 
     it("ignores undefined headers (provider exposed none)", async () => {
@@ -198,7 +198,7 @@ describe("cerebrasRateLimit", () => {
 
       const delay = await measure(awaitCerebrasCallSlot());
       // No token gate; request spacing only.
-      expect(delay).toBe(LLM.minRequestSpacingMs);
+      expect(delay).toBe(LLM.slowLaneSpacingMs);
     });
   });
 });

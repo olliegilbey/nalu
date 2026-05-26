@@ -209,17 +209,29 @@ export const BASELINE = {
  * fast on a genuine outage. Production traffic is bursty but single-user;
  * this ceiling is for the smoke suite.
  *
- * `minRequestSpacingMs: 13000`: minimum gap (dispatch-to-dispatch) between
- * consecutive Cerebras API calls, enforced at the `generateChat` call site
- * by `src/lib/llm/cerebrasRateLimit.ts`. The Cerebras FREE tier caps at
+ * `slowLaneSpacingMs: 13000`: minimum gap (dispatch-to-dispatch) between
+ * consecutive Cerebras API calls AFTER a user has consumed their fast-lane
+ * window, enforced at the `generateChat` call site by
+ * `src/lib/llm/cerebrasRateLimit.ts`. The Cerebras FREE tier caps at
  * 5 requests/min — a 12.0s exact floor (60s ÷ 5). 13s adds ~1s margin so a
  * strict server-side sliding window can't trip on clock skew or
- * response-time variance. Pacing at the call site (rather than per logical
- * turn) means `executeTurn`'s JSON-validation retries — each a separate API
- * call — are throttled too. THIS IS THE SINGLE KNOB TO BUMP when upgrading
- * to a paid Cerebras tier: a paid plan's higher RPM allows a much smaller
- * spacing (e.g. 600ms at 100 RPM). The rate limiter is a no-op in mocked
- * unit/integration tests, so this value never slows those suites.
+ * response-time variance. We're on the paid tier now, but the slow-lane
+ * value is sized for the free-tier floor — it's the deterrent that kicks
+ * in after `fastLaneCallsPerUser` calls, not a budget mechanism.
+ *
+ * `fastLaneSpacingMs: 200`: spacing applied while a user is still inside
+ * their fast-lane window. Paid tier supports 1000 RPM (60ms floor); 200ms
+ * is a conservative cushion that absorbs `executeTurn` retry bursts
+ * without measurable user-visible latency (200ms × 6 worst-case retries
+ * ≈ 1.2s, vs 78s at the slow-lane floor).
+ *
+ * `fastLaneCallsPerUser: 30`: per-user count of fast-lane calls before
+ * the slow-lane floor kicks in. Sized to cover scoping (~4 calls) plus
+ * 2 Waves (~22 calls) plus ~4 calls of retry headroom — a hiring-manager
+ * demo can complete the full onboarding and reach the second Wave before
+ * any slowdown. Counter is in-memory (module-level Map keyed by userId);
+ * resets on lambda cold start, which is generous to the user and does
+ * not affect wallet exposure (~$0.10/session regardless).
  *
  * `lowTokenBudgetThreshold: 10000`: if a prior response's
  * `x-ratelimit-remaining-tokens-minute` header drops below this, the limiter
@@ -234,7 +246,9 @@ export const BASELINE = {
 export const LLM = {
   defaultTemperature: 0.3,
   maxRetries: 6,
-  minRequestSpacingMs: 13_000,
+  slowLaneSpacingMs: 13_000,
+  fastLaneSpacingMs: 200,
+  fastLaneCallsPerUser: 30,
   lowTokenBudgetThreshold: 10_000,
 } as const;
 
