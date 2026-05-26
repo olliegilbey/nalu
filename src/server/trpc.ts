@@ -68,15 +68,11 @@ export const protectedProcedure = t.procedure.use(mapNotFound).use(async ({ ctx,
     throw new TRPCError({ code: "UNAUTHORIZED", message: "no authenticated user" });
   }
   await ensureUserProfile(ctx.userId);
-  // Bind `userId` first so the override ctx is well-typed for downstream
-  // procedures, then immediately run it inside the ALS scope. `next()`
-  // returns a thenable — we kick it off inside `run()` so every async
-  // continuation (including the AI SDK's `fetch` calls) sees the store.
+  // Bind ctx.userId to ALS so the LLM layer (Cerebras rate limiter) reads
+  // it from ambient request scope rather than threading it through
+  // generateChat's signature. ALS propagates through await/Promise/fetch,
+  // so the AI SDK transport preserves the binding. Hoist into `userId`
+  // first to keep the override ctx well-typed across the callback boundary.
   const userId = ctx.userId;
-  // Make `userId` available to the Cerebras rate limiter (and anything
-  // else in the LLM layer that wants request-scoped ambient context)
-  // without threading it through `generateChat`'s signature. ALS
-  // propagates through `await`, Promise chains, timers, and `fetch`, so
-  // the AI SDK's transport code preserves the binding.
   return userIdStore.run(userId, () => next({ ctx: { ...ctx, userId } }));
 });
