@@ -1,4 +1,5 @@
 import { LLM } from "@/lib/config/tuning";
+import { userIdStore } from "./userIdStore";
 
 /**
  * Header-aware Cerebras rate limiter for the entire application.
@@ -25,6 +26,14 @@ import { LLM } from "@/lib/config/tuning";
  * Exhausting it across repeated smoke runs still yields a hard 429
  * ("Tokens per day limit exceeded"). Enforcing TPD would need cumulative
  * `usage` accounting in a persistent cross-process store (future work).
+ *
+ * Per-user fast/slow lane: each call reads the active userId from
+ * `userIdStore` (Node AsyncLocalStorage, populated by `protectedProcedure`
+ * in `src/server/trpc.ts`). The first `LLM.fastLaneCallsPerUser` calls per
+ * userId use `LLM.fastLaneSpacingMs` (200ms); calls beyond that fall back
+ * to `LLM.slowLaneSpacingMs` (13s). Calls with no userId in scope (smoke,
+ * CLI, background) use the fast lane and do not consume any user's budget.
+ * The counter is in-memory only (`callCountByUser`); cold starts reset it.
  *
  * Two responsibilities, both consumed by `generateChat`:
  *   - `awaitCerebrasCallSlot()` — BEFORE `generateText`: enforces request
@@ -89,6 +98,24 @@ let tokenBucketResetAtMs: number | null = null;
 let remainingTokensThisMinute: number | null = null;
 
 /**
+ * Per-user call counter, keyed by userId. Each entry counts how many LLM
+ * calls this user has made in the current process lifetime. When the count
+ * reaches `LLM.fastLaneCallsPerUser`, the next call (and all subsequent
+ * ones) use `LLM.slowLaneSpacingMs` instead of `LLM.fastLaneSpacingMs`.
+ *
+ * In-memory only — no DB, no shared store. Cold starts reset the map, which
+ * is generous to the user (they get another fast-lane window) and does not
+ * affect wallet exposure (~$0.10/session regardless). See the spec at
+ * `docs/superpowers/specs/2026-05-26-per-user-rate-limit-fast-lane-design.md`
+ * for the rationale.
+ *
+ * No userId in scope (smoke runs, CLI, background) → the limiter uses the
+ * fast lane and does not mutate this map. The Map's `get` returns undefined
+ * for unknown keys, which we coerce to 0.
+ */
+const callCountByUser = new Map<string, number>();
+
+/**
  * Sleep for `ms` milliseconds. Extracted so the wait sites read cleanly and
  * vitest fake timers have a single `setTimeout` to drive.
  */
@@ -104,8 +131,10 @@ function sleep(ms: number): Promise<void> {
  *   1. Token-budget backoff — if the last-seen remaining per-minute token
  *      budget is below `LLM.lowTokenBudgetThreshold`, wait until the stored
  *      bucket-reset time. Skipped when no headers have been seen yet.
- *   2. Request spacing — wait so this dispatch is ≥ `LLM.minRequestSpacingMs`
- *      after the previous one (the 5-RPM floor).
+ *   2. Request spacing — wait so this dispatch is ≥ the per-user lane's
+ *      spacing (`LLM.fastLaneSpacingMs` for the first `fastLaneCallsPerUser`
+ *      calls, then `LLM.slowLaneSpacingMs` — the 5-RPM floor) after the
+ *      previous one.
  *
  * A complete no-op (returns immediately) when `isRateLimiterActive()` is
  * false — i.e. in mocked unit/integration test suites.
@@ -115,6 +144,14 @@ function sleep(ms: number): Promise<void> {
 export async function awaitCerebrasCallSlot(): Promise<void> {
   // Gate: outside production / live smoke this does nothing at all.
   if (!isRateLimiterActive()) return;
+
+  // Resolve the per-user lane. No userId in scope → fast lane, no counter
+  // mutation. The lane choice is per-user; the spacing gate itself is
+  // global (a single dispatch clock for the process).
+  const userId = userIdStore.getStore();
+  const count = userId !== undefined ? (callCountByUser.get(userId) ?? 0) : 0;
+  const spacingMs =
+    count < LLM.fastLaneCallsPerUser ? LLM.fastLaneSpacingMs : LLM.slowLaneSpacingMs;
 
   // Gate 1 — token-budget backoff. Only when we've seen headers AND the
   // last-reported remaining budget is too low to safely cover one more
@@ -130,9 +167,10 @@ export async function awaitCerebrasCallSlot(): Promise<void> {
     }
   }
 
-  // Gate 2 — request spacing. Wait the remainder of the min-spacing window
-  // since the previous dispatch. Negative/zero when enough time has passed.
-  const spacingWaitMs = LLM.minRequestSpacingMs - (Date.now() - lastDispatchAtMs);
+  // Gate 2 — request spacing. Wait the remainder of the chosen spacing
+  // window since the previous dispatch. Negative/zero when enough time
+  // has passed (or when this is the first call in the process).
+  const spacingWaitMs = spacingMs - (Date.now() - lastDispatchAtMs);
   if (spacingWaitMs > 0) {
     await sleep(spacingWaitMs);
   }
@@ -140,6 +178,19 @@ export async function awaitCerebrasCallSlot(): Promise<void> {
   // Record this call's dispatch time AFTER any waits, so it reflects the
   // moment the call is actually cleared to fire (call-start to call-start).
   lastDispatchAtMs = Date.now();
+
+  // Increment the per-user counter ONLY when a userId is in scope. Calls
+  // outside a tRPC request (smoke / CLI / background) don't consume any
+  // user's fast-lane budget. Re-read at increment time so concurrent
+  // calls that interleaved with our `await` above don't lose increments
+  // — `get`+`set` within one synchronous frame is atomic in Node's
+  // single-threaded event loop (the documented lane-choice race at the
+  // top of this function still stands; this only fixes lost updates).
+  if (userId !== undefined) {
+    const current = callCountByUser.get(userId) ?? 0;
+    // eslint-disable-next-line functional/immutable-data -- rate-limiter per-user counter
+    callCountByUser.set(userId, current + 1);
+  }
 }
 
 /**
@@ -195,4 +246,6 @@ export function __resetCerebrasRateLimitStateForTests(): void {
   lastDispatchAtMs = 0;
   tokenBucketResetAtMs = null;
   remainingTokensThisMinute = null;
+  // eslint-disable-next-line functional/immutable-data -- test-only reset seam
+  callCountByUser.clear();
 }
