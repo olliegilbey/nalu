@@ -3,6 +3,7 @@ import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { NotFoundError } from "@/db/queries/errors";
 import { createClient } from "@/lib/supabase/server";
 import { ensureUserProfile } from "@/db/queries";
+import { userIdStore } from "@/lib/llm/userIdStore";
 
 /**
  * Build the tRPC request context. Resolves `userId` (possibly undefined).
@@ -67,5 +68,15 @@ export const protectedProcedure = t.procedure.use(mapNotFound).use(async ({ ctx,
     throw new TRPCError({ code: "UNAUTHORIZED", message: "no authenticated user" });
   }
   await ensureUserProfile(ctx.userId);
-  return next({ ctx: { ...ctx, userId: ctx.userId } });
+  // Bind `userId` first so the override ctx is well-typed for downstream
+  // procedures, then immediately run it inside the ALS scope. `next()`
+  // returns a thenable — we kick it off inside `run()` so every async
+  // continuation (including the AI SDK's `fetch` calls) sees the store.
+  const userId = ctx.userId;
+  // Make `userId` available to the Cerebras rate limiter (and anything
+  // else in the LLM layer that wants request-scoped ambient context)
+  // without threading it through `generateChat`'s signature. ALS
+  // propagates through `await`, Promise chains, timers, and `fetch`, so
+  // the AI SDK's transport code preserves the binding.
+  return userIdStore.run(userId, () => next({ ctx: { ...ctx, userId } }));
 });
