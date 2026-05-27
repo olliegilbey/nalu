@@ -6,6 +6,7 @@ import { clarifySchema, type ClarifyTurn } from "@/lib/prompts/clarify";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
+import { notifyEvent } from "@/lib/notify/ntfy";
 import type { ClarificationJsonb } from "@/lib/types/jsonb";
 
 /** Parameters for {@link clarify}. */
@@ -32,6 +33,13 @@ export interface ClarifyResult {
  */
 export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
   const course = await createCourse({ userId: params.userId, topic: params.topic });
+
+  // Fire-and-forget ping: notify operator that a new course has started.
+  // Sent before the LLM call so we hear about attempts even if Cerebras fails.
+  notifyEvent({
+    title: "Nalu: new course",
+    message: `Topic: ${params.topic} (user ${params.userId.slice(0, 8)})`,
+  });
 
   if (course.clarification !== null) {
     // Idempotency: rebuild ClarifyTurn from stored JSONB. `courseRowGuard`
