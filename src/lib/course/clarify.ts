@@ -36,9 +36,13 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
 
   // Fire-and-forget ping: notify operator that a new course has started.
   // Sent before the LLM call so we hear about attempts even if Cerebras fails.
+  // `VERCEL_ENV` is set automatically on Vercel deploys (production/preview/development);
+  // locally it's undefined, so we label as "dev" — useful to distinguish real-user traffic
+  // from our own testing without leaking any user identifier to the third-party service.
+  const env = process.env.VERCEL_ENV ?? "dev";
   notifyEvent({
     title: "Nalu: new course",
-    message: `Topic: ${params.topic} (user ${params.userId.slice(0, 8)})`,
+    message: `[${env}] Topic: ${params.topic}`,
   });
 
   if (course.clarification !== null) {
