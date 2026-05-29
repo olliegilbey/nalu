@@ -86,6 +86,7 @@ function colorForRole(role: string): (s: string) => string {
 // Header
 // ---------------------------------------------------------------------------
 
+/** Banner-line context for one LLM attempt; rendered at the top of each smoke turn. */
 export interface HeaderContext {
   readonly label: string;
   readonly attempt: number;

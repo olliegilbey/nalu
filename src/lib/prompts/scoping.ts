@@ -24,6 +24,7 @@ Each turn you receive a <response_schema> block inside the user message. Reply w
 </role>`;
 }
 
+/** Inputs for {@link renderStageEnvelope}; the per-turn user-role wrapper params. */
 export interface RenderStageEnvelopeParams {
   /** Bare stage label — appears verbatim inside `<stage>...</stage>`. */
   readonly stage: "clarify" | "generate framework" | "generate baseline" | "close scoping";

@@ -16,10 +16,6 @@
 
 /**
  * Minimal `Storage` implementation backed by an in-memory `Map`.
- *
- * A Storage polyfill is inherently a stateful class with mutating methods;
- * `eslint-plugin-functional`'s `immutable-data` rule is disabled narrowly
- * per-line below with justifications rather than blanket-ignored.
  */
 class MemoryStorage implements Storage {
   private readonly store = new Map<string, string>();
@@ -27,7 +23,6 @@ class MemoryStorage implements Storage {
     return this.store.size;
   }
   clear(): void {
-    // eslint-disable-next-line functional/immutable-data -- a Storage polyfill is inherently stateful
     this.store.clear();
   }
   getItem(key: string): string | null {
@@ -37,11 +32,9 @@ class MemoryStorage implements Storage {
     return [...this.store.keys()][index] ?? null;
   }
   removeItem(key: string): void {
-    // eslint-disable-next-line functional/immutable-data -- a Storage polyfill is inherently stateful
     this.store.delete(key);
   }
   setItem(key: string, value: string): void {
-    // eslint-disable-next-line functional/immutable-data -- a Storage polyfill is inherently stateful
     this.store.set(key, String(value));
   }
 }
@@ -54,7 +47,6 @@ class MemoryStorage implements Storage {
  */
 export function installMemoryStorage(): void {
   // Replace the broken Bun/jsdom stub with a working in-memory Storage.
-  // eslint-disable-next-line functional/immutable-data -- swapping in a working localStorage shim for the test
   Object.defineProperty(window, "localStorage", {
     value: new MemoryStorage(),
     configurable: true,

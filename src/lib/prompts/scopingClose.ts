@@ -44,6 +44,7 @@ export function makeScopingCloseSchema(params: MakeCloseTurnBaseSchemaParams) {
   );
 }
 
+/** Inferred from {@link makeScopingCloseSchema}; full close-scoping turn payload. */
 export type ScopingCloseTurn = z.infer<ReturnType<typeof makeScopingCloseSchema>>;
 
 /**
@@ -59,6 +60,7 @@ export interface RenderScopingCloseStageParams {
   readonly responseSchema?: string;
 }
 
+/** Render the user-role envelope for the close-scoping turn. */
 export function renderScopingCloseStage(params: RenderScopingCloseStageParams): string {
   return renderStageEnvelope({
     stage: "close scoping",

@@ -17,9 +17,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 // not domain code. The `let` is required so the captured handler can be
 // reassigned across renders.
 const submitTurnCalls: { args: unknown }[] = [];
-// eslint-disable-next-line functional/no-let -- test-fixture handler slot
 let latestOnSuccess: ((result: unknown) => void) | undefined;
-// eslint-disable-next-line functional/no-let -- test-fixture handler slot
 let latestOnError: ((err: unknown) => void) | undefined;
 
 // Default wave-state fixture (chat_log-first wire shape). Individual tests
@@ -39,7 +37,6 @@ const defaultStateData = {
 
 // Mutable test-fixture cell so individual tests can swap in a different
 // wire payload before rendering. Mirrors the `latestOnSuccess` pattern above.
-// eslint-disable-next-line functional/no-let -- test-fixture state slot
 let currentState: unknown = defaultStateData;
 
 vi.mock("@/lib/trpc", () => {
@@ -58,7 +55,6 @@ vi.mock("@/lib/trpc", () => {
             onError?: (e: unknown) => void;
           }) => ({
             mutationFn: async (args: unknown) => {
-              // eslint-disable-next-line functional/immutable-data -- record into test buffer
               submitTurnCalls.push({ args });
               latestOnSuccess = o.onSuccess;
               latestOnError = o.onError;
@@ -80,12 +76,10 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
-  /* eslint-disable functional/immutable-data -- reset test buffers between tests */
   submitTurnCalls.length = 0;
   latestOnSuccess = undefined;
   latestOnError = undefined;
   currentState = defaultStateData;
-  /* eslint-enable functional/immutable-data */
   // Fresh in-memory localStorage per test — useWaveState now depends on
   // useCourseXp, and tests sharing courseId "c1" must not leak XP totals.
   installMemoryStorage();

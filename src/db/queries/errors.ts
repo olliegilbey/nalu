@@ -8,6 +8,7 @@
 
 /** Thrown when a required DB row is absent. */
 export class NotFoundError extends Error {
+  /** `resource` is the entity name, `id` the key that missed; both surface in the message. */
   constructor(
     public readonly resource: string,
     public readonly id: string,

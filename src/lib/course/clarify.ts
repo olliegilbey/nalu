@@ -15,6 +15,7 @@ export interface ClarifyParams {
   readonly topic: string;
 }
 
+/** Result of {@link clarify}; carries the freshly-created course id + clarify payload. */
 export interface ClarifyResult {
   readonly courseId: string;
   /** Full Questionnaire payload — the UI renders cards from this. */

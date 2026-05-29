@@ -88,6 +88,7 @@ export const blueprintSchema = z.object({
     .describe("Concepts you intend to teach this lesson. May be empty for consolidation lessons."),
 });
 
+/** Runtime inputs for {@link makeCloseTurnBaseSchema}; closure values for the refines. */
 export interface MakeCloseTurnBaseSchemaParams {
   readonly scopeTiers: readonly number[];
   readonly questionIds: readonly string[];
@@ -210,4 +211,5 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
     });
 }
 
+/** Inferred from {@link makeCloseTurnBaseSchema}; fields every close turn emits. */
 export type CloseTurnBase = z.infer<ReturnType<typeof makeCloseTurnBaseSchema>>;

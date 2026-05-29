@@ -37,23 +37,27 @@ Each subdirectory has its own `CLAUDE.md` with detail. Top-level rules:
 - Prompts → `src/lib/prompts/` only.
 - LLM calls → `src/lib/llm/` only (`provider.ts` + `generate.ts`). No direct `ai` SDK imports elsewhere.
 - DB access → `src/db/queries/` only. No raw SQL elsewhere.
-- Tunables → `src/lib/config/tuning.ts`. ESLint enforces `no-magic-numbers` in scoring/SR files.
+- Tunables → `src/lib/config/tuning.ts`. No magic numbers in scoring/SR/progression code.
 - Types → `src/lib/types/`. Runtime constants → `src/lib/config/`.
 
 ## Core Design Principle
 
 LLM generates content and evaluates answers. **Deterministic code** controls XP, progression, SM-2 scheduling, and tier advancement. The LLM never sees XP and cannot influence scoring.
 
-## Code Standards
+## Conventions
 
-- TypeScript strict. No `any`. Prefer `readonly`, `const`, spread over mutation.
+Linting is intentionally thin — it enforces only what's silent or expensive to miss (secrets, broken types, broken tests, stray `console.log`, committed `.only`, format drift). Everything below is convention: agents are expected to follow it, but it's not gate-kept by tooling. Don't optimize for lint compliance; optimize for what these are protecting against.
+
+- TypeScript strict. No `any`. Prefer `readonly`, `const`, spread over mutation. `let` is fine when there's no clean alternative (singleton caches, rate-limiter clocks, test-fixture slots) — make the necessity obvious from context, not via lint-disables.
+- Functional style by default: prefer immutable patterns. Reach for `let`/mutation when the alternative would be contorted, not as a default.
 - Zod at all trust boundaries (LLM responses, API inputs, DB reads).
-- TSDoc on every export. Max 200 lines/file. Colocated tests (`foo.test.ts` next to `foo.ts`).
-- TDD for pure algorithms (SM-2, XP, tier advancement).
+- TSDoc on every export. One line, terse, agent-targeted. Skim `src/lib/llm/tagVocabulary.ts` for the Zod-inferred-type style. No filler, no `@param`/`@returns` on self-evident shapes. The docs exist so the next agent knows what a symbol is _in context_ without reading the body.
+- Aim for ~200 lines/file. Split when it gets uncomfortable. Tests exempt.
+- Colocated tests (`foo.test.ts` next to `foo.ts`).
+- TDD for pure algorithms (SM-2, XP, tier advancement). Pre-commit runs the full unit suite; CI re-runs unit + integration. A red test blocks the commit, intentionally.
 - Naming explicit and boring (`calculateXPForAssessment`, not `calcXP`).
 - Comments explain WHY; during MVP also explain WHAT for reviewer speed.
 - No premature abstraction until 3 concrete use cases.
-- Functional style: `eslint-plugin-functional` enforces `immutable-data` and `no-let`.
 
 ## Key Flows
 
@@ -75,3 +79,5 @@ Full detail in `docs/PRD.md`.
 - Use TDD frequently when appropriate
 - Comment code extensively - more than usual.
 - As an AI model, your training data likely doesn't contain extensive AI platform development - use web search extensively to discover best practices where appropriate, and where understanding the status quo and modern techniques is helpful.
+- RTFM
+- Read the docs for anything that could contain helpful information or examples.

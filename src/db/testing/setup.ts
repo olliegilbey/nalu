@@ -13,8 +13,8 @@ import * as schema from "@/db/schema";
  * all tables in FK-safe order). Serialised via `fileParallelism: false`
  * in vitest.integration.config.ts so we never spawn parallel containers.
  */
-let container: StartedPostgreSqlContainer | undefined; // eslint-disable-line functional/no-let
-let url: string | undefined; // eslint-disable-line functional/no-let
+let container: StartedPostgreSqlContainer | undefined;
+let url: string | undefined;
 
 beforeAll(async () => {
   // postgres:16-alpine ships with postgresql-contrib so pgcrypto is available
@@ -27,19 +27,19 @@ beforeAll(async () => {
   // Mutate process.env so any module that reads the URL (config loader,
   // Drizzle client created inside withTestDb) sees the testcontainer
   // address. This is the one legitimate place we touch process.env.
-  process.env.DATABASE_URL = url; // eslint-disable-line functional/immutable-data
-  process.env.DIRECT_URL = url; // eslint-disable-line functional/immutable-data
+  process.env.DATABASE_URL = url;
+  process.env.DIRECT_URL = url;
 
   // Stub non-DB env vars so `getEnv()` (required by src/db/client.ts) passes
   // Zod validation in tests. Query-layer integration tests never actually call
   // Supabase or the LLM; these values are intentionally fake.
-  process.env.NEXT_PUBLIC_SUPABASE_URL ??= "https://stub.supabase.co"; // eslint-disable-line functional/immutable-data
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??= "sb_publishable_stub"; // eslint-disable-line functional/immutable-data
-  process.env.SUPABASE_SECRET_KEY ??= "sb_secret_stub"; // eslint-disable-line functional/immutable-data
-  process.env.LLM_BASE_URL ??= "https://stub.llm.invalid/v1"; // eslint-disable-line functional/immutable-data
-  process.env.LLM_API_KEY ??= "stub-llm-key"; // eslint-disable-line functional/immutable-data
-  process.env.LLM_MODEL ??= "stub-model"; // eslint-disable-line functional/immutable-data
-  process.env.DEV_USER_ID ??= "a0000000-0000-4000-8000-000000000001"; // eslint-disable-line functional/immutable-data
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??= "https://stub.supabase.co";
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??= "sb_publishable_stub";
+  process.env.SUPABASE_SECRET_KEY ??= "sb_secret_stub";
+  process.env.LLM_BASE_URL ??= "https://stub.llm.invalid/v1";
+  process.env.LLM_API_KEY ??= "stub-llm-key";
+  process.env.LLM_MODEL ??= "stub-model";
+  process.env.DEV_USER_ID ??= "a0000000-0000-4000-8000-000000000001";
 
   const pgClient = postgres(url, { max: 1 });
   const db = drizzle(pgClient, { schema });

@@ -42,11 +42,13 @@ export interface LlmRenderedMessage {
   readonly content: string;
 }
 
+/** Output of {@link renderContext}: the system string + role-tagged message list. */
 export interface RenderedContext {
   readonly system: string;
   readonly messages: readonly LlmRenderedMessage[];
 }
 
+/** Build the LLM API payload from seed inputs + ordered `context_messages` rows (spec §9.1). */
 export function renderContext(
   seed: SeedInputs,
   messages: readonly ContextMessage[],

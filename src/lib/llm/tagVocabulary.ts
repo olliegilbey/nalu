@@ -23,6 +23,7 @@ export const comprehensionSignalSchema = z.object({
   demonstrated_quality: qualityScoreSchema,
   evidence: z.string(),
 });
+/** Inferred from {@link comprehensionSignalSchema}; one `<comprehension_signal>` payload. */
 export type ComprehensionSignal = z.infer<typeof comprehensionSignalSchema>;
 
 export const assessmentQuestionSchema = z.discriminatedUnion("type", [
@@ -57,19 +58,24 @@ export const assessmentQuestionSchema = z.discriminatedUnion("type", [
     explanation: z.string().optional(),
   }),
 ]);
+/** Inferred from {@link assessmentQuestionSchema}; one MC or free-text item inside `<assessment>`. */
 export type AssessmentQuestion = z.infer<typeof assessmentQuestionSchema>;
 
 export const assessmentSchema = z.object({
   questions: z.array(assessmentQuestionSchema).min(1),
 });
+/** Inferred from {@link assessmentSchema}; full `<assessment>` payload (question array). */
 export type AssessmentCard = z.infer<typeof assessmentSchema>;
 
+/** Re-export of {@link blueprintSchema}; the `<next_lesson_blueprint>` payload. */
 export const nextLessonBlueprintSchema = blueprintSchema;
+/** Inferred from {@link nextLessonBlueprintSchema}; final-turn blueprint for the next Wave. */
 export type NextLessonBlueprint = z.infer<typeof nextLessonBlueprintSchema>;
 
 export const courseSummaryUpdateSchema = z.object({
   summary: z.string(),
 });
+/** Inferred from {@link courseSummaryUpdateSchema}; final-turn course-summary rewrite. */
 export type CourseSummaryUpdate = z.infer<typeof courseSummaryUpdateSchema>;
 
 export const batchEvaluationSchema = z.object({
@@ -83,9 +89,11 @@ export const batchEvaluationSchema = z.object({
     }),
   ),
 });
+/** Inferred from {@link batchEvaluationSchema}; baseline grader's per-question verdicts. */
 export type BatchEvaluation = z.infer<typeof batchEvaluationSchema>;
 
 export const courseSummarySchema = z.object({ summary: z.string() });
+/** Inferred from {@link courseSummarySchema}; standalone course-summary payload. */
 export type CourseSummary = z.infer<typeof courseSummarySchema>;
 
 /**
@@ -100,6 +108,7 @@ export const TEACHING_TURN_TAGS = [
   "course_summary_update",
 ] as const;
 
+/** One of {@link TEACHING_TURN_TAGS}; literal-union of extractable model→harness tag names. */
 export type TeachingTurnTag = (typeof TEACHING_TURN_TAGS)[number];
 
 /**
@@ -113,4 +122,5 @@ export const HARNESS_INJECTION_TAGS = [
   "due_for_review",
 ] as const;
 
+/** One of {@link HARNESS_INJECTION_TAGS}; literal-union of harness→model row tag names. */
 export type HarnessInjectionTag = (typeof HARNESS_INJECTION_TAGS)[number];

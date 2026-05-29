@@ -34,7 +34,9 @@ export interface ParsedAssistantResponse {
   readonly raw: string;
 }
 
+/** Thrown when the model's turn fails the spec §9.2 tag gate; drives harness retry. */
 export class ValidationGateFailure extends Error {
+  /** `reason` is the gate category; `detail` is the Zod/extractor message used in retry directives. */
   constructor(
     public readonly reason: "missing_response" | "missing_final_turn_tags",
     public readonly detail: string,
@@ -44,11 +46,13 @@ export class ValidationGateFailure extends Error {
   }
 }
 
+/** Options for {@link parseAssistantResponse}; flips the final-turn-tags gate on/off. */
 export interface ParseOptions {
   /** True on a Wave's final turn (turns_remaining == 0). */
   readonly requireFinalTurnTags: boolean;
 }
 
+/** Run the spec §9.2 validation gate on the raw model output; throws {@link ValidationGateFailure} on miss. */
 export function parseAssistantResponse(raw: string, opts: ParseOptions): ParsedAssistantResponse {
   const response = extractTag(raw, "response");
   if (response === null) {

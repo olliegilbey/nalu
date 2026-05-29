@@ -76,7 +76,6 @@ function isRateLimiterActive(): boolean {
  * Dispatch timestamp (ms epoch) of the previous LLM call. Initialised to 0
  * so the first call in any process is never delayed by request spacing.
  */
-// eslint-disable-next-line functional/no-let -- rate-limiter dispatch clock
 let lastDispatchAtMs = 0;
 
 /**
@@ -86,7 +85,6 @@ let lastDispatchAtMs = 0;
  * `x-ratelimit-reset-tokens-minute` header, which Cerebras sends as
  * SECONDS-UNTIL-RESET (a floating-point number, e.g. `11.38`).
  */
-// eslint-disable-next-line functional/no-let -- rate-limiter token-reset clock
 let tokenBucketResetAtMs: number | null = null;
 
 /**
@@ -94,7 +92,6 @@ let tokenBucketResetAtMs: number | null = null;
  * headers have been observed yet. When this drops below
  * `LLM.lowTokenBudgetThreshold`, the next acquire waits for the bucket reset.
  */
-// eslint-disable-next-line functional/no-let -- rate-limiter token budget
 let remainingTokensThisMinute: number | null = null;
 
 /**
@@ -188,7 +185,6 @@ export async function awaitCerebrasCallSlot(): Promise<void> {
   // top of this function still stands; this only fixes lost updates).
   if (userId !== undefined) {
     const current = callCountByUser.get(userId) ?? 0;
-    // eslint-disable-next-line functional/immutable-data -- rate-limiter per-user counter
     callCountByUser.set(userId, current + 1);
   }
 }
@@ -246,6 +242,5 @@ export function __resetCerebrasRateLimitStateForTests(): void {
   lastDispatchAtMs = 0;
   tokenBucketResetAtMs = null;
   remainingTokensThisMinute = null;
-  // eslint-disable-next-line functional/immutable-data -- test-only reset seam
   callCountByUser.clear();
 }

@@ -37,4 +37,5 @@ export interface ScopingSeedInputs {
   readonly topic: string;
 }
 
+/** Discriminated seed inputs for {@link renderContext}; wave or scoping. */
 export type SeedInputs = WaveSeedInputs | ScopingSeedInputs;

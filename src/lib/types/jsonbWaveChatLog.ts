@@ -58,5 +58,7 @@ export const waveChatLogEntrySchema = z.union([
   }),
 ]);
 export const waveChatLogSchema = z.array(waveChatLogEntrySchema);
+/** Inferred from {@link waveChatLogEntrySchema}; one `waves.chat_log` row. */
 export type WaveChatLogEntry = z.infer<typeof waveChatLogEntrySchema>;
+/** Inferred from {@link waveChatLogSchema}; the append-only wave chat log array. */
 export type WaveChatLog = z.infer<typeof waveChatLogSchema>;

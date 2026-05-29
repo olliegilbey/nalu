@@ -1,12 +1,10 @@
 "use client";
 
-/* eslint-disable functional/immutable-data --
- * Parity-locked port from kanagawa-whispers. Local array mutations are
- * confined to handler closures whose results re-enter React state via setX.
- */
-/* eslint-disable max-lines --
- * Parity-locked port (~337 lines from whispers + 4 layered Nalu deltas).
- * Splitting would diverge from upstream and complicate future re-syncs.
+/*
+ * Parity-locked port from kanagawa-whispers (~337 lines + 4 layered Nalu deltas).
+ * Local array mutations are confined to handler closures whose results re-enter
+ * React state via setX. Splitting would diverge from upstream and complicate
+ * future re-syncs.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -28,6 +26,7 @@ function safeGetItem(key: string): string | null {
   }
 }
 
+/** Chat input bar; also renders MC/free-text questionnaire cards when `questions` is set. */
 export function Composer({
   value,
   onChange,

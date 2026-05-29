@@ -26,6 +26,7 @@ export interface WaveCloseResult {
   readonly tierAdvancedTo: number | null;
 }
 
+/** Return shape of {@link useWaveState}; turns, active questionnaire, XP counters, submit handlers. */
 export interface UseWaveStateResult {
   readonly turns: readonly Turn[];
   readonly activeQuestionnaire: ActiveQuestionnaire | null;

@@ -10,6 +10,7 @@ import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import type { ClarificationJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
+/** Parameters for {@link generateFramework}; responses are the learner's clarify answers. */
 export interface GenerateFrameworkParams {
   readonly courseId: string;
   readonly userId: string;
@@ -17,11 +18,13 @@ export interface GenerateFrameworkParams {
   readonly responses: readonly { readonly questionId: string; readonly freetext: string }[];
 }
 
+/** Result of {@link generateFramework}; persisted framework JSONB + next scoping stage. */
 export interface GenerateFrameworkResult {
   readonly framework: FrameworkJsonb;
   readonly nextStage: "baseline";
 }
 
+/** Scoping framework step: validates clarify answers, emits tier ladder, persists JSONB. */
 export async function generateFramework(
   params: GenerateFrameworkParams,
 ): Promise<GenerateFrameworkResult> {

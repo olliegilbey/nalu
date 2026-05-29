@@ -9,16 +9,19 @@ import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import type { BaselineJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
+/** Parameters for {@link generateBaseline}. */
 export interface GenerateBaselineParams {
   readonly courseId: string;
   readonly userId: string;
 }
 
+/** Result of {@link generateBaseline}; baseline questions + next scoping stage. */
 export interface GenerateBaselineResult {
   readonly baseline: BaselineTurn;
   readonly nextStage: "answering";
 }
 
+/** Scoping baseline step: LLM emits scoped questions, persists JSONB, returns the wire payload. */
 export async function generateBaseline(
   params: GenerateBaselineParams,
 ): Promise<GenerateBaselineResult> {

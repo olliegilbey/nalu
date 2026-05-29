@@ -1,51 +1,18 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
-import functional from "eslint-plugin-functional";
 import prettier from "eslint-config-prettier";
 
+// Lint enforces only what's expensive to miss. Style/convention guidance
+// (file length, magic numbers, immutability, TSDoc) lives in AGENTS.md as
+// prose, not as rules — see "Conventions" there.
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Immutable-first patterns: warn during MVP, don't block velocity.
-  // languageOptions.parserOptions.project is required by eslint-plugin-functional's
-  // immutable-data rule — it calls getTypeOfNode to detect mutating Set/Map methods.
-  // Scoped to src/**/*.ts(x) so root .mjs config files are not matched by tsconfig.
-  {
-    files: ["src/**/*.ts", "src/**/*.tsx"],
-    plugins: { functional },
-    languageOptions: {
-      parserOptions: {
-        project: true,
-      },
-    },
-    rules: {
-      "functional/immutable-data": "warn",
-      "functional/no-let": "warn",
-    },
-  },
-  // Global hardening. Keep tight; per-file overrides below relax where needed.
+  // Global hardening: stray console.log in prod paths is a real bug class.
   {
     rules: {
       "no-console": ["error", { allow: ["warn", "error"] }],
-      "max-lines": ["error", { max: 200, skipBlankLines: true, skipComments: true }],
-    },
-  },
-  // Algorithm files: no magic numbers. All tunables must live in
-  // src/lib/config/tuning.ts. Small values that are indices / the SM-2
-  // quality-score domain are allowed so we don't drown in false positives.
-  {
-    files: ["src/lib/scoring/**/*.ts", "src/lib/spaced-repetition/**/*.ts"],
-    ignores: ["**/*.test.ts"],
-    rules: {
-      "no-magic-numbers": [
-        "error",
-        {
-          ignore: [0, 1, -1, 2, 3, 4, 5],
-          ignoreArrayIndexes: true,
-          enforceConst: true,
-        },
-      ],
     },
   },
   // Live smoke tests: console.log is intentional — output is the manual eyeball check.
@@ -55,11 +22,10 @@ const eslintConfig = defineConfig([
       "no-console": "off",
     },
   },
-  // Test files: allow any length; ban committed .only.
+  // Test files: ban committed .only — silently skips other tests.
   {
     files: ["**/*.test.ts", "**/*.test.tsx"],
     rules: {
-      "max-lines": "off",
       // Catch .only anywhere in the member chain: it.only(), describe.only(),
       // test.only(), it.only.each(), test.concurrent.only(), etc.
       "no-restricted-syntax": [
