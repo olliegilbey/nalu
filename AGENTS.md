@@ -46,7 +46,11 @@ LLM generates content and evaluates answers. **Deterministic code** controls XP,
 
 ## Conventions
 
-Linting is intentionally thin — it enforces only what's silent or expensive to miss (secrets, broken types, broken tests, stray `console.log`, committed `.only`, format drift). Everything below is convention: agents are expected to follow it, but it's not gate-kept by tooling. Don't optimize for lint compliance; optimize for what these are protecting against.
+You are expected to follow the conventions below. Optimise for what these are protecting against.
+
+Automated gates are intentionally thin. Pre-commit and CI block only on things that are silent, expensive, or compounding if missed: secrets, broken types, broken tests, stray `console.log`, committed `.only`, format drift, and dead code (knip). Everything else below is convention — agents are expected to follow it, but it's not gate-kept by tooling. Don't optimize for lint compliance; optimize for what these are protecting against.
+
+If knip flags an export as dead, fix it (delete or wire up) — don't blanket-ignore in `knip.json`. Narrow per-file justifications are fine when an export is genuinely used at runtime in a way the static analyzer can't see.
 
 - TypeScript strict. No `any`. Prefer `readonly`, `const`, spread over mutation. `let` is fine when there's no clean alternative (singleton caches, rate-limiter clocks, test-fixture slots) — make the necessity obvious from context, not via lint-disables.
 - Functional style by default: prefer immutable patterns. Reach for `let`/mutation when the alternative would be contorted, not as a default.
@@ -69,7 +73,7 @@ Full detail in `docs/PRD.md`.
 
 ## Workflow
 
-1. Pull latest docs of frameworks/packages before writing code.
+1. Pull latest docs of frameworks/packages before writing code. The things we are building are often not in your training data, so you need to defer to the docs.
 2. Explain intent before code (brief comment or message).
 3. Run tests before committing.
 4. **Never bypass git hooks** (no `--no-verify`, no `HUSKY=0`, no hook deletion). Fix the root cause; CI re-runs every check anyway.

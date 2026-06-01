@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 #
 # Pre-commit Hook for Nalu
-# Fail-fast ordering: Secrets → Lint → Typecheck → Tests
+# Fail-fast ordering: Secrets → Lint → Typecheck → Tests → Dead code
 #
 # Philosophy: Catch agent and human mistakes before they hit the repo.
-# AI agents are particularly prone to: leaking API keys into code,
-# introducing type errors, and skipping tests. This hook catches all three.
+# AI agents are particularly prone to: leaking API keys, introducing
+# type errors, skipping tests, and accumulating dead code. This hook
+# catches all four.
 #
 # Fast path (no tests needed): ~5-10s
-# Full path: ~15-25s
+# Full path: ~15-30s
 #
 # Skip only in emergency: git commit --no-verify
 
@@ -32,7 +33,7 @@ echo ""
 # PHASE 1: SECRET SCANNING (~3-5s)
 # Agents leak keys. Catch them before push.
 # ============================================
-printf "${BLUE}→ Phase 1/4: Secret scanning${NC}\n"
+printf "${BLUE}→ Phase 1/5: Secret scanning${NC}\n"
 
 # 1.1 Gitleaks (uses .gitleaks.toml if present)
 if command -v gitleaks &> /dev/null; then
@@ -95,7 +96,7 @@ echo ""
 # PHASE 2: LINT (~3-5s, only staged TS files)
 # Agents introduce lint violations frequently.
 # ============================================
-printf "${BLUE}→ Phase 2/4: Lint${NC}\n"
+printf "${BLUE}→ Phase 2/5: Lint${NC}\n"
 
 TS_STAGED=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx)$' || true)
 
@@ -117,7 +118,7 @@ echo ""
 # PHASE 3: TYPECHECK (~5-10s, if TS files changed)
 # Full project typecheck catches cascading type errors.
 # ============================================
-printf "${BLUE}→ Phase 3/4: Typecheck${NC}\n"
+printf "${BLUE}→ Phase 3/5: Typecheck${NC}\n"
 
 if [ -n "$TS_STAGED" ]; then
   if ! bun x tsc --noEmit 2>&1; then
@@ -137,7 +138,7 @@ echo ""
 # PHASE 4: TESTS (~5-10s, if TS files changed)
 # Run the full test suite. Fast with vitest.
 # ============================================
-printf "${BLUE}→ Phase 4/4: Tests${NC}\n"
+printf "${BLUE}→ Phase 4/5: Tests${NC}\n"
 
 if [ -n "$TS_STAGED" ]; then
   if ! bun run test 2>&1; then
@@ -151,6 +152,28 @@ else
 fi
 
 printf "${GREEN}✅ Phase 4 complete: Tests passed${NC}\n"
+echo ""
+
+# ============================================
+# PHASE 5: DEAD CODE (~1-2s, if TS files changed)
+# Knip catches unused exports/files/deps. Dead code is a
+# spaghettification signal — block it before it lands so
+# future agents inherit a clean tree.
+# ============================================
+printf "${BLUE}→ Phase 5/5: Dead code${NC}\n"
+
+if [ -n "$TS_STAGED" ]; then
+  if ! bun run deadcode 2>&1; then
+    printf "${RED}❌ Knip found dead code${NC}\n"
+    printf "${YELLOW}Fix or narrowly justify in knip.json. Don't blanket-ignore.${NC}\n"
+    exit 1
+  fi
+  printf "${GREEN}  ✓${NC} No dead code\n"
+else
+  printf "${GREEN}  ✓${NC} No TS/JS files staged (skipped)\n"
+fi
+
+printf "${GREEN}✅ Phase 5 complete: Dead code clean${NC}\n"
 echo ""
 
 # ============================================
