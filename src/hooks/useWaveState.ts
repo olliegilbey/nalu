@@ -125,7 +125,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
             toast.success(`Tier up → ${result.tierAdvancedTo}`, { duration: 3000 });
           }
         }
-        invalidateState();
+        void invalidateState();
       },
       // Surface turn failures instead of swallowing them. The most common
       // cause is submitting into an already-closed wave (server throws

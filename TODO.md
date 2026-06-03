@@ -5,6 +5,10 @@ the concern, and the conditions under which it should be promoted to a PR.
 
 - [ ] Narrow `makeWaveCloseSchema` to reject `mc-index` close-gradings — the close orchestrator can only grade free-text at close (MC graded mid-turn in `executeWaveMid.grade.ts`). Currently `applyCloseGradings` throws at runtime if the LLM emits an mc-index grading at close. Move the constraint into the Zod schema via a superRefine so the model's response is rejected at parse time and `executeTurn` can retry with a directive.
 
+- [ ] Resolve drizzle-orm imports outside `src/db/` in 4 wave-close files (`src/lib/course/executeWaveMid.ts`, `persistWaveClose.ts`, `persistWaveClose.helpers.ts`, `submitBaseline.persist.ts`). AGENTS.md says "DB access → src/db/queries/ only" but these files import `and`/`desc`/`eq`/`sql` operators for transactional wave-close logic. Two options: (a) refactor the query-building into composed helpers in `src/db/queries/waves.ts`, or (b) update AGENTS.md to acknowledge that wave-close persistence helpers belong in `src/lib/course/` because they're tightly coupled to wave orchestration. Surfaced by the `no-restricted-imports` warn rule.
+
+- [ ] `proxy.test.ts:88` floating promise — the test fires a promise without awaiting or marking with `void`. Decide whether the test should `await` (probable) or whether the pattern is intentional and the `void` annotation is the fix. Surfaced by the `@typescript-eslint/no-floating-promises` warn rule.
+
 ## Teaching-loop UI (Task 15 follow-ups)
 
 ### JSON-everywhere for wave `context_messages.content`

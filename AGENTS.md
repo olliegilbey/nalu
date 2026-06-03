@@ -6,6 +6,18 @@ Next.js 16.2 has breaking changes vs your training data — APIs, conventions, a
 
 AI-powered learning platform. "Duolingo for anything." Spec: `docs/PRD.md`. Glossary: `docs/UBIQUITOUS_LANGUAGE.md`.
 
+## Some thoughts from the author (Ollie)
+
+The following is a letter from me to you, the agent. We are building this together.
+This is also a learning project for me throughout, to understand modern agentic and LLM implementations.
+To this end, think of me as the product manager who is learning about the project as we go, and you as the engineer - you are my colleague for planning and implementing, and also my teacher for my own understanding of the application and the principles.
+
+Quick glossary of relevant parties in this document:
+
+- _you_ - the agent reading this document and working on Nalu directly.
+- _me_/_we_/_us_ - the humans contributing to Nalu - although this is likely just me (Ollie) for now.
+- _users_ - the people who will be learning using Nalu to help them have an exciting learning experience.
+
 ## Nomenclature
 
 - **LLM** is stateless. Harness loads the current **Context** (append-only message list) from DB and sends as-is — never rebuilt from components per turn.
@@ -48,7 +60,13 @@ LLM generates content and evaluates answers. **Deterministic code** controls XP,
 
 You are expected to follow the conventions below. Optimise for what these are protecting against.
 
-Automated gates are intentionally thin. Pre-commit and CI block only on things that are silent, expensive, or compounding if missed: secrets, broken types, broken tests, stray `console.log`, committed `.only`, format drift, and dead code (knip). Everything else below is convention — agents are expected to follow it, but it's not gate-kept by tooling. Don't optimize for lint compliance; optimize for what these are protecting against.
+Automated gates split into two tiers:
+
+**Errors** (block commit / merge) — silent, expensive, or compounding if missed: secrets, broken types, broken tests, stray `console.log`, committed `.only`, format drift, and dead code (knip).
+
+**Warnings** (visible, non-blocking) — backstop recall triggers for things agents reliably forget. Currently: missing TSDoc on exports, magic numbers in `src/lib/scoring/` & `src/lib/spaced-repetition/`, floating promises (use `void` or `await`), `any` usage, `ai` SDK or `drizzle-orm` imports outside their architectural homes. Warnings are cheap to fix when they fire — when you see one, address it. If a violation is a legitimate exception, leave the warning rather than disabling the rule; future review will catch it.
+
+Everything else below is convention — agents are expected to follow it, but it's not gate-kept by tooling. Don't optimize for lint compliance; optimize for what these are protecting against.
 
 If knip flags an export as dead, fix it (delete or wire up) — don't blanket-ignore in `knip.json`. Narrow per-file justifications are fine when an export is genuinely used at runtime in a way the static analyzer can't see.
 
