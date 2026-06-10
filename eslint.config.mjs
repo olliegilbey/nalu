@@ -161,8 +161,18 @@ const eslintConfig = defineConfig([
 
   // Disable ESLint rules that conflict with Prettier. Must be last.
   prettier,
-  // Override default ignores of eslint-config-next.
-  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
+  // Override default ignores of eslint-config-next. Use `**/` prefix so
+  // nested checkouts (e.g. agent worktrees) are also skipped — unprefixed
+  // globs anchor at the config root and miss those.
+  // `.claude/worktrees/**` is ignored wholesale: worktrees are agent-tooling
+  // checkouts that may sit on older branches with stale lint config.
+  globalIgnores([
+    "**/.next/**",
+    "**/out/**",
+    "**/build/**",
+    "next-env.d.ts",
+    ".claude/worktrees/**",
+  ]),
 ]);
 
 export default eslintConfig;
