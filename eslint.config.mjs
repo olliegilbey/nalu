@@ -72,8 +72,12 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Narrow exemption: only `provider.ts` and `generate.ts` need runtime
+  // `ai`/`@ai-sdk` imports (per AGENTS.md). Other files in `src/lib/llm/`
+  // (e.g. `toCerebrasJsonSchema.ts`) get type-only access via the
+  // `allowTypeImports: true` escape hatch — same as the rest of the repo.
   {
-    files: ["src/lib/llm/**/*.ts", "src/lib/llm/**/*.tsx"],
+    files: ["src/lib/llm/provider.ts", "src/lib/llm/generate.ts"],
     rules: { "no-restricted-imports": "off" },
   },
   {
