@@ -55,7 +55,9 @@ export const v3Response = z
     message: "response must have exactly one of choice or freetext",
   });
 
+/** Inferred from {@link v3Question}; one stored scoping question (MC or free-text). */
 export type V3Question = z.infer<typeof v3Question>;
+/** Inferred from {@link v3Response}; one stored learner response (MC choice xor freetext). */
 export type V3Response = z.infer<typeof v3Response>;
 
 export const clarificationJsonbSchema = z.object({
@@ -64,6 +66,7 @@ export const clarificationJsonbSchema = z.object({
   questions: z.array(v3Question),
   responses: z.array(v3Response),
 });
+/** Inferred from {@link clarificationJsonbSchema}; persisted `courses.clarification`. */
 export type ClarificationJsonb = z.infer<typeof clarificationJsonbSchema>;
 
 // --- courses.framework ------------------------------------------------------
@@ -83,6 +86,7 @@ export const frameworkJsonbSchema = z.object({
   estimatedStartingTier: z.number().int().min(1),
   baselineScopeTiers: z.array(z.number().int().min(1)),
 });
+/** Inferred from {@link frameworkJsonbSchema}; persisted `courses.framework`. */
 export type FrameworkJsonb = z.infer<typeof frameworkJsonbSchema>;
 
 // --- courses.baseline -------------------------------------------------------
@@ -122,6 +126,7 @@ export const dueConceptSnapshotEntrySchema = z.object({
 
 /** Array of due concepts frozen at Wave start for LLM prompt injection. */
 export const dueConceptsSnapshotSchema = z.array(dueConceptSnapshotEntrySchema);
+/** Inferred from {@link dueConceptsSnapshotSchema}; SM-2-due list frozen at Wave start. */
 export type DueConceptsSnapshot = z.infer<typeof dueConceptsSnapshotSchema>;
 
 // --- waves.seed_source (discriminated union) -------------------------------
@@ -149,6 +154,7 @@ export const blueprintSchema = z.object({
   openingText: z.string(),
   plannedConcepts: z.array(plannedConceptStorageSchema).default([]),
 });
+/** Inferred from {@link blueprintSchema}; teaching plan that seeds the next Wave. */
 export type Blueprint = z.infer<typeof blueprintSchema>;
 
 /**
@@ -172,6 +178,7 @@ export const seedSourceSchema = z.discriminatedUnion("kind", [
     blueprint: blueprintSchema,
   }),
 ]);
+/** Inferred from {@link seedSourceSchema}; how a Wave was seeded (scoping or prior blueprint). */
 export type SeedSource = z.infer<typeof seedSourceSchema>;
 
 // --- waves.blueprint_emitted (= Blueprint when present) -------------------

@@ -26,6 +26,7 @@ export interface WaveCloseResult {
   readonly tierAdvancedTo: number | null;
 }
 
+/** Return shape of {@link useWaveState}; turns, active questionnaire, XP counters, submit handlers. */
 export interface UseWaveStateResult {
   readonly turns: readonly Turn[];
   readonly activeQuestionnaire: ActiveQuestionnaire | null;
@@ -124,7 +125,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
             toast.success(`Tier up → ${result.tierAdvancedTo}`, { duration: 3000 });
           }
         }
-        invalidateState();
+        void invalidateState();
       },
       // Surface turn failures instead of swallowing them. The most common
       // cause is submitting into an already-closed wave (server throws

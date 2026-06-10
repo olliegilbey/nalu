@@ -45,4 +45,5 @@ export const clarifySchema = z
 // field would be worse than persisting a benign hallucination — the UI ignores
 // these fields and downstream stages aren't materially affected.
 
+/** Inferred from {@link clarifySchema}; wire shape for the clarify turn. */
 export type ClarifyTurn = z.infer<typeof clarifySchema>;

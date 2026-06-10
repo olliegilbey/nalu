@@ -3,6 +3,7 @@ import type { McOptionKey } from "@/lib/prompts/questionnaire";
 import type { z } from "zod";
 import type { baselineGradingSchema } from "@/lib/types/jsonb";
 
+/** One learner answer in a baseline submission; MC selects a key, free-text carries prose. */
 export type BaselineAnswer =
   | { readonly id: string; readonly kind: "mc"; readonly selected: McOptionKey }
   | {

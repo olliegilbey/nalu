@@ -1,5 +1,6 @@
 import { t } from "@/i18n";
 
+/** One rung of the framework's tier ladder rendered below the framework turn. */
 export interface FrameworkTier {
   readonly number: number;
   readonly name: string;

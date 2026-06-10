@@ -24,7 +24,6 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   // `response` is reassigned by `setAll` when Supabase writes cookies.
-  // eslint-disable-next-line functional/no-let -- @supabase/ssr cookie adapter contract
   let response = NextResponse.next({ request });
 
   const env = getEnv();

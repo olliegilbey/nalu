@@ -45,6 +45,5 @@ main().catch((err: unknown) => {
   console.error("seed failed", err);
   // CLI entrypoint must signal failure to the shell; process.exitCode write
   // is the only standard way to do that.
-  // eslint-disable-next-line functional/immutable-data
   process.exitCode = 1;
 });

@@ -89,6 +89,7 @@ export const baselineGradingSchema = z
       });
     }
   });
+/** Inferred from {@link baselineGradingSchema}; one persisted grading row. */
 export type BaselineGrading = z.infer<typeof baselineGradingSchema>;
 
 /**
@@ -117,6 +118,7 @@ export const baselineQuestionsJsonbSchema = z
     gradings: z.array(baselineGradingSchema),
   })
   .strict();
+/** Inferred from {@link baselineQuestionsJsonbSchema}; pre-close baseline JSONB. */
 export type BaselineQuestionsJsonb = z.infer<typeof baselineQuestionsJsonbSchema>;
 
 /**
@@ -134,6 +136,7 @@ export const baselineClosedJsonbSchema = baselineQuestionsJsonbSchema
     startingTier: z.number().int().positive(),
   })
   .strict();
+/** Inferred from {@link baselineClosedJsonbSchema}; post-close baseline JSONB. */
 export type BaselineClosedJsonb = z.infer<typeof baselineClosedJsonbSchema>;
 
 /**
@@ -152,4 +155,5 @@ export const baselineJsonbSchema = z.union([
   baselineClosedJsonbSchema,
   baselineQuestionsJsonbSchema,
 ]);
+/** Inferred from {@link baselineJsonbSchema}; row-guard union accepting either shape. */
 export type BaselineJsonb = z.infer<typeof baselineJsonbSchema>;

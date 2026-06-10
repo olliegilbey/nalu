@@ -15,6 +15,7 @@ export interface ChoiceQuestion {
 
 const KEY_TO_INDEX: Record<McOptionKey, number> = { A: 0, B: 1, C: 2, D: 3 };
 
+/** Output of {@link adaptQuestionnaire}; `mode` is informational for headers. */
 export interface AdaptedQuestionnaire {
   readonly mode: "mc" | "free-text" | "mixed";
   readonly questions: readonly ChoiceQuestion[];

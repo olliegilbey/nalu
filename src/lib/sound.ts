@@ -1,9 +1,10 @@
-/* eslint-disable functional/no-let, functional/immutable-data --
+/*
  * Parity-locked port from kanagawa-whispers. Module-level singletons (WebAudio
  * context + mute flag) are intentional. See spec §6.
+ *
+ * Tiny client-side sound + mute manager. No assets — uses WebAudio oscillators
+ * to synthesize a friendly ping (correct) and a sad ping (wrong).
  */
-// Tiny client-side sound + mute manager. No assets — uses WebAudio oscillators
-// to synthesize a friendly ping (correct) and a sad ping (wrong).
 
 let muted = false;
 const listeners = new Set<(m: boolean) => void>();

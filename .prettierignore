@@ -8,3 +8,8 @@ package-lock.json
 tsconfig.tsbuildinfo
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+# Historical session notes. Prettier mis-reads bare underscores (e.g. `bug_003`)
+# as markdown emphasis and corrupts the content; archival material isn't worth
+# reformatting anyway.
+docs/status/

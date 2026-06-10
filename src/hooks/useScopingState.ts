@@ -28,6 +28,7 @@ export interface ActiveQuestionnaire {
   readonly persistKey: string;
 }
 
+/** Return shape of {@link useScopingState}; turns + active questionnaire + submit handlers. */
 export interface UseScopingStateResult {
   readonly turns: readonly Turn[];
   readonly activeQuestionnaire: ActiveQuestionnaire | null;

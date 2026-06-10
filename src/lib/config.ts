@@ -25,8 +25,9 @@ const envSchema = z.object({
 
 /** Validated environment config. Throws on first access if env vars are missing/invalid. */
 // Mutable cache — intentional; lazy init to avoid blowing up client bundles
-let _env: z.infer<typeof envSchema> | undefined; // eslint-disable-line functional/no-let
+let _env: z.infer<typeof envSchema> | undefined;
 
+/** Validated server env; throws on first call if any var is missing/invalid. Cached. */
 export function getEnv(): z.infer<typeof envSchema> {
   if (!_env) {
     _env = envSchema.parse(process.env);

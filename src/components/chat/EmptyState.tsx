@@ -17,6 +17,7 @@ const KIND_COLORS: Record<string, string> = {
 
 type Suggestion = { kind: string; label: string };
 
+/** Home screen shown before a course exists: greeting, headline, suggestion buttons. */
 export function EmptyState({ onPick }: { onPick: (t: string) => void }) {
   // Compute on the client only to avoid SSR/CSR hydration mismatch on time-of-day.
   // setState-in-effect is the React-recommended pattern for this exact case

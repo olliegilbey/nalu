@@ -18,7 +18,7 @@ import { getEnv } from "@/lib/config";
  */
 
 // Mutable cache — intentional; lazy singleton pattern.
-let _db: ReturnType<typeof drizzle<typeof schema>> | undefined; // eslint-disable-line functional/no-let
+let _db: ReturnType<typeof drizzle<typeof schema>> | undefined;
 
 /** Returns the lazily-initialised Drizzle client. */
 function getDb(): ReturnType<typeof drizzle<typeof schema>> {

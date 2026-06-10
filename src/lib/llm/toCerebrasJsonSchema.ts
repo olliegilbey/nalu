@@ -6,6 +6,7 @@ import { cleanForCerebras, schemaObjectDepth } from "./toCerebrasJsonSchema.tran
 const MAX_CHARS = 5000;
 const MAX_DEPTH = 10;
 
+/** Options for {@link toCerebrasJsonSchema}; wire `response_format.json_schema` metadata. */
 export interface CerebrasJsonSchemaOptions {
   /** Schema name (passed as `response_format.json_schema.name`). */
   readonly name: string;

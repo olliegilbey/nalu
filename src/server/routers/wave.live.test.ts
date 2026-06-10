@@ -140,28 +140,21 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
       // -----------------------------------------------------------------
       // PHASE B: Wave 1 mid-turn loop + close turn (COVERAGE 2 + 3).
       // -----------------------------------------------------------------
-      // Track per-loop stats for forensic logging at the end. Mutable
-      // counters use `let` — permitted in tests with an explicit disable.
-      /* eslint-disable functional/no-let */
+      // Track per-loop stats for forensic logging at the end.
       // Count assistant turns that emitted a new questionnaire vs those
       // that didn't, and how many of THOSE got comprehensionSignals back
       // on the very next turn. This is the questionnaire-drop / signals
       // coverage requested by the plan.
       let questionnaireDropCount = 0;
       let signalsReturnedCount = 0;
-      /* eslint-enable functional/no-let */
 
       // Loop exactly WAVE.turnCount times. On iteration i = turnCount-1
       // submitWaveTurn dispatches the close path (`kind === "close-turn"`).
-      // Use Array.reduce instead of a for/let to satisfy immutable-data —
-      // accumulator is the empty Promise chain; iteration index is i.
-      //
-      // We capture the close result outside the reducer by branching on
-      // i === turnCount - 1 (the controller of the loop) and storing
-      // into a `let` (test-only exemption).
-      /* eslint-disable functional/no-let */
+      // Use Array.reduce instead of a for-loop — accumulator is the empty
+      // Promise chain; iteration index is i. We capture the close result
+      // outside the reducer by branching on i === turnCount - 1 (the
+      // controller of the loop) and storing into closeResult.
       let closeResult: Awaited<ReturnType<typeof caller.wave.submitTurn>> | null = null;
-      /* eslint-enable functional/no-let */
 
       // Decision matrix per turn — read the current state, then post the
       // matching payload. chat-text when no questionnaire is open;

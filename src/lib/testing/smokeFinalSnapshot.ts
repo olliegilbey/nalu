@@ -39,6 +39,7 @@ const SCOPING_STEP_BY_TURN: Readonly<Record<number, string>> = {
   3: "close",
 };
 
+/** Args for {@link emitSmokeFinalSnapshot}; identifies the course to reconstruct. */
 export interface SmokeFinalSnapshotArgs {
   readonly db: DrizzleClient;
   readonly courseId: string;

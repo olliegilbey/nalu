@@ -49,6 +49,7 @@ function detectStageFromBody(raw: string): string | null {
   return best.score >= STAGE_MATCH_THRESHOLD ? best.stage : null;
 }
 
+/** Map a {@link ValidationGateFailure} + raw model output to a one-line operator diagnosis. */
 export function diagnoseFailure(err: ValidationGateFailure, raw: string): string {
   const detail = err.detail;
 

@@ -12,6 +12,7 @@ export const metadata: Metadata = {
   description: "AI-powered learning platform — Duolingo for anything",
 };
 
+/** App Router root layout: fonts, providers, centered column, global toaster. */
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>

@@ -4,12 +4,14 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { t } from "@/i18n";
 
+/** Renderable chat row; `content` is markdown for assistant, plain text for user. */
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
 };
 
+/** One chat row: right-aligned bubble for user, full-width markdown for assistant. */
 export function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
 
@@ -78,6 +80,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
   );
 }
 
+/** Assistant-side loading row: spinning Nalu wave emblem. */
 export function TypingBubble() {
   return (
     <div className="w-full animate-message-in">

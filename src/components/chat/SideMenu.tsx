@@ -16,6 +16,7 @@ const ACCENT: Record<string, string> = {
   aqua: "var(--wave-aqua-2)",
 };
 
+/** Slide-out left panel: course list, new-course CTA, profile, mute toggle. */
 export function SideMenu({
   open,
   onOpenChange,

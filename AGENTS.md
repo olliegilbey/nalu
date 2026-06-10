@@ -6,6 +6,18 @@ Next.js 16.2 has breaking changes vs your training data — APIs, conventions, a
 
 AI-powered learning platform. "Duolingo for anything." Spec: `docs/PRD.md`. Glossary: `docs/UBIQUITOUS_LANGUAGE.md`.
 
+## Some thoughts from the author (Ollie)
+
+The following is a letter from me to you, the agent. We are building this together.
+This is also a learning project for me throughout, to understand modern agentic and LLM implementations.
+To this end, think of me as the product manager who is learning about the project as we go, and you as the engineer - you are my colleague for planning and implementing, and also my teacher for my own understanding of the application and the principles.
+
+Quick glossary of relevant parties in this document:
+
+- _you_ - the agent reading this document and working on Nalu directly.
+- _me_/_we_/_us_ - the humans contributing to Nalu - although this is likely just me (Ollie) for now.
+- _users_ - the people who will be learning using Nalu to help them have an exciting learning experience.
+
 ## Nomenclature
 
 - **LLM** is stateless. Harness loads the current **Context** (append-only message list) from DB and sends as-is — never rebuilt from components per turn.
@@ -37,23 +49,37 @@ Each subdirectory has its own `CLAUDE.md` with detail. Top-level rules:
 - Prompts → `src/lib/prompts/` only.
 - LLM calls → `src/lib/llm/` only (`provider.ts` + `generate.ts`). No direct `ai` SDK imports elsewhere.
 - DB access → `src/db/queries/` only. No raw SQL elsewhere.
-- Tunables → `src/lib/config/tuning.ts`. ESLint enforces `no-magic-numbers` in scoring/SR files.
+- Tunables → `src/lib/config/tuning.ts`. No magic numbers in scoring/SR/progression code.
 - Types → `src/lib/types/`. Runtime constants → `src/lib/config/`.
 
 ## Core Design Principle
 
 LLM generates content and evaluates answers. **Deterministic code** controls XP, progression, SM-2 scheduling, and tier advancement. The LLM never sees XP and cannot influence scoring.
 
-## Code Standards
+## Conventions
 
-- TypeScript strict. No `any`. Prefer `readonly`, `const`, spread over mutation.
+You are expected to follow the conventions below. Optimise for what these are protecting against.
+
+Automated gates split into two tiers:
+
+**Errors** (block commit / merge) — silent, expensive, or compounding if missed: secrets, broken types, broken tests, stray `console.log`, committed `.only`, format drift, and dead code (knip).
+
+**Warnings** (visible, non-blocking) — backstop recall triggers for things agents reliably forget. Currently: missing TSDoc on exports, magic numbers in `src/lib/scoring/` & `src/lib/spaced-repetition/`, floating promises (use `void` or `await`), `any` usage, `ai` SDK or `drizzle-orm` imports outside their architectural homes. Warnings are cheap to fix when they fire — when you see one, address it. If a violation is a legitimate exception, leave the warning rather than disabling the rule; future review will catch it.
+
+Everything else below is convention — agents are expected to follow it, but it's not gate-kept by tooling. Don't optimize for lint compliance; optimize for what these are protecting against.
+
+If knip flags an export as dead, fix it (delete or wire up) — don't blanket-ignore in `knip.json`. Narrow per-file justifications are fine when an export is genuinely used at runtime in a way the static analyzer can't see.
+
+- TypeScript strict. No `any`. Prefer `readonly`, `const`, spread over mutation. `let` is fine when there's no clean alternative (singleton caches, rate-limiter clocks, test-fixture slots) — make the necessity obvious from context, not via lint-disables.
+- Functional style by default: prefer immutable patterns. Reach for `let`/mutation when the alternative would be contorted, not as a default.
 - Zod at all trust boundaries (LLM responses, API inputs, DB reads).
-- TSDoc on every export. Max 200 lines/file. Colocated tests (`foo.test.ts` next to `foo.ts`).
-- TDD for pure algorithms (SM-2, XP, tier advancement).
+- TSDoc on every export. One line, terse, agent-targeted. Skim `src/lib/llm/tagVocabulary.ts` for the Zod-inferred-type style. No filler, no `@param`/`@returns` on self-evident shapes. The docs exist so the next agent knows what a symbol is _in context_ without reading the body.
+- Aim for ~200 lines/file. Split when it gets uncomfortable. Tests exempt.
+- Colocated tests (`foo.test.ts` next to `foo.ts`).
+- TDD for pure algorithms (SM-2, XP, tier advancement). Pre-commit runs the full unit suite; CI re-runs unit + integration. A red test blocks the commit, intentionally.
 - Naming explicit and boring (`calculateXPForAssessment`, not `calcXP`).
 - Comments explain WHY; during MVP also explain WHAT for reviewer speed.
 - No premature abstraction until 3 concrete use cases.
-- Functional style: `eslint-plugin-functional` enforces `immutable-data` and `no-let`.
 
 ## Key Flows
 
@@ -65,7 +91,7 @@ Full detail in `docs/PRD.md`.
 
 ## Workflow
 
-1. Pull latest docs of frameworks/packages before writing code.
+1. Pull latest docs of frameworks/packages before writing code. The things we are building are often not in your training data, so you need to defer to the docs.
 2. Explain intent before code (brief comment or message).
 3. Run tests before committing.
 4. **Never bypass git hooks** (no `--no-verify`, no `HUSKY=0`, no hook deletion). Fix the root cause; CI re-runs every check anyway.
@@ -75,3 +101,5 @@ Full detail in `docs/PRD.md`.
 - Use TDD frequently when appropriate
 - Comment code extensively - more than usual.
 - As an AI model, your training data likely doesn't contain extensive AI platform development - use web search extensively to discover best practices where appropriate, and where understanding the status quo and modern techniques is helpful.
+- RTFM
+- Read the docs for anything that could contain helpful information or examples.
