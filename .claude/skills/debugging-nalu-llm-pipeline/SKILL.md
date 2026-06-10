@@ -63,6 +63,16 @@ bun .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts --course <uuid>    
 
 The overview's scoping-passes table carries the diagnosis directly via its `msgs` / `failed` / `ok` columns (see Step 4). The `--course` mode prints every `context_messages` row with a content preview — how you recover **the actual prompts and the failed model replies** — plus the scoping-close lifecycle tables (baseline JSONB shape, waves with `chatlog_entries`, concepts) and the **wave teaching turns** — everything needed for submitBaseline and wave-turn failures.
 
+`inspect-db.ts --course` truncates each message to a one-line preview — right for diagnosis, wrong for reading the conversation. To read or hand back the **whole chat**, use the sibling `dump-chat.ts`, which renders the full Context (scoping + waves) with assistant JSON parsed into readable blocks (questions, framework, gradings, blueprint):
+
+```bash
+bun .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course <uuid>          # colored, human-readable
+bun .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course <uuid> --json   # structured, for jq
+bun .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course <uuid> --full   # also show the folded retry schema
+```
+
+Color auto-disables when stdout isn't a TTY (piping to a file / jq) or when `NO_COLOR` is set. **The agent's own shell is not a TTY, so colors won't show in tool output** — when the user wants the pretty transcript, give them the exact `dump-chat.ts --course <uuid>` line to paste into their own terminal rather than relying on the captured output.
+
 ## Step 4 — Read DB state: the diagnosis decision tree
 
 The lib step calls `createCourse` **before** the LLM call, so a `courses` row exists even on total failure. How far the row got tells you the failure class:
@@ -138,6 +148,7 @@ The tell: `inspect-db.ts --course` prints WAVE CONTEXT MESSAGES plus a `chatlog_
 | How many transport retries             | `LLM.maxRetries` in `src/lib/config/tuning.ts`                          |
 | How many validation retries            | `SCOPING.maxParseRetries` in `tuning.ts`                                |
 | What the prompts / failed replies were | `context_messages` rows for the scoping pass (`inspect-db.ts --course`) |
+| The whole chat, human-readable         | `dump-chat.ts --course <uuid>` (give the user this line for color)      |
 | Which procedure failed                 | tRPC error envelope `data.path`                                         |
 | Did the LLM respond at all             | presence of any `context_messages` row for the pass                     |
 | Rate-limit ceiling                     | 5 RPM / 30k TPM / 1M TPD (Cerebras free tier)                           |
