@@ -57,6 +57,13 @@
       "when": 1779287789278,
       "tag": "0007_wave_chat_log",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782930070779,
+      "tag": "0008_enable_rls",
+      "breakpoints": true
     }
   ]
 }

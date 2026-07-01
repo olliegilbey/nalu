@@ -72,7 +72,7 @@ export const waves = pgTable(
       sql`(${t.status} = 'closed') = (${t.closedAt} IS NOT NULL)`,
     ),
   ],
-);
+).enableRLS();
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type Wave = InferSelectModel<typeof waves>;
