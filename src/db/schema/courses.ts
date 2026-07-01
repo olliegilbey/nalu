@@ -59,7 +59,7 @@ export const courses = pgTable(
     // Most queries filter by userId; index prevents seq-scans on large tables.
     index("courses_user_id_idx").on(t.userId),
   ],
-);
+).enableRLS();
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type Course = InferSelectModel<typeof courses>;

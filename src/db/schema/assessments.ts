@@ -106,7 +106,7 @@ export const assessments = pgTable(
     // XP can be zero (e.g. incorrect answer) but never negative.
     check("assessments_xp_awarded_nonneg", sql`${t.xpAwarded} >= 0`),
   ],
-);
+).enableRLS();
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type Assessment = InferSelectModel<typeof assessments>;

@@ -29,7 +29,7 @@ export const userProfiles = pgTable(
     // invariant on `courses.total_xp` (`courses_total_xp_nonneg`).
     check("user_profiles_total_xp_nonneg", sql`${t.totalXp} >= 0`),
   ],
-);
+).enableRLS();
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type UserProfile = InferSelectModel<typeof userProfiles>;

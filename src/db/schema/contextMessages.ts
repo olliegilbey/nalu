@@ -91,7 +91,7 @@ export const contextMessages = pgTable(
     check("context_messages_turn_index_nonneg", sql`${t.turnIndex} >= 0`),
     check("context_messages_seq_nonneg", sql`${t.seq} >= 0`),
   ],
-);
+).enableRLS();
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type ContextMessage = InferSelectModel<typeof contextMessages>;

@@ -80,7 +80,7 @@ export const concepts = pgTable(
     check("concepts_times_correct_nonneg", sql`${t.timesCorrect} >= 0`),
     check("concepts_times_incorrect_nonneg", sql`${t.timesIncorrect} >= 0`),
   ],
-);
+).enableRLS();
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type Concept = InferSelectModel<typeof concepts>;

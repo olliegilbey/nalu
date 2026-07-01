@@ -37,7 +37,7 @@ export const scopingPasses = pgTable(
     // One scoping pass per course (MVP) — uniqueness enforced at DB level, not app layer.
     uniqueIndex("scoping_passes_course_id_unique").on(t.courseId),
   ],
-);
+).enableRLS();
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type ScopingPass = InferSelectModel<typeof scopingPasses>;
