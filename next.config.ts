@@ -10,6 +10,26 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: import.meta.dirname,
   },
+  // Reverse-proxy PostHog through our own origin so ad-blockers (which block
+  // requests to *.posthog.com) don't drop analytics. The client SDK points at
+  // `/api/_lib` (src/app/posthog-provider.tsx); these rewrites forward it to
+  // PostHog EU ingestion + its asset CDN. `src/proxy.ts` already excludes
+  // `/api`, so this path never mints an anonymous session.
+  async rewrites() {
+    return [
+      {
+        source: "/api/_lib/static/:path*",
+        destination: "https://eu-assets.i.posthog.com/static/:path*",
+      },
+      {
+        source: "/api/_lib/:path*",
+        destination: "https://eu.i.posthog.com/:path*",
+      },
+    ];
+  },
+  // PostHog's ingestion API uses trailing-slash paths; without this Next would
+  // 308-redirect them and break capture.
+  skipTrailingSlashRedirect: true,
 };
 
 export default nextConfig;

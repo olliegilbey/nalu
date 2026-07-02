@@ -149,3 +149,37 @@ dead-end UX. Surfaced by the anonymous-auth production smoke.
 
 **Promote when:** next UX pass, or before course-URL sharing becomes a real
 flow.
+
+## Analytics / visitor observability
+
+### Wire PostHog for visitor attribution — DONE 2026-07-03
+
+Implemented client-only anonymous capture (reverse-proxied via `/api/_lib`,
+tagged `app:"nalu"`), reusing resumate's EU project. Spec:
+`docs/superpowers/specs/2026-07-02-posthog-visitor-analytics-design.md`.
+Deferred (still tracked by the notes below): Supabase-user `identify` so DB
+courses join to sessions, and server-side `posthog-node` capture.
+
+**Files:** client entry (`src/app/layout.tsx` or a `PostHogProvider`), optional
+server-side capture in tRPC (`src/server/`), `src/proxy.ts` (stopgap only)
+
+A prod visitor's origin — IP-geo, referrer/UTM, session — is currently
+unrecoverable after ~1hr: runtime logs age out fast, the `client_ip` / `asn_name`
+/ `client_ip_country` metric dimensions are gated behind Observability Plus (Pro
+plan), and `@vercel/analytics` is not wired. Surfaced 2026-07-01 trying to
+identify an anonymous visitor to the "how transformers work" demo (see
+`reference_visitor_ip_geo_forensics` memory). With the app link now circulating in
+job applications, knowing who opens it is worth having.
+
+**Fix:** wire `posthog-js` on the client — pageviews, referrer, UTM, IP-based
+geoip, session replays. Set the anonymous Supabase `user_id` as the PostHog
+distinct_id so DB courses join to sessions. Consider server-side `posthog-node`
+capture for key tRPC events (topic chosen, clarify, wave progress) that the client
+script can't see. Free tier (1M events/mo) covers current traffic many times over.
+
+**Stopgap (zero-dep):** log `x-vercel-ip-country` / `x-vercel-ip-city` /
+`x-forwarded-for` in `src/proxy.ts` on session mint — but only as durable as log
+retention (~1hr) unless drained somewhere.
+
+**Promote when:** soon — visitor attribution is wanted now that the link is
+shared. At minimum before the next batch of applications goes out.
