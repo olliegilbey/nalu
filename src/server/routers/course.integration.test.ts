@@ -11,6 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { NoObjectGeneratedError } from "ai";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { appRouter } from "./index";
 import { userProfiles, contextMessages, courses } from "@/db/schema";
@@ -44,6 +45,25 @@ const FAKE_USAGE = {
   inputTokenDetails: { noCacheTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
   outputTokenDetails: { textTokens: 0, reasoningTokens: 0 },
 } as const;
+
+/**
+ * Success-path mock payload mirroring generateChat's Output.object result:
+ * `parsed` is derived from the JSON fixture the same way the SDK derives it.
+ */
+function llmSuccess(text: string) {
+  return { text, parsed: JSON.parse(text) as unknown, usage: FAKE_USAGE };
+}
+
+/** Builds the error generateChat now throws on parse/validation failure. */
+function noObjectError(text: string): NoObjectGeneratedError {
+  return new NoObjectGeneratedError({
+    message: "No object generated: response did not match schema.",
+    text,
+    response: { id: "test", timestamp: new Date(0), modelId: "mock" },
+    usage: FAKE_USAGE,
+    finishReason: "stop",
+  });
+}
 
 // ---------------------------------------------------------------------------
 // LLM response payload fixtures
@@ -214,10 +234,7 @@ describe("course.clarify", () => {
   it("happy path: returns questions + courseId, persists 2 context_messages and clarification JSONB", async () => {
     await withTestDb(async (db) => {
       await seedUser(db);
-      vi.mocked(generateChat).mockResolvedValueOnce({
-        text: validClarifyText(),
-        usage: FAKE_USAGE,
-      });
+      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validClarifyText()));
 
       const caller = appRouter.createCaller({ userId: USER });
       const result = await caller.course.clarify({ topic: "Rust" });
@@ -255,10 +272,11 @@ describe("course.clarify", () => {
     await withTestDb(async (db) => {
       await seedUser(db);
 
-      // First call: not valid JSON → JSON.parse throws → ValidationGateFailure.
+      // First call: not valid JSON → generateChat throws NoObjectGeneratedError
+      // → executeTurn converts it to ValidationGateFailure.
       vi.mocked(generateChat)
-        .mockResolvedValueOnce({ text: "<response>thinking...</response>", usage: FAKE_USAGE })
-        .mockResolvedValueOnce({ text: validClarifyText(), usage: FAKE_USAGE });
+        .mockRejectedValueOnce(noObjectError("<response>thinking...</response>"))
+        .mockResolvedValueOnce(llmSuccess(validClarifyText()));
 
       const caller = appRouter.createCaller({ userId: USER });
       const result = await caller.course.clarify({ topic: "Rust" });
@@ -290,10 +308,9 @@ describe("course.clarify", () => {
       await seedUser(db);
 
       // All 3 attempts fail — response is not valid JSON.
-      vi.mocked(generateChat).mockResolvedValue({
-        text: "<response>still no questions</response>",
-        usage: FAKE_USAGE,
-      });
+      vi.mocked(generateChat).mockRejectedValue(
+        noObjectError("<response>still no questions</response>"),
+      );
 
       const caller = appRouter.createCaller({ userId: USER });
       await expect(caller.course.clarify({ topic: "Rust" })).rejects.toThrow();
@@ -346,18 +363,12 @@ describe("course.generateFramework", () => {
       await seedUser(db);
 
       // Step 1: clarify to populate the course.
-      vi.mocked(generateChat).mockResolvedValueOnce({
-        text: validClarifyText(),
-        usage: FAKE_USAGE,
-      });
+      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validClarifyText()));
       const caller = appRouter.createCaller({ userId: USER });
       const clarifyResult = await caller.course.clarify({ topic: "Rust" });
 
       // Step 2: mock framework LLM call.
-      vi.mocked(generateChat).mockResolvedValueOnce({
-        text: validFrameworkText(),
-        usage: FAKE_USAGE,
-      });
+      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validFrameworkText()));
 
       const result = await caller.course.generateFramework({
         courseId: clarifyResult.courseId,
@@ -388,10 +399,7 @@ describe("course.generateFramework", () => {
       await seedUser(db);
 
       // Run clarify to create the course.
-      vi.mocked(generateChat).mockResolvedValueOnce({
-        text: validClarifyText(),
-        usage: FAKE_USAGE,
-      });
+      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validClarifyText()));
       const caller = appRouter.createCaller({ userId: USER });
       const clarifyResult = await caller.course.clarify({ topic: "Rust" });
 
@@ -475,10 +483,7 @@ describe("course.generateFramework", () => {
       await seedUser(db, OTHER_USER);
 
       // UserA creates and clarifies a course.
-      vi.mocked(generateChat).mockResolvedValueOnce({
-        text: validClarifyText(),
-        usage: FAKE_USAGE,
-      });
+      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validClarifyText()));
       const callerA = appRouter.createCaller({ userId: USER });
       const clarifyResult = await callerA.course.clarify({ topic: "Rust" });
 
@@ -570,10 +575,7 @@ describe("course.generateBaseline", () => {
     await withTestDb(async (db) => {
       const courseId = await seedCourseWithFramework(db);
 
-      vi.mocked(generateChat).mockResolvedValueOnce({
-        text: validBaselineText(),
-        usage: FAKE_USAGE,
-      });
+      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validBaselineText()));
 
       const caller = appRouter.createCaller({ userId: USER });
       const result = await caller.course.generateBaseline({ courseId });
@@ -665,8 +667,8 @@ describe("course.generateBaseline", () => {
 
       // First call: not valid JSON → executeTurn surfaces a ValidationGateFailure.
       vi.mocked(generateChat)
-        .mockResolvedValueOnce({ text: "<response>thinking...</response>", usage: FAKE_USAGE })
-        .mockResolvedValueOnce({ text: validBaselineText(), usage: FAKE_USAGE });
+        .mockRejectedValueOnce(noObjectError("<response>thinking...</response>"))
+        .mockResolvedValueOnce(llmSuccess(validBaselineText()));
 
       const caller = appRouter.createCaller({ userId: USER });
       const result = await caller.course.generateBaseline({ courseId });
@@ -713,10 +715,10 @@ describe("course.submitBaseline", () => {
       // Stage 4: scoping-close. Mock returns gradings covering all 7 ids,
       //          startingTier=2 (in scope), valid blueprint + immutableSummary.
       vi.mocked(generateChat)
-        .mockResolvedValueOnce({ text: validClarifyText(), usage: FAKE_USAGE })
-        .mockResolvedValueOnce({ text: validFrameworkText(), usage: FAKE_USAGE })
-        .mockResolvedValueOnce({ text: validBaselineText(), usage: FAKE_USAGE })
-        .mockResolvedValueOnce({ text: validScopingCloseText(), usage: FAKE_USAGE });
+        .mockResolvedValueOnce(llmSuccess(validClarifyText()))
+        .mockResolvedValueOnce(llmSuccess(validFrameworkText()))
+        .mockResolvedValueOnce(llmSuccess(validBaselineText()))
+        .mockResolvedValueOnce(llmSuccess(validScopingCloseText()));
 
       const caller = appRouter.createCaller({ userId: USER });
 

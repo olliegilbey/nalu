@@ -14,7 +14,8 @@ import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
  * Two failure modes are handled:
  *   1. JSON.parse failed — the model returned text that's not JSON at all.
  *      Detected by the `did not parse as JSON` prefix that
- *      `executeTurn.parseAndValidate` writes onto its `ValidationGateFailure`.
+ *      `executeTurn.toValidationGateFailure` writes onto its
+ *      `ValidationGateFailure`.
  *   2. Zod schema validation failed — the JSON parsed but the shape was
  *      wrong. The detail is Zod's full issue list as a JSON string; we
  *      flatten it to a `- field {path}: {message}` bullet list.
@@ -64,7 +65,7 @@ function summariseZodIssues(detail: string): string | null {
  * model has the contract right above its retry without scrollback.
  */
 export function buildRetryDirective(err: ValidationGateFailure, schemaJson: string): string {
-  // JSON.parse-failure branch — `parseAndValidate` writes this exact prefix.
+  // JSON.parse-failure branch — `toValidationGateFailure` writes this exact prefix.
   if (err.detail.toLowerCase().includes("did not parse as json")) {
     return [
       "Your previous response did not parse as JSON. Reply with a single JSON object — no prose, no Markdown fences, no leading commentary.",
