@@ -1,4 +1,5 @@
 import { buildPageviewEvent } from "./buildPageviewEvent";
+import { getServerEnvironmentContext } from "./environmentContext";
 
 /**
  * Server-side `$pageview` capture to PostHog EU. Called from `src/proxy.ts` via
@@ -36,6 +37,7 @@ export async function capturePageview(input: {
       userAgent: input.headers.get("user-agent"),
       ip: clientIp(input.headers),
       timestamp: input.timestamp,
+      environment: getServerEnvironmentContext(),
     });
     await fetch(CAPTURE_URL, {
       method: "POST",

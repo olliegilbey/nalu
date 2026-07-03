@@ -8,6 +8,8 @@
  * Revision section for why.
  */
 
+import type { EnvironmentContext } from "./environmentContext";
+
 /** UTM query params PostHog recognises for attribution. */
 const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"] as const;
 
@@ -20,6 +22,8 @@ export interface PageviewInput {
   readonly userAgent: string | null;
   readonly ip: string | null;
   readonly timestamp: string;
+  /** `env`/`source`/`is_server` — `source` separates preview from production. */
+  readonly environment: EnvironmentContext;
 }
 
 /** PostHog capture-API event body (`POST /i/v0/e/`). */
@@ -28,7 +32,7 @@ export interface PageviewEvent {
   readonly event: "$pageview";
   readonly distinct_id: string;
   readonly timestamp: string;
-  readonly properties: Record<string, string>;
+  readonly properties: Record<string, string | boolean>;
 }
 
 /** Hostname of a URL, or null if it doesn't parse (referrers can be malformed). */
@@ -42,7 +46,7 @@ function hostnameOf(url: string): string | null {
 
 /** Build a PostHog `$pageview` event from pre-extracted request values. */
 export function buildPageviewEvent(input: PageviewInput): PageviewEvent {
-  const { apiKey, distinctId, url, referrer, userAgent, ip, timestamp } = input;
+  const { apiKey, distinctId, url, referrer, userAgent, ip, timestamp, environment } = input;
   const parsed = (() => {
     try {
       return new URL(url);
@@ -51,11 +55,16 @@ export function buildPageviewEvent(input: PageviewInput): PageviewEvent {
     }
   })();
 
-  const properties: Record<string, string> = {
+  const properties: Record<string, string | boolean> = {
     $current_url: url,
     // Fall back to the raw url if it didn't parse — never drop the event.
     $pathname: parsed?.pathname ?? url,
     app: "nalu",
+    // env/source/is_server: `source` (production|preview|local) is what you
+    // filter on to keep preview-deploy test data out of production analytics.
+    env: environment.env,
+    source: environment.source,
+    is_server: environment.is_server,
   };
 
   if (ip) properties.$ip = ip;

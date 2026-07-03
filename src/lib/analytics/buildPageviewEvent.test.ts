@@ -9,6 +9,7 @@ const base = {
   userAgent: null,
   ip: null,
   timestamp: "2026-07-03T00:00:00.000Z",
+  environment: { env: "production", source: "preview", is_server: true } as const,
 };
 
 describe("buildPageviewEvent", () => {
@@ -21,6 +22,10 @@ describe("buildPageviewEvent", () => {
     expect(e.properties.$current_url).toBe("https://nalu.ollie.gg/course/abc");
     expect(e.properties.$pathname).toBe("/course/abc");
     expect(e.properties.app).toBe("nalu");
+    // env context — `source` separates preview from production.
+    expect(e.properties.env).toBe("production");
+    expect(e.properties.source).toBe("preview");
+    expect(e.properties.is_server).toBe(true);
   });
 
   it("includes $ip only when an IP is provided (drives correct GeoIP)", () => {

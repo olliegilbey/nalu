@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { capturePageview } from "./capturePageview";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 function run(headers: Record<string, string>) {
   return capturePageview({
@@ -15,6 +18,7 @@ function run(headers: Record<string, string>) {
 
 describe("capturePageview", () => {
   it("POSTs the built $pageview to PostHog EU, taking the first x-forwarded-for IP as $ip", async () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"status":"Ok"}', { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -31,9 +35,10 @@ describe("capturePageview", () => {
     const body = JSON.parse(init.body as string) as {
       event: string;
       distinct_id: string;
-      properties: Record<string, string | undefined>;
+      properties: Record<string, string | boolean | undefined>;
     };
     expect(body.event).toBe("$pageview");
+    expect(body.properties.source).toBe("preview");
     expect(body.distinct_id).toBe("user-1");
     expect(body.properties.$ip).toBe("203.0.113.7");
     expect(body.properties.$referrer).toBe("https://www.linkedin.com/");
