@@ -22,6 +22,8 @@ describe("buildPageviewEvent", () => {
     expect(e.properties.$current_url).toBe("https://nalu.ollie.gg/course/abc");
     expect(e.properties.$pathname).toBe("/course/abc");
     expect(e.properties.app).toBe("nalu");
+    // Anonymous capture — no Person profiles in the shared project.
+    expect(e.properties.$process_person_profile).toBe(false);
     // env context — `source` separates preview from production.
     expect(e.properties.env).toBe("production");
     expect(e.properties.source).toBe("preview");

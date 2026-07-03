@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { NextRequest, NextResponse, type NextFetchEvent } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { capturePageview } from "@/lib/analytics/capturePageview";
-import { proxy } from "./proxy";
+import { proxy, config } from "./proxy";
 
 // The proxy reads the env schema and constructs a Supabase SSR client. Both are
 // stubbed so the production branches can be exercised without real env vars or
@@ -125,15 +125,19 @@ describe("proxy", () => {
     });
   });
 
-  it("production, prefetch request: does not capture a pageview", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    mockedCreateServerClient.mockReturnValue(fakeClient({ user: { id: "user-1" } }) as never);
-
-    await proxy(
-      new NextRequest("https://nalu.ollie.gg/", { headers: { "next-router-prefetch": "1" } }),
-      fakeEvent(),
-    );
-
-    expect(mockedCapture).not.toHaveBeenCalled();
+  it("matcher: skips prefetches via `missing` conditions (runtime checks can't — Next strips the headers)", () => {
+    // Guards against flattening the matcher back to a bare string: prefetch
+    // filtering only works at the matcher level, so losing the `missing`
+    // conditions would silently reintroduce phantom pageviews and
+    // anonymous-user minting on hover-prefetches.
+    expect(config.matcher).toEqual([
+      {
+        source: expect.stringContaining("(?!api|_next/static|_next/image") as string,
+        missing: [
+          { type: "header", key: "next-router-prefetch" },
+          { type: "header", key: "purpose", value: "prefetch" },
+        ],
+      },
+    ]);
   });
 });

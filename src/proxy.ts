@@ -71,7 +71,7 @@ export async function proxy(request: NextRequest, event?: NextFetchEvent): Promi
       // triggers `setAll`, writing the new session cookies onto `response`.
       //
       // Known race (acceptable for MVP): two near-simultaneous first visits
-      // — e.g. a prefetched <Link> load racing the real navigation — can each
+      // — e.g. parallel document and RSC fetches on a cold load — can each
       // see "no user" and mint their own account; the losing cookie is
       // discarded, leaving a stray session-less `auth.users` row. Harmless
       // (the surviving cookie wins, `ensureUserProfile` is idempotent). See
@@ -92,11 +92,9 @@ export async function proxy(request: NextRequest, event?: NextFetchEvent): Promi
   // Server-side pageview: `distinct_id` is the anon user id (joins PostHog
   // sessions to DB courses), `$ip` is the real client IP for correct GeoIP.
   // `waitUntil` runs it past the response so it never adds latency. Prefetches
-  // aren't real visits — skip them (they'd also double-count navigations).
-  const isPrefetch =
-    request.headers.get("next-router-prefetch") === "1" ||
-    request.headers.get("purpose") === "prefetch";
-  if (env.POSTHOG_KEY && userId && event && !isPrefetch) {
+  // never reach here — the matcher's `missing` conditions exclude them (see
+  // `config` below; a runtime header check can't work, Next strips them).
+  if (env.POSTHOG_KEY && userId && event) {
     event.waitUntil(
       capturePageview({
         apiKey: env.POSTHOG_KEY,
@@ -117,5 +115,20 @@ export const config = {
   // (`favicon.ico`, `icon.png`, `apple-icon.png` — see `src/app/`). Serving
   // those never needs a session; matching them would mint a throwaway
   // anonymous user on every crawler/browser asset fetch.
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png).*)"],
+  //
+  // The `missing` conditions skip prefetches entirely. This MUST live in the
+  // matcher: Next strips internal Flight headers (`next-router-prefetch`,
+  // `rsc`, …) from `request.headers` before proxy code runs ("RSC requests
+  // and rewrites", proxy docs), so a runtime header check silently never
+  // fires. A prefetch is not a real visit — matching it would both inflate
+  // `$pageview` counts and mint anonymous users for hover-prefetches.
+  matcher: [
+    {
+      source: "/((?!api|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png).*)",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+  ],
 };

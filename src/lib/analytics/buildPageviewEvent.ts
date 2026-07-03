@@ -59,6 +59,12 @@ export function buildPageviewEvent(input: PageviewInput): PageviewEvent {
     $current_url: url,
     // Fall back to the raw url if it didn't parse — never drop the event.
     $pathname: parsed?.pathname ?? url,
+    // Anonymous capture: API events are *identified* by default, so without
+    // this opt-out every anon user id would mint a Person profile in the
+    // shared PostHog project (privacy expectation broken + billed at the
+    // higher identified-event rate). The event keeps its distinct_id either
+    // way, so joining PostHog sessions to DB courses still works.
+    $process_person_profile: false,
     app: "nalu",
     // env/source/is_server: `source` (production|preview|local) is what you
     // filter on to keep preview-deploy test data out of production analytics.
