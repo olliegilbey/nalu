@@ -44,6 +44,22 @@ describe("capturePageview", () => {
     expect(body.properties.$referrer).toBe("https://www.linkedin.com/");
     expect(body.properties.$raw_user_agent).toBe("Mozilla/5.0");
     expect(body.properties.utm_source).toBe("cv");
+    // The waitUntil task must be time-bounded — a hung request would keep the
+    // invocation alive with no benefit.
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("logs non-2xx capture responses (fetch does not reject on HTTP errors)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("unauthorized", { status: 401 })),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(run({})).resolves.toBeUndefined();
+
+    // Without this signal a bad key or PostHog outage kills analytics silently.
+    expect(errorSpy).toHaveBeenCalledOnce();
   });
 
   it("never throws when the network call fails (analytics must not break page delivery)", async () => {

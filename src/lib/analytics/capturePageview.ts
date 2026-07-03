@@ -14,6 +14,10 @@ import { getServerEnvironmentContext } from "./environmentContext";
 /** PostHog EU single-event capture endpoint. */
 const CAPTURE_URL = "https://eu.i.posthog.com/i/v0/e/";
 
+/** Abort a hung capture — it runs in `waitUntil`, so an unbounded request
+ * would keep the invocation alive for best-effort analytics. */
+const CAPTURE_TIMEOUT_MS = 5_000;
+
 /** Extract the originating client IP (first hop) from an `x-forwarded-for` value. */
 function clientIp(headers: Headers): string | null {
   const xff = headers.get("x-forwarded-for");
@@ -39,11 +43,18 @@ export async function capturePageview(input: {
       timestamp: input.timestamp,
       environment: getServerEnvironmentContext(),
     });
-    await fetch(CAPTURE_URL, {
+    const response = await fetch(CAPTURE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(event),
+      signal: AbortSignal.timeout(CAPTURE_TIMEOUT_MS),
     });
+    // `fetch` only rejects on network errors — a bad key or PostHog outage
+    // returns 4xx/5xx "successfully". Log it (greppable, like the proxy's
+    // auth-failure log) so production analytics can't die silently.
+    if (!response.ok) {
+      console.error(`[capturePageview] PostHog capture failed: HTTP ${response.status}`);
+    }
   } catch {
     // Swallow — a failed analytics call must never surface to the visitor.
   }
