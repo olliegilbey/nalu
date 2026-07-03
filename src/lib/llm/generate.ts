@@ -1,10 +1,9 @@
-import { generateText, wrapLanguageModel } from "ai";
+import { generateText, Output, NoObjectGeneratedError } from "ai";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import type { z } from "zod/v4";
 import { LLM } from "@/lib/config/tuning";
 import { getLlmModel } from "./provider";
-import { toCerebrasJsonSchema } from "./toCerebrasJsonSchema";
-import { getModelCapabilities } from "./modelCapabilities";
+import { toOutputSchema } from "./toCerebrasJsonSchema";
 import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "./cerebrasRateLimit";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 
@@ -20,116 +19,108 @@ export interface GenerateOptions {
   readonly maxRetries?: number;
   /** Override the model for a single call (testing, capability routing). */
   readonly model?: LanguageModelV3;
-  /**
-   * Model name override for capability lookup. Set this alongside `model`
-   * when the override is a different model than `process.env.LLM_MODEL`,
-   * otherwise the capability gate could send `response_format` to a model
-   * that ignores strict-mode (or strip it from one that needs it).
-   */
-  readonly modelName?: string;
 }
 
 /**
- * Chat-call extension: when `responseSchema` is provided, the call uses
- * Cerebras strict-mode constrained decoding — the model can only emit JSON
- * matching the schema. `responseSchemaName` is the JSON Schema `name`
- * field on the wire (defaults to "response").
+ * Chat-call extension: when `responseSchema` is provided, the call sends a
+ * strict `json_schema` response_format (soft guidance on Cerebras) AND the
+ * SDK validates the response against the Zod schema before returning.
+ * `responseSchemaName` is the JSON Schema `name` field on the wire
+ * (defaults to "response").
  */
-export interface ChatOptions extends GenerateOptions {
-  readonly responseSchema?: z.ZodType<unknown>;
+export interface ChatOptions<T = unknown> extends GenerateOptions {
+  readonly responseSchema?: z.ZodType<T>;
   readonly responseSchemaName?: string;
 }
 
 /**
- * Successful chat result. When `responseSchema` is supplied the `text`
- * field is a JSON string guaranteed to match the schema; otherwise it is
- * raw model output.
+ * Successful chat result. When `responseSchema` was supplied, `parsed` is
+ * the schema-validated object and `text` is the raw JSON string it was
+ * parsed from (persisted verbatim by executeTurn); otherwise `parsed` is
+ * absent and `text` is raw model prose.
  */
-export interface ChatResult {
+export interface ChatResult<T = unknown> {
   /** Raw model output (JSON string or prose). */
   readonly text: string;
+  /** Schema-validated object; present iff `responseSchema` was supplied. */
+  readonly parsed?: T;
   /** Provider-reported token usage for this call. */
   readonly usage: LlmUsage;
 }
 
 /**
- * Chat call. When `responseSchema` is supplied, Cerebras constrained decoding
- * is used — but only for models that honour strict-mode JSON schema decoding.
+ * Chat call. When `responseSchema` is supplied, the AI SDK's
+ * `Output.object` mechanism is used: `toOutputSchema` preserves the
+ * Cerebras-cleaned wire bytes, and the SDK runs Zod validation (refines
+ * included) on the response. Validation or JSON-parse failure throws the
+ * SDK's `NoObjectGeneratedError` (carrying `text` + `usage`); transport
+ * errors propagate as before. `executeTurn` converts
+ * `NoObjectGeneratedError` into its `ValidationGateFailure` retry flow.
  *
- * WHY the model gate: weak models (e.g. llama3.1-8b on Cerebras free tier)
- * silently ignore `response_format: { type: "json_schema", strict: true }` and
- * emit free-form JSON anyway. Sending `response_format` to them wastes bytes on
- * the wire and obscures the actual contract. Those models get an inline
- * `<response_schema>` block in the user envelope instead (handled at the prompt
- * assembly layer in `src/lib/course/`). Strong models (e.g. llama-3.3-70b)
- * honour strict-mode; they get `response_format` only and no inline duplicate.
- *
- * Model name is read from `process.env.LLM_MODEL` (the same source `provider.ts`
- * uses to configure the provider). An unrecognised model defaults to
- * `honorsStrictMode: true` — see `modelCapabilities.ts`.
+ * Docs: node_modules/ai/docs/03-ai-sdk-core/10-generating-structured-data.mdx
+ *       (https://ai-sdk.dev/docs/ai-sdk-core/generating-structured-data)
  *
  * Rate limiting: `awaitCerebrasCallSlot()` paces every call to stay under
- * the Cerebras free-tier PER-MINUTE limits (5 RPM + 30k tokens/min) via
- * request spacing plus header-driven token-budget backoff. The 1M
- * tokens/day cap is not header-observable and is NOT enforced here — see
- * `cerebrasRateLimit.ts`. It runs in production AND live smoke, including
- * across `executeTurn`'s validation retries (each a separate API call).
- * After the call returns, the `x-ratelimit-*` response headers are
- * recorded for the next call to consult. Both are a complete no-op in
- * mocked unit/integration suites.
+ * the Cerebras PER-MINUTE limits via request spacing plus header-driven
+ * token-budget backoff (see `cerebrasRateLimit.ts`). It runs in production
+ * AND live smoke, including across `executeTurn`'s validation retries.
+ * After the call returns — including the NoObjectGeneratedError path,
+ * where the HTTP call itself succeeded — the `x-ratelimit-*` response
+ * headers are recorded for the next call to consult. Both are a complete
+ * no-op in mocked unit/integration suites.
  */
+export async function generateChat<T>(
+  messages: readonly LlmMessage[],
+  opts: ChatOptions<T> & { responseSchema: z.ZodType<T> },
+): Promise<ChatResult<T> & { parsed: T }>;
 export async function generateChat(
   messages: readonly LlmMessage[],
-  opts: ChatOptions = {},
-): Promise<ChatResult> {
-  // Determine whether this model honours strict-mode constrained decoding.
-  // `opts.modelName` is the test/override seam — it wins over the env so
-  // capability detection stays in sync with the actual provider call when a
-  // test injects a different `opts.model`.
-  const modelName = opts.modelName ?? process.env.LLM_MODEL ?? "(default)";
-  const capabilities = getModelCapabilities(modelName);
-
-  // Build the Cerebras response_format only when a schema is provided AND the
-  // model honours strict-mode decoding. Weak models get the schema inline in
-  // the user envelope instead (handled at the prompt-assembly layer).
-  const responseFormat =
-    opts.responseSchema !== undefined && capabilities.honorsStrictMode
-      ? toCerebrasJsonSchema(opts.responseSchema, {
-          name: opts.responseSchemaName ?? "response",
-        })
-      : undefined;
-
+  opts?: ChatOptions,
+): Promise<ChatResult>;
+export async function generateChat<T>(
+  messages: readonly LlmMessage[],
+  opts: ChatOptions<T> = {},
+): Promise<ChatResult<T>> {
   // Cerebras rate-limit gate. Blocks until this call is cleared under the
-  // free-tier limits (request spacing + token-budget backoff). No-op in
-  // mocked test suites; active in production and live smoke, so even
-  // executeTurn's back-to-back validation retries stay under the cap.
+  // per-minute limits. No-op in mocked test suites.
   await awaitCerebrasCallSlot();
 
-  // generateText silently drops a top-level `responseFormat` arg; setting it
-  // via a middleware transformParams hook is the supported way to reach
-  // callOptions.responseFormat, which the openai-compatible provider then
-  // emits as a strict json_schema response_format on the wire.
-  const baseModel = opts.model ?? getLlmModel();
-  const model =
-    responseFormat !== undefined
-      ? wrapLanguageModel({
-          model: baseModel,
-          middleware: {
-            specificationVersion: "v3",
-            transformParams: async ({ params }) => ({ ...params, responseFormat }),
-          },
-        })
-      : baseModel;
-
-  const result = await generateText({
+  const model = opts.model ?? getLlmModel();
+  const common = {
     model,
     messages: [...messages],
     temperature: opts.temperature ?? LLM.defaultTemperature,
     maxRetries: opts.maxRetries ?? LLM.maxRetries,
-  });
-  // Capture the Cerebras x-ratelimit-* headers so the next call can back
-  // off when the per-minute token budget runs low. `response.headers` is
-  // `Record<string,string> | undefined` (undefined for non-HTTP providers).
-  recordCerebrasRateLimitHeaders(result.response.headers);
-  return { text: result.text, usage: result.usage };
+  };
+
+  // Plain-text path: no schema, no output wrapper.
+  if (opts.responseSchema === undefined) {
+    const result = await generateText(common);
+    recordCerebrasRateLimitHeaders(result.response.headers);
+    return { text: result.text, usage: result.usage };
+  }
+
+  // Structured path: Output.object sets callOptions.responseFormat from
+  // toOutputSchema (Cerebras-cleaned wire bytes) and validates the response
+  // with the Zod schema before returning.
+  const name = opts.responseSchemaName ?? "response";
+  try {
+    const result = await generateText({
+      ...common,
+      output: Output.object({
+        schema: toOutputSchema(opts.responseSchema, { name }),
+        name,
+      }),
+    });
+    recordCerebrasRateLimitHeaders(result.response.headers);
+    return { text: result.text, parsed: result.output, usage: result.usage };
+  } catch (err) {
+    // Validation failure still means the HTTP call succeeded — record the
+    // rate-limit headers the error carries so the next call backs off
+    // correctly, then let executeTurn translate the error.
+    if (NoObjectGeneratedError.isInstance(err)) {
+      recordCerebrasRateLimitHeaders(err.response?.headers);
+    }
+    throw err;
+  }
 }
