@@ -1,21 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { z } from "zod/v4";
 import { MockLanguageModelV3 } from "ai/test";
+import { NoObjectGeneratedError } from "ai";
 import { generateChat } from "./generate";
 import { LLM } from "@/lib/config/tuning";
-
-// generateChat builds a Cerebras response_format only for models that honour
-// strict-mode decoding (see modelCapabilities.ts). Pin a honouring model so
-// the schema-wiring assertions are exercised.
-beforeEach(() => {
-  vi.stubEnv("LLM_MODEL", "gpt-oss-120b");
-});
-
-// vi.stubEnv does not auto-restore (the Vitest configs do not enable
-// `unstubEnvs`), so restore explicitly to stop the LLM_MODEL stub leaking.
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
 
 /**
  * A MockLanguageModelV3 that returns `text` and records every doGenerate
@@ -66,8 +54,9 @@ describe("generateChat", () => {
       responseSchemaName: "test",
     });
 
-    // The middleware must have set callOptions.responseFormat: this is the
-    // value the openai-compatible provider turns into a strict json_schema.
+    // Output.object resolves callOptions.responseFormat from toOutputSchema:
+    // this is the value the openai-compatible provider turns into a strict
+    // json_schema response_format on the wire.
     const responseFormat = model.doGenerateCalls[0]?.responseFormat;
     expect(responseFormat?.type).toBe("json");
     expect(responseFormat).toMatchObject({ type: "json", name: "test" });
@@ -82,5 +71,48 @@ describe("generateChat", () => {
     // generateText may default responseFormat to {type:"text"} or leave it
     // unset; either way it must not be a json schema payload.
     expect(model.doGenerateCalls[0]?.responseFormat?.type).not.toBe("json");
+  });
+
+  it("returns the validated object as `parsed` when a schema is supplied", async () => {
+    const model = mockModel('{"x":"hi"}');
+
+    const result = await generateChat([{ role: "user", content: "hi" }], {
+      model,
+      responseSchema: z.object({ x: z.string() }),
+    });
+
+    expect(result.parsed).toEqual({ x: "hi" });
+    // Raw text is still returned verbatim — executeTurn persists it.
+    expect(result.text).toBe('{"x":"hi"}');
+  });
+
+  it("throws NoObjectGeneratedError carrying the raw text on schema violation", async () => {
+    const model = mockModel('{"x":42}'); // wrong type for x
+
+    await expect(
+      generateChat([{ role: "user", content: "hi" }], {
+        model,
+        responseSchema: z.object({ x: z.string() }),
+      }),
+    ).rejects.toSatisfy((err: unknown) => {
+      if (!NoObjectGeneratedError.isInstance(err)) return false;
+      return err.text === '{"x":42}';
+    });
+  });
+
+  it("sends response_format regardless of model capability (gate removed)", async () => {
+    // Pre-Output behavior gated response_format on honorsStrictMode; the gate
+    // is gone — Cerebras treats response_format as soft guidance, so sending
+    // it universally is harmless and keeps one code path.
+    vi.stubEnv("LLM_MODEL", "llama3.1-8b"); // a non-honouring model name
+    const model = mockModel('{"x":"hi"}');
+
+    await generateChat([{ role: "user", content: "hi" }], {
+      model,
+      responseSchema: z.object({ x: z.string() }),
+    });
+
+    expect(model.doGenerateCalls[0]?.responseFormat?.type).toBe("json");
+    vi.unstubAllEnvs();
   });
 });

@@ -3,7 +3,7 @@
 Single LLM integration point for the entire application. Built on the Vercel AI SDK v6 (`ai` + `@ai-sdk/openai-compatible`); nothing outside this directory imports `ai` directly.
 
 - `provider.ts` is the only swap-point for the underlying model. Env-driven (`LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`). Switching providers is a one-line change here.
-- `generate.ts` wraps the SDK: `generateChat` (→ `generateText`) for all LLM calls. When `responseSchema` is supplied (and the model honours strict-mode), wraps the model with a `transformParams` middleware that sets `callOptions.responseFormat`, so the openai-compatible provider emits a strict `json_schema` `response_format`; otherwise plain text. Applies `tuning.LLM` defaults; forwards `usage`.
+- `generate.ts` wraps the SDK: `generateChat` (→ `generateText`) for all LLM calls. When `responseSchema` is supplied, the call uses `output: Output.object({ schema: toOutputSchema(...) })` — the SDK sets the strict `json_schema` `response_format` on the wire (Cerebras-cleaned bytes preserved) and Zod-validates the response (refines included) before returning `parsed`. Parse/validation failure throws the SDK's `NoObjectGeneratedError`; `executeTurn` converts it to `ValidationGateFailure`. Applies `tuning.LLM` defaults; forwards `usage`.
 - `extractTag.ts` — pure XML extractor for the prose+XML turns. Callers Zod-validate the extracted payload at that boundary (this is where the "no raw LLM output" rule is enforced for chat calls).
 - Structured calls are validated by the SDK against the supplied Zod schema before returning; transport retries are bounded by `LLM.maxRetries`.
 - Token usage is returned on every call — propagate it, don't drop it.

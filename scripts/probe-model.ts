@@ -69,11 +69,9 @@ async function main(): Promise<void> {
   // Strict-mode probe: verifies the model honours response_format json_schema
   // strict decoding. This is the deciding capability — production needs it
   // for prompt-LLM contract enforcement without inline schemas.
-  // generateChat only sends response_format when modelCapabilities says
-  // honorsStrictMode=true, so pass modelName="(probe-strict)" with an entry
-  // OR bypass via opts. Simpler: force the path by setting modelName so the
-  // gate returns true. We use a known strict-mode model name as the gate
-  // probe; the actual underlying provider call still uses env LLM_MODEL.
+  // generateChat sends response_format whenever a schema is supplied (the
+  // old honorsStrictMode gate is gone), so supplying responseSchema alone
+  // exercises the wire path against env LLM_MODEL.
   const strictStarted = Date.now();
   try {
     const result = await generateChat(
@@ -87,7 +85,6 @@ async function main(): Promise<void> {
       {
         responseSchema: PROBE_SCHEMA,
         responseSchemaName: "probe",
-        modelName: "llama-3.3-70b", // forces strict-mode wire emission via capability gate
       },
     );
     console.log(`STRICT OK in ${Date.now() - strictStarted}ms`);
@@ -125,12 +122,6 @@ async function main(): Promise<void> {
       {
         responseSchema: DESC_PROBE_SCHEMA,
         responseSchemaName: "desc_probe",
-        // Capability-gate key = the real model under test. Use the validated
-        // non-empty `model` local (narrowed above) rather than re-reading the
-        // `string | undefined` env var.
-        // gpt-oss-120b is registry-marked honorsStrictMode, so the gate opens
-        // and `response_format` is emitted on the wire.
-        modelName: model,
       },
     );
     console.log(`DESC-FOLLOWING responded in ${Date.now() - descStarted}ms`);

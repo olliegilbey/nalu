@@ -169,15 +169,21 @@ function stringifyMessageContent(m: LlmMessage): string {
  * The raw assistant text plus a timing / token-usage subheader. Same
  * rule as the prompt: body is uncolored so the bytes are trustworthy.
  */
-export function formatResponseBlock(text: string, durationMs: number, usage: LlmUsage): string {
+export function formatResponseBlock(
+  text: string,
+  durationMs: number,
+  // Optional: the SDK's NoObjectGeneratedError types usage as possibly
+  // absent; the "?" placeholders below cover that case.
+  usage: LlmUsage | undefined,
+): string {
   const subhead = formatUsage(durationMs, usage);
   const header = dim(`▼ response received  ${subhead}`);
   return `\n${header}\n${text}\n`;
 }
 
-function formatUsage(durationMs: number, usage: LlmUsage): string {
-  const input = usage.inputTokens ?? "?";
-  const output = usage.outputTokens ?? "?";
+function formatUsage(durationMs: number, usage: LlmUsage | undefined): string {
+  const input = usage?.inputTokens ?? "?";
+  const output = usage?.outputTokens ?? "?";
   return dim(`(${durationMs}ms · ${input} in / ${output} out)`);
 }
 
