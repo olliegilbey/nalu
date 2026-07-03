@@ -1,8 +1,14 @@
 # PostHog Visitor Analytics — Design
 
-**Date:** 2026-07-02
-**Status:** Approved, pending implementation plan
+**Date:** 2026-07-02 (revised 2026-07-03)
+**Status:** Superseded by the Revision below — client approach abandoned after live verification
 **Author:** Ollie + agent (brainstormed)
+
+> **⚠️ Read the Revision at the bottom first.** The original client-only,
+> reverse-proxied design below was implemented and smoke-tested, and
+> verification revealed it **breaks GeoIP** — the one thing this feature exists
+> for. We pivoted to server-side capture. The original is kept for the record
+> (it documents why the proxy approach fails).
 
 ## Goal
 
@@ -146,3 +152,107 @@ code guards on its absence):
 - **New:** `src/app/posthog-provider.tsx`, `src/app/posthog-provider.test.tsx`
 - **Modify:** `next.config.ts`, `src/app/providers.tsx`, `.env.local.example`,
   `package.json` / `bun.lock`, `TODO.md`
+
+---
+
+# Revision — 2026-07-03: server-side capture (supersedes everything above)
+
+## Why the client approach was abandoned
+
+The client-only design above was built and smoke-tested locally. The reverse
+proxy worked (assets + a test event flowed through `/api/_lib` → PostHog EU,
+`{"status":"Ok"}`), but two problems surfaced:
+
+1. **GeoIP is wrong for 100% of visitors** — the whole point of the feature.
+   With a reverse proxy, the request to PostHog originates from _our server_
+   (Vercel), and **PostHog Cloud geolocates the TCP connection IP, ignoring
+   `X-Forwarded-For`** (no "trusted proxies" config on Cloud). So every visitor
+   appears to come from Vercel's datacenter, not their real location.
+   - PostHog docs, [Next.js reverse proxy](https://posthog.com/docs/advanced/proxy/nextjs); community writeup [PostHog client IPs behind reverse proxies](https://simplyleen.com/posts/posthog-reverse-proxy-client-ip/) ("everyone visiting from my VPS in Frankfurt").
+2. **Feature leakage from the shared project** — reusing resumate's project
+   pulled its remote-config features (session replay recorder, surveys,
+   dead-clicks) into Nalu; a resumate survey could render on Nalu. Fixable with
+   `disable_*` flags, but a symptom of the shared-project + client-SDK coupling.
+
+## Revised approach: server-side `$pageview` from `proxy.ts`
+
+Capture one `$pageview` per navigation **server-side in `src/proxy.ts`**, which
+already runs per page-load in production and already resolves the anonymous
+Supabase user id. Pass the visitor's **real IP** as the event property `$ip` so
+PostHog GeoIP resolves correctly.
+
+**Why this is the best-practice fix (current docs, verified 2026-07-03):**
+
+- **Correct geo for 100% of visitors, incl. ad-blocked** — capture is
+  server-to-server, so no ad-blocker and no proxy-IP problem. PostHog:
+  _"explicitly set the event property `$ip` and it will be used in preference to
+  the server IP … which will also make the default GeoIP transformation work
+  correctly."_
+- **`proxy.ts` is the right seam** — Next.js 16.2 `node_modules/next/dist/docs`
+  confirms Proxy **defaults to the Node.js runtime** and exposes
+  `event.waitUntil(...)`, so we fire the capture without blocking the response.
+- **Real client IP is available** — on Vercel, `x-forwarded-for` is _"the public
+  IP address of the client"_ (Vercel request-headers doc, updated 2025-12-13);
+  Vercel also injects `x-vercel-ip-country/city/...` if we ever want to bypass
+  PostHog's GeoIP entirely (`$geoip_disable` + manual `$geoip_*` — documented
+  fallback if `$ip` ever under-resolves).
+- **Links session ↔ DB user for free** — `distinct_id` = the Supabase anon user
+  id (right there in `proxy.ts`), achieving the originally-deferred join.
+- **Leaner** — no `posthog-js`, no reverse-proxy rewrites, no client provider,
+  no shared-project feature leakage.
+
+**Trade-off:** no in-session client behavior (clicks, SPA analytics beyond
+navigations that hit `proxy.ts`, session replay). That's explicitly out of scope
+("not extensive"). Richer client analytics can be added later as direct (un-proxied)
+`posthog-js` if wanted.
+
+## Components (revised)
+
+1. **`src/lib/analytics/buildPageviewEvent.ts`** (pure, TDD) — builds the PostHog
+   capture payload: `event: "$pageview"`, `distinct_id`, `properties` incl.
+   `$ip`, `$current_url`, `$pathname`, `$referrer` (+ `$referring_domain`),
+   `$raw_user_agent` (PostHog derives browser/OS/device), parsed `utm_*`, and
+   `app: "nalu"`.
+2. **`src/lib/analytics/capturePageview.ts`** — extracts IP/referrer/UA from
+   request headers, builds the event, `POST`s to
+   `https://eu.i.posthog.com/i/v0/e/`. Best-effort; never throws.
+3. **`src/proxy.ts`** — add `event?: NextFetchEvent` param; after resolving the
+   user, `event.waitUntil(capturePageview(...))`, gated on `POSTHOG_KEY` present,
+   a resolved `userId`, and **not a prefetch** (`Next-Router-Prefetch` /
+   `purpose: prefetch` headers skipped).
+4. **`src/lib/config.ts`** — add `POSTHOG_KEY: z.string().optional()` (server
+   env now; capture is server-side, so no `NEXT_PUBLIC_` needed).
+5. **`.env.local.example`** — `POSTHOG_KEY=phc_...` (resumate's EU project public
+   key; used server-side).
+
+## Testing / verification (revised)
+
+- **Unit (TDD)** — `buildPageviewEvent.test.ts`: `$ip`/referrer/UA/UTM inclusion,
+  `app:"nalu"`, `$pageview` shape, distinct_id. `capturePageview.test.ts`: builds
+  - POSTs to the right URL, swallows fetch errors. `proxy.test.ts`: fires capture
+    via `waitUntil` when key+user present & not prefetch; skips otherwise.
+- **Gate** — `just check` + `just build`.
+- **Live acceptance** — a real `POST` to `/i/v0/e/` returns `{"status":"Ok"}`
+  (already confirmed during the client smoke).
+- **Geo confirmation (Ollie, on first deploy)** — `proxy.ts` is prod-gated, so
+  geo can only be validated on a real Vercel deploy where `x-forwarded-for` is a
+  real visitor IP. After deploy, confirm PostHog shows the correct
+  `$geoip_country_name` for a real visit. If geo is missing, switch to the
+  documented fallback: set `$geoip_*` from the `x-vercel-ip-*` headers +
+  `$geoip_disable: true`.
+
+## Key handoff (revised)
+
+`POSTHOG_KEY` (resumate's EU project public key) is needed only in **Vercel prod
+env** (and `.env.local` if exercising the prod branch locally). Never needed to
+build or unit-test.
+
+## File manifest (revised)
+
+- **New:** `src/lib/analytics/buildPageviewEvent.ts` (+ test),
+  `src/lib/analytics/capturePageview.ts` (+ test)
+- **Modify:** `src/proxy.ts` (+ `proxy.test.ts`), `src/lib/config.ts`,
+  `.env.local.example`, `TODO.md`
+- **Reverted:** `src/app/posthog-provider.tsx` (+ test) deleted,
+  `next.config.ts` rewrites removed, `src/app/providers.tsx` restored,
+  `posthog-js` removed.

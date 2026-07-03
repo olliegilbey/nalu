@@ -1,5 +1,13 @@
 # PostHog Visitor Analytics Implementation Plan
 
+> **⚠️ SUPERSEDED 2026-07-03.** The client-only tasks below were implemented and
+> smoke-tested; live verification found the reverse proxy breaks GeoIP on PostHog
+> Cloud (the feature's whole purpose). The build pivoted to **server-side capture
+> in `proxy.ts`** — see the "Revision" section of the spec
+> (`docs/superpowers/specs/2026-07-02-posthog-visitor-analytics-design.md`) for
+> the current design, rationale, and current-doc citations. The tasks below are
+> kept for the record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Capture Nalu visitor geo/referrer/UTM/pageviews in PostHog with the leanest clean wiring — anonymous only, no custom events.
