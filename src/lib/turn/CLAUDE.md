@@ -9,12 +9,15 @@ atomic batch (`user_message + assistant_response`, with optional
 between).
 
 - Used by scoping (`src/lib/course/`) today; teaching (`src/lib/wave/`) later.
-- Validation now lives inside `executeTurn` itself: callers supply a
-  `responseSchema` (Zod). The harness JSON-parses model output then runs
-  `schema.safeParse`; on failure it throws
-  `ValidationGateFailure("missing_response", safe.error.message)`. Zod's
-  error message includes field paths, issue codes, and refine `.message`
-  strings — that JSON becomes the retry directive.
+- Validation: callers supply a `responseSchema` (Zod). `generateChat`
+  validates via the SDK's `Output.object` (JSON-parse + `safeParse`,
+  refines included) and throws `NoObjectGeneratedError` on failure;
+  `executeTurn` converts that to
+  `ValidationGateFailure("missing_response", <directive>)`, where the
+  directive is re-derived from the raw text so its strings are identical
+  to the pre-SDK implementation. Zod's error message includes field
+  paths, issue codes, and refine `.message` strings — that JSON becomes
+  the retry directive.
 - Transport errors (timeouts, 5xx) propagate untouched; no rows are
   persisted on transport failure.
 
