@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import type { JSONSchema7 } from "ai";
+import { jsonSchema, type JSONSchema7, type Schema } from "ai";
 import { cleanForCerebras, schemaObjectDepth } from "./toCerebrasJsonSchema.transform";
 
 /** Cerebras documented strict-mode budget: 5000 char wire schema, object-depth ≤ 10. */
@@ -82,4 +82,30 @@ export function toSchemaJsonString<T>(
   opts: CerebrasJsonSchemaOptions,
 ): string {
   return JSON.stringify(toCerebrasJsonSchema(schema, opts).schema, null, 2);
+}
+
+/**
+ * Wrap a Zod schema as an AI SDK `Schema` whose wire shape is the
+ * Cerebras-cleaned JSON Schema and whose validator is Zod `safeParse`.
+ *
+ * WHY: `Output.object({ schema })` would otherwise derive JSON Schema from
+ * Zod itself, bypassing `cleanForCerebras` (keyword stripping, oneOf→anyOf,
+ * the 5000-char/depth-10 budget asserts). Feeding the SDK this wrapper keeps
+ * the wire bytes identical to the pre-Output implementation while letting
+ * the SDK run our full Zod validation — refines included — and throw
+ * `NoObjectGeneratedError` with the ZodError as `cause` on failure.
+ */
+export function toOutputSchema<T>(
+  schema: z.ZodType<T>,
+  opts: CerebrasJsonSchemaOptions,
+): Schema<T> {
+  const wire = toCerebrasJsonSchema(schema, opts);
+  return jsonSchema<T>(wire.schema, {
+    validate: (value) => {
+      const result = schema.safeParse(value);
+      return result.success
+        ? { success: true, value: result.data }
+        : { success: false, error: result.error };
+    },
+  });
 }
