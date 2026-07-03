@@ -3,6 +3,8 @@ import { z } from "zod/v4";
 import { streamText, Output, NoObjectGeneratedError } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { toOutputSchema } from "./toCerebrasJsonSchema";
+import { streamChat } from "./streamChat";
+import type { LlmMessage } from "@/lib/types/llm";
 
 /** Mock model that streams `chunks` of text then finishes. */
 function mockStreamModel(deltas: readonly string[]): MockLanguageModelV3 {
@@ -55,6 +57,39 @@ describe("streamText + Output.object semantics (SDK behavior pin)", () => {
       /* drain */
     }
     await expect(result.output).rejects.toSatisfy((e: unknown) =>
+      NoObjectGeneratedError.isInstance(e),
+    );
+  });
+});
+
+const messages: readonly LlmMessage[] = [{ role: "user", content: "hi" }];
+
+describe("streamChat", () => {
+  it("yields partials and resolves final parsed + text + usage", async () => {
+    const handle = await streamChat(messages, {
+      model: mockStreamModel(['{ "userMessage": "Hi!" }']),
+      responseSchema: schema,
+      responseSchemaName: "t",
+    });
+    const partials: unknown[] = [];
+    for await (const p of handle.partialOutputStream) partials.push(p);
+    const final = await handle.final();
+    expect(final.parsed).toEqual({ userMessage: "Hi!" });
+    expect(final.text).toBe('{ "userMessage": "Hi!" }');
+    expect(final.usage).toBeDefined();
+    expect(partials.length).toBeGreaterThan(0);
+  });
+
+  it("final() rejects with NoObjectGeneratedError on invalid output", async () => {
+    const handle = await streamChat(messages, {
+      model: mockStreamModel(['{ "wrong": 1 }']),
+      responseSchema: schema,
+      responseSchemaName: "t",
+    });
+    for await (const _ of handle.partialOutputStream) {
+      /* drain */
+    }
+    await expect(handle.final()).rejects.toSatisfy((e: unknown) =>
       NoObjectGeneratedError.isInstance(e),
     );
   });
