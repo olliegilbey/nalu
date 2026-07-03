@@ -5,7 +5,6 @@ import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { useState } from "react";
 import { TRPCProvider, getBaseUrl } from "@/lib/trpc";
 import type { AppRouter } from "@/server/routers";
-import { PostHogProvider } from "./posthog-provider";
 
 /** Fallback dev user UUID — matches the seeded row in seed.ts. */
 const DEV_USER_FALLBACK = "a0000000-0000-4000-8000-000000000001";
@@ -35,10 +34,8 @@ export function Providers({ children }: { readonly children: React.ReactNode }) 
   );
 
   return (
-    <PostHogProvider>
-      <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-      </TRPCProvider>
-    </PostHogProvider>
+    <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </TRPCProvider>
   );
 }

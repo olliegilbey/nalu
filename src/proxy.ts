@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest, type NextFetchEvent } from "next/server";
 import { getEnv } from "@/lib/config";
+import { capturePageview } from "@/lib/analytics/capturePageview";
 
 /**
  * Next.js proxy (formerly `middleware`) — establishes a Supabase anonymous
@@ -17,8 +18,12 @@ import { getEnv } from "@/lib/config";
  * Fails open — a transient Supabase error returns `NextResponse.next()`
  * rather than bricking the page; the subsequent tRPC call degrades to
  * `UNAUTHORIZED`, which the UI already handles.
+ *
+ * Also fires a best-effort server-side PostHog `$pageview` (via `waitUntil`)
+ * with the visitor's real IP as `$ip`, so PostHog Cloud geolocates the visitor
+ * rather than our server — the reason we capture here instead of client-side.
  */
-export async function proxy(request: NextRequest): Promise<NextResponse> {
+export async function proxy(request: NextRequest, event?: NextFetchEvent): Promise<NextResponse> {
   if (process.env.NODE_ENV !== "production") {
     return NextResponse.next();
   }
@@ -57,8 +62,10 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     },
   );
 
+  let userId: string | undefined;
   try {
     const { data } = await supabase.auth.getUser();
+    userId = data.user?.id;
     if (!data.user) {
       // No session yet — mint an anonymous account. `signInAnonymously`
       // triggers `setAll`, writing the new session cookies onto `response`.
@@ -69,7 +76,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       // discarded, leaving a stray session-less `auth.users` row. Harmless
       // (the surviving cookie wins, `ensureUserProfile` is idempotent). See
       // TODO.md for the periodic-cleanup follow-up.
-      await supabase.auth.signInAnonymously();
+      const signIn = await supabase.auth.signInAnonymously();
+      userId = signIn?.data?.user?.id ?? undefined;
     }
   } catch (error) {
     // Fail open: never brick a page load on a transient auth error. Log it so
@@ -79,6 +87,25 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     // `UNAUTHORIZED` with no signal.
     console.error("[proxy] Supabase auth failed; serving page without session", error);
     return NextResponse.next();
+  }
+
+  // Server-side pageview: `distinct_id` is the anon user id (joins PostHog
+  // sessions to DB courses), `$ip` is the real client IP for correct GeoIP.
+  // `waitUntil` runs it past the response so it never adds latency. Prefetches
+  // aren't real visits — skip them (they'd also double-count navigations).
+  const isPrefetch =
+    request.headers.get("next-router-prefetch") === "1" ||
+    request.headers.get("purpose") === "prefetch";
+  if (env.POSTHOG_KEY && userId && event && !isPrefetch) {
+    event.waitUntil(
+      capturePageview({
+        apiKey: env.POSTHOG_KEY,
+        distinctId: userId,
+        url: request.nextUrl.href,
+        headers: request.headers,
+        timestamp: new Date().toISOString(),
+      }),
+    );
   }
 
   return response;

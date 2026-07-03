@@ -21,6 +21,9 @@ const envSchema = z.object({
   DATABASE_URL: z.url(), // pooled, used by app at runtime
   DIRECT_URL: z.url(), // direct, used by drizzle-kit migrate
   DEV_USER_ID: z.uuid(), // seed user id; refs auth.users when auth lands
+  // PostHog EU project public key (phc_…). Server-side only — proxy.ts captures
+  // a $pageview per visit. Optional: absent = analytics disabled.
+  POSTHOG_KEY: z.string().optional(),
 });
 
 /** Validated environment config. Throws on first access if env vars are missing/invalid. */

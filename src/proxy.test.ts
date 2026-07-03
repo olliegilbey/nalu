@@ -1,7 +1,8 @@
 // @vitest-environment node
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, type NextFetchEvent } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { capturePageview } from "@/lib/analytics/capturePageview";
 import { proxy } from "./proxy";
 
 // The proxy reads the env schema and constructs a Supabase SSR client. Both are
@@ -11,11 +12,19 @@ vi.mock("@/lib/config", () => ({
   getEnv: () => ({
     NEXT_PUBLIC_SUPABASE_URL: "https://stub.supabase.co",
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_stub",
+    POSTHOG_KEY: "phc_test",
   }),
 }));
 vi.mock("@supabase/ssr", () => ({ createServerClient: vi.fn() }));
+vi.mock("@/lib/analytics/capturePageview", () => ({ capturePageview: vi.fn() }));
 
 const mockedCreateServerClient = vi.mocked(createServerClient);
+const mockedCapture = vi.mocked(capturePageview);
+
+/** Minimal `NextFetchEvent` stub exposing a spyable `waitUntil`. */
+function fakeEvent(): NextFetchEvent {
+  return { waitUntil: vi.fn() } as unknown as NextFetchEvent;
+}
 
 /**
  * Builds a fake Supabase client. `user` is what `getUser()` resolves with;
@@ -98,5 +107,33 @@ describe("proxy", () => {
     expect(res.headers.get("Cache-Control")).toBe(
       "private, no-cache, no-store, must-revalidate, max-age=0",
     );
+  });
+
+  it("production, key + user + real navigation: fires a pageview via waitUntil", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    mockedCreateServerClient.mockReturnValue(fakeClient({ user: { id: "user-1" } }) as never);
+    const event = fakeEvent();
+
+    await proxy(new NextRequest("https://nalu.ollie.gg/?utm_source=cv"), event);
+
+    expect(event.waitUntil).toHaveBeenCalledOnce();
+    expect(mockedCapture).toHaveBeenCalledOnce();
+    expect(mockedCapture.mock.calls[0]?.[0]).toMatchObject({
+      apiKey: "phc_test",
+      distinctId: "user-1",
+      url: "https://nalu.ollie.gg/?utm_source=cv",
+    });
+  });
+
+  it("production, prefetch request: does not capture a pageview", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    mockedCreateServerClient.mockReturnValue(fakeClient({ user: { id: "user-1" } }) as never);
+
+    await proxy(
+      new NextRequest("https://nalu.ollie.gg/", { headers: { "next-router-prefetch": "1" } }),
+      fakeEvent(),
+    );
+
+    expect(mockedCapture).not.toHaveBeenCalled();
   });
 });

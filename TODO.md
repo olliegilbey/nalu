@@ -154,11 +154,15 @@ flow.
 
 ### Wire PostHog for visitor attribution — DONE 2026-07-03
 
-Implemented client-only anonymous capture (reverse-proxied via `/api/_lib`,
-tagged `app:"nalu"`), reusing resumate's EU project. Spec:
-`docs/superpowers/specs/2026-07-02-posthog-visitor-analytics-design.md`.
-Deferred (still tracked by the notes below): Supabase-user `identify` so DB
-courses join to sessions, and server-side `posthog-node` capture.
+Implemented **server-side** anonymous `$pageview` capture in `src/proxy.ts`
+(distinct_id = Supabase anon user id; real client IP as `$ip` for correct
+GeoIP; tagged `app:"nalu"`), reusing resumate's EU project. Went server-side
+after verifying a client reverse proxy breaks GeoIP on PostHog Cloud (it
+geolocates our server, not the visitor). Spec + rationale:
+`docs/superpowers/specs/2026-07-02-posthog-visitor-analytics-design.md`
+(Revision section). The session↔DB-course join is now covered (distinct_id is
+the anon user id). Remaining optional: richer in-session client analytics
+(direct, un-proxied `posthog-js`) if ever wanted.
 
 **Files:** client entry (`src/app/layout.tsx` or a `PostHogProvider`), optional
 server-side capture in tRPC (`src/server/`), `src/proxy.ts` (stopgap only)
