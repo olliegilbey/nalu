@@ -2,6 +2,7 @@ import { z } from "zod/v4";
 import { router, protectedProcedure } from "../trpc";
 import { getWaveState } from "@/lib/course/getWaveState";
 import { submitWaveTurn } from "@/lib/course/submitWaveTurn";
+import { submitTurnInputSchema } from "./waveTurnInput";
 
 /**
  * Wave teaching loop (spec §7).
@@ -22,39 +23,8 @@ export const waveRouter = router({
 
   /** Submit one learner turn against an open Wave (spec §7.2 + §7.4). Returns mid-turn or close-turn result. */
   submitTurn: protectedProcedure
-    .input(
-      z.object({
-        courseId: z.uuid(),
-        waveNumber: z.number().int().min(1),
-        // Discriminated payload mirrors `SubmitTurnPayload` from
-        // `src/lib/course/buildLearnerInput.ts` — the router is the trust
-        // boundary; the lib step assumes the shape is already validated.
-        payload: z.discriminatedUnion("kind", [
-          z.object({ kind: z.literal("chat-text"), text: z.string().min(1) }),
-          z.object({
-            kind: z.literal("questionnaire-answers"),
-            questionnaireId: z.string().min(1),
-            answers: z
-              .array(
-                z.discriminatedUnion("kind", [
-                  z.object({
-                    id: z.string().min(1),
-                    kind: z.literal("mc"),
-                    selected: z.enum(["A", "B", "C", "D"]),
-                  }),
-                  z.object({
-                    id: z.string().min(1),
-                    kind: z.literal("freetext"),
-                    text: z.string().min(1),
-                    fromEscape: z.boolean(),
-                  }),
-                ]),
-              )
-              .min(1),
-          }),
-        ]),
-      }),
-    )
+    // Schema shared with the streaming route handler — see waveTurnInput.ts.
+    .input(submitTurnInputSchema)
     .mutation(({ ctx, input }) =>
       submitWaveTurn({
         userId: ctx.userId,

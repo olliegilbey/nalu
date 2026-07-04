@@ -53,8 +53,8 @@ describe("streamText + Output.object semantics (SDK behavior pin)", () => {
       prompt: "x",
     });
     // Drain partials first (route code will too).
-    for await (const _ of result.partialOutputStream) {
-      /* drain */
+    for await (const chunk of result.partialOutputStream) {
+      void chunk; // drain
     }
     await expect(result.output).rejects.toSatisfy((e: unknown) =>
       NoObjectGeneratedError.isInstance(e),
@@ -86,8 +86,8 @@ describe("streamChat", () => {
       responseSchema: schema,
       responseSchemaName: "t",
     });
-    for await (const _ of handle.partialOutputStream) {
-      /* drain */
+    for await (const chunk of handle.partialOutputStream) {
+      void chunk; // drain
     }
     await expect(handle.final()).rejects.toSatisfy((e: unknown) =>
       NoObjectGeneratedError.isInstance(e),
