@@ -109,3 +109,48 @@ export function toOutputSchema<T>(
     },
   });
 }
+
+/**
+ * Recursively drop `null`-valued OBJECT PROPERTIES. Array elements are left
+ * untouched (a null element is data, not an omitted field). Used by
+ * {@link toToolInputSchema} to absorb the tool-trained-model habit of
+ * emitting explicit `null` for inapplicable optional fields.
+ */
+function stripNullsDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripNullsDeep);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, v]) => v !== null)
+        .map(([k, v]) => [k, stripNullsDeep(v)]),
+    );
+  }
+  return value;
+}
+
+/**
+ * Wrap a Zod schema as an AI SDK `Schema` for TOOL INPUTS (the tool-channel
+ * analogue of {@link toOutputSchema}).
+ *
+ * WHY the split (live probe, docs/status/2026-07-06-tool-call-probe-verdict.md):
+ * - Wire bytes are the bare-`.optional()` Cerebras-cleaned shape. Null unions
+ *   (`.nullish()` → `anyOf: [..., {type:"null"}]`) crater gpt-oss-120b's
+ *   tool-call reliability from ~95% to ~44% and cause record→array confusion.
+ * - Validation strips explicit `null` object properties BEFORE Zod: models
+ *   trained on OpenAI strict-mode tools emit `"field": null` for inapplicable
+ *   optionals, which bare `.optional()` would reject.
+ */
+export function toToolInputSchema<T>(
+  schema: z.ZodType<T>,
+  opts: CerebrasJsonSchemaOptions,
+): Schema<T> {
+  const wire = toCerebrasJsonSchema(schema, opts);
+  return jsonSchema<T>(wire.schema, {
+    validate: (value) => {
+      const result = schema.safeParse(stripNullsDeep(value));
+      return result.success
+        ? { success: true, value: result.data }
+        : { success: false, error: result.error };
+    },
+  });
+}
