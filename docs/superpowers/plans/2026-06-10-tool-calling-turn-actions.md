@@ -97,11 +97,17 @@ Close turns keep the Phase-2 blocking path in this plan (their `makeCloseTurnBas
 
 ## Task 1: Tool-call reliability probe (THE GATE)
 
+> **VERDICT (2026-07-06): GO.** 95.0% / 100.0% valid-call rate on consecutive
+> runs, median 2 steps — with the wire/validator-split schema. Full numbers +
+> three binding findings (reasoning_content stripping, wire/validator split
+> for tool schemas, invalid-input surfacing) in
+> `docs/status/2026-07-06-tool-call-probe-verdict.md`.
+
 **Files:**
 
 - Modify: `scripts/probe-model.ts` (read it first; follow its existing structure for model/env handling)
 
-- [ ] **Step 1: Add a `--tools` probe mode**
+- [x] **Step 1: Add a `--tools` probe mode**
 
 Add a function that runs N=20 trials of a scripted teaching turn against the live model with two tools defined (no DB, no app code — pure SDK):
 
@@ -181,16 +187,16 @@ async function probeToolCalling(model: LanguageModelV3): Promise<{
 
 Wire it behind a CLI flag following the script's existing arg parsing, printing the tally + a GO/NO-GO line against the criteria in the Decision Gate section. Check `result.steps` field shapes against `node_modules/ai/docs/03-ai-sdk-core/15-tools-and-tool-calling.mdx` ("Multi-Step Calls" + "Tool Errors" sections) — adjust property names to the installed version if they differ.
 
-- [ ] **Step 2: Run the probe (live; uses real Cerebras budget — ~20-80 calls)**
+- [x] **Step 2: Run the probe (live; uses real Cerebras budget — ~20-80 calls)**
 
 Run: `just probe-model gpt-oss-120b -- --tools` (match the justfile's probe recipe syntax — read `justfile`).
 Expected: a tally + GO/NO-GO verdict.
 
-- [ ] **Step 3: Record the verdict**
+- [x] **Step 3: Record the verdict**
 
 Write the numbers into `docs/status/` as a dated note AND into this plan file under this task. **If NO-GO: stop here, commit the probe, report.**
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add scripts/probe-model.ts docs/status/

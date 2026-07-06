@@ -38,8 +38,8 @@ smoke:
 # One-shot probe for a Cerebras model. Overrides LLM_MODEL so the
 # `.env.local` default isn't used; LLM_API_KEY and the rest load from
 # `.env.local` via `set dotenv-filename` above. See scripts/probe-model.ts.
-probe-model model:
-    env LLM_MODEL="{{model}}" bun scripts/probe-model.ts
+probe-model model *args:
+    env LLM_MODEL="{{model}}" bun scripts/probe-model.ts {{args}}
 
 # Run unit tests in watch mode
 test-watch:
