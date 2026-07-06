@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z } from "zod/v4";
+import { NoObjectGeneratedError } from "ai";
 import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
 import { executeTurn } from "./executeTurn";
 
@@ -40,6 +41,17 @@ const FAKE_USAGE = {
 // Reusable schema for the happy-path and most tests.
 const VALUE_SCHEMA = z.object({ value: z.string() });
 
+/** Builds the error generateChat now throws on parse/validation failure. */
+function noObjectError(text: string): NoObjectGeneratedError {
+  return new NoObjectGeneratedError({
+    message: "No object generated: response did not match schema.",
+    text,
+    response: { id: "test", timestamp: new Date(0), modelId: "mock" },
+    usage: FAKE_USAGE,
+    finishReason: "stop",
+  });
+}
+
 beforeEach(() => {
   vi.mocked(generateChat).mockReset();
   vi.mocked(appendMessages).mockReset();
@@ -56,6 +68,7 @@ describe("executeTurn", () => {
   it("happy path: schema validates on first attempt, writes user + assistant rows", async () => {
     vi.mocked(generateChat).mockResolvedValueOnce({
       text: '{"value":"OK_RAW"}',
+      parsed: { value: "OK_RAW" },
       usage: FAKE_USAGE,
     });
     const result = await executeTurn({
@@ -80,8 +93,12 @@ describe("executeTurn", () => {
       .refine((v) => v.value !== "BAD_VALUE", { message: "fix the thing" });
 
     vi.mocked(generateChat)
-      .mockResolvedValueOnce({ text: '{"value":"BAD_VALUE"}', usage: FAKE_USAGE })
-      .mockResolvedValueOnce({ text: '{"value":"GOOD"}', usage: FAKE_USAGE });
+      .mockRejectedValueOnce(noObjectError('{"value":"BAD_VALUE"}'))
+      .mockResolvedValueOnce({
+        text: '{"value":"GOOD"}',
+        parsed: { value: "GOOD" },
+        usage: FAKE_USAGE,
+      });
 
     const r = await executeTurn({
       parent: { kind: "scoping", id: SCOPING_ID },
@@ -107,10 +124,7 @@ describe("executeTurn", () => {
       .object({ value: z.string() })
       .refine((v) => v.value === "GOOD", { message: "still broken" });
 
-    vi.mocked(generateChat).mockResolvedValue({
-      text: '{"value":"BAD"}',
-      usage: FAKE_USAGE,
-    });
+    vi.mocked(generateChat).mockRejectedValue(noObjectError('{"value":"BAD"}'));
     await expect(
       executeTurn({
         parent: { kind: "scoping", id: SCOPING_ID },
@@ -137,6 +151,7 @@ describe("executeTurn", () => {
     const WAVE_SEED = { kind: "wave" } as unknown as Parameters<typeof executeTurn>[0]["seed"];
     vi.mocked(generateChat).mockResolvedValueOnce({
       text: '{"value":"OK"}',
+      parsed: { value: "OK" },
       usage: FAKE_USAGE,
     });
     await executeTurn({
@@ -164,7 +179,7 @@ describe("executeTurn", () => {
 
   it("invalid JSON from model: throws ValidationGateFailure with JSON parse directive", async () => {
     // Even with strict-mode decoding, test the JSON-parse failure branch.
-    vi.mocked(generateChat).mockResolvedValue({ text: "not json at all", usage: FAKE_USAGE });
+    vi.mocked(generateChat).mockRejectedValue(noObjectError("not json at all"));
     await expect(
       executeTurn({
         parent: { kind: "scoping", id: SCOPING_ID },

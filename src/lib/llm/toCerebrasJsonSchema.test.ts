@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod/v4";
-import { toCerebrasJsonSchema, toSchemaJsonString } from "./toCerebrasJsonSchema";
+import { toCerebrasJsonSchema, toOutputSchema, toSchemaJsonString } from "./toCerebrasJsonSchema";
 import { clarifySchema } from "@/lib/prompts/clarify";
 import { frameworkSchema } from "@/lib/prompts/framework";
 import { waveMidTurnSchema } from "@/lib/prompts/waveTurn";
@@ -272,5 +272,28 @@ describe("toCerebrasJsonSchema", () => {
     // Cerebras strict mode requires an object at the root.
     expect(out.schema).toMatchObject({ type: "object" });
     assertCerebrasStrictValid(out.schema);
+  });
+});
+
+describe("toOutputSchema", () => {
+  const zodSchema = z.object({ x: z.string() }).refine((v) => v.x !== "bad", {
+    message: "x must not be 'bad'",
+  });
+
+  it("exposes the same cleaned wire schema bytes as toCerebrasJsonSchema", async () => {
+    const sdkSchema = toOutputSchema(zodSchema, { name: "test" });
+    const wire = toCerebrasJsonSchema(zodSchema, { name: "test" });
+    // `jsonSchema` exposes the wrapped JSON Schema via `.jsonSchema`.
+    expect(await sdkSchema.jsonSchema).toEqual(wire.schema);
+  });
+
+  it("validates via Zod, surfacing refine failures", async () => {
+    const sdkSchema = toOutputSchema(zodSchema, { name: "test" });
+    const ok = await sdkSchema.validate!({ x: "fine" });
+    expect(ok).toEqual({ success: true, value: { x: "fine" } });
+    const bad = await sdkSchema.validate!({ x: "bad" });
+    expect(bad.success).toBe(false);
+    // The error must be the ZodError so issue messages reach retry directives.
+    if (!bad.success) expect(bad.error.message).toContain("x must not be 'bad'");
   });
 });

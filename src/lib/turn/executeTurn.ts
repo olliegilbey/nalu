@@ -6,6 +6,7 @@ import {
   type AppendMessageParams,
   type ContextParent,
 } from "@/db/queries/contextMessages";
+import { NoObjectGeneratedError } from "ai";
 import type { ContextMessage } from "@/db/schema";
 import { generateChat } from "@/lib/llm/generate";
 import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
@@ -36,8 +37,8 @@ import { diagnoseFailure } from "./diagnoseFailure";
  * directive verbatim, so schema refine messages must be model-readable.
  *
  * `retryDirective` defaults to `(err) => err.detail` — the detail string
- * is the Zod issue list from `parseAndValidate`. Override only if the
- * caller needs different wording per attempt index.
+ * is the Zod issue list from `toValidationGateFailure`. Override only if
+ * the caller needs different wording per attempt index.
  */
 export interface ExecuteTurnParams<T> {
   readonly parent: ContextParent;
@@ -48,9 +49,10 @@ export interface ExecuteTurnParams<T> {
    * Used twice per turn: (1) at decode time via `generateChat` →
    * `toCerebrasJsonSchema` → Cerebras `response_format: { type: "json_schema",
    * strict: true }`, so invalid JSON is unreachable for the decoder;
-   * (2) post-decode via `schema.safeParse(JSON.parse(text))`, which
-   * enforces business invariants (`.refine`/`.superRefine` rules that
-   * Cerebras strict mode can't express, e.g. tier-scope, count bounds).
+   * (2) post-decode by the SDK's `Output.object` validate hook, which runs
+   * this schema's `safeParse` (refines included), enforcing business
+   * invariants (`.refine`/`.superRefine` rules that Cerebras strict mode
+   * can't express, e.g. tier-scope, count bounds).
    * Refine `.message` text appears inside Zod's full issue-list JSON, which
    * becomes the retry directive — the model sees field paths, codes, and the
    * verbatim refine message together.
@@ -86,17 +88,19 @@ export interface ExecuteTurnResult<T> {
  *   1. Load prior rows for this parent (Wave or scoping pass).
  *   2. Render context (prior rows + the in-memory batch we're building this
  *      turn) → LLM messages.
- *   3. Call `generateChat`.
- *   4. JSON-parse the raw text and Zod-validate via `parseAndValidate`.
- *   5. On parse success: append `[user_message, ..., assistant_response]`
+ *   3. Call `generateChat` — the SDK's `Output.object` JSON-parses and
+ *      Zod-validates the response before returning.
+ *   4. On success: append `[user_message, ..., assistant_response]`
  *      as one batch via `appendMessages` and return.
- *   6. On `ValidationGateFailure`: append a `failed_assistant_response`
- *      + `harness_retry_directive` to the in-memory batch and re-attempt
- *      up to `SCOPING.maxParseRetries` more times.
- *   7. Terminal exhaust: persist `[user, failed, directive, ..., failed]`
+ *   5. On `NoObjectGeneratedError`: convert to `ValidationGateFailure`
+ *      (directive re-derived from the raw text), append a
+ *      `failed_assistant_response` + `harness_retry_directive` to the
+ *      in-memory batch and re-attempt up to `SCOPING.maxParseRetries`
+ *      more times.
+ *   6. Terminal exhaust: persist `[user, failed, directive, ..., failed]`
  *      (drop trailing directive — the caller's next turn IS the recovery
- *      context) and re-throw the `ValidationGateFailure`.
- *   8. Transport errors: propagate untouched. Nothing persisted.
+ *      context) and throw the `ValidationGateFailure`.
+ *   7. Transport errors: propagate untouched. Nothing persisted.
  *
  * Atomicity boundary: a turn only commits rows to the DB when the batch
  * is finalised (success or terminal exhaust). Partial state never leaks.
@@ -127,7 +131,8 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   // second caller.
   const totalAttempts = SCOPING.maxParseRetries + 1;
   // Default directive surfaces Zod's error.message verbatim (the harness
-  // authors it inside parseAndValidate; .retryDirective lets callers override).
+  // authors it inside toValidationGateFailure; .retryDirective lets callers
+  // override).
   const directiveFn = params.retryDirective ?? ((err) => err.detail);
 
   // Live-smoke observability (CEREBRAS_LIVE=1). All emit decisions
@@ -204,23 +209,20 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
     }
 
     const t0 = Date.now();
-    const result = await generateChat(llmMessages, {
-      responseSchema: params.responseSchema,
-      responseSchemaName: params.responseSchemaName ?? params.seed.kind,
-    });
-    const dt = Date.now() - t0;
-
-    // Verbose mode: response printed inline. Quiet mode: suppressed for now;
-    // the failure branch below replays it if needed.
-    if (live && !quiet) {
-      process.stderr.write(formatResponseBlock(result.text, dt, result.usage));
-    }
     try {
-      // JSON-parse + Zod-validate. Throws ValidationGateFailure on either failure.
-      const parsed = parseAndValidate(result.text, params.responseSchema);
+      // generateChat now JSON-parses AND Zod-validates via Output.object;
+      // `parsed` is the typed result and `text` the raw string we persist.
+      const result = await generateChat(llmMessages, {
+        responseSchema: params.responseSchema,
+        responseSchemaName: params.responseSchemaName ?? params.seed.kind,
+      });
+      const dt = Date.now() - t0;
+      if (live && !quiet) {
+        process.stderr.write(formatResponseBlock(result.text, dt, result.usage));
+      }
       if (live) {
         const summary = params.successSummary
-          ? params.successSummary(parsed)
+          ? params.successSummary(result.parsed)
           : `chars=${result.text.length}`;
         process.stderr.write(formatParseSuccess(label, summary));
       }
@@ -233,21 +235,24 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
         content: result.text,
       };
       await appendMessages([...batch, successRow]);
-      return { parsed, usage: result.usage };
+      return { parsed: result.parsed, usage: result.usage };
     } catch (err) {
-      // Anything other than a validation gate failure is treated as a transport-class
-      // error and propagates without persisting — the batch never commits.
-      if (!(err instanceof ValidationGateFailure)) throw err;
-      // Failure observability: in quiet mode we retroactively flush the
-      // prompt + response so the reader has the full forensic trail.
-      // In verbose mode they're already on stderr; just append diagnosis.
+      // Only the SDK's structured-output failure enters the retry flow;
+      // transport-class errors propagate without persisting — the batch
+      // never commits (same contract as before).
+      if (!NoObjectGeneratedError.isInstance(err)) throw err;
+      const dt = Date.now() - t0;
+      const raw = err.text ?? "";
+      const gate = toValidationGateFailure(raw, params.responseSchema);
+      // Failure observability: flush the prompt + response trail (verbose
+      // already printed the prompt; quiet retroactively flushes both).
       if (live) {
         if (quiet) {
           process.stderr.write(formatPromptBlock(llmMessages, liveSchemaJson));
-          process.stderr.write(formatResponseBlock(result.text, dt, result.usage));
         }
-        const diagnosis = diagnoseFailure(err, result.text);
-        process.stderr.write(formatParseFailure(label, err, diagnosis));
+        process.stderr.write(formatResponseBlock(raw, dt, err.usage));
+        const diagnosis = diagnoseFailure(gate, raw);
+        process.stderr.write(formatParseFailure(label, gate, diagnosis));
       }
       const failedRow: AppendMessageParams = {
         parent: params.parent,
@@ -255,14 +260,14 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
         seq: batch.length,
         kind: "failed_assistant_response",
         role: "assistant",
-        content: result.text,
+        content: raw,
       };
       if (i + 1 >= totalAttempts) {
         // Terminal exhaust: persist failure trail without trailing directive.
         // The caller's next user_message becomes the recovery context, so
         // appending a directive here would be redundant noise.
         await appendMessages([...batch, failedRow]);
-        throw err;
+        throw gate;
       }
       // Retry path: append failed row + directive and recurse with i+1.
       const directiveRow: AppendMessageParams = {
@@ -271,7 +276,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
         seq: batch.length + 1,
         kind: "harness_retry_directive",
         role: "user",
-        content: directiveFn(err, i + 1),
+        content: directiveFn(gate, i + 1),
       };
       return attempt(i + 1, [...batch, failedRow, directiveRow]);
     }
@@ -281,29 +286,32 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
 }
 
 /**
- * JSON-parse the model output then Zod-validate it against `schema`.
- * Throws `ValidationGateFailure` with a model-readable directive on either
- * failure mode. Generic directive on JSON shape failures (rare under
- * strict-mode constrained decoding but possible if the provider returns
- * text outside the JSON envelope); refine `.message` verbatim on
- * business-invariant failures.
+ * Rebuild the legacy retry directive from a NoObjectGeneratedError's raw
+ * text. Re-runs the same JSON.parse + safeParse the old in-harness gate
+ * ran, so directive strings (and therefore persisted
+ * `harness_retry_directive` rows and replayed prompts) are byte-identical
+ * to the pre-Output implementation. The double-parse only happens on the
+ * failure path — rare, and trivially cheap next to the LLM call.
  */
-function parseAndValidate<T>(raw: string, schema: z.ZodType<T>): T {
-  // JSON.parse failure is wrapped so callers see a uniform ValidationGateFailure.
+function toValidationGateFailure<T>(raw: string, schema: z.ZodType<T>): ValidationGateFailure {
   const parsed: unknown = (() => {
     try {
       return JSON.parse(raw) as unknown;
     } catch {
-      throw new ValidationGateFailure("missing_response", JSON_PARSE_RETRY_DIRECTIVE);
+      return undefined;
     }
   })();
-  const safe = schema.safeParse(parsed);
-  if (!safe.success) {
-    // Surface Zod's full issue list — refine `.message` strings include
-    // field paths and the violated rule. The model needs the specifics.
-    throw new ValidationGateFailure("missing_response", safe.error.message);
+  if (parsed === undefined) {
+    return new ValidationGateFailure("missing_response", JSON_PARSE_RETRY_DIRECTIVE);
   }
-  return safe.data;
+  const safe = schema.safeParse(parsed);
+  // safeParse succeeding here means the SDK rejected for a reason our
+  // re-parse can't see (e.g. secure-JSON prototype-pollution guard) —
+  // treat as a JSON-shape failure rather than inventing a directive.
+  return new ValidationGateFailure(
+    "missing_response",
+    safe.success ? JSON_PARSE_RETRY_DIRECTIVE : safe.error.message,
+  );
 }
 
 /**
