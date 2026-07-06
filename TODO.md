@@ -9,6 +9,8 @@ the concern, and the conditions under which it should be promoted to a PR.
 
 - [ ] `proxy.test.ts:88` floating promise — the test fires a promise without awaiting or marking with `void`. Decide whether the test should `await` (probable) or whether the pattern is intentional and the `void` annotation is the fix. Surfaced by the `@typescript-eslint/no-floating-promises` warn rule.
 
+- [ ] Streaming follow-ups (2026-06-10 plan): stream close-turn prose; resumable streams on reload (chatbot-resume-streams doc); remove tRPC wave.submitTurn after one stable release; consider full useChat message-state adoption with the tool-calling migration.
+
 ## Teaching-loop UI (Task 15 follow-ups)
 
 ### JSON-everywhere for wave `context_messages.content`
