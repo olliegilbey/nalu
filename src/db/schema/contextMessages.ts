@@ -36,13 +36,25 @@ import { scopingPasses } from "./scopingPasses";
  * row→tag mapping is in spec §6.5:
  *   user_message, card_answer, assistant_response,
  *   harness_turn_counter, harness_review_block,
- *   failed_assistant_response, harness_retry_directive.
- * The last two are persisted by executeTurn's per-turn retry loop when the
- * model emits an unparseable response (failed_assistant_response = raw output
- * that failed parsing; harness_retry_directive = synthesised user-role nudge
- * to retry). They share (parent, turn_index) with the original attempt and
- * are filtered out of successful turns by renderContext, but retained in DB
- * so the LLM sees them during a retry and terminal failures keep an audit trail.
+ *   failed_assistant_response, harness_retry_directive,
+ *   assistant_tool_call, tool_result.
+ * failed_assistant_response / harness_retry_directive are persisted by
+ * executeTurn's per-turn retry loop when the model emits an unparseable
+ * response (failed_assistant_response = raw output that failed parsing;
+ * harness_retry_directive = synthesised user-role nudge to retry). They share
+ * (parent, turn_index) with the original attempt and are filtered out of
+ * successful turns by renderContext, but retained in DB so the LLM sees them
+ * during a retry and terminal failures keep an audit trail.
+ *
+ * Tool-loop kinds (tool-calling migration, 2026-06-10 plan) — content is
+ * JSON, serialized once at write time and parsed (never re-serialized) at
+ * render so the cache prefix stays byte-stable:
+ *   - `assistant_tool_call`: role='assistant', content =
+ *     `{ "text": string, "toolCalls": [{ "toolCallId", "toolName", "input" }] }`
+ *     — one row per assistant step that contained tool calls (text may be "").
+ *   - `tool_result`: role='tool', content =
+ *     `{ "results": [{ "toolCallId", "toolName", "output" }] }`
+ *     — one row per step's results batch.
  *
  * Two partial unique indexes enforce (turn_index, seq) ordering uniqueness
  * scoped to each parent type without conflicting across the XOR.
@@ -69,7 +81,8 @@ export const contextMessages = pgTable(
       sql`${t.kind} IN (
         'user_message','card_answer','assistant_response',
         'harness_turn_counter','harness_review_block',
-        'failed_assistant_response','harness_retry_directive'
+        'failed_assistant_response','harness_retry_directive',
+        'assistant_tool_call','tool_result'
       )`,
     ),
     // Restrict role to known LLM roles — 'system' excluded; system content is never persisted (P3).

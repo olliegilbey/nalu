@@ -58,7 +58,9 @@ export interface AppendMessageParams {
     | "harness_turn_counter"
     | "harness_review_block"
     | "failed_assistant_response"
-    | "harness_retry_directive";
+    | "harness_retry_directive"
+    | "assistant_tool_call"
+    | "tool_result";
   /** LLM role — 'system' excluded; system content is never persisted (P3). */
   readonly role: "user" | "assistant" | "tool";
   /** Raw text content of the message. */

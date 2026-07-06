@@ -64,6 +64,13 @@
       "when": 1782930070779,
       "tag": "0008_enable_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1783341335876,
+      "tag": "0009_tool_call_rows",
+      "breakpoints": true
     }
   ]
 }
