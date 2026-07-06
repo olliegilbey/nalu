@@ -43,6 +43,7 @@ export function WaveSession({
     xpGainAmount,
     awardMcXp,
     isPending,
+    streamingText,
     submitChatText,
     submitQuestionnaireAnswers,
   } = useWaveState(courseId, waveNumber);
@@ -142,7 +143,15 @@ export function WaveSession({
       {optimistic && turns.length === optimistic.turnCountAtSubmit && (
         <MessageBubble message={{ id: "pending", role: "user", content: optimistic.content }} />
       )}
-      {isPending && <TypingBubble />}
+      {/* Streaming bubble: teaching prose arrives token-by-token from the
+          in-flight turn (useChat). Markup matches committed assistant bubbles
+          so the swap to the canonical server-derived turn on invalidation is
+          visually seamless. Typing indicator covers the pre-first-token gap. */}
+      {streamingText.length > 0 ? (
+        <MessageBubble message={{ id: "streaming", role: "assistant", content: streamingText }} />
+      ) : (
+        isPending && <TypingBubble />
+      )}
     </ChatShell>
   );
 }
