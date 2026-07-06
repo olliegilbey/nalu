@@ -35,6 +35,13 @@ describe("buildPageviewEvent", () => {
     expect(buildPageviewEvent({ ...base, ip: "203.0.113.7" }).properties.$ip).toBe("203.0.113.7");
   });
 
+  it("mirrors the IP into client_ip (PostHog strips $ip after GeoIP; client_ip persists)", () => {
+    expect(buildPageviewEvent(base).properties.client_ip).toBeUndefined();
+    expect(buildPageviewEvent({ ...base, ip: "203.0.113.7" }).properties.client_ip).toBe(
+      "203.0.113.7",
+    );
+  });
+
   it("adds $referrer and $referring_domain from a valid referrer", () => {
     const e = buildPageviewEvent({ ...base, referrer: "https://www.linkedin.com/feed/" });
     expect(e.properties.$referrer).toBe("https://www.linkedin.com/feed/");
