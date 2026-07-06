@@ -1,6 +1,6 @@
 import type { Course } from "@/db/schema";
 import type { Wave } from "@/db/schema";
-import type { WaveSeedInputs } from "@/lib/types/context";
+import type { WaveSeedInputs, WaveOutputContract } from "@/lib/types/context";
 import type {
   ClarificationJsonb,
   DueConceptsSnapshot,
@@ -11,6 +11,11 @@ import type {
 /**
  * Compose `WaveSeedInputs` from a Course row + Wave row for `executeTurn`.
  *
+ * `outputContract` is the caller's transport declaration ("tools" = streaming
+ * tool-loop turns, "json" = blocking mega-schema turns) — it selects the
+ * teaching system prompt's output-format block. Explicit at every call site
+ * so a transport can't silently render the wrong prompt.
+ *
  * `topicScope` is derived from the clarification responses (already persisted
  * on `courses.clarification`); concatenating them gives the LLM a plain-text
  * reminder of the agreed scope without re-parsing.
@@ -20,7 +25,11 @@ import type {
  * — Drizzle's row type widens JSONB to `unknown`, but the runtime shape is
  * guaranteed by the read-side guard.
  */
-export function buildWaveSeed(course: Course, wave: Wave): WaveSeedInputs {
+export function buildWaveSeed(
+  course: Course,
+  wave: Wave,
+  outputContract: WaveOutputContract,
+): WaveSeedInputs {
   // Validated upstream by `courseRowGuard` — see file-level comment.
   const clarification = (course.clarification as ClarificationJsonb | null) ?? null;
   const topicScope = clarification
@@ -42,5 +51,6 @@ export function buildWaveSeed(course: Course, wave: Wave): WaveSeedInputs {
     courseSummary: course.summary,
     dueConcepts: wave.dueConceptsSnapshot as DueConceptsSnapshot,
     seedSource: wave.seedSource as SeedSource,
+    outputContract,
   };
 }

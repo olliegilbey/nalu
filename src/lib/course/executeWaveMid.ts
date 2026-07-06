@@ -33,7 +33,9 @@ export async function executeWaveMid(
 
   const { parsed } = await executeTurn({
     parent: { kind: "wave", id: ctx.wave.id },
-    seed: buildWaveSeed(ctx.course, ctx.wave),
+    // "json": this is the blocking mega-schema path — the system prompt must
+    // keep declaring the single-JSON output contract.
+    seed: buildWaveSeed(ctx.course, ctx.wave, "json"),
     userMessageContent: renderWaveTurnEnvelope({
       learnerInput,
       turnsRemaining,

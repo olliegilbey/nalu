@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { NoObjectGeneratedError } from "ai";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
@@ -7,21 +6,24 @@ import { createCourse, setCourseStartingState } from "@/db/queries/courses";
 import { appendWaveChatLog, getWaveById, openWave } from "@/db/queries/waves";
 import { appendMessage, getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { WAVE } from "@/lib/config/tuning";
-import * as streamChatModule from "@/lib/llm/streamChat";
+import * as streamToolChatModule from "@/lib/llm/streamToolChat";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
-import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
+import type { StreamToolChatHandle, StreamToolChatOptions } from "@/lib/llm/streamToolChat";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTurn";
 import { streamWaveTurn } from "./streamWaveTurn";
 
 /**
- * Integration tests for `streamWaveTurn` (plan: streaming-wave-turns Task 6).
- * Real Postgres testcontainer; the LLM boundary is mocked at `streamChat`
- * (mid-turns — `executeTurnStream` then runs for real, persisting production
- * -shaped context_messages rows) and at `executeTurn` (close turns, which
- * run the blocking path inside the stream). Assertions cover the UIMessage
- * part sequence AND the same DB row trails the blocking suite asserts.
+ * Integration tests for `streamWaveTurn` (plans: streaming-wave-turns Task 6,
+ * tool-calling Task 6). Real Postgres testcontainer; the LLM boundary is
+ * mocked at `streamToolChat` (mid-turns — `executeToolTurnStream` then runs
+ * for real, persisting production-shaped context_messages rows INCLUDING the
+ * tool kinds) and at `executeTurn` (close turns, which run the blocking path
+ * inside the stream). Mock handles invoke the REAL tool executes so the
+ * collector is staged exactly as `streamText` would stage it in production.
+ * Assertions cover the UIMessage part sequence (text + tool chunks) AND the
+ * same DB row trails the blocking suite asserts.
  */
 
 const USER_ID = "55555555-5555-5555-5555-555555555555";
@@ -42,6 +44,22 @@ const FAKE_USAGE = {
   totalTokens: 0,
   inputTokenDetails: { noCacheTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
   outputTokenDetails: { textTokens: 0, reasoningTokens: 0 },
+};
+
+/** A valid presentQuestionnaire tool input (post-validation shape). */
+const QUIZ_INPUT = {
+  questions: [
+    {
+      id: "q1",
+      type: "multiple_choice" as const,
+      prompt: "Which binding moves?",
+      options: { A: "let", B: "const", C: "both", D: "neither" },
+      correct: "A" as const,
+      freetextRubric: "n/a",
+      conceptName: "ownership",
+      tier: 1,
+    },
+  ],
 };
 
 /** Seed user + course + open Wave 1. Returns the ids each test needs. */
@@ -77,35 +95,46 @@ async function seedCourseWithOpenWave(): Promise<{
   return { courseId: course.id, waveId: wave.id };
 }
 
-/** Builds a StreamChatHandle whose partials/final are canned. */
-function handleOf(partials: readonly unknown[], final: () => Promise<unknown>) {
-  return {
-    partialOutputStream: (async function* () {
-      for (const p of partials) yield p;
-    })(),
-    final,
-  };
+/**
+ * One scripted attempt for the streamToolChat mock: fullStream parts to yield
+ * (production `TextStreamPart` shapes) + the final step trail. `run` is
+ * invoked with the attempt's REAL tools before parts are yielded, so tool
+ * executes stage the collector mid-"stream", exactly like `streamText`.
+ */
+interface ScriptedAttempt {
+  readonly parts: readonly { type: string; [k: string]: unknown }[];
+  readonly steps: readonly {
+    text: string;
+    toolCalls: readonly unknown[];
+    toolResults: readonly unknown[];
+    content: readonly unknown[];
+  }[];
+  readonly run?: (tools: StreamToolChatOptions["tools"]) => Promise<void>;
 }
 
-/** Builds the error streamChat's final() rejects with on parse/validation failure. */
-function noObjectError(text: string): NoObjectGeneratedError {
-  return new NoObjectGeneratedError({
-    message: "No object generated: response did not match schema.",
-    text,
-    response: { id: "t", timestamp: new Date(0), modelId: "mock" },
-    usage: FAKE_USAGE,
-    finishReason: "stop",
+/** Queue scripted attempts onto the streamToolChat spy (one per LLM attempt). */
+function mockToolChatAttempts(...attempts: readonly ScriptedAttempt[]) {
+  const spy = vi.spyOn(streamToolChatModule, "streamToolChat");
+  attempts.forEach((attempt) => {
+    spy.mockImplementationOnce(async (_messages, opts): Promise<StreamToolChatHandle> => {
+      return {
+        fullStream: (async function* () {
+          await attempt.run?.(opts.tools);
+          for (const p of attempt.parts) yield p as never;
+        })(),
+        final: async () => ({
+          text: attempt.steps[attempt.steps.length - 1]?.text ?? "",
+          steps: attempt.steps as never,
+          usage: FAKE_USAGE,
+        }),
+      };
+    });
   });
+  return spy;
 }
 
-/** Canned success handle for a mid-turn `parsed` emission. */
-function midTurnHandle(parsed: WaveMidTurn) {
-  return handleOf(
-    // Two growing partials so the delta path is exercised.
-    [{ userMessage: parsed.userMessage.slice(0, 3) }, { userMessage: parsed.userMessage }],
-    async () => ({ parsed, text: JSON.stringify(parsed), usage: FAKE_USAGE }),
-  );
-}
+/** fullStream text-delta part (note: `text`, not `delta`, at this layer). */
+const textDelta = (text: string) => ({ type: "text-delta", id: "t0", text });
 
 /** Minimal recording writer satisfying UIMessageStreamWriter for assertions. */
 function recordingWriter() {
@@ -157,16 +186,16 @@ describe("streamWaveTurn (integration)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 1. Happy mid-turn: text part lifecycle + transient result part + the same
-  //    DB rows the blocking path persists (context_messages, chat_log).
+  // 1. Happy mid-turn (pure teaching, no tool calls): text part lifecycle +
+  //    transient result part + the same DB rows the blocking path persists.
   // -------------------------------------------------------------------------
   it("happy mid-turn: streams text parts, emits data-turn-result, persists both stores", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
-      const parsed: WaveMidTurn = { userMessage: "Got it." };
-      vi.spyOn(streamChatModule, "streamChat").mockResolvedValueOnce(
-        midTurnHandle(parsed) as never,
-      );
+      mockToolChatAttempts({
+        parts: [textDelta("Got"), textDelta(" it.")],
+        steps: [{ text: "Got it.", toolCalls: [], toolResults: [], content: [] }],
+      });
       const { parts, writer } = recordingWriter();
 
       await streamWaveTurn(
@@ -200,7 +229,7 @@ describe("streamWaveTurn (integration)", () => {
         turnsRemaining: WAVE.turnCount - 1,
       });
 
-      // DB: context_messages rows (persisted by the REAL executeTurnStream).
+      // DB: context_messages rows (persisted by the REAL executeToolTurnStream).
       const ctxRows = await getMessagesForWave(waveId);
       expect(ctxRows.map((r) => r.kind)).toEqual(["user_message", "assistant_response"]);
       // DB: chat_log dual-write — learner entry (pre-LLM) + assistant entry.
@@ -211,20 +240,128 @@ describe("streamWaveTurn (integration)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 2. Validation retry: reset part with attempt 1 + two distinct text ids;
-  //    the final result still lands.
+  // 2. Questionnaire tool turn: tool chunks forward to the writer, the REAL
+  //    execute stages the collector, tool-kind rows persist, chat_log carries
+  //    the questionnaire entry, the result projects it.
+  // -------------------------------------------------------------------------
+  it("questionnaire turn: forwards tool chunks, persists tool rows + questionnaire", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      mockToolChatAttempts({
+        // Prose before the call, tool lifecycle, short wrap-up after — the
+        // shape the probe observed (median 2 steps).
+        parts: [
+          textDelta("Let's check. "),
+          { type: "tool-input-start", id: "c1", toolName: "presentQuestionnaire" },
+          { type: "tool-input-delta", id: "c1", delta: '{"questions":' },
+          {
+            type: "tool-call",
+            toolCallId: "c1",
+            toolName: "presentQuestionnaire",
+            input: QUIZ_INPUT,
+          },
+          {
+            type: "tool-result",
+            toolCallId: "c1",
+            toolName: "presentQuestionnaire",
+            input: QUIZ_INPUT,
+            output: { accepted: true, questionCount: 1 },
+          },
+          textDelta("Quiz below!"),
+        ],
+        steps: [
+          {
+            text: "Let's check. ",
+            toolCalls: [{ toolCallId: "c1", toolName: "presentQuestionnaire", input: QUIZ_INPUT }],
+            toolResults: [
+              {
+                toolCallId: "c1",
+                toolName: "presentQuestionnaire",
+                output: { accepted: true, questionCount: 1 },
+              },
+            ],
+            content: [],
+          },
+          { text: "Quiz below!", toolCalls: [], toolResults: [], content: [] },
+        ],
+        // Stage the collector through the REAL tool execute, as streamText would.
+        run: async (tools) => {
+          await tools["presentQuestionnaire"]!.execute!(QUIZ_INPUT, {
+            toolCallId: "c1",
+            messages: [],
+          });
+        },
+      });
+      const { parts, writer } = recordingWriter();
+
+      await streamWaveTurn(
+        {
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: { kind: "chat-text", text: "quiz me" },
+        },
+        writer,
+      );
+
+      // Tool chunk lifecycle reached the client in order.
+      const toolTypes = parts.map((p) => p.type).filter((t) => t.startsWith("tool-"));
+      expect(toolTypes).toEqual([
+        "tool-input-start",
+        "tool-input-delta",
+        "tool-input-available",
+        "tool-output-available",
+      ]);
+      const inputAvailable = parts.find((p) => p.type === "tool-input-available")!;
+      expect(inputAvailable["toolCallId"]).toBe("c1");
+      expect(inputAvailable["toolName"]).toBe("presentQuestionnaire");
+      expect(inputAvailable["input"]).toEqual(QUIZ_INPUT);
+
+      // Result projection: the full streamed prose + the new questionnaire.
+      const resultPart = parts.at(-1)!;
+      expect(resultPart.type).toBe("data-turn-result");
+      const data = resultPart["data"] as {
+        assistantContent: string;
+        newQuestionnaire: { questions: readonly unknown[] } | null;
+      };
+      expect(data.assistantContent).toBe("Let's check. Quiz below!");
+      expect(data.newQuestionnaire?.questions).toHaveLength(1);
+
+      // DB: the loop trail persists with tool kinds at one turn_index.
+      const ctxRows = await getMessagesForWave(waveId);
+      expect(ctxRows.map((r) => r.kind)).toEqual([
+        "user_message",
+        "assistant_tool_call",
+        "tool_result",
+        "assistant_response",
+      ]);
+      // chat_log carries the questionnaire entry with the FULL streamed prose.
+      const wave = await getWaveById(waveId);
+      const log = wave.chatLog as WaveChatLog;
+      expect(log.at(-1)).toMatchObject({
+        role: "assistant",
+        kind: "text_with_questionnaire",
+        content: "Let's check. Quiz below!",
+      });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 3. Validation retry (gate: empty prose): reset part with attempt 1 + two
+  //    distinct text ids; retry exhaust persists; the final result still lands.
   // -------------------------------------------------------------------------
   it("validation retry: emits data-turn-reset and re-streams under a new text id", async () => {
     await withTestDb(async () => {
-      const { courseId } = await seedCourseWithOpenWave();
-      const parsed: WaveMidTurn = { userMessage: "Second try." };
-      vi.spyOn(streamChatModule, "streamChat")
-        .mockResolvedValueOnce(
-          handleOf([{ userMessage: "bad" }], async () => {
-            throw noObjectError('{"wrong":1}');
-          }) as never,
-        )
-        .mockResolvedValueOnce(midTurnHandle(parsed) as never);
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      mockToolChatAttempts(
+        // Attempt 0: the loop ends with NO learner-visible prose → gate fails.
+        { parts: [], steps: [{ text: "", toolCalls: [], toolResults: [], content: [] }] },
+        // Attempt 1: clean teaching turn.
+        {
+          parts: [textDelta("Second try.")],
+          steps: [{ text: "Second try.", toolCalls: [], toolResults: [], content: [] }],
+        },
+      );
       const { parts, writer } = recordingWriter();
 
       await streamWaveTurn(
@@ -247,12 +384,24 @@ describe("streamWaveTurn (integration)", () => {
       const textEnds = parts.filter((p) => p.type === "text-end");
       expect(textEnds.map((p) => p["id"])).toEqual(textStarts.map((p) => p["id"]));
       expect(parts.at(-1)!["data"]).toMatchObject({ kind: "mid-turn" });
+
+      // DB: the failed attempt persists as ONE JSON envelope + directive —
+      // never as tool-kind rows (cache-prefix invariant).
+      const ctxRows = await getMessagesForWave(waveId);
+      expect(ctxRows.map((r) => r.kind)).toEqual([
+        "user_message",
+        "failed_assistant_response",
+        "harness_retry_directive",
+        "assistant_response",
+      ]);
+      const directive = ctxRows[2]!;
+      expect(directive.content).toContain("teaching prose");
     });
   });
 
   // -------------------------------------------------------------------------
-  // 3. Close turn: blocking path inside the stream — result part only, no
-  //    text parts.
+  // 4. Close turn: blocking path inside the stream — result part only, no
+  //    text parts, tool loop never touched.
   // -------------------------------------------------------------------------
   it("close turn: emits only data-turn-result (kind close-turn), no text parts", async () => {
     await withTestDb(async () => {
@@ -294,7 +443,7 @@ describe("streamWaveTurn (integration)", () => {
       vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
         makeBlockingTurnMock(closeParsed) as unknown as typeof executeTurnModule.executeTurn,
       );
-      const streamSpy = vi.spyOn(streamChatModule, "streamChat");
+      const toolChatSpy = vi.spyOn(streamToolChatModule, "streamToolChat");
       const { parts, writer } = recordingWriter();
 
       await streamWaveTurn(
@@ -314,8 +463,8 @@ describe("streamWaveTurn (integration)", () => {
         closingMessage: "Closing chat.",
         nextWaveNumber: 2,
       });
-      // The streaming LLM path is never touched on a close turn.
-      expect(streamSpy).not.toHaveBeenCalled();
+      // The streaming tool loop is never touched on a close turn.
+      expect(toolChatSpy).not.toHaveBeenCalled();
     });
   });
 });

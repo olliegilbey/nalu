@@ -67,3 +67,49 @@ describe("renderTeachingSystem (JSON-everywhere)", () => {
     expect(out).not.toContain("<planned_concepts>");
   });
 });
+
+describe("renderTeachingSystem (output contracts)", () => {
+  it("absent outputContract renders byte-identically to explicit 'json'", () => {
+    expect(renderTeachingSystem({ ...baseInputs, outputContract: "json" })).toBe(
+      renderTeachingSystem(baseInputs),
+    );
+  });
+
+  it("json contract declares single-JSON and never mentions the tools", () => {
+    const out = renderTeachingSystem({ ...baseInputs, outputContract: "json" });
+    expect(out).toContain("single JSON object");
+    expect(out).toContain("the questionnaire field");
+    expect(out).not.toContain("presentQuestionnaire");
+    expect(out).not.toContain("recordComprehensionSignals");
+  });
+
+  it("tools contract names both tools, keeps single-JSON for the final turn, drops field vocab", () => {
+    const out = renderTeachingSystem({ ...baseInputs, outputContract: "tools" });
+    expect(out).toContain("presentQuestionnaire");
+    expect(out).toContain("recordComprehensionSignals");
+    // Close turns still run the blocking single-JSON path under this prompt.
+    expect(out).toContain("final turn no tools are available");
+    expect(out).toContain("single JSON object");
+    // Mega-schema vocabulary must not leak into the tools prompt.
+    expect(out).not.toContain("the questionnaire field");
+  });
+
+  it("contracts differ ONLY in the questionnaire channel + output format", () => {
+    const json = renderTeachingSystem({ ...baseInputs, outputContract: "json" });
+    const tools = renderTeachingSystem({ ...baseInputs, outputContract: "tools" });
+    // Shared pedagogy is identical: strip the two contract-dependent pieces
+    // and the remainder must match. Cheap proxy: both keep the security block
+    // and lesson-seed sections byte-identical.
+    const sharedMarkers = [
+      "<course_topic>",
+      "<lesson_seed>",
+      "Do not award, claim, or acknowledge XP amounts.",
+      "End each lesson on a teaching beat",
+    ];
+    sharedMarkers.forEach((m) => {
+      expect(json).toContain(m);
+      expect(tools).toContain(m);
+    });
+    expect(json).not.toBe(tools);
+  });
+});

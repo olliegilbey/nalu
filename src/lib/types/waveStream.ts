@@ -1,5 +1,6 @@
-import type { UIMessage } from "ai";
+import type { InferUITools, UIMessage } from "ai";
 import type { SubmitWaveTurnResult } from "@/lib/course/submitWaveTurn";
+import type { WaveMidTurnToolkit } from "@/lib/course/waveTurnTools";
 
 /**
  * Client-safe projection of a finished turn, delivered as a transient
@@ -15,7 +16,18 @@ export interface WaveTurnResetData {
 }
 
 /**
- * The wave-turn UI message type: no metadata; two custom data parts.
+ * Mid-turn tool set as UI tool types — gives the client typed
+ * `tool-recordComprehensionSignals` / `tool-presentQuestionnaire` message
+ * parts (`part.input` is the tool's validated input shape). Derived from the
+ * server tool definitions so client and loop can never drift.
+ * Docs: node_modules/ai/docs/04-ai-sdk-ui/03-chatbot-tool-usage.mdx
+ */
+export type WaveTurnUITools = InferUITools<WaveMidTurnToolkit["tools"]>;
+
+/**
+ * The wave-turn UI message type: no metadata; two custom data parts; typed
+ * mid-turn tool parts (generative UI — the questionnaire card renders from
+ * `tool-presentQuestionnaire` input).
  * Server writes parts via `createUIMessageStream<WaveTurnUIMessage>`;
  * client consumes via `useChat<WaveTurnUIMessage>` `onData`.
  * Docs: node_modules/ai/docs/04-ai-sdk-ui/20-streaming-data.mdx
@@ -26,5 +38,6 @@ export type WaveTurnUIMessage = UIMessage<
   {
     "turn-result": WaveTurnResultData;
     "turn-reset": WaveTurnResetData;
-  }
+  },
+  WaveTurnUITools
 >;
