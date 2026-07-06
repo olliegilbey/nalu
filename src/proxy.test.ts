@@ -132,7 +132,10 @@ describe("proxy", () => {
     // anonymous-user minting on hover-prefetches.
     expect(config.matcher).toEqual([
       {
-        source: expect.stringContaining("(?!api|_next/static|_next/image") as string,
+        // Dotted-path exclusion covers all static assets (no app route has a
+        // `.`); losing it would count asset fetches as pageviews and mint
+        // anonymous users for them.
+        source: "/((?!api|_next/static|_next/image|.*\\..*).*)",
         missing: [
           { type: "header", key: "next-router-prefetch" },
           { type: "header", key: "purpose", value: "prefetch" },

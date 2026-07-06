@@ -111,10 +111,12 @@ export async function proxy(request: NextRequest, event?: NextFetchEvent): Promi
 
 export const config = {
   // Run on page routes only. Exclude API routes (the tRPC route reads the
-  // cookie read-only), Next internals, and the root metadata files
-  // (`favicon.ico`, `icon.png`, `apple-icon.png` — see `src/app/`). Serving
-  // those never needs a session; matching them would mint a throwaway
-  // anonymous user on every crawler/browser asset fetch.
+  // cookie read-only), Next internals, and any dotted path — static assets
+  // (`favicon.ico`, `nalu-logo.svg`, everything in `/public`) all contain a
+  // `.` and no app route does. Serving assets never needs a session; matching
+  // them would mint a throwaway anonymous user on every crawler/browser asset
+  // fetch and count file requests as `$pageview`s (live preview showed
+  // `/nalu-logo.svg` firing one).
   //
   // The `missing` conditions skip prefetches entirely. This MUST live in the
   // matcher: Next strips internal Flight headers (`next-router-prefetch`,
@@ -124,7 +126,7 @@ export const config = {
   // `$pageview` counts and mint anonymous users for hover-prefetches.
   matcher: [
     {
-      source: "/((?!api|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png).*)",
+      source: "/((?!api|_next/static|_next/image|.*\\..*).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },
