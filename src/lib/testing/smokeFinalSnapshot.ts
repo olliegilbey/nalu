@@ -100,14 +100,14 @@ export async function emitSmokeFinalSnapshot(args: SmokeFinalSnapshotArgs): Prom
   const llmMessages: readonly LlmMessage[] = [
     { role: "system", content: rendered.system } satisfies LlmMessage,
     ...rendered.messages.map((m): LlmMessage => {
-      // Mirror the narrow in executeTurn: 'tool' would need ToolContent.
       // Scoping never emits tool rows today; throw rather than silently
-      // mis-rendering if that changes.
+      // mis-rendering if that changes. (`content` guard also excludes the
+      // structured tool-call/tool-result variants at the type level.)
+      if (m.role === "tool" || !("content" in m)) {
+        throw new Error("smokeFinalSnapshot: tool/structured row is not supported");
+      }
       if (m.role === "assistant") return { role: "assistant", content: m.content };
       if (m.role === "system") return { role: "system", content: m.content };
-      if (m.role === "tool") {
-        throw new Error("smokeFinalSnapshot: tool-role row is not supported");
-      }
       return { role: "user", content: m.content };
     }),
   ];

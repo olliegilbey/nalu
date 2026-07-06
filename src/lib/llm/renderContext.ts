@@ -1,3 +1,4 @@
+import { z } from "zod/v4";
 import type { ContextMessage } from "@/db/schema";
 import type { SeedInputs } from "@/lib/types/context";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
@@ -16,7 +17,8 @@ import { renderScopingSystem } from "@/lib/prompts/scoping";
  * consecutive same-role rows into one LLM message (e.g. a `user_message`
  * row immediately followed by a `harness_turn_counter` row collapses into
  * one user-role API message). This is a deliberate cache-key optimisation
- * for OpenAI-compatible providers; flat over the row list.
+ * for OpenAI-compatible providers; flat over the row list. Structured
+ * tool rows (below) never coalesce — each is a distinct API message.
  *
  * The cache-prefix invariant only holds when role transitions are stable
  * across appends: an append that introduces a NEW user row immediately
@@ -35,17 +37,69 @@ import { renderScopingSystem } from "@/lib/prompts/scoping";
  * (no `assistant_response`) keep every row so the model can see the
  * failure context on re-attempt. This filter preserves cache-prefix
  * stability across successful turns: a recovered turn always renders to
- * the same bytes as a non-retry turn would have.
+ * the same bytes as a non-retry turn would have. Tool rows ride along
+ * with whatever the filter decides for their turn group.
+ *
+ * Tool rows (tool-calling migration): `assistant_tool_call` / `tool_result`
+ * rows carry JSON content serialized once at write time; it is PARSED here
+ * (Zod-guarded — DB reads are a trust boundary) and never re-serialized, so
+ * the provider-facing bytes remain deterministic from the stored source.
  */
-export interface LlmRenderedMessage {
-  readonly role: "system" | "user" | "assistant" | "tool";
-  readonly content: string;
-}
+export type LlmRenderedMessage =
+  | { readonly role: "system" | "user" | "assistant" | "tool"; readonly content: string }
+  | {
+      readonly role: "assistant";
+      readonly kind: "tool-call";
+      readonly text: string;
+      readonly toolCalls: readonly {
+        readonly toolCallId: string;
+        readonly toolName: string;
+        readonly input: unknown;
+      }[];
+    }
+  | {
+      readonly role: "tool";
+      readonly results: readonly {
+        readonly toolCallId: string;
+        readonly toolName: string;
+        readonly output: unknown;
+      }[];
+    };
 
 /** Output of {@link renderContext}: the system string + role-tagged message list. */
 export interface RenderedContext {
   readonly system: string;
   readonly messages: readonly LlmRenderedMessage[];
+}
+
+// Row-content guards for the tool kinds — DB reads are a trust boundary
+// (AGENTS.md). Shapes documented next to the schema (contextMessages.ts).
+const toolCallContentSchema = z.object({
+  text: z.string(),
+  toolCalls: z.array(
+    z.object({ toolCallId: z.string(), toolName: z.string(), input: z.unknown() }),
+  ),
+});
+const toolResultContentSchema = z.object({
+  results: z.array(z.object({ toolCallId: z.string(), toolName: z.string(), output: z.unknown() })),
+});
+
+/** Parse a tool row's JSON content against its guard; throw with row identity on corruption. */
+function parseToolRow<T>(row: ContextMessage, schema: z.ZodType<T>): T {
+  const parsed = (() => {
+    try {
+      return JSON.parse(row.content) as unknown;
+    } catch {
+      return undefined;
+    }
+  })();
+  const result = schema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error(
+      `renderContext: corrupt ${row.kind} row ${row.id} (turn ${row.turnIndex}, seq ${row.seq})`,
+    );
+  }
+  return result.data;
 }
 
 /** Build the LLM API payload from seed inputs + ordered `context_messages` rows (spec §9.1). */
@@ -80,15 +134,30 @@ export function renderContext(
     );
   });
 
-  // Same-role coalescing fold (unchanged from prior version).
+  // Same-role coalescing fold. Structured tool rows map to standalone
+  // messages and break the coalescing chain in both directions: a plain
+  // row after a structured one starts a fresh message.
   const out = filtered.reduce<readonly LlmRenderedMessage[]>((acc, row) => {
     // Defensive: schema CHECK already excludes 'system'. If somehow seen, skip.
     if (row.role === "system") return acc;
+    if (row.kind === "assistant_tool_call") {
+      const parsed = parseToolRow(row, toolCallContentSchema);
+      return [
+        ...acc,
+        { role: "assistant", kind: "tool-call", text: parsed.text, toolCalls: parsed.toolCalls },
+      ];
+    }
+    if (row.kind === "tool_result") {
+      const parsed = parseToolRow(row, toolResultContentSchema);
+      return [...acc, { role: "tool", results: parsed.results }];
+    }
     const last = acc[acc.length - 1];
-    if (last && last.role === row.role) {
+    // Coalesce only when the previous message is a plain-content one of the
+    // same role ("content" in last narrows away the structured variants).
+    if (last && "content" in last && last.role === row.role) {
       return [...acc.slice(0, -1), { role: last.role, content: `${last.content}\n${row.content}` }];
     }
-    return [...acc, { role: row.role as LlmRenderedMessage["role"], content: row.content }];
+    return [...acc, { role: row.role as "user" | "assistant" | "tool", content: row.content }];
   }, []);
 
   return { system, messages: out };
