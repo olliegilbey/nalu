@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest, type NextFetchEvent } from "next/server";
 import { getEnv } from "@/lib/config";
+import { capturePageview } from "@/lib/analytics/capturePageview";
 
 /**
  * Next.js proxy (formerly `middleware`) — establishes a Supabase anonymous
@@ -17,8 +18,12 @@ import { getEnv } from "@/lib/config";
  * Fails open — a transient Supabase error returns `NextResponse.next()`
  * rather than bricking the page; the subsequent tRPC call degrades to
  * `UNAUTHORIZED`, which the UI already handles.
+ *
+ * Also fires a best-effort server-side PostHog `$pageview` (via `waitUntil`)
+ * with the visitor's real IP as `$ip`, so PostHog Cloud geolocates the visitor
+ * rather than our server — the reason we capture here instead of client-side.
  */
-export async function proxy(request: NextRequest): Promise<NextResponse> {
+export async function proxy(request: NextRequest, event?: NextFetchEvent): Promise<NextResponse> {
   if (process.env.NODE_ENV !== "production") {
     return NextResponse.next();
   }
@@ -57,19 +62,22 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     },
   );
 
+  let userId: string | undefined;
   try {
     const { data } = await supabase.auth.getUser();
+    userId = data.user?.id;
     if (!data.user) {
       // No session yet — mint an anonymous account. `signInAnonymously`
       // triggers `setAll`, writing the new session cookies onto `response`.
       //
       // Known race (acceptable for MVP): two near-simultaneous first visits
-      // — e.g. a prefetched <Link> load racing the real navigation — can each
+      // — e.g. parallel document and RSC fetches on a cold load — can each
       // see "no user" and mint their own account; the losing cookie is
       // discarded, leaving a stray session-less `auth.users` row. Harmless
       // (the surviving cookie wins, `ensureUserProfile` is idempotent). See
       // TODO.md for the periodic-cleanup follow-up.
-      await supabase.auth.signInAnonymously();
+      const signIn = await supabase.auth.signInAnonymously();
+      userId = signIn?.data?.user?.id ?? undefined;
     }
   } catch (error) {
     // Fail open: never brick a page load on a transient auth error. Log it so
@@ -81,14 +89,48 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     return NextResponse.next();
   }
 
+  // Server-side pageview: `distinct_id` is the anon user id (joins PostHog
+  // sessions to DB courses), `$ip` is the real client IP for correct GeoIP.
+  // `waitUntil` runs it past the response so it never adds latency. Prefetches
+  // never reach here — the matcher's `missing` conditions exclude them (see
+  // `config` below; a runtime header check can't work, Next strips them).
+  if (env.POSTHOG_KEY && userId && event) {
+    event.waitUntil(
+      capturePageview({
+        apiKey: env.POSTHOG_KEY,
+        distinctId: userId,
+        url: request.nextUrl.href,
+        headers: request.headers,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  }
+
   return response;
 }
 
 export const config = {
   // Run on page routes only. Exclude API routes (the tRPC route reads the
-  // cookie read-only), Next internals, and the root metadata files
-  // (`favicon.ico`, `icon.png`, `apple-icon.png` — see `src/app/`). Serving
-  // those never needs a session; matching them would mint a throwaway
-  // anonymous user on every crawler/browser asset fetch.
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png).*)"],
+  // cookie read-only), Next internals, and any dotted path — static assets
+  // (`favicon.ico`, `nalu-logo.svg`, everything in `/public`) all contain a
+  // `.` and no app route does. Serving assets never needs a session; matching
+  // them would mint a throwaway anonymous user on every crawler/browser asset
+  // fetch and count file requests as `$pageview`s (live preview showed
+  // `/nalu-logo.svg` firing one).
+  //
+  // The `missing` conditions skip prefetches entirely. This MUST live in the
+  // matcher: Next strips internal Flight headers (`next-router-prefetch`,
+  // `rsc`, …) from `request.headers` before proxy code runs ("RSC requests
+  // and rewrites", proxy docs), so a runtime header check silently never
+  // fires. A prefetch is not a real visit — matching it would both inflate
+  // `$pageview` counts and mint anonymous users for hover-prefetches.
+  matcher: [
+    {
+      source: "/((?!api|_next/static|_next/image|.*\\..*).*)",
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+  ],
 };

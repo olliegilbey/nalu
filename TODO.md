@@ -149,3 +149,41 @@ dead-end UX. Surfaced by the anonymous-auth production smoke.
 
 **Promote when:** next UX pass, or before course-URL sharing becomes a real
 flow.
+
+## Analytics / visitor observability
+
+### Wire PostHog for visitor attribution — DONE 2026-07-03
+
+Implemented **server-side** anonymous `$pageview` capture in `src/proxy.ts`
+(distinct_id = Supabase anon user id; real client IP as `$ip` for correct
+GeoIP; tagged `app:"nalu"`), reusing resumate's EU project. Went server-side
+after verifying a client reverse proxy breaks GeoIP on PostHog Cloud (it
+geolocates our server, not the visitor). Spec + rationale:
+`docs/superpowers/specs/2026-07-02-posthog-visitor-analytics-design.md`
+(Revision section). The session↔DB-course join is now covered (distinct_id is
+the anon user id). Remaining optional: richer in-session client analytics
+(direct, un-proxied `posthog-js`) if ever wanted.
+
+**Files:** client entry (`src/app/layout.tsx` or a `PostHogProvider`), optional
+server-side capture in tRPC (`src/server/`), `src/proxy.ts` (stopgap only)
+
+A prod visitor's origin — IP-geo, referrer/UTM, session — is currently
+unrecoverable after ~1hr: runtime logs age out fast, the `client_ip` / `asn_name`
+/ `client_ip_country` metric dimensions are gated behind Observability Plus (Pro
+plan), and `@vercel/analytics` is not wired. Surfaced 2026-07-01 trying to
+identify an anonymous visitor to the "how transformers work" demo (see
+`reference_visitor_ip_geo_forensics` memory). With the app link now circulating in
+job applications, knowing who opens it is worth having.
+
+**Fix:** wire `posthog-js` on the client — pageviews, referrer, UTM, IP-based
+geoip, session replays. Set the anonymous Supabase `user_id` as the PostHog
+distinct_id so DB courses join to sessions. Consider server-side `posthog-node`
+capture for key tRPC events (topic chosen, clarify, wave progress) that the client
+script can't see. Free tier (1M events/mo) covers current traffic many times over.
+
+**Stopgap (zero-dep):** log `x-vercel-ip-country` / `x-vercel-ip-city` /
+`x-forwarded-for` in `src/proxy.ts` on session mint — but only as durable as log
+retention (~1hr) unless drained somewhere.
+
+**Promote when:** soon — visitor attribution is wanted now that the link is
+shared. At minimum before the next batch of applications goes out.
