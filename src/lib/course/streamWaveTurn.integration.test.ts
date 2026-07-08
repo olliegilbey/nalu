@@ -389,6 +389,9 @@ describe("streamWaveTurn (integration)", () => {
       const resets = parts.filter((p) => p.type === "data-turn-reset");
       expect(resets).toHaveLength(1);
       expect(resets[0]!["data"]).toEqual({ attempt: 1 });
+      // NON-transient: the marker must land in the message's parts array —
+      // the client slices on its position to hide failed-attempt output.
+      expect(resets[0]!["transient"]).toBeUndefined();
       const textStarts = parts.filter((p) => p.type === "text-start");
       expect(textStarts).toHaveLength(2);
       expect(textStarts[0]!["id"]).not.toBe(textStarts[1]!["id"]);
@@ -408,6 +411,77 @@ describe("streamWaveTurn (integration)", () => {
       ]);
       const directive = ctxRows[2]!;
       expect(directive.content).toContain("teaching prose");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 3b. Leak guard: a JSON-imitation attempt dumps the would-be tool input
+  //     (answer key included) into the TEXT channel. Deltas from the unfenced
+  //     line-start `{` onward must NOT cross the wire; the gate then retries.
+  //     Persistence still records the full failed prose (context fidelity).
+  // -------------------------------------------------------------------------
+  it("json-imitation attempt: withholds leaked text deltas, gate retries clean", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      const leakedJson = '{"questions": [{"id": "q1", "correct": "C"}]}';
+      mockToolChatAttempts(
+        // Attempt 0: greeting prose, then the raw JSON dump — the live-observed
+        // failure shape (2026-07-08, transformers dev wave).
+        {
+          parts: [textDelta("Here you go!\n"), textDelta(leakedJson)],
+          steps: [
+            {
+              text: `Here you go!\n${leakedJson}`,
+              toolCalls: [],
+              toolResults: [],
+              content: [],
+            },
+          ],
+        },
+        // Attempt 1: clean teaching turn.
+        {
+          parts: [textDelta("Clean retry.")],
+          steps: [{ text: "Clean retry.", toolCalls: [], toolResults: [], content: [] }],
+        },
+      );
+      const { parts, writer } = recordingWriter();
+
+      await streamWaveTurn(
+        {
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: { kind: "chat-text", text: "quiz me" },
+        },
+        writer,
+      );
+
+      // The answer key never crossed the wire: only the safe prefix of
+      // attempt 0 plus the whole of attempt 1 were forwarded.
+      const forwarded = parts
+        .filter((p) => p.type === "text-delta")
+        .map((p) => p["delta"] as string);
+      expect(forwarded.join("")).toBe("Here you go!\nClean retry.");
+      expect(forwarded.some((d) => d.includes("correct"))).toBe(false);
+      expect(parts.filter((p) => p.type === "data-turn-reset")).toHaveLength(1);
+
+      // The failed attempt's FULL prose (JSON included) still persists in the
+      // retry-exhaust envelope — the leak guard gates the client wire only.
+      const ctxRows = await getMessagesForWave(waveId);
+      expect(ctxRows.map((r) => r.kind)).toEqual([
+        "user_message",
+        "failed_assistant_response",
+        "harness_retry_directive",
+        "assistant_response",
+      ]);
+      // (inner quotes are JSON-escaped inside the envelope's text field)
+      expect(ctxRows[1]!.content).toContain('\\"correct\\"');
+      expect(ctxRows[2]!.content).toContain("raw JSON object");
+
+      // chat_log carries only the successful attempt's prose.
+      const wave = await getWaveById(waveId);
+      const log = wave.chatLog as WaveChatLog;
+      expect(log.at(-1)).toMatchObject({ role: "assistant", content: "Clean retry." });
     });
   });
 

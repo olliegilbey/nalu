@@ -163,11 +163,6 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
       prepareSendMessagesRequest: ({ body }) => ({ body: { payload: body?.["payload"] } }),
     }),
     onData: (part) => {
-      if (part.type === "data-turn-reset") {
-        // A validation retry is about to re-stream: drop the partial bubble.
-        chat.setMessages((prev) => prev.filter((m) => m.role !== "assistant"));
-        return;
-      }
       if (part.type === "data-turn-result") {
         handleTurnResult(part.data);
       }
@@ -236,10 +231,20 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
 
   const isPending = state.isFetching || chat.status === "submitted" || chat.status === "streaming";
 
-  // In-flight assistant prose: concatenated text parts of the last assistant
-  // message in useChat's transient list (empty when idle or between turns).
+  // In-flight assistant parts, discarding failed attempts: a validation retry
+  // re-streams the whole turn, and the server marks the boundary with a
+  // NON-transient `data-turn-reset` part. Everything before the last reset is
+  // a failed attempt's output (stale text/tool parts — TextUIPart carries no
+  // id, so slicing on the marker's POSITION is the only reliable seam;
+  // setMessages surgery mid-stream is undone by the SDK's next chunk).
   const lastAssistant = chat.messages.findLast((m) => m.role === "assistant");
-  const streamingText = (lastAssistant?.parts ?? [])
+  const allParts = lastAssistant?.parts ?? [];
+  const lastResetIdx = allParts.findLastIndex((p) => p.type === "data-turn-reset");
+  const liveParts = lastResetIdx === -1 ? allParts : allParts.slice(lastResetIdx + 1);
+
+  // In-flight assistant prose: concatenated text parts of the live attempt
+  // (empty when idle or between turns).
+  const streamingText = liveParts
     .filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
     .map((p) => p.text)
     .join("");
@@ -251,7 +256,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
   // structural subset of the typed input, hence the StreamedToolQuestion
   // adapter. (`recordComprehensionSignals` parts also stream but are
   // invisible to the learner by design — grading signals never render.)
-  const questionnairePart = (lastAssistant?.parts ?? []).find(
+  const questionnairePart = liveParts.find(
     (p): p is Extract<typeof p, { type: "tool-presentQuestionnaire" }> =>
       p.type === "tool-presentQuestionnaire",
   );

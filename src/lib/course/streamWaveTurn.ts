@@ -7,7 +7,7 @@ import { prepareWaveTurn, type PreparedWaveTurn } from "./prepareWaveTurn";
 import { persistWaveMidTurn } from "./persistWaveMidTurn";
 import { executeWaveClose } from "./executeWaveClose";
 import { buildWaveMidTurnTools, type WaveTurnCollector } from "./waveTurnTools";
-import { validateWaveMidToolTurn } from "./waveMidTurnGate";
+import { findJsonProseLeakIndex, validateWaveMidToolTurn } from "./waveMidTurnGate";
 import type { SubmitWaveTurnParams } from "./submitWaveTurn";
 
 /**
@@ -18,8 +18,9 @@ import type { SubmitWaveTurnParams } from "./submitWaveTurn";
  * `buildWaveMidTurnTools`) — teaching prose streams as plain text parts,
  * structured actions arrive as tool calls forwarded to the client as typed
  * tool chunks (generative UI), the finished-turn projection arrives as a
- * transient `data-turn-result` part, and validation retries emit
- * `data-turn-reset`.
+ * transient `data-turn-result` part, and validation retries emit a
+ * non-transient `data-turn-reset` marker part (the client slices the
+ * message's parts on it).
  *
  * The blocking tRPC path (`executeWaveMid`) keeps the mega-schema JSON
  * contract as the rollback transport — shared pieces are prepareWaveTurn
@@ -56,13 +57,21 @@ export async function streamWaveTurn(
   // Per-attempt mutable slots, reset by makeAttempt/onAttemptStart. After the
   // loop resolves they hold the SUCCESSFUL attempt's state:
   // - collector: tool-staged questionnaire + grading signals.
-  // - prose: every text delta the client saw this attempt, concatenated. This
-  //   is the learner-visible message (chat_log / turn-result) — deliberately
-  //   NOT `finalText` (the last step's text only), because models typically
+  // - prose: every text delta of this attempt, concatenated. This is the
+  //   learner-visible message (chat_log / turn-result) — deliberately NOT
+  //   `finalText` (the last step's text only), because models typically
   //   write prose BEFORE a tool call and only a short wrap-up after it.
-  const attemptState: { collector: WaveTurnCollector; prose: string } = {
+  // - suppressedAt: leak-guard cut point (see onTextDelta). Deltas past it
+  //   are withheld from the CLIENT only; prose keeps accumulating for the
+  //   gate and persistence.
+  const attemptState: {
+    collector: WaveTurnCollector;
+    prose: string;
+    suppressedAt: number | null;
+  } = {
     collector: { questionnaire: null, signals: [] },
     prose: "",
+    suppressedAt: null,
   };
 
   // Result deliberately unused: the learner-visible prose is accumulated in
@@ -93,16 +102,40 @@ export async function streamWaveTurn(
     onAttemptStart: (attempt) => {
       closeText();
       attemptState.prose = "";
+      attemptState.suppressedAt = null;
       if (attempt > 0) {
-        writer.write({ type: "data-turn-reset", data: { attempt }, transient: true });
+        // NOT transient: the part must land INSIDE the assistant message's
+        // parts array as a positional marker — the client renders only parts
+        // AFTER the last reset (useWaveState). Mid-stream setMessages surgery
+        // does not work: the SDK re-emits its internally accumulated message
+        // (stale parts included) on the next chunk.
+        writer.write({ type: "data-turn-reset", data: { attempt } });
       }
       textState.id = `wave-turn-text-${attempt}`;
       writer.write({ type: "text-start", id: textState.id });
       textState.open = true;
     },
     onTextDelta: (delta) => {
+      const priorLength = attemptState.prose.length;
       attemptState.prose += delta;
-      writer.write({ type: "text-delta", id: textState.id, delta });
+      // Leak guard: a JSON-imitation attempt dumps the would-be tool input —
+      // plaintext `correct` included — into the TEXT channel, bypassing all
+      // tool-chunk redaction (observed live). Once the accumulated prose hits
+      // an unfenced line-start `{`, withhold everything from that point for
+      // the rest of the attempt. The gate then usually retries the turn; if
+      // it accepts (false positive), the full prose still reaches the client
+      // via chat_log on the turn-end refetch.
+      if (attemptState.suppressedAt !== null) return;
+      const leakAt = findJsonProseLeakIndex(attemptState.prose);
+      if (leakAt === null) {
+        writer.write({ type: "text-delta", id: textState.id, delta });
+        return;
+      }
+      attemptState.suppressedAt = leakAt;
+      const safe = delta.slice(0, Math.max(0, leakAt - priorLength));
+      if (safe.length > 0) {
+        writer.write({ type: "text-delta", id: textState.id, delta: safe });
+      }
     },
     onToolEvent: (part) => {
       forwardToolChunk(writer, part);

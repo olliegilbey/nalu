@@ -11,6 +11,17 @@ harness_retry_directive` retry exhaust between). Persisted rows, retry
 budget, and ValidationGateFailure semantics are identical across both —
 tests assert the same row sequences for each.
 
+`executeToolTurnStream` is the third sibling for TOOL-loop turns
+(`streamToolChat` instead of `Output.object`): callers supply a
+`makeAttempt` factory (fresh tool set + collector per attempt — retries
+must not inherit staged state) and a post-loop `validateTurn` gate. Each
+step persists `assistant_tool_call` + `tool_result` rows, then the final
+prose as `assistant_response`; failed attempts collapse to
+`failed_assistant_response` (JSON envelope of the step trail) +
+`harness_retry_directive` — never tool-kind rows — so renderContext's
+retry filter keeps working. Learner-visible prose = ALL steps' streamed
+deltas accumulated at the call site, NOT `finalText` (last step only).
+
 - Used by scoping (`src/lib/course/`) today; teaching (`src/lib/wave/`) later.
 - Validation: callers supply a `responseSchema` (Zod). `generateChat`
   validates via the SDK's `Output.object` (JSON-parse + `safeParse`,

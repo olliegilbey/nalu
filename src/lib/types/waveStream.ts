@@ -10,7 +10,11 @@ import type { WaveMidTurnToolkit } from "@/lib/course/waveTurnTools";
  */
 export type WaveTurnResultData = SubmitWaveTurnResult;
 
-/** Emitted (transient) before re-streaming after a validation retry. */
+/**
+ * Non-transient marker part written before a validation retry re-streams.
+ * It lands INSIDE the assistant message's parts array; the client renders
+ * only parts after the last one (failed-attempt output must not show).
+ */
 export interface WaveTurnResetData {
   readonly attempt: number;
 }
