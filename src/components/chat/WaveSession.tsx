@@ -44,6 +44,7 @@ export function WaveSession({
     awardMcXp,
     isPending,
     streamingText,
+    streamingQuestions,
     submitChatText,
     submitQuestionnaireAnswers,
   } = useWaveState(courseId, waveNumber);
@@ -109,9 +110,17 @@ export function WaveSession({
           }}
           disabled={isPending}
           questions={
+            // Committed questionnaire (server-derived, interactive) wins;
+            // while a turn streams, the tool-part preview renders the SAME
+            // question ids so the Composer's internal state carries across
+            // the swap (its identity key is the joined ids). The preview is
+            // effectively read-only: isPending disables options + send until
+            // the turn result lands and getState refetches.
             activeQuestionnaire && activeQuestionnaire.questionsKey !== dismissedKey
               ? [...activeQuestionnaire.questions]
-              : null
+              : streamingQuestions
+                ? [...streamingQuestions]
+                : null
           }
           persistKey={activeQuestionnaire?.persistKey}
           waveTier={currentTier ?? undefined}

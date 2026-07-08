@@ -16,7 +16,8 @@ export const maxDuration = 300;
  * client; the mutation remains server-side as a rollback path for one
  * release). Protocol: AI SDK UI Message Stream (SSE) — text parts carry
  * teaching prose, transient `data-turn-result` carries the grading/XP
- * projection, transient `data-turn-reset` precedes a validation re-stream.
+ * projection, a non-transient `data-turn-reset` marker part precedes a
+ * validation re-stream (the client slices the parts array on it).
  * Docs: node_modules/ai/docs/04-ai-sdk-ui/20-streaming-data.mdx
  *       https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol
  */

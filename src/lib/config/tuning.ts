@@ -242,6 +242,13 @@ export const BASELINE = {
  * without tripping a mid-turn 429. The same Cerebras API key is shared with
  * another workload, so the remaining-tokens header reports the
  * account-wide budget — this backoff absorbs that contention automatically.
+ *
+ * `maxToolSteps: 4`: tool-loop step ceiling (`streamText` `stopWhen`) for
+ * tool-calling turns. 4 = grade + quiz + closing prose + one in-loop
+ * self-correction; the reliability probe's median loop depth was 2
+ * (docs/status/2026-07-06-tool-call-probe-verdict.md). Every step is one
+ * rate-limiter-paced Cerebras call, so raising this raises worst-case
+ * turn latency (~+13s per extra step on the slow lane).
  */
 export const LLM = {
   defaultTemperature: 0.3,
@@ -250,6 +257,7 @@ export const LLM = {
   fastLaneSpacingMs: 200,
   fastLaneCallsPerUser: 30,
   lowTokenBudgetThreshold: 10_000,
+  maxToolSteps: 4,
 } as const;
 
 /**

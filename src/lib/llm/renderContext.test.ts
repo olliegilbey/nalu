@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderContext } from "./renderContext";
 import type { ContextMessage } from "@/db/schema";
+import type { LlmRenderedMessage } from "./renderContext";
 import type { WaveSeedInputs } from "@/lib/types/context";
 
 const SEED: WaveSeedInputs = {
@@ -49,6 +50,15 @@ const mkRow = (overrides: Partial<ContextMessage>): ContextMessage =>
     createdAt: new Date(0),
     ...overrides,
   }) as ContextMessage;
+
+/**
+ * Type-narrowing accessor for plain-content messages. Needed since
+ * LlmRenderedMessage became a union (tool-calling migration): structured
+ * variants carry no `content`, so `m?.content` no longer typechecks.
+ * Behavioral assertions below are unchanged.
+ */
+const contentOf = (m: LlmRenderedMessage | undefined): string | undefined =>
+  m !== undefined && "content" in m ? m.content : undefined;
 
 describe("renderContext", () => {
   it("is byte-stable across calls", () => {
@@ -141,7 +151,7 @@ describe("renderContext", () => {
     ];
     const r = renderContext(SEED, messages);
     expect(r.messages).toHaveLength(1);
-    expect(r.messages[0]?.content).toBe("A\nB");
+    expect(contentOf(r.messages[0])).toBe("A\nB");
   });
 
   it("coalesces two consecutive user rows then emits the assistant row separately", () => {
@@ -173,7 +183,7 @@ describe("renderContext", () => {
     const out = renderContext(SEED, messages);
     expect(out.messages).toHaveLength(2);
     expect(out.messages[0]?.role).toBe("user");
-    expect(out.messages[0]?.content).toBe(
+    expect(contentOf(out.messages[0])).toBe(
       "<user_message>hi</user_message>\n<turns_remaining>9</turns_remaining>",
     );
     expect(out.messages[1]?.role).toBe("assistant");
@@ -221,9 +231,9 @@ describe("renderContext", () => {
     const r = renderContext(SEED, messages);
     expect(r.messages).toHaveLength(2);
     expect(r.messages[0]?.role).toBe("user");
-    expect(r.messages[0]?.content).toBe("u");
+    expect(contentOf(r.messages[0])).toBe("u");
     expect(r.messages[1]?.role).toBe("assistant");
-    expect(r.messages[1]?.content).toBe("good");
+    expect(contentOf(r.messages[1])).toBe("good");
   });
 
   it("keeps every row in a terminal-exhaust turn (no assistant_response)", () => {
@@ -287,10 +297,10 @@ describe("renderContext", () => {
     // Row order after filter: u0, f0, d0, u1, ok.
     // Coalesce: d0+u1 → single user message with "\n" separator.
     expect(r.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
-    expect(r.messages[0]?.content).toBe("u0");
-    expect(r.messages[1]?.content).toBe("f0");
-    expect(r.messages[2]?.content).toBe("d0\nu1");
-    expect(r.messages[3]?.content).toBe("ok");
+    expect(contentOf(r.messages[0])).toBe("u0");
+    expect(contentOf(r.messages[1])).toBe("f0");
+    expect(contentOf(r.messages[2])).toBe("d0\nu1");
+    expect(contentOf(r.messages[3])).toBe("ok");
   });
 
   it("cache-prefix stability: appending a turn after a recovered retry leaves prior turns byte-identical", () => {
@@ -328,5 +338,151 @@ describe("renderContext", () => {
     expect(b.system).toBe(a.system);
     expect(b.messages[0]).toEqual(a.messages[0]);
     expect(b.messages[1]).toEqual(a.messages[1]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Tool-loop rows (tool-calling migration, 2026-06-10 plan)
+  // ---------------------------------------------------------------------------
+
+  it("renders an assistant_tool_call row as a structured tool-call message and tool_result as a tool message", () => {
+    const rows: readonly ContextMessage[] = [
+      mkRow({ turnIndex: 0, seq: 0, content: "hi" }),
+      mkRow({
+        turnIndex: 0,
+        seq: 1,
+        kind: "assistant_tool_call",
+        role: "assistant",
+        content: JSON.stringify({
+          text: "Let me check that.",
+          toolCalls: [
+            { toolCallId: "c1", toolName: "presentQuestionnaire", input: { questions: [] } },
+          ],
+        }),
+      }),
+      mkRow({
+        turnIndex: 0,
+        seq: 2,
+        kind: "tool_result",
+        role: "tool",
+        content: JSON.stringify({
+          results: [
+            { toolCallId: "c1", toolName: "presentQuestionnaire", output: { accepted: true } },
+          ],
+        }),
+      }),
+      mkRow({
+        turnIndex: 0,
+        seq: 3,
+        kind: "assistant_response",
+        role: "assistant",
+        content: "Here's your quiz.",
+      }),
+    ];
+    const rendered = renderContext(SEED, rows);
+    expect(rendered.messages.map((m) => m.role)).toEqual([
+      "user",
+      "assistant",
+      "tool",
+      "assistant",
+    ]);
+
+    const toolCallMsg = rendered.messages[1];
+    if (!(toolCallMsg && "kind" in toolCallMsg && toolCallMsg.kind === "tool-call")) {
+      throw new Error("expected structured tool-call message at index 1");
+    }
+    expect(toolCallMsg.text).toBe("Let me check that.");
+    expect(toolCallMsg.toolCalls).toEqual([
+      { toolCallId: "c1", toolName: "presentQuestionnaire", input: { questions: [] } },
+    ]);
+
+    const toolResultMsg = rendered.messages[2];
+    if (!(toolResultMsg && "results" in toolResultMsg)) {
+      throw new Error("expected structured tool-result message at index 2");
+    }
+    expect(toolResultMsg.results).toEqual([
+      { toolCallId: "c1", toolName: "presentQuestionnaire", output: { accepted: true } },
+    ]);
+  });
+
+  it("does not coalesce a plain assistant row into a structured tool-call row", () => {
+    // assistant_tool_call (assistant role) immediately followed by
+    // assistant_response (assistant role): same-role coalescing must NOT
+    // merge them — the structured message is a distinct API message.
+    const rows: readonly ContextMessage[] = [
+      mkRow({ turnIndex: 0, seq: 0, content: "hi" }),
+      mkRow({
+        turnIndex: 0,
+        seq: 1,
+        kind: "assistant_tool_call",
+        role: "assistant",
+        content: JSON.stringify({
+          text: "",
+          toolCalls: [{ toolCallId: "c1", toolName: "t", input: {} }],
+        }),
+      }),
+      mkRow({
+        turnIndex: 0,
+        seq: 2,
+        kind: "assistant_response",
+        role: "assistant",
+        content: "closing prose",
+      }),
+    ];
+    const rendered = renderContext(SEED, rows);
+    expect(rendered.messages).toHaveLength(3);
+    expect(rendered.messages[2]).toEqual({ role: "assistant", content: "closing prose" });
+  });
+
+  it("tool rows preserve cache-prefix byte stability when later rows append", () => {
+    const prefix: readonly ContextMessage[] = [
+      mkRow({ turnIndex: 0, seq: 0, content: "hi" }),
+      mkRow({
+        turnIndex: 0,
+        seq: 1,
+        kind: "assistant_tool_call",
+        role: "assistant",
+        content: JSON.stringify({
+          text: "checking",
+          toolCalls: [{ toolCallId: "c1", toolName: "t", input: { a: 1 } }],
+        }),
+      }),
+      mkRow({
+        turnIndex: 0,
+        seq: 2,
+        kind: "tool_result",
+        role: "tool",
+        content: JSON.stringify({
+          results: [{ toolCallId: "c1", toolName: "t", output: { ok: true } }],
+        }),
+      }),
+      mkRow({
+        turnIndex: 0,
+        seq: 3,
+        kind: "assistant_response",
+        role: "assistant",
+        content: "done",
+      }),
+    ];
+    const appended: readonly ContextMessage[] = [
+      ...prefix,
+      mkRow({ turnIndex: 1, seq: 0, content: "next turn" }),
+    ];
+    const before = renderContext(SEED, prefix);
+    const after = renderContext(SEED, appended);
+    // Every message rendered from the prefix is byte-identical after the append.
+    expect(after.messages.slice(0, before.messages.length)).toEqual(before.messages);
+  });
+
+  it("throws on a corrupt assistant_tool_call row (trust boundary)", () => {
+    const rows: readonly ContextMessage[] = [
+      mkRow({
+        turnIndex: 0,
+        seq: 0,
+        kind: "assistant_tool_call",
+        role: "assistant",
+        content: "not json",
+      }),
+    ];
+    expect(() => renderContext(SEED, rows)).toThrow(/assistant_tool_call/);
   });
 });

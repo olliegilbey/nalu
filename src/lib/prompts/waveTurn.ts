@@ -15,7 +15,7 @@ import { questionnaireSchema } from "./questionnaire";
  * advisory (they shape the next turn's teaching). The XP-relevant grading
  * runs at wave-close, where the band invariant IS enforced (`closeTurn.ts`).
  */
-const comprehensionSignalSchema = z.discriminatedUnion("kind", [
+export const comprehensionSignalSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("mc-index"),
     questionId: z

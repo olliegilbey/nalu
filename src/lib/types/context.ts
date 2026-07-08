@@ -1,6 +1,15 @@
 import type { FrameworkJsonb, DueConceptsSnapshot, SeedSource } from "@/lib/types/jsonb";
 
 /**
+ * Output contract the teaching system prompt declares. `"tools"` = mid-turns
+ * emit prose as plain text + structured actions as tool calls (streaming
+ * transport); `"json"` = every turn is one mega-schema JSON object (blocking
+ * tRPC rollback path). Absent on a seed ⇒ `"json"` — keeps every pre-existing
+ * fixture and the rollback path byte-identical.
+ */
+export type WaveOutputContract = "json" | "tools";
+
+/**
  * Structured inputs to `renderContext` for a teaching Wave (spec §9.1).
  *
  * Mirrors the snapshot columns on `waves` plus the live course summary.
@@ -22,6 +31,8 @@ export interface WaveSeedInputs {
   /** Used to render the static <due_for_review> block at Wave start. */
   readonly dueConcepts: DueConceptsSnapshot;
   readonly seedSource: SeedSource;
+  /** Optional so legacy fixtures stay valid; absent renders as `"json"`. */
+  readonly outputContract?: WaveOutputContract;
 }
 
 /**

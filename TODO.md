@@ -11,6 +11,10 @@ the concern, and the conditions under which it should be promoted to a PR.
 
 - [ ] Streaming follow-ups (2026-06-10 plan): stream close-turn prose; resumable streams on reload (chatbot-resume-streams doc); remove tRPC wave.submitTurn after one stable release; consider full useChat message-state adoption with the tool-calling migration.
 
+- [ ] Delete the mid-turn mega-schema (`waveMidTurnSchema` + `renderWaveTurnEnvelope`'s `responseSchema` param + `executeWaveMid.ts` + the `"json"` teaching-prompt contract branch) TOGETHER with tRPC `wave.submitTurn` after one stable release — they are the same rollback debt. The streaming path emits via tools (`waveTurnTools.ts` + `executeToolTurnStream`); the blocking path is kept only as the rollback transport (tool-calling plan Task 6 deviation, 2026-07-06).
+
+- [ ] Tool-calling follow-ups (2026-06-10 plan): decompose close-turn (blueprint/summary/grading) into tools using the mid-turn recipe; consider harness→model tools (getDueConcepts, getLearnerHistory) to shrink rendered context; full useChat message-state adoption; remove inline-schema fallback once scoping also moves to tools.
+
 ## Teaching-loop UI (Task 15 follow-ups)
 
 ### JSON-everywhere for wave `context_messages.content`

@@ -52,22 +52,54 @@ export function assembleLlmMessages(
   const rendered = renderContext(seed, synthesiseRows(prior, batch));
   // Flatten system prompt + rendered messages into the SDK's flat message list.
   // `LlmMessage` (= `ModelMessage`) is a discriminated union where 'tool' role
-  // demands array `ToolContent` rather than a plain string. The DB's
-  // `context_messages.role` CHECK constraint allows 'tool', but no row kind
-  // currently emits it — system/tool branches are unreachable in practice today.
-  // Branching here keeps the type union narrow per arm so the call site compiles
-  // without an unsafe cast over the whole array.
+  // demands array `ToolContent` rather than a plain string. Structured
+  // variants (tool-call / tool-result, from the persisted tool rows) map to
+  // the SDK's typed content parts; part property names (`input`/`output`,
+  // `output: {type:'json', value}`) verified against installed ai@6.0.158
+  // (`ToolCallPart`/`ToolResultPart` in @ai-sdk/provider-utils).
   return [
     { role: "system", content: rendered.system } satisfies LlmMessage,
     ...rendered.messages.map((m): LlmMessage => {
-      // Narrow each role to the matching ModelMessage variant. 'tool' would
-      // require ToolContent; if a future row kind emits role 'tool' we'll need
-      // a separate code path (and a richer content shape).
+      // Structured tool-result message → tool role with ToolContent array.
+      if (m.role === "tool") {
+        if (!("results" in m)) {
+          // Plain-content tool rows don't exist (only tool_result emits the
+          // role); a string here means a row kind was mis-persisted.
+          throw new Error("assembleLlmMessages: plain-content tool-role message is not supported");
+        }
+        return {
+          role: "tool",
+          content: m.results.map((r) => ({
+            type: "tool-result" as const,
+            toolCallId: r.toolCallId,
+            toolName: r.toolName,
+            output: { type: "json" as const, value: r.output as never },
+          })),
+        };
+      }
+      // Structured assistant step with tool calls → text part (when
+      // non-empty) followed by typed tool-call parts.
+      if (m.role === "assistant" && "kind" in m && m.kind === "tool-call") {
+        return {
+          role: "assistant",
+          content: [
+            ...(m.text.length > 0 ? [{ type: "text" as const, text: m.text }] : []),
+            ...m.toolCalls.map((c) => ({
+              type: "tool-call" as const,
+              toolCallId: c.toolCallId,
+              toolName: c.toolName,
+              input: c.input,
+            })),
+          ],
+        };
+      }
+      // Only plain-content variants remain; the guard also narrows the type
+      // (the structured assistant variant carries no `content`).
+      if (!("content" in m)) {
+        throw new Error("assembleLlmMessages: unhandled structured message variant");
+      }
       if (m.role === "assistant") return { role: "assistant", content: m.content };
       if (m.role === "system") return { role: "system", content: m.content };
-      if (m.role === "tool") {
-        throw new Error("assembleLlmMessages: tool-role rendered message is not supported");
-      }
       return { role: "user", content: m.content };
     }),
   ];

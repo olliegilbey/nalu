@@ -25,12 +25,15 @@ let latestChatOptions:
     }
   | undefined;
 const setMessagesMock = vi.fn();
+// Swappable transient message list (mirrors `currentState` below) so tests
+// can exercise the streaming derivations (streamingText / streamingQuestions).
+let chatMessages: unknown[] = [];
 
 vi.mock("@ai-sdk/react", () => ({
   useChat: (opts: never) => {
     latestChatOptions = opts;
     return {
-      messages: [],
+      messages: chatMessages,
       status: "ready",
       setMessages: setMessagesMock,
       sendMessage: (message: unknown, options: unknown) => {
@@ -92,6 +95,7 @@ beforeEach(() => {
   latestChatOptions = undefined;
   setMessagesMock.mockReset();
   currentState = defaultStateData;
+  chatMessages = [];
   // Fresh in-memory localStorage per test — useWaveState depends on
   // useCourseXp, and tests sharing courseId "c1" must not leak XP totals.
   installMemoryStorage();
@@ -201,14 +205,62 @@ describe("useWaveState", () => {
     await waitFor(() => expect(result.current.xp).toBe(30));
   });
 
-  it("clears the streaming bubble on a data-turn-reset part", async () => {
+  it("derives streamingText from the last assistant message's text parts", async () => {
+    chatMessages = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { type: "text", text: "Streaming " },
+          { type: "text", text: "prose." },
+        ],
+      },
+    ];
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
-    await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
+    await waitFor(() => expect(result.current.streamingText).toBe("Streaming prose."));
+    expect(result.current.streamingQuestions).toBeNull();
+  });
 
-    act(() => latestChatOptions?.onData?.({ type: "data-turn-reset", data: { attempt: 1 } }));
-    // The reset handler drops transient assistant messages so the retry
-    // re-streams into a clean bubble.
-    expect(setMessagesMock).toHaveBeenCalled();
+  it("hides failed-attempt parts before the last data-turn-reset marker", async () => {
+    // A validation retry: attempt 0 leaked text + a stale tool part, then the
+    // server wrote the non-transient reset marker, then attempt 1 re-streamed.
+    // Only the parts AFTER the marker may render.
+    chatMessages = [
+      {
+        id: "a1",
+        role: "assistant",
+        parts: [
+          { type: "text", text: '{"questions": []}' },
+          {
+            type: "tool-presentQuestionnaire",
+            state: "input-available",
+            input: { questions: [{ id: "stale", type: "free_text", prompt: "old?" }] },
+          },
+          { type: "data-turn-reset", data: { attempt: 1 } },
+          { type: "text", text: "Clean retry." },
+          {
+            type: "tool-presentQuestionnaire",
+            state: "input-available",
+            input: {
+              questions: [
+                {
+                  id: "q1",
+                  type: "multiple_choice",
+                  prompt: "Which?",
+                  options: { A: "a", B: "b", C: "c", D: "d" },
+                  tier: 1,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.streamingText).toBe("Clean retry."));
+    expect(result.current.streamingQuestions).toEqual([
+      { id: "q1", prompt: "Which?", options: ["a", "b", "c", "d"], tier: 1 },
+    ]);
   });
 
   it("exposes the course topic and current tier", async () => {

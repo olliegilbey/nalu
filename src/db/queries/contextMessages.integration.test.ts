@@ -341,4 +341,72 @@ describe("contextMessages queries", () => {
       expect(rows).toHaveLength(1);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Test 10: tool-loop row kinds — insert + read round-trip
+  // -------------------------------------------------------------------------
+  // The tool-calling migration (2026-06-10 plan) adds two kinds whose content
+  // is JSON serialized once at write time. The round-trip must return the
+  // stored bytes verbatim (renderContext parses, never re-serializes).
+  it("round-trips assistant_tool_call and tool_result rows verbatim", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+      const toolCallContent = JSON.stringify({
+        text: "Let me check that.",
+        toolCalls: [
+          { toolCallId: "c1", toolName: "presentQuestionnaire", input: { questions: [] } },
+        ],
+      });
+      const toolResultContent = JSON.stringify({
+        results: [
+          { toolCallId: "c1", toolName: "presentQuestionnaire", output: { accepted: true } },
+        ],
+      });
+      await appendMessages([
+        {
+          parent: { kind: "wave", id: WAVE },
+          turnIndex: 0,
+          seq: 0,
+          kind: "user_message",
+          role: "user",
+          content: "hi",
+        },
+        {
+          parent: { kind: "wave", id: WAVE },
+          turnIndex: 0,
+          seq: 1,
+          kind: "assistant_tool_call",
+          role: "assistant",
+          content: toolCallContent,
+        },
+        {
+          parent: { kind: "wave", id: WAVE },
+          turnIndex: 0,
+          seq: 2,
+          kind: "tool_result",
+          role: "tool",
+          content: toolResultContent,
+        },
+        {
+          parent: { kind: "wave", id: WAVE },
+          turnIndex: 0,
+          seq: 3,
+          kind: "assistant_response",
+          role: "assistant",
+          content: "Here's your quiz.",
+        },
+      ]);
+      const rows = await getMessagesForWave(WAVE);
+      expect(rows.map((r) => r.kind)).toEqual([
+        "user_message",
+        "assistant_tool_call",
+        "tool_result",
+        "assistant_response",
+      ]);
+      expect(rows.map((r) => r.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+      // Byte-verbatim: the JSON content comes back exactly as stored.
+      expect(rows[1]?.content).toBe(toolCallContent);
+      expect(rows[2]?.content).toBe(toolResultContent);
+    });
+  });
 });

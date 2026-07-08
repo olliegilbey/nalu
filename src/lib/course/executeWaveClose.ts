@@ -9,6 +9,7 @@ import {
   renderConceptInjection,
 } from "@/lib/spaced-repetition/scheduler";
 import { getConceptsByCourse } from "@/db/queries/concepts";
+import type { WaveOutputContract } from "@/lib/types/context";
 import type { FrameworkJsonb } from "@/lib/types/jsonb";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { buildWaveSeed } from "./buildWaveSeed";
@@ -59,6 +60,13 @@ export interface ExecuteWaveCloseResult {
 export async function executeWaveClose(
   ctx: LoadedWaveContext,
   learnerInput: string,
+  // The close turn itself is ALWAYS single-JSON (blocking executeTurn +
+  // response_format); the contract only selects which system prompt the
+  // whole Wave renders under. The streaming transport passes "tools" so the
+  // close turn's system prompt is byte-identical to the mid turns' — the
+  // provider cache prefix survives the mid→close switch. Default "json"
+  // keeps the blocking rollback path and existing tests untouched.
+  outputContract: WaveOutputContract = "json",
 ): Promise<ExecuteWaveCloseResult> {
   const now = new Date();
 
@@ -95,7 +103,7 @@ export async function executeWaveClose(
 
   const { parsed } = await executeTurn({
     parent: { kind: "wave", id: ctx.wave.id },
-    seed: buildWaveSeed(ctx.course, ctx.wave),
+    seed: buildWaveSeed(ctx.course, ctx.wave, outputContract),
     userMessageContent: renderWaveCloseEnvelope({
       learnerInput,
       conceptsForNextWaveBlock: conceptsBlock,

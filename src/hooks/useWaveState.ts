@@ -7,7 +7,8 @@ import { DefaultChatTransport } from "ai";
 import { toast } from "sonner";
 import { useTRPC, devUserHeaders } from "@/lib/trpc";
 import { deriveWaveTurns } from "@/lib/course/deriveWaveTurns";
-import { adaptOpenQuestion } from "@/lib/course/adaptQuestionnaire";
+import { adaptOpenQuestion, adaptStreamedToolQuestion } from "@/lib/course/adaptQuestionnaire";
+import type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import { useCourseXp } from "./useCourseXp";
 import type { ActiveQuestionnaire } from "./useScopingState";
 import type { Turn } from "@/lib/types/turn";
@@ -61,6 +62,15 @@ export interface UseWaveStateResult {
    * invalidation) replaces it on finish — see `onFinish` below.
    */
   readonly streamingText: string;
+  /**
+   * Questionnaire questions streamed in as a `tool-presentQuestionnaire` part
+   * on the in-flight turn (generative UI) — non-null from the part's
+   * `input-available` state until the committed `activeQuestionnaire` takes
+   * over after the turn-result refetch. The Composer renders these as a
+   * preview; interactivity comes only with `activeQuestionnaire` (isPending
+   * disables the option grid until the server-derived state lands).
+   */
+  readonly streamingQuestions: readonly ChoiceQuestion[] | null;
   readonly submitChatText: (text: string) => void;
   readonly submitQuestionnaireAnswers: (
     answers: readonly ShapedQuestionnaireAnswer[],
@@ -153,11 +163,6 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
       prepareSendMessagesRequest: ({ body }) => ({ body: { payload: body?.["payload"] } }),
     }),
     onData: (part) => {
-      if (part.type === "data-turn-reset") {
-        // A validation retry is about to re-stream: drop the partial bubble.
-        chat.setMessages((prev) => prev.filter((m) => m.role !== "assistant"));
-        return;
-      }
       if (part.type === "data-turn-result") {
         handleTurnResult(part.data);
       }
@@ -226,13 +231,41 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
 
   const isPending = state.isFetching || chat.status === "submitted" || chat.status === "streaming";
 
-  // In-flight assistant prose: concatenated text parts of the last assistant
-  // message in useChat's transient list (empty when idle or between turns).
+  // In-flight assistant parts, discarding failed attempts: a validation retry
+  // re-streams the whole turn, and the server marks the boundary with a
+  // NON-transient `data-turn-reset` part. Everything before the last reset is
+  // a failed attempt's output (stale text/tool parts — TextUIPart carries no
+  // id, so slicing on the marker's POSITION is the only reliable seam;
+  // setMessages surgery mid-stream is undone by the SDK's next chunk).
   const lastAssistant = chat.messages.findLast((m) => m.role === "assistant");
-  const streamingText = (lastAssistant?.parts ?? [])
+  const allParts = lastAssistant?.parts ?? [];
+  const lastResetIdx = allParts.findLastIndex((p) => p.type === "data-turn-reset");
+  const liveParts = lastResetIdx === -1 ? allParts : allParts.slice(lastResetIdx + 1);
+
+  // In-flight assistant prose: concatenated text parts of the live attempt
+  // (empty when idle or between turns).
+  const streamingText = liveParts
     .filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
     .map((p) => p.text)
     .join("");
+
+  // In-flight questionnaire: the typed `tool-presentQuestionnaire` part on the
+  // same message. Rendered only from `input-available` onward — the server
+  // forwards no input-streaming deltas, and the input it does forward is the
+  // redacted projection (grading keys stripped — see `streamWaveTurn`), a
+  // structural subset of the typed input, hence the StreamedToolQuestion
+  // adapter. (`recordComprehensionSignals` parts also stream but are
+  // invisible to the learner by design — grading signals never render.)
+  const questionnairePart = liveParts.find(
+    (p): p is Extract<typeof p, { type: "tool-presentQuestionnaire" }> =>
+      p.type === "tool-presentQuestionnaire",
+  );
+  const streamingQuestions =
+    questionnairePart &&
+    (questionnairePart.state === "input-available" ||
+      questionnairePart.state === "output-available")
+      ? questionnairePart.input.questions.map(adaptStreamedToolQuestion)
+      : null;
 
   const submitChatText: UseWaveStateResult["submitChatText"] = (text) => {
     void chat.sendMessage({ text }, { body: { payload: { kind: "chat-text", text } } });
@@ -276,6 +309,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     awardMcXp: courseXp.addXp,
     isPending,
     streamingText,
+    streamingQuestions,
     submitChatText,
     submitQuestionnaireAnswers,
   };

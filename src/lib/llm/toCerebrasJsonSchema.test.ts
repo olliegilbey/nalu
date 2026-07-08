@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod/v4";
-import { toCerebrasJsonSchema, toOutputSchema, toSchemaJsonString } from "./toCerebrasJsonSchema";
+import {
+  toCerebrasJsonSchema,
+  toOutputSchema,
+  toSchemaJsonString,
+  toToolInputSchema,
+} from "./toCerebrasJsonSchema";
 import { clarifySchema } from "@/lib/prompts/clarify";
 import { frameworkSchema } from "@/lib/prompts/framework";
 import { waveMidTurnSchema } from "@/lib/prompts/waveTurn";
@@ -295,5 +300,46 @@ describe("toOutputSchema", () => {
     expect(bad.success).toBe(false);
     // The error must be the ZodError so issue messages reach retry directives.
     if (!bad.success) expect(bad.error.message).toContain("x must not be 'bad'");
+  });
+});
+
+describe("toToolInputSchema", () => {
+  const shape = z.object({
+    name: z.string(),
+    correct: z.enum(["A", "B", "C", "D"]).optional(),
+    nested: z
+      .object({
+        rubric: z.string().optional(),
+      })
+      .optional(),
+  });
+
+  it("wire bytes are the bare-optional Cerebras-cleaned shape (no null unions)", async () => {
+    const s = toToolInputSchema(shape, { name: "t" });
+    const wire = JSON.stringify(await s.jsonSchema);
+    // The anyOf-null union pattern must never reach the wire: it craters
+    // tool-call reliability (docs/status/2026-07-06-tool-call-probe-verdict.md).
+    expect(wire).not.toContain('"null"');
+    expect(wire).not.toContain("anyOf");
+  });
+
+  it("validator absorbs explicit nulls on optional fields", async () => {
+    const s = toToolInputSchema(shape, { name: "t" });
+    const result = await s.validate!({ name: "x", correct: null, nested: { rubric: null } });
+    expect(result).toEqual({ success: true, value: { name: "x", nested: {} } });
+  });
+
+  it("validator still rejects genuinely invalid input", async () => {
+    const s = toToolInputSchema(shape, { name: "t" });
+    const result = await s.validate!({ name: "x", correct: "E" });
+    expect(result.success).toBe(false);
+  });
+
+  it("null-stripping does not touch nulls inside arrays' non-object items", async () => {
+    const arrShape = z.object({ xs: z.array(z.string()) });
+    const s = toToolInputSchema(arrShape, { name: "t" });
+    // A null ARRAY ELEMENT is data, not an omitted field - it must still fail.
+    const result = await s.validate!({ xs: ["a", null] });
+    expect(result.success).toBe(false);
   });
 });
