@@ -32,7 +32,7 @@ const FT_QUESTION = {
 };
 
 describe("buildWaveMidTurnTools", () => {
-  it("stages a valid questionnaire into the collector", async () => {
+  it("stages a valid questionnaire into the collector as CANONICAL questions", async () => {
     const { tools, collector } = buildWaveMidTurnTools();
     const result = await tools.presentQuestionnaire.execute!(
       { questions: [MC_QUESTION] },
@@ -40,6 +40,33 @@ describe("buildWaveMidTurnTools", () => {
     );
     expect(result).toEqual({ accepted: true, questionCount: 1 });
     expect(collector.questionnaire?.questions).toHaveLength(1);
+    // Flat tool input maps to the canonical Question union member the
+    // persistence layer types against.
+    expect(collector.questionnaire?.questions[0]).toEqual(MC_QUESTION);
+  });
+
+  it("questionnaire inputSchema rejects an MC question without options, teacher-style directive", async () => {
+    const { tools } = buildWaveMidTurnTools();
+    const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to drop options
+    const { options, ...noOptions } = MC_QUESTION;
+    const result = await schema.validate!({ questions: [noOptions] });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(String(result.error)).toContain("is missing required options");
+    }
+  });
+
+  it("signals inputSchema rejects a free-text signal without verdict/qualityScore", async () => {
+    const { tools } = buildWaveMidTurnTools();
+    const schema = asValidatingSchema(tools.recordComprehensionSignals.inputSchema);
+    const result = await schema.validate!({
+      signals: [{ kind: "free-text", questionId: "q2", rationale: "Half right. Revisit moves." }],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(String(result.error)).toContain("missing required verdict and/or qualityScore");
+    }
   });
 
   it("rejects a second questionnaire in the same turn with a model-readable refusal", async () => {

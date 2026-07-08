@@ -304,18 +304,30 @@ describe("streamWaveTurn (integration)", () => {
         writer,
       );
 
-      // Tool chunk lifecycle reached the client in order.
+      // Tool chunk lifecycle reached the client in order. NO tool-input-delta:
+      // raw input deltas carry the plaintext `correct` key and are dropped.
       const toolTypes = parts.map((p) => p.type).filter((t) => t.startsWith("tool-"));
       expect(toolTypes).toEqual([
         "tool-input-start",
-        "tool-input-delta",
         "tool-input-available",
         "tool-output-available",
       ]);
       const inputAvailable = parts.find((p) => p.type === "tool-input-available")!;
       expect(inputAvailable["toolCallId"]).toBe("c1");
       expect(inputAvailable["toolName"]).toBe("presentQuestionnaire");
-      expect(inputAvailable["input"]).toEqual(QUIZ_INPUT);
+      // The forwarded input is the allowlist-redacted projection: grading
+      // keys (`correct`, `freetextRubric`) and conceptName never cross the wire.
+      expect(inputAvailable["input"]).toEqual({
+        questions: [
+          {
+            id: "q1",
+            type: "multiple_choice",
+            prompt: "Which binding moves?",
+            options: { A: "let", B: "const", C: "both", D: "neither" },
+            tier: 1,
+          },
+        ],
+      });
 
       // Result projection: the full streamed prose + the new questionnaire.
       const resultPart = parts.at(-1)!;

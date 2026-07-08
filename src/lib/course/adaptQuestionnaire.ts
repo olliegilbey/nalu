@@ -87,3 +87,40 @@ export function adaptOpenQuestion(q: OpenQuestionForClient): ChoiceQuestion {
   }
   return { id: q.id, prompt: q.prompt, options: [], tier: q.tier };
 }
+
+/**
+ * Streamed `tool-presentQuestionnaire` part question as it reaches the
+ * client: the server allowlist-redacts grading keys (`correct`,
+ * `freetextRubric`) before forwarding (`streamWaveTurn`), so this is a
+ * strict subset of the tool's input shape.
+ */
+export interface StreamedToolQuestion {
+  readonly id: string;
+  readonly type: "multiple_choice" | "free_text";
+  readonly prompt: string;
+  readonly options?: {
+    readonly A: string;
+    readonly B: string;
+    readonly C: string;
+    readonly D: string;
+  };
+  readonly tier?: number;
+}
+
+/**
+ * Adapt a streamed (redacted) tool-part question to the Composer's shape.
+ * No `correctIndex` on purpose: the streamed preview is non-interactive, and
+ * instant MC feedback comes only with the committed card's `correctEnc`
+ * (`adaptOpenQuestion`) after the turn result lands.
+ */
+export function adaptStreamedToolQuestion(q: StreamedToolQuestion): ChoiceQuestion {
+  if (q.type === "multiple_choice" && q.options) {
+    return {
+      id: q.id,
+      prompt: q.prompt,
+      options: [q.options.A, q.options.B, q.options.C, q.options.D],
+      tier: q.tier,
+    };
+  }
+  return { id: q.id, prompt: q.prompt, options: [], tier: q.tier };
+}

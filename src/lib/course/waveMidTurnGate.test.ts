@@ -31,6 +31,26 @@ describe("validateWaveMidToolTurn", () => {
     expect(failure?.detail).toContain("teaching prose");
   });
 
+  it("rejects prose that IS a raw mega-schema JSON envelope (legacy-context imitation)", () => {
+    const blob = JSON.stringify({ userMessage: "Hi!", questionnaire: { questions: [] } });
+    const failure = validateWaveMidToolTurn(emptyCollector(), blob, CHAT_PAYLOAD);
+    expect(failure?.reason).toBe("tool_turn_gate");
+    expect(failure?.detail).toContain("raw JSON object");
+  });
+
+  it("rejects prose with a TRAILING questionnaire JSON blob (observed live)", () => {
+    const prose = `Great! Let's learn konnichiwa.\n\n{ "questions": [{ "id": "q1", "type": "multiple_choice", "prompt": "?" }] }`;
+    const failure = validateWaveMidToolTurn(emptyCollector(), prose, CHAT_PAYLOAD);
+    expect(failure?.reason).toBe("tool_turn_gate");
+    expect(failure?.detail).toContain("raw JSON object");
+  });
+
+  it("accepts prose that merely mentions JSON or contains an unrelated snippet", () => {
+    const prose =
+      'In JSON you write objects like { "name": "value" } - braces around key/value pairs.';
+    expect(validateWaveMidToolTurn(emptyCollector(), prose, CHAT_PAYLOAD)).toBeNull();
+  });
+
   it("rejects answered questions with no grading signals, naming the missing ids", () => {
     const failure = validateWaveMidToolTurn(emptyCollector(), "Nice try!", ANSWERS_PAYLOAD);
     expect(failure).toBeInstanceOf(ValidationGateFailure);

@@ -132,10 +132,19 @@ export async function streamWaveTurn(
 /**
  * Map a `streamText` fullStream tool part to its UIMessage chunk and write it
  * — the same conversion the SDK's `toUIMessageStream` applies (verified in
- * installed ai@6.0.158), inlined because this route hand-writes its stream.
- * Gives the client the standard tool-part lifecycle for generative UI:
- * `input-streaming` → `input-available` → `output-available` (or the error
+ * installed ai@6.0.158), inlined because this route hand-writes its stream
+ * AND because questionnaire inputs need server-side redaction before they
+ * cross the wire (below). Gives the client the tool-part lifecycle for
+ * generative UI: `input-available` → `output-available` (plus the error
  * states for schema-invalid inputs the model then self-corrects in-loop).
+ *
+ * DELIBERATE deviations from the SDK conversion:
+ * - `tool-input-delta` is NOT forwarded: the raw input text contains the
+ *   plaintext `correct` key while it streams. The client renders from
+ *   `input-available` (redacted) anyway.
+ * - `presentQuestionnaire` inputs are redacted (grading keys stripped)
+ *   before writing — the committed card gets `correctEnc` via `getState`
+ *   (spec §7.8); the streamed preview must not leak more than that.
  */
 function forwardToolChunk(
   writer: UIMessageStreamWriter<WaveTurnUIMessage>,
@@ -145,16 +154,15 @@ function forwardToolChunk(
     case "tool-input-start":
       writer.write({ type: "tool-input-start", toolCallId: part.id, toolName: part.toolName });
       return;
-    case "tool-input-delta":
-      writer.write({ type: "tool-input-delta", toolCallId: part.id, inputTextDelta: part.delta });
-      return;
     case "tool-call":
       if (part.invalid === true) {
+        // Redact here too: an invalid input can still contain a plaintext
+        // `correct`; the client never needs the payload, only the error.
         writer.write({
           type: "tool-input-error",
           toolCallId: part.toolCallId,
           toolName: part.toolName,
-          input: part.input,
+          input: null,
           errorText: String(part.error),
         });
         return;
@@ -163,7 +171,10 @@ function forwardToolChunk(
         type: "tool-input-available",
         toolCallId: part.toolCallId,
         toolName: part.toolName,
-        input: part.input,
+        input:
+          part.toolName === "presentQuestionnaire"
+            ? redactQuestionnaireInput(part.input)
+            : part.input,
       });
       return;
     case "tool-result":
@@ -181,8 +192,35 @@ function forwardToolChunk(
       });
       return;
     default:
-      // tool-input-end has no UIMessage chunk equivalent (input-available
-      // carries the full input); other part types never reach onToolEvent.
+      // tool-input-end has no UIMessage chunk equivalent; tool-input-delta is
+      // deliberately dropped (see TSDoc); other part types never reach
+      // onToolEvent.
       return;
   }
+}
+
+/**
+ * Allowlist-project a validated `presentQuestionnaire` input to the fields
+ * the client card needs (id/type/prompt/options/tier), dropping the grading
+ * keys (`correct`, `freetextRubric` — "[server] NEVER shown to the learner").
+ * Structural rather than schema-bound so a shape drift forwards LESS, never
+ * more. Returns null when the shape is unrecognisable.
+ */
+function redactQuestionnaireInput(input: unknown): unknown {
+  if (typeof input !== "object" || input === null || !("questions" in input)) return null;
+  const questions = (input as { questions: unknown }).questions;
+  if (!Array.isArray(questions)) return null;
+  return {
+    questions: questions.map((q) => {
+      if (typeof q !== "object" || q === null) return null;
+      const rec = q as Record<string, unknown>;
+      return {
+        id: rec["id"],
+        type: rec["type"],
+        prompt: rec["prompt"],
+        options: rec["options"],
+        tier: rec["tier"],
+      };
+    }),
+  };
 }
