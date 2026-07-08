@@ -73,7 +73,14 @@ export function buildPageviewEvent(input: PageviewInput): PageviewEvent {
     is_server: environment.is_server,
   };
 
-  if (ip) properties.$ip = ip;
+  if (ip) {
+    properties.$ip = ip;
+    // PostHog consumes the magic `$ip` for GeoIP and strips it from the stored
+    // event (verified live) — the derived geo survives, the value itself
+    // doesn't. Mirror it into a custom property, which PostHog persists like
+    // any other, so the value stays on the event.
+    properties.client_ip = ip;
+  }
   if (userAgent) properties.$raw_user_agent = userAgent;
   if (referrer) {
     properties.$referrer = referrer;
