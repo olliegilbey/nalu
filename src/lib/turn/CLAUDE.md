@@ -2,11 +2,14 @@
 
 Stage-agnostic per-turn primitives.
 
-`executeTurn` is the only thing in here. It owns: load prior rows → render
-context → call the LLM → parse with the caller's parser → persist one
-atomic batch (`user_message + assistant_response`, with optional
-`failed_assistant_response + harness_retry_directive` retry exhaust
-between).
+`executeTurn` (blocking) and `executeTurnStream` (streaming; adds
+progressText/onTextDelta/onAttemptStart hooks) share one contract: load
+prior rows → assemble context (`contextAssembly.ts`) → call the LLM →
+validate via Output.object → persist one atomic batch (`user_message +
+assistant_response`, with optional `failed_assistant_response +
+harness_retry_directive` retry exhaust between). Persisted rows, retry
+budget, and ValidationGateFailure semantics are identical across both —
+tests assert the same row sequences for each.
 
 - Used by scoping (`src/lib/course/`) today; teaching (`src/lib/wave/`) later.
 - Validation: callers supply a `responseSchema` (Zod). `generateChat`

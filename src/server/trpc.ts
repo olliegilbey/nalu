@@ -1,28 +1,17 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { NotFoundError } from "@/db/queries/errors";
-import { createClient } from "@/lib/supabase/server";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
+import { resolveRequestUserId } from "./requestUser";
 
 /**
- * Build the tRPC request context. Resolves `userId` (possibly undefined).
- *
- * Production: identity comes from the Supabase session cookie that
- * `src/proxy.ts` mints for every visitor. Non-production keeps the
- * `x-dev-user-id` dev-stub seam so `just dev` and the test suite need
- * no Supabase Auth.
+ * Build the tRPC request context. Resolves `userId` (possibly undefined)
+ * via `resolveRequestUserId` — the auth story shared with the streaming
+ * wave-turn route handler.
  */
 export const createTRPCContext = async (opts: FetchCreateContextFnOptions) => {
-  if (process.env.NODE_ENV === "production") {
-    const supabase = await createClient();
-    const { data } = await supabase.auth.getUser();
-    return { userId: data.user?.id };
-  }
-  // headers.get is the Web Fetch API surface — lowercase keys; tRPC-fetch
-  // gives us a `Headers` object directly.
-  const devUserId = opts.req.headers.get("x-dev-user-id") ?? undefined;
-  return { userId: devUserId };
+  return { userId: await resolveRequestUserId(opts.req) };
 };
 
 const t = initTRPC.context<typeof createTRPCContext>().create();

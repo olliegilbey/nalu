@@ -7,17 +7,16 @@ import {
   type ContextParent,
 } from "@/db/queries/contextMessages";
 import { NoObjectGeneratedError } from "ai";
-import type { ContextMessage } from "@/db/schema";
 import { generateChat } from "@/lib/llm/generate";
 import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
-import { renderContext } from "@/lib/llm/renderContext";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { JSON_PARSE_RETRY_DIRECTIVE } from "@/lib/prompts/turn";
 import { SCOPING } from "@/lib/config/tuning";
-import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
+import type { LlmUsage } from "@/lib/types/llm";
 import type { SeedInputs } from "@/lib/types/context";
 import type { z } from "zod/v4";
+import { assembleLlmMessages } from "./contextAssembly";
 import {
   formatHeader,
   formatParseFailure,
@@ -163,32 +162,10 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
     i: number,
     batch: readonly AppendMessageParams[],
   ): Promise<ExecuteTurnResult<T>> {
-    // Synthesise a renderable row list from prior DB rows + the in-memory batch.
-    // The in-memory batch (including any failed/directive rows from earlier attempts
-    // *this turn*) is part of the context so the model sees its previous mistakes.
-    const renderable = synthesiseRows(priorRows, batch);
-    const rendered = renderContext(params.seed, renderable);
-    // Flatten system prompt + rendered messages into the SDK's flat message list.
-    // `LlmMessage` (= `ModelMessage`) is a discriminated union where 'tool' role
-    // demands array `ToolContent` rather than a plain string. The DB's
-    // `context_messages.role` CHECK constraint allows 'tool', but no row kind
-    // currently emits it — system/tool branches are unreachable in practice today.
-    // Branching here keeps the type union narrow per arm so the call site compiles
-    // without an unsafe cast over the whole array.
-    const llmMessages: readonly LlmMessage[] = [
-      { role: "system", content: rendered.system } satisfies LlmMessage,
-      ...rendered.messages.map((m): LlmMessage => {
-        // Narrow each role to the matching ModelMessage variant. 'tool' would
-        // require ToolContent; if a future row kind emits role 'tool' we'll need
-        // a separate code path (and a richer content shape).
-        if (m.role === "assistant") return { role: "assistant", content: m.content };
-        if (m.role === "system") return { role: "system", content: m.content };
-        if (m.role === "tool") {
-          throw new Error("executeTurn: tool-role rendered message is not supported");
-        }
-        return { role: "user", content: m.content };
-      }),
-    ];
+    // Render context from prior DB rows + the in-memory batch (including any
+    // failed/directive rows from earlier attempts *this turn*) so the model
+    // sees its previous mistakes. Shared with executeTurnStream.
+    const llmMessages = assembleLlmMessages(params.seed, priorRows, batch);
     // Banner per attempt — always emitted under live mode so a 3-retry turn
     // produces three banners and the reader knows which call's output follows.
     if (live) {
@@ -312,39 +289,4 @@ function toValidationGateFailure<T>(raw: string, schema: z.ZodType<T>): Validati
     "missing_response",
     safe.success ? JSON_PARSE_RETRY_DIRECTIVE : safe.error.message,
   );
-}
-
-/**
- * Build a renderable row list from prior DB rows + the in-memory batch.
- *
- * `renderContext` only reads `turnIndex`, `seq`, `kind`, `role`, `content`
- * from each row — other `ContextMessage` fields are filled with inert
- * placeholders. These synthetic rows are never persisted; they exist only
- * for the duration of one `renderContext` call within an attempt.
- *
- * Including the in-memory batch is deliberate: during a retry the model
- * needs to see the failed attempt and the directive it produced. The
- * per-turn bucketing filter in `renderContext` drops those rows once the
- * turn ends in `assistant_response`, preserving cache-prefix stability
- * for successful turns.
- */
-function synthesiseRows(
-  prior: readonly ContextMessage[],
-  batch: readonly AppendMessageParams[],
-): readonly ContextMessage[] {
-  const batchAsRows: readonly ContextMessage[] = batch.map((b, i) => ({
-    // Synthetic id — never read by renderContext; any non-empty string suffices.
-    id: `synthetic-${i}`,
-    // XOR FK fields mirror the persistence layer's discriminated-union mapping.
-    waveId: b.parent.kind === "wave" ? b.parent.id : null,
-    scopingPassId: b.parent.kind === "scoping" ? b.parent.id : null,
-    turnIndex: b.turnIndex,
-    seq: b.seq,
-    kind: b.kind,
-    role: b.role,
-    content: b.content,
-    // Inert timestamp — renderContext doesn't read createdAt.
-    createdAt: new Date(0),
-  }));
-  return [...prior, ...batchAsRows];
 }

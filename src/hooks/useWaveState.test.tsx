@@ -8,17 +8,38 @@ import { installMemoryStorage } from "@/lib/testing/memoryStorage";
 // Mock sonner so we can assert toast calls without dragging the real lib in.
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-// Hand-shaped tRPC stub. We capture submitTurn invocations so we can assert
-// the hook forwards `chat-text` / `questionnaire-answers` payloads correctly,
-// and we drive onSuccess by hand to exercise the result-branch handling.
+// Hand-shaped useChat stub (the streaming transport seam). We capture the
+// options object so tests can drive onData / onFinish / onError by hand —
+// the streaming analogue of the old "drive the mutation's onSuccess" pattern
+// — and record sendMessage calls to assert payload forwarding.
 //
-// Test fixtures legitimately mutate an `args[]` capture buffer + a single
-// "latest handler" slot — both are recording sinks for the assertion phase,
-// not domain code. The `let` is required so the captured handler can be
-// reassigned across renders.
-const submitTurnCalls: { args: unknown }[] = [];
-let latestOnSuccess: ((result: unknown) => void) | undefined;
-let latestOnError: ((err: unknown) => void) | undefined;
+// Test fixtures legitimately mutate capture buffers + "latest handler" slots —
+// recording sinks for the assertion phase, not domain code. The `let` is
+// required so the captured options can be reassigned across renders.
+const sendMessageCalls: { message: unknown; options: unknown }[] = [];
+let latestChatOptions:
+  | {
+      onData?: (part: { type: string; data: unknown }) => void;
+      onFinish?: () => void;
+      onError?: (err: Error) => void;
+    }
+  | undefined;
+const setMessagesMock = vi.fn();
+
+vi.mock("@ai-sdk/react", () => ({
+  useChat: (opts: never) => {
+    latestChatOptions = opts;
+    return {
+      messages: [],
+      status: "ready",
+      setMessages: setMessagesMock,
+      sendMessage: (message: unknown, options: unknown) => {
+        sendMessageCalls.push({ message, options });
+        return Promise.resolve();
+      },
+    };
+  },
+}));
 
 // Default wave-state fixture (chat_log-first wire shape). Individual tests
 // re-assign `currentState` to exercise different chatLog shapes; the
@@ -36,7 +57,7 @@ const defaultStateData = {
 };
 
 // Mutable test-fixture cell so individual tests can swap in a different
-// wire payload before rendering. Mirrors the `latestOnSuccess` pattern above.
+// wire payload before rendering. Mirrors the `latestChatOptions` pattern above.
 let currentState: unknown = defaultStateData;
 
 vi.mock("@/lib/trpc", () => {
@@ -49,21 +70,12 @@ vi.mock("@/lib/trpc", () => {
     useTRPC: () => ({
       wave: {
         getState: { queryOptions: () => stateOpts },
-        submitTurn: {
-          mutationOptions: (o: {
-            onSuccess?: (r: unknown) => void;
-            onError?: (e: unknown) => void;
-          }) => ({
-            mutationFn: async (args: unknown) => {
-              submitTurnCalls.push({ args });
-              latestOnSuccess = o.onSuccess;
-              latestOnError = o.onError;
-              return { kind: "mid-turn" }; // benign default; specific tests override via latestOnSuccess
-            },
-          }),
-        },
       },
     }),
+    // Dev-stub auth headers for the streaming transport; the hook calls this
+    // when constructing DefaultChatTransport. Empty is fine — transport
+    // config is not exercised by these tests (useChat is fully mocked).
+    devUserHeaders: () => ({}),
   };
 });
 
@@ -76,11 +88,11 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 beforeEach(() => {
-  submitTurnCalls.length = 0;
-  latestOnSuccess = undefined;
-  latestOnError = undefined;
+  sendMessageCalls.length = 0;
+  latestChatOptions = undefined;
+  setMessagesMock.mockReset();
   currentState = defaultStateData;
-  // Fresh in-memory localStorage per test — useWaveState now depends on
+  // Fresh in-memory localStorage per test — useWaveState depends on
   // useCourseXp, and tests sharing courseId "c1" must not leak XP totals.
   installMemoryStorage();
 });
@@ -126,36 +138,36 @@ describe("useWaveState", () => {
     expect(result.current.activeQuestionnaire?.questionsKey).toBe("q-1");
   });
 
-  it("submitChatText forwards a chat-text payload", async () => {
+  it("submitChatText forwards a chat-text payload via sendMessage", async () => {
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
     await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
 
     act(() => result.current.submitChatText("hello"));
-    await waitFor(() => expect(submitTurnCalls.length).toBe(1));
-    expect(submitTurnCalls[0]?.args).toEqual({
-      courseId: "c1",
-      waveNumber: 1,
-      payload: { kind: "chat-text", text: "hello" },
+    expect(sendMessageCalls).toHaveLength(1);
+    expect(sendMessageCalls[0]).toEqual({
+      message: { text: "hello" },
+      options: { body: { payload: { kind: "chat-text", text: "hello" } } },
     });
   });
 
-  it("captures closeResult from a close-turn mutation response", async () => {
+  it("captures closeResult from a close-turn data-turn-result part", async () => {
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
     await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
 
-    // Fire the mutation, then drive onSuccess by hand with a close-turn result.
-    act(() => result.current.submitChatText("done"));
-    await waitFor(() => expect(latestOnSuccess).toBeDefined());
-
+    // Drive the transient result part by hand — the streaming analogue of
+    // the old mutation onSuccess.
     act(() =>
-      latestOnSuccess?.({
-        kind: "close-turn",
-        closingMessage: "Nicely done.",
-        nextWaveId: "w2",
-        nextWaveNumber: 2,
-        completionXpAwarded: 50,
-        tierAdvancedTo: 2,
-        gradedSignals: [],
+      latestChatOptions?.onData?.({
+        type: "data-turn-result",
+        data: {
+          kind: "close-turn",
+          closingMessage: "Nicely done.",
+          nextWaveId: "w2",
+          nextWaveNumber: 2,
+          completionXpAwarded: 50,
+          tierAdvancedTo: 2,
+          gradedSignals: [],
+        },
       }),
     );
 
@@ -173,20 +185,30 @@ describe("useWaveState", () => {
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
     await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
 
-    act(() => result.current.submitChatText("an answer"));
-    await waitFor(() => expect(latestOnSuccess).toBeDefined());
-
     act(() =>
-      latestOnSuccess?.({
-        kind: "mid-turn",
-        gradedSignals: [
-          { kind: "free-text", questionId: "q1", xpAwarded: 30 },
-          { kind: "mc-index", questionId: "q2", xpAwarded: 20 },
-        ],
+      latestChatOptions?.onData?.({
+        type: "data-turn-result",
+        data: {
+          kind: "mid-turn",
+          gradedSignals: [
+            { kind: "free-text", questionId: "q1", xpAwarded: 30 },
+            { kind: "mc-index", questionId: "q2", xpAwarded: 20 },
+          ],
+        },
       }),
     );
 
     await waitFor(() => expect(result.current.xp).toBe(30));
+  });
+
+  it("clears the streaming bubble on a data-turn-reset part", async () => {
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
+
+    act(() => latestChatOptions?.onData?.({ type: "data-turn-reset", data: { attempt: 1 } }));
+    // The reset handler drops transient assistant messages so the retry
+    // re-streams into a clean bubble.
+    expect(setMessagesMock).toHaveBeenCalled();
   });
 
   it("exposes the course topic and current tier", async () => {
@@ -211,22 +233,19 @@ describe("useWaveState", () => {
     expect(result.current.closeResult).toBeNull();
   });
 
-  it("surfaces an error toast when a turn submission rejects", async () => {
-    // Submitting into an already-closed wave rejects server-side. The onError
-    // handler must turn that into a visible toast instead of failing silently.
-    // Driven by hand (like the onSuccess test) — the tRPC stub's
-    // `mutationOptions` only forwards `mutationFn`, so react-query never runs
-    // the registered callbacks; we capture and invoke them directly.
+  it("surfaces an error toast when the stream errors", async () => {
+    // Submitting into an already-closed wave errors server-side; the route's
+    // onError forwards the guard message into the stream, and the hook's
+    // onError must turn that into a visible toast instead of failing silently.
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
     await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
 
-    act(() => result.current.submitChatText("continue"));
-    await waitFor(() => expect(latestOnError).toBeDefined());
-
-    act(() => latestOnError?.(new Error("wave is closed")));
+    act(() => latestChatOptions?.onError?.(new Error("wave is closed")));
     expect(toast.error).toHaveBeenCalledWith(
       "Couldn't submit that turn",
       expect.objectContaining({ description: "wave is closed" }),
     );
+    // The transient streaming bubble is dropped alongside the toast.
+    expect(setMessagesMock).toHaveBeenCalled();
   });
 });
