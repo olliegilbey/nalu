@@ -261,6 +261,18 @@ export const LLM = {
 } as const;
 
 /**
+ * Agent lookup-tool caps (agent-loop plan Task 3): every lookup returns a
+ * bounded projection so a tool result can never blow the rendered context.
+ * - `dueConceptsLimit`: max concepts per getDueConcepts call (soonest first).
+ * - `historyAttemptsLimit`: max attempts per getConceptHistory call
+ *   (most recent first).
+ */
+export const AGENT_LOOKUP = {
+  dueConceptsLimit: 10,
+  historyAttemptsLimit: 5,
+} as const;
+
+/**
  * Wave-loop tunables.
  * - `turnCount`: fixed length of every teaching Wave (mid-turns 1…turnCount-1,
  *   close turn at turnsRemaining===0).
