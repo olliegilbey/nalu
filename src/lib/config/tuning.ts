@@ -289,9 +289,21 @@ export const AGENT_LOOKUP = {
  *   without inflating per-question XP scaling — sized at roughly a tier-5
  *   medium-quality free-text answer, so the per-Wave commitment payoff is
  *   visible without dwarfing in-Wave grading.
+ * - `dueReviewInjection` (agent-loop plan Task 5): how the Wave system
+ *   prompt surfaces due concepts on the TOOLS contract. `"full"` injects
+ *   the whole `<due_for_review>` list (pre-agent behaviour); `"hint"`
+ *   replaces it with a one-line nudge to call getDueConcepts, shrinking
+ *   the static prompt now that the model can pull the live list on
+ *   demand. The json contract ALWAYS gets the full list — it has no
+ *   lookup tools. Default stays "full" until the live A/B in
+ *   docs/status/ shows hint mode preserves review coverage.
  */
 export const WAVE = {
   turnCount: 10,
   tierCheckInterval: 2,
   completionXp: 50,
+  dueReviewInjection: "full" as WaveDueReviewInjection,
 } as const;
+
+/** Due-review injection mode for the Wave system prompt — see `WAVE` docs. */
+export type WaveDueReviewInjection = "full" | "hint";

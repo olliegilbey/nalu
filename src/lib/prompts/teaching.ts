@@ -1,5 +1,6 @@
 import { escapeXmlText } from "@/lib/security/escapeXmlText";
 import { sanitiseUserInput } from "@/lib/security/sanitiseUserInput";
+import { WAVE } from "@/lib/config/tuning";
 import type { WaveSeedInputs, WaveOutputContract } from "@/lib/types/context";
 
 /**
@@ -25,15 +26,7 @@ export function renderTeachingSystem(inputs: WaveSeedInputs): string {
     ? `Tier ${tierBlock.number}: ${tierBlock.name} - ${tierBlock.description}`
     : `Tier ${inputs.currentTier}`;
 
-  const dueBlock =
-    inputs.dueConcepts.length > 0
-      ? `<due_for_review>\n${inputs.dueConcepts
-          .map(
-            (c) =>
-              `- ${escapeXmlText(c.name)} (tier ${c.tier})${c.lastQuality === null ? "" : `: last scored ${c.lastQuality}/5`}`,
-          )
-          .join("\n")}\n</due_for_review>`
-      : "";
+  const dueBlock = renderDueBlock(inputs.dueConcepts, contract);
 
   const plannedBlock = renderPlannedConcepts(inputs.seedSource);
   const seedBlock = renderSeedSource(inputs.seedSource);
@@ -55,6 +48,29 @@ export function renderTeachingSystem(inputs: WaveSeedInputs): string {
   ]
     .filter((s) => s !== "")
     .join("\n\n");
+}
+
+/**
+ * `<due_for_review>` block per `WAVE.dueReviewInjection` (agent-loop Task 5).
+ * Hint mode applies ONLY to the tools contract — that path can pull the live
+ * list via getDueConcepts; the json (blocking rollback) path has no lookup
+ * tools, so it always receives the full snapshot regardless of the flag.
+ * Empty snapshot renders nothing in every mode (unchanged).
+ */
+function renderDueBlock(
+  dueConcepts: WaveSeedInputs["dueConcepts"],
+  contract: WaveOutputContract,
+): string {
+  if (dueConcepts.length === 0) return "";
+  if (contract === "tools" && WAVE.dueReviewInjection === "hint") {
+    return `<due_for_review>\nConcepts from earlier lessons are due for spaced-repetition review. Call getDueConcepts for the current list before choosing review material.\n</due_for_review>`;
+  }
+  return `<due_for_review>\n${dueConcepts
+    .map(
+      (c) =>
+        `- ${escapeXmlText(c.name)} (tier ${c.tier})${c.lastQuality === null ? "" : `: last scored ${c.lastQuality}/5`}`,
+    )
+    .join("\n")}\n</due_for_review>`;
 }
 
 function renderPlannedConcepts(seed: WaveSeedInputs["seedSource"]): string {

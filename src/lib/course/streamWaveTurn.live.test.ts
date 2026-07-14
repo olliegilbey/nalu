@@ -22,6 +22,7 @@ import { userProfiles } from "@/db/schema";
 import { createCourse, setCourseStartingState } from "@/db/queries/courses";
 import { openWave } from "@/db/queries/waves";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
+import { updateConceptSm2, upsertConcept } from "@/db/queries/concepts";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import { WAVE } from "@/lib/config/tuning";
 import type { WaveTurnUIMessage } from "@/lib/types/waveStream";
@@ -62,13 +63,31 @@ describe.skipIf(!LIVE)("streamWaveTurn tool loop — live Cerebras", () => {
         startingTier: 1,
         currentTier: 1,
       });
+      // Seed a genuinely DUE concept (SM-2 review date in the past) so the
+      // `<due_for_review>` block renders and getDueConcepts has real rows —
+      // the Task-5 injection A/B compares lookup usage + review coverage.
+      const dueConcept = await upsertConcept({
+        courseId: course.id,
+        name: "ownership",
+        tier: 1,
+      });
+      await updateConceptSm2(dueConcept.id, {
+        easinessFactor: 2.5,
+        intervalDays: 1,
+        repetitionCount: 1,
+        lastQualityScore: 3,
+        lastReviewedAt: new Date(Date.now() - 2 * 86_400_000),
+        nextReviewAt: new Date(Date.now() - 86_400_000),
+      });
       const wave = await openWave({
         courseId: course.id,
         waveNumber: 1,
         tier: 1,
         frameworkSnapshot: FRAMEWORK,
         customInstructionsSnapshot: null,
-        dueConceptsSnapshot: [],
+        dueConceptsSnapshot: [
+          { conceptId: dueConcept.id, name: "ownership", tier: 1, lastQuality: 3 },
+        ],
         seedSource: {
           kind: "scoping_handoff",
           blueprint: {
@@ -163,6 +182,31 @@ describe.skipIf(!LIVE)("streamWaveTurn tool loop — live Cerebras", () => {
         expect(kinds, "tool result persisted").toContain("tool_result");
       }
 
+      // A/B forensics (agent-loop Task 5): which lookups the model called
+      // (wire) and whether the questionnaire covered the seeded due concept
+      // (persisted tool-call rows carry the UNREDACTED conceptName).
+      const lookupCalls = parts
+        .filter(
+          (p) =>
+            p.type === "tool-input-available" &&
+            (p["toolName"] === "getDueConcepts" || p["toolName"] === "getConceptHistory"),
+        )
+        .map((p) => p["toolName"]);
+      const questionnaireConcepts = ctxRows
+        .filter((r) => r.kind === "assistant_tool_call")
+        .flatMap((r) => {
+          const parsed = JSON.parse(r.content) as {
+            toolCalls: readonly { toolName: string; input: unknown }[];
+          };
+          return parsed.toolCalls
+            .filter((c) => c.toolName === "presentQuestionnaire")
+            .flatMap((c) =>
+              ((c.input as { questions?: readonly { conceptName?: string }[] }).questions ?? [])
+                .map((q) => q.conceptName)
+                .filter((n): n is string => typeof n === "string"),
+            );
+        });
+
       // Forensic summary (mirrors wave.live.test.ts style). Token usage feeds
       // the Task-5 injection A/B (cost-gate doc caveat): summed across ALL
       // loop steps of the successful attempt.
@@ -170,7 +214,11 @@ describe.skipIf(!LIVE)("streamWaveTurn tool loop — live Cerebras", () => {
         `[tool-loop-smoke] DONE questionnaireStaged=${data.newQuestionnaire !== null} ` +
           `rowKinds=${kinds.join(",")} ` +
           `forwardedTextChars=${forwardedText.length} ` +
-          `tokens=in:${usage?.inputTokens ?? "?"},out:${usage?.outputTokens ?? "?"},total:${usage?.totalTokens ?? "?"}\n`,
+          `tokens=in:${usage?.inputTokens ?? "?"},out:${usage?.outputTokens ?? "?"},total:${usage?.totalTokens ?? "?"} ` +
+          `dueInjection=${WAVE.dueReviewInjection} ` +
+          `lookupCalls=${lookupCalls.join("+") || "none"} ` +
+          `questionnaireConcepts=${questionnaireConcepts.join("+") || "none"} ` +
+          `dueCovered=${questionnaireConcepts.includes("ownership")}\n`,
       );
     });
   }, 300_000); // one tool loop = up to LLM.maxToolSteps provider calls + retries

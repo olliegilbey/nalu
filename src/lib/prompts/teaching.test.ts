@@ -68,6 +68,28 @@ describe("renderTeachingSystem (JSON-everywhere)", () => {
   });
 });
 
+describe("renderTeachingSystem (due-review injection, default full)", () => {
+  const dueInputs: WaveSeedInputs = {
+    ...baseInputs,
+    dueConcepts: [{ conceptId: "c-1", name: "Markets", tier: 1, lastQuality: 3 }],
+  };
+
+  it("renders the full due-concept list under BOTH contracts", () => {
+    (["json", "tools"] as const).forEach((outputContract) => {
+      const out = renderTeachingSystem({ ...dueInputs, outputContract });
+      expect(out).toContain("<due_for_review>");
+      expect(out).toContain("Markets (tier 1): last scored 3/5");
+      // The hint copy belongs to hint mode only (teaching.dueInjection.test.ts).
+      expect(out).not.toContain("Call getDueConcepts for the current list");
+    });
+  });
+
+  it("renders no block when nothing is due", () => {
+    const out = renderTeachingSystem({ ...baseInputs, outputContract: "tools" });
+    expect(out).not.toContain("<due_for_review>");
+  });
+});
+
 describe("renderTeachingSystem (output contracts)", () => {
   it("absent outputContract renders byte-identically to explicit 'json'", () => {
     expect(renderTeachingSystem({ ...baseInputs, outputContract: "json" })).toBe(
