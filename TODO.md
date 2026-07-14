@@ -193,3 +193,5 @@ retention (~1hr) unless drained somewhere.
 
 **Promote when:** soon — visitor attribution is wanted now that the link is
 shared. At minimum before the next batch of applications goes out.
+
+- Agent-loop follow-ups (2026-06-10 plan): close-turn agent (blueprint/summary tools); scoping clarify as adaptive agent (model decides clarification depth via askLearner/completeScoping emissions — design only, gated on product call); evaluate createAgentUIStreamResponse to replace the hand-rolled writer once full useChat message-state adoption lands; MCP tools explicitly out of scope until an external integration exists.
