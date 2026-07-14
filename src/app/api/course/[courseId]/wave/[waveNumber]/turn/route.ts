@@ -46,8 +46,10 @@ export async function POST(
     // Bind userId into ALS for the Cerebras rate limiter — same contract
     // as protectedProcedure (src/server/trpc.ts).
     execute: ({ writer }) =>
-      userIdStore.run(userId, () =>
-        streamWaveTurn(
+      userIdStore.run(userId, async () => {
+        // Return value (token usage, logged by the live smoke only) is
+        // deliberately dropped on the route.
+        await streamWaveTurn(
           {
             userId,
             courseId: input.data.courseId,
@@ -55,8 +57,8 @@ export async function POST(
             payload: input.data.payload,
           },
           writer,
-        ),
-      ),
+        );
+      }),
     // Surfaced to useChat's onError. Keep messages generic; TRPCError codes
     // from the guards (PRECONDITION_FAILED etc.) map to their message text.
     onError: (error) => (error instanceof Error ? error.message : "turn failed"),

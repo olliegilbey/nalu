@@ -93,7 +93,7 @@ describe.skipIf(!LIVE)("streamWaveTurn tool loop — live Cerebras", () => {
       } as unknown as UIMessageStreamWriter<WaveTurnUIMessage>;
 
       // ALS wrap mirrors the streaming route (rate-limiter lane resolution).
-      await userIdStore.run(LIVE_TEST_USER, () =>
+      const usage = await userIdStore.run(LIVE_TEST_USER, () =>
         streamWaveTurn(
           {
             userId: LIVE_TEST_USER,
@@ -163,11 +163,14 @@ describe.skipIf(!LIVE)("streamWaveTurn tool loop — live Cerebras", () => {
         expect(kinds, "tool result persisted").toContain("tool_result");
       }
 
-      // Forensic summary (mirrors wave.live.test.ts style).
+      // Forensic summary (mirrors wave.live.test.ts style). Token usage feeds
+      // the Task-5 injection A/B (cost-gate doc caveat): summed across ALL
+      // loop steps of the successful attempt.
       process.stderr.write(
         `[tool-loop-smoke] DONE questionnaireStaged=${data.newQuestionnaire !== null} ` +
           `rowKinds=${kinds.join(",")} ` +
-          `forwardedTextChars=${forwardedText.length}\n`,
+          `forwardedTextChars=${forwardedText.length} ` +
+          `tokens=in:${usage?.inputTokens ?? "?"},out:${usage?.outputTokens ?? "?"},total:${usage?.totalTokens ?? "?"}\n`,
       );
     });
   }, 300_000); // one tool loop = up to LLM.maxToolSteps provider calls + retries

@@ -225,13 +225,18 @@ export const BASELINE = {
  * without measurable user-visible latency (200ms × 6 worst-case retries
  * ≈ 1.2s, vs 78s at the slow-lane floor).
  *
- * `fastLaneCallsPerUser: 30`: per-user count of fast-lane calls before
- * the slow-lane floor kicks in. Sized to cover scoping (~4 calls) plus
- * 2 Waves (~22 calls) plus ~4 calls of retry headroom — a hiring-manager
- * demo can complete the full onboarding and reach the second Wave before
- * any slowdown. Counter is in-memory (module-level Map keyed by userId);
- * resets on lambda cold start, which is generous to the user and does
- * not affect wallet exposure (~$0.10/session regardless).
+ * `fastLaneCallsPerUser: 45`: per-user count of fast-lane calls before
+ * the slow-lane floor kicks in. Raised 30 → 45 when mid-turns gained
+ * lookup tools (agent-loop Task 4, cost gate:
+ * docs/status/2026-07-08-agent-loop-cost-gate.md): each lookup adds one
+ * full loop step, so a 10-turn Wave at 3 calls/turn hit 30 exactly at
+ * wave end — any retry or 4-step turn tipped mid-wave turns onto the 13s
+ * cliff. The paid-tier key allows 1000 RPM with no daily token cap, and
+ * 200ms spacing already caps a process at ≤300 calls/min — the raise
+ * changes pacing, not spend (+~10-15 calls/wave at ~0.01¢ each). Counter
+ * is in-memory (module-level Map keyed by userId); resets on lambda cold
+ * start, which is generous to the user and does not affect wallet
+ * exposure (~$0.10/session regardless).
  *
  * `lowTokenBudgetThreshold: 10000`: if a prior response's
  * `x-ratelimit-remaining-tokens-minute` header drops below this, the limiter
@@ -255,7 +260,7 @@ export const LLM = {
   maxRetries: 6,
   slowLaneSpacingMs: 13_000,
   fastLaneSpacingMs: 200,
-  fastLaneCallsPerUser: 30,
+  fastLaneCallsPerUser: 45,
   lowTokenBudgetThreshold: 10_000,
   maxToolSteps: 4,
 } as const;

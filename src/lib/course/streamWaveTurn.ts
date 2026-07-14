@@ -1,12 +1,14 @@
 import type { TextStreamPart, ToolSet, UIMessageStreamWriter } from "ai";
 import { executeToolTurnStream } from "@/lib/turn/executeToolTurnStream";
+import { buildWaveMidTurnAgent } from "@/lib/agents/waveMidTurnAgent";
 import { renderWaveTurnEnvelope, type WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { WaveTurnUIMessage } from "@/lib/types/waveStream";
+import type { LlmUsage } from "@/lib/types/llm";
 import { buildWaveSeed } from "./buildWaveSeed";
 import { prepareWaveTurn, type PreparedWaveTurn } from "./prepareWaveTurn";
 import { persistWaveMidTurn } from "./persistWaveMidTurn";
 import { executeWaveClose } from "./executeWaveClose";
-import { buildWaveMidTurnTools, type WaveTurnCollector } from "./waveTurnTools";
+import type { WaveTurnCollector } from "./waveTurnTools";
 import { findJsonProseLeakIndex, validateWaveMidToolTurn } from "./waveMidTurnGate";
 import type { SubmitWaveTurnParams } from "./submitWaveTurn";
 
@@ -14,13 +16,13 @@ import type { SubmitWaveTurnParams } from "./submitWaveTurn";
  * Streaming counterpart of `submitWaveTurn`. Same guards (via
  * prepareWaveTurn), same persistence (via persistWaveMidTurn /
  * executeWaveClose); the difference is transport AND emission channel:
- * mid-turns run a `streamText` tool loop (`executeToolTurnStream` +
- * `buildWaveMidTurnTools`) — teaching prose streams as plain text parts,
- * structured actions arrive as tool calls forwarded to the client as typed
- * tool chunks (generative UI), the finished-turn projection arrives as a
- * transient `data-turn-result` part, and validation retries emit a
- * non-transient `data-turn-reset` marker part (the client slices the
- * message's parts on it).
+ * mid-turns dispatch through the wave mid-turn agent (`executeToolTurnStream`
+ * + `buildWaveMidTurnAgent`, one fresh agent per attempt) — teaching prose
+ * streams as plain text parts, structured actions arrive as tool calls
+ * forwarded to the client as typed tool chunks (generative UI), the
+ * finished-turn projection arrives as a transient `data-turn-result` part,
+ * and validation retries emit a non-transient `data-turn-reset` marker part
+ * (the client slices the message's parts on it).
  *
  * The blocking tRPC path (`executeWaveMid`) keeps the mega-schema JSON
  * contract as the rollback transport — shared pieces are prepareWaveTurn
@@ -29,11 +31,16 @@ import type { SubmitWaveTurnParams } from "./submitWaveTurn";
  * Close turns (turnsRemaining === 0) run BLOCKING inside the stream —
  * only the final data part is emitted. Streaming close prose is a noted
  * follow-up (TODO.md).
+ *
+ * Returns the mid-turn loop's summed token usage (null on close turns) so
+ * the live smoke can log token cost per turn — the Task-5 injection A/B
+ * compares on it (docs/status/2026-07-08-agent-loop-cost-gate.md caveat).
+ * The streaming route ignores the return value.
  */
 export async function streamWaveTurn(
   params: SubmitWaveTurnParams,
   writer: UIMessageStreamWriter<WaveTurnUIMessage>,
-): Promise<void> {
+): Promise<LlmUsage | null> {
   const prep: PreparedWaveTurn = await prepareWaveTurn(params);
 
   if (prep.isCloseTurn) {
@@ -41,7 +48,7 @@ export async function streamWaveTurn(
     // mid turns' (cache prefix) — the close call itself is still single-JSON.
     const result = await executeWaveClose(prep.dispatchCtx, prep.learnerInput, "tools");
     writer.write({ type: "data-turn-result", data: result, transient: true });
-    return;
+    return null;
   }
 
   // Each attempt streams under its own text id so the client can
@@ -74,12 +81,17 @@ export async function streamWaveTurn(
     suppressedAt: null,
   };
 
-  // Result deliberately unused: the learner-visible prose is accumulated in
-  // attemptState (all steps), and usage is dropped here exactly as the
-  // blocking path drops executeTurn's.
-  await executeToolTurnStream({
+  // One seed serves both the context assembly (executeToolTurnStream) and
+  // the agent's instructions — byte-identity between the two renders is what
+  // lets the dispatcher drop the assembled system message (cache prefix).
+  const seed = buildWaveSeed(prep.dispatchCtx.course, prep.dispatchCtx.wave, "tools");
+
+  // finalText deliberately unused: the learner-visible prose is accumulated
+  // in attemptState (all steps, not just the closing step). usage is
+  // surfaced to the caller for smoke-run cost logging only.
+  const { usage } = await executeToolTurnStream({
     parent: { kind: "wave", id: prep.dispatchCtx.wave.id },
-    seed: buildWaveSeed(prep.dispatchCtx.course, prep.dispatchCtx.wave, "tools"),
+    seed,
     // No inline responseSchema block: tool definitions ARE the schema channel
     // on this path (the envelope's param stays alive for the blocking path).
     userMessageContent: renderWaveTurnEnvelope({
@@ -87,16 +99,17 @@ export async function streamWaveTurn(
       turnsRemaining: prep.turnsRemaining,
     }),
     makeAttempt: () => {
-      // Fresh tools + collector per attempt — a retry must not inherit a
-      // failed attempt's staged state (executeToolTurnStream contract).
-      const toolkit = buildWaveMidTurnTools();
-      attemptState.collector = toolkit.collector;
+      // Fresh agent + collector per attempt — a retry must not inherit a
+      // failed attempt's staged state (executeToolTurnStream contract). The
+      // lookup tools are scoped to the server-resolved course by closure.
+      const instance = buildWaveMidTurnAgent({ seed, courseId: prep.dispatchCtx.course.id });
+      attemptState.collector = instance.collector;
       return {
-        tools: toolkit.tools,
+        agent: instance.agent,
         // Gate over what the learner actually saw (attemptState.prose), not
         // the final step's text — see attemptState comment.
         validateTurn: () =>
-          validateWaveMidToolTurn(toolkit.collector, attemptState.prose, prep.payload),
+          validateWaveMidToolTurn(instance.collector, attemptState.prose, prep.payload),
       };
     },
     onAttemptStart: (attempt) => {
@@ -160,6 +173,7 @@ export async function streamWaveTurn(
     turnsRemaining: prep.turnsRemaining,
   });
   writer.write({ type: "data-turn-result", data: result, transient: true });
+  return usage;
 }
 
 /**
@@ -179,9 +193,9 @@ export async function streamWaveTurn(
  *   before writing — the committed card gets `correctEnc` via `getState`
  *   (spec §7.8); the streamed preview must not leak more than that.
  */
-function forwardToolChunk(
+function forwardToolChunk<TOOLS extends ToolSet>(
   writer: UIMessageStreamWriter<WaveTurnUIMessage>,
-  part: TextStreamPart<ToolSet>,
+  part: TextStreamPart<TOOLS>,
 ): void {
   switch (part.type) {
     case "tool-input-start":

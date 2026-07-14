@@ -129,6 +129,10 @@ const OUTPUT_FORMAT_BLOCKS: Record<WaveOutputContract, string> = {
   tools: `On teaching turns, your text output IS your message to the learner: write it as natural conversational prose. Do not emit JSON or XML framing. Structured actions are tool calls, never prose:
 - recordComprehensionSignals: call it once, before anything else, whenever the learner answered graded questions last turn — one signal per answered question. Skip it on pure teaching turns.
 - presentQuestionnaire: call it at most once per turn, after your teaching prose, to drop a graded concept-check quiz.
+You also have read-only lookups into this learner's progress records:
+- getDueConcepts: lists the concepts currently due for spaced-repetition review. Call it before choosing review material to weave in or quiz on.
+- getConceptHistory: this learner's past assessment results for one named concept. Call it before re-teaching something they have struggled with.
+Never invent or assume review history — if you have not looked it up, do not claim it.
 Every turn must include teaching prose for the learner, even when you call tools.
 On the lesson's final turn no tools are available; respond with a single JSON object validated against the schema provided in that turn's message.`,
 };

@@ -1,12 +1,25 @@
 import { ToolLoopAgent, stepCountIs } from "ai";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { getLlmModel } from "@/lib/llm/provider";
-import { cerebrasToolLoopPrepareStep } from "@/lib/llm/streamToolChat";
+import { cerebrasToolLoopPrepareStep } from "@/lib/llm/cerebrasToolLoopPrepareStep";
+import { recordCerebrasRateLimitHeaders } from "@/lib/llm/cerebrasRateLimit";
 import { LLM } from "@/lib/config/tuning";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
-import { buildWaveMidTurnTools, type WaveTurnCollector } from "@/lib/course/waveTurnTools";
+import {
+  buildWaveMidTurnTools,
+  type WaveMidTurnToolkit,
+  type WaveTurnCollector,
+} from "@/lib/course/waveTurnTools";
 import type { WaveSeedInputs } from "@/lib/types/context";
 import { buildWaveLookupTools } from "./waveLookupTools";
+
+/**
+ * The mid-turn agent's full tool map: emission staging + read-only lookups.
+ * `src/lib/types/waveStream.ts` derives the client's typed UI tool parts from
+ * this, so the wire and the client can never drift on the tool surface.
+ */
+export type WaveMidTurnAgentTools = WaveMidTurnToolkit["tools"] &
+  ReturnType<typeof buildWaveLookupTools>;
 
 /** Inputs that scope one agent instance to one wave turn. */
 export interface WaveMidTurnAgentParams {
@@ -20,10 +33,7 @@ export interface WaveMidTurnAgentParams {
 
 /** One built agent instance: agent + its turn-scoped collector + instructions. */
 export interface WaveMidTurnAgentInstance {
-  readonly agent: ToolLoopAgent<
-    never,
-    ReturnType<typeof buildWaveMidTurnTools>["tools"] & ReturnType<typeof buildWaveLookupTools>
-  >;
+  readonly agent: ToolLoopAgent<never, WaveMidTurnAgentTools>;
   /** Staging collector drained by persistWaveMidTurn after the loop. */
   readonly collector: WaveTurnCollector;
   /**
@@ -62,6 +72,12 @@ export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTu
     temperature: LLM.defaultTemperature,
     maxRetries: LLM.maxRetries,
     prepareStep: cerebrasToolLoopPrepareStep,
+    // Feed observed x-ratelimit-* headers back to the pacing limiter after
+    // EVERY loop step (each step is one provider call). Constructor-level so
+    // no dispatch site can forget it.
+    onStepFinish: (step) => {
+      recordCerebrasRateLimitHeaders(step.response.headers);
+    },
   });
   return { agent, collector: toolkit.collector, instructions };
 }

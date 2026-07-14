@@ -81,12 +81,20 @@ describe("renderTeachingSystem (output contracts)", () => {
     expect(out).toContain("the questionnaire field");
     expect(out).not.toContain("presentQuestionnaire");
     expect(out).not.toContain("recordComprehensionSignals");
+    // Lookup tools exist only on the agent path (tools contract).
+    expect(out).not.toContain("getDueConcepts");
+    expect(out).not.toContain("getConceptHistory");
   });
 
-  it("tools contract names both tools, keeps single-JSON for the final turn, drops field vocab", () => {
+  it("tools contract names all four tools, keeps single-JSON for the final turn, drops field vocab", () => {
     const out = renderTeachingSystem({ ...baseInputs, outputContract: "tools" });
     expect(out).toContain("presentQuestionnaire");
     expect(out).toContain("recordComprehensionSignals");
+    // Lookup guidance (agent-loop plan Task 4): pull review state on demand,
+    // never fabricate it.
+    expect(out).toContain("getDueConcepts");
+    expect(out).toContain("getConceptHistory");
+    expect(out).toContain("Never invent or assume review history");
     // Close turns still run the blocking single-JSON path under this prompt.
     expect(out).toContain("final turn no tools are available");
     expect(out).toContain("single JSON object");

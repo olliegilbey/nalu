@@ -8,20 +8,39 @@ import {
   type ContextParent,
 } from "@/db/queries/contextMessages";
 import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
-import { streamToolChat } from "@/lib/llm/streamToolChat";
 import { SCOPING } from "@/lib/config/tuning";
 import type { SeedInputs } from "@/lib/types/context";
-import type { LlmUsage } from "@/lib/types/llm";
+import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 import { assembleLlmMessages } from "./contextAssembly";
 
 /**
- * One attempt's tool surface: a fresh tool set (bound to a fresh collector
- * on the caller's side) plus the post-loop validation gate that inspects
- * that collector + the closing prose. A FACTORY rather than a static tool
- * set because retries must not inherit a failed attempt's staged state.
+ * Minimal agent surface the dispatcher needs — structurally satisfied by a
+ * `ToolLoopAgent` from `src/lib/agents/` (whose `.stream()` resolves a
+ * `StreamTextResult`), and by a canned stub in tests. Generic over the tool
+ * set so a concrete agent's typed stream parts flow through to `onToolEvent`
+ * without variance casts.
+ *
+ * CONTRACT: the agent carries the turn's system prompt as constructor
+ * `instructions` (byte-identical to `renderContext(seed,…).system` — pinned
+ * in waveMidTurnAgent.test.ts), plus model, tools, stopWhen, per-step pacing
+ * (`prepareStep`) and rate-limit header recording (`onStepFinish`).
  */
-export interface ToolTurnAttempt {
-  readonly tools: ToolSet;
+export interface ToolTurnAgent<TOOLS extends ToolSet = ToolSet> {
+  stream(options: { readonly messages: LlmMessage[] }): PromiseLike<{
+    readonly fullStream: AsyncIterable<TextStreamPart<TOOLS>>;
+    readonly steps: PromiseLike<ReadonlyArray<StepResult<TOOLS>>>;
+    readonly totalUsage: PromiseLike<LlmUsage>;
+  }>;
+}
+
+/**
+ * One attempt's dispatch surface: a fresh agent (bound to a fresh collector
+ * on the caller's side) plus the post-loop validation gate that inspects
+ * that collector + the closing prose. A FACTORY rather than a static agent
+ * because retries must not inherit a failed attempt's staged state.
+ */
+export interface ToolTurnAttempt<TOOLS extends ToolSet = ToolSet> {
+  readonly agent: ToolTurnAgent<TOOLS>;
   /**
    * Post-loop validation (e.g. "free-text answers were submitted but
    * recordComprehensionSignals was never called"). Return null to accept;
@@ -31,13 +50,13 @@ export interface ToolTurnAttempt {
 }
 
 /** Inputs to {@link executeToolTurnStream}. */
-export interface ExecuteToolTurnStreamParams {
+export interface ExecuteToolTurnStreamParams<TOOLS extends ToolSet = ToolSet> {
   readonly parent: ContextParent;
   readonly seed: SeedInputs;
   /** Full pre-rendered user envelope (persisted verbatim as user_message). */
   readonly userMessageContent: string;
-  /** Build a fresh tool set + validation gate per attempt (0-based). */
-  readonly makeAttempt: (attempt: number) => ToolTurnAttempt;
+  /** Build a fresh agent + validation gate per attempt (0-based). */
+  readonly makeAttempt: (attempt: number) => ToolTurnAttempt<TOOLS>;
   /** Directive text for the retry row. Default: the gate failure's detail. */
   readonly retryDirective?: (err: ValidationGateFailure, attempt: number) => string;
   /** Called with each prose text delta as it streams (any loop step). */
@@ -49,7 +68,7 @@ export interface ExecuteToolTurnStreamParams {
    * tool-call, tool-result, tool-error parts). Optional — persistence does
    * not depend on it.
    */
-  readonly onToolEvent?: (part: TextStreamPart<ToolSet>, attempt: number) => void;
+  readonly onToolEvent?: (part: TextStreamPart<TOOLS>, attempt: number) => void;
 }
 
 /** Result of a successful tool turn. The caller reads its collector for staged state. */
@@ -75,9 +94,15 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
  * load priors, assemble messages, persist one atomic batch; same retry
  * budget). Differences:
  *
- * - The LLM call is a `streamText` tool loop (`streamToolChat`): prose is
- *   plain streamed text (no partial-JSON projection — deltas forward as-is),
- *   structured actions arrive as tool calls staged by the caller's executes.
+ * - The LLM call is `agent.stream({messages})` on the attempt's ToolLoopAgent
+ *   (agent-loop plan Task 4): prose is plain streamed text (no partial-JSON
+ *   projection — deltas forward as-is), structured actions arrive as tool
+ *   calls staged by the agent's tool executes.
+ * - The assembled message list's LEADING SYSTEM MESSAGE IS DROPPED before
+ *   dispatch: the agent carries the identical bytes as constructor
+ *   `instructions` (ToolLoopAgent maps instructions → system and passes
+ *   messages through untouched — verified in installed ai@6.0.158); sending
+ *   both would double the system prompt on the wire.
  * - Persisted rows for a successful turn: `user_message`, then per tool step
  *   an `assistant_tool_call` + `tool_result` pair, then `assistant_response`
  *   holding the closing prose. The Context replays the loop faithfully.
@@ -95,8 +120,8 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
  *   corrected call) are NOT harness retries; they stay inside one attempt's
  *   step trail and persist with it.
  */
-export async function executeToolTurnStream(
-  params: ExecuteToolTurnStreamParams,
+export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
+  params: ExecuteToolTurnStreamParams<TOOLS>,
 ): Promise<ExecuteToolTurnStreamResult> {
   const turnIndex = await getNextTurnIndex(params.parent);
   const priorRows =
@@ -116,7 +141,7 @@ export async function executeToolTurnStream(
   const directiveFn = params.retryDirective ?? ((err) => err.detail);
 
   /** Map one loop step to its persisted row pair (empty for pure-text steps). */
-  function stepRows(step: StepResult<ToolSet>, seqStart: number): readonly AppendMessageParams[] {
+  function stepRows(step: StepResult<TOOLS>, seqStart: number): readonly AppendMessageParams[] {
     if (step.toolCalls.length === 0) return [];
     const callRow: AppendMessageParams = {
       parent: params.parent,
@@ -166,14 +191,18 @@ export async function executeToolTurnStream(
     batch: readonly AppendMessageParams[],
   ): Promise<ExecuteToolTurnStreamResult> {
     const llmMessages = assembleLlmMessages(params.seed, priorRows, batch);
-    const { tools, validateTurn } = params.makeAttempt(i);
+    const { agent, validateTurn } = params.makeAttempt(i);
     params.onAttemptStart(i);
 
-    const handle = await streamToolChat(llmMessages, { tools });
+    // Drop the leading system message — the agent's `instructions` carries
+    // the identical bytes (see the dispatch TSDoc above).
+    const [head, ...rest] = llmMessages;
+    const messages = head !== undefined && head.role === "system" ? rest : [...llmMessages];
+    const result = await agent.stream({ messages });
 
     // Drain the stream: forward prose deltas and tool lifecycle events.
     // Tool-turn prose is plain text — no monotonic-prefix workaround needed.
-    for await (const part of handle.fullStream) {
+    for await (const part of result.fullStream) {
       if (part.type === "text-delta") {
         params.onTextDelta(part.text, i);
       } else if (TOOL_EVENT_TYPES.has(part.type)) {
@@ -181,12 +210,15 @@ export async function executeToolTurnStream(
       }
     }
 
-    const final = await handle.final();
-    const gate = validateTurn(final.text);
+    const [steps, usage] = await Promise.all([result.steps, result.totalUsage]);
+    // Closing prose = the FINAL step's text ("" when the loop ended on a
+    // tool-call step); the caller's validation gate decides acceptability.
+    const finalText = steps[steps.length - 1]?.text ?? "";
+    const gate = validateTurn(finalText);
 
     if (gate === null) {
       // Success: persist the loop trail + closing prose in one atomic batch.
-      const stepRowsAll = final.steps.reduce<readonly AppendMessageParams[]>(
+      const stepRowsAll = steps.reduce<readonly AppendMessageParams[]>(
         (acc, step) => [...acc, ...stepRows(step, batch.length + acc.length)],
         [],
       );
@@ -196,10 +228,10 @@ export async function executeToolTurnStream(
         seq: batch.length + stepRowsAll.length,
         kind: "assistant_response",
         role: "assistant",
-        content: final.text,
+        content: finalText,
       };
       await appendMessages([...batch, ...stepRowsAll, successRow]);
-      return { finalText: final.text, usage: final.usage };
+      return { finalText, usage };
     }
 
     // Validation failure: persist the exhaust as a JSON envelope (see TSDoc).
@@ -210,8 +242,8 @@ export async function executeToolTurnStream(
       kind: "failed_assistant_response",
       role: "assistant",
       content: JSON.stringify({
-        text: final.text,
-        steps: final.steps.map((step) => ({
+        text: finalText,
+        steps: steps.map((step) => ({
           toolCalls: step.toolCalls.map((c) => ({
             toolCallId: c.toolCallId,
             toolName: c.toolName,
