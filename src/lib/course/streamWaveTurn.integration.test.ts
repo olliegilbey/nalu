@@ -5,25 +5,34 @@ import { userProfiles } from "@/db/schema";
 import { createCourse, setCourseStartingState } from "@/db/queries/courses";
 import { appendWaveChatLog, getWaveById, openWave } from "@/db/queries/waves";
 import { appendMessage, getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
+import { updateConceptSm2, upsertConcept } from "@/db/queries/concepts";
 import { WAVE } from "@/lib/config/tuning";
-import * as streamToolChatModule from "@/lib/llm/streamToolChat";
+import * as waveMidTurnAgentModule from "@/lib/agents/waveMidTurnAgent";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
-import type { StreamToolChatHandle, StreamToolChatOptions } from "@/lib/llm/streamToolChat";
+import type { WaveMidTurnAgentTools } from "@/lib/agents/waveMidTurnAgent";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
+import type { LlmMessage } from "@/lib/types/llm";
 import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTurn";
 import { streamWaveTurn } from "./streamWaveTurn";
 
+// The provider needs env at build time; the stubbed agent stream never calls it.
+vi.mock("@/lib/llm/provider", () => ({
+  getLlmModel: () => ({ modelId: "stub", specificationVersion: "v3" }),
+}));
+
 /**
  * Integration tests for `streamWaveTurn` (plans: streaming-wave-turns Task 6,
- * tool-calling Task 6). Real Postgres testcontainer; the LLM boundary is
- * mocked at `streamToolChat` (mid-turns — `executeToolTurnStream` then runs
- * for real, persisting production-shaped context_messages rows INCLUDING the
- * tool kinds) and at `executeTurn` (close turns, which run the blocking path
- * inside the stream). Mock handles invoke the REAL tool executes so the
- * collector is staged exactly as `streamText` would stage it in production.
- * Assertions cover the UIMessage part sequence (text + tool chunks) AND the
- * same DB row trails the blocking suite asserts.
+ * tool-calling Task 6, agent-loop Task 4). Real Postgres testcontainer; the
+ * LLM boundary is mocked at `buildWaveMidTurnAgent` (mid-turns — the REAL
+ * builder runs, only the agent's `.stream()` is stubbed, so
+ * `executeToolTurnStream` persists production-shaped context_messages rows
+ * INCLUDING the tool kinds) and at `executeTurn` (close turns, which run the
+ * blocking path inside the stream). Scripted attempts invoke the REAL tool
+ * executes (collector staging AND DB-backed lookups) so state moves exactly
+ * as `streamText` would move it in production. Assertions cover the UIMessage
+ * part sequence (text + tool chunks) AND the same DB row trails the blocking
+ * suite asserts.
  */
 
 const USER_ID = "55555555-5555-5555-5555-555555555555";
@@ -96,10 +105,11 @@ async function seedCourseWithOpenWave(): Promise<{
 }
 
 /**
- * One scripted attempt for the streamToolChat mock: fullStream parts to yield
+ * One scripted attempt for the agent-builder mock: fullStream parts to yield
  * (production `TextStreamPart` shapes) + the final step trail. `run` is
- * invoked with the attempt's REAL tools before parts are yielded, so tool
- * executes stage the collector mid-"stream", exactly like `streamText`.
+ * invoked with the attempt's REAL agent tools before parts are yielded, so
+ * tool executes stage the collector / hit the test DB mid-"stream", exactly
+ * like `streamText`.
  */
 interface ScriptedAttempt {
   readonly parts: readonly { type: string; [k: string]: unknown }[];
@@ -109,28 +119,42 @@ interface ScriptedAttempt {
     toolResults: readonly unknown[];
     content: readonly unknown[];
   }[];
-  readonly run?: (tools: StreamToolChatOptions["tools"]) => Promise<void>;
+  readonly run?: (tools: WaveMidTurnAgentTools) => Promise<void>;
 }
 
-/** Queue scripted attempts onto the streamToolChat spy (one per LLM attempt). */
-function mockToolChatAttempts(...attempts: readonly ScriptedAttempt[]) {
-  const spy = vi.spyOn(streamToolChatModule, "streamToolChat");
-  attempts.forEach((attempt) => {
-    spy.mockImplementationOnce(async (_messages, opts): Promise<StreamToolChatHandle> => {
-      return {
-        fullStream: (async function* () {
-          await attempt.run?.(opts.tools);
-          for (const p of attempt.parts) yield p as never;
-        })(),
-        final: async () => ({
-          text: attempt.steps[attempt.steps.length - 1]?.text ?? "",
-          steps: attempt.steps as never,
-          usage: FAKE_USAGE,
-        }),
-      };
-    });
+/** Messages each stubbed `agent.stream()` received, in dispatch order. */
+const streamedMessages: LlmMessage[][] = [];
+
+/**
+ * Mock the agent SEAM: the REAL `buildWaveMidTurnAgent` runs (real collector,
+ * real tools, real instructions), and only the returned agent's `.stream()`
+ * is replaced with the scripted attempt — one per dispatch, in order.
+ */
+function mockAgentAttempts(...attempts: readonly ScriptedAttempt[]) {
+  // Capture the original BEFORE installing the spy: the named import is a
+  // live binding and would recurse into the mock once spied.
+  const realBuild = waveMidTurnAgentModule.buildWaveMidTurnAgent;
+  const dispatchState = { next: 0 };
+  return vi.spyOn(waveMidTurnAgentModule, "buildWaveMidTurnAgent").mockImplementation((params) => {
+    const instance = realBuild(params);
+    const agent = {
+      stream: async ({ messages }: { messages: LlmMessage[] }) => {
+        const attempt = attempts[dispatchState.next];
+        dispatchState.next += 1;
+        if (!attempt) throw new Error("mockAgentAttempts: unscripted dispatch");
+        streamedMessages.push(messages);
+        return {
+          fullStream: (async function* () {
+            await attempt.run?.(instance.agent.tools);
+            for (const p of attempt.parts) yield p as never;
+          })(),
+          steps: Promise.resolve(attempt.steps as never),
+          totalUsage: Promise.resolve(FAKE_USAGE),
+        };
+      },
+    };
+    return { ...instance, agent: agent as never };
   });
-  return spy;
 }
 
 /** fullStream text-delta part (note: `text`, not `delta`, at this layer). */
@@ -183,6 +207,7 @@ function makeBlockingTurnMock(parsed: unknown) {
 describe("streamWaveTurn (integration)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    streamedMessages.length = 0;
   });
 
   // -------------------------------------------------------------------------
@@ -192,7 +217,7 @@ describe("streamWaveTurn (integration)", () => {
   it("happy mid-turn: streams text parts, emits data-turn-result, persists both stores", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
-      mockToolChatAttempts({
+      mockAgentAttempts({
         parts: [textDelta("Got"), textDelta(" it.")],
         steps: [{ text: "Got it.", toolCalls: [], toolResults: [], content: [] }],
       });
@@ -247,7 +272,7 @@ describe("streamWaveTurn (integration)", () => {
   it("questionnaire turn: forwards tool chunks, persists tool rows + questionnaire", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
-      mockToolChatAttempts({
+      mockAgentAttempts({
         // Prose before the call, tool lifecycle, short wrap-up after — the
         // shape the probe observed (median 2 steps).
         parts: [
@@ -359,13 +384,130 @@ describe("streamWaveTurn (integration)", () => {
   });
 
   // -------------------------------------------------------------------------
+  // 2b. Lookup turn (agent-loop Task 4): the REAL getDueConcepts execute hits
+  //     the test DB; the loop trail persists as tool-kind rows; the NEXT
+  //     turn's dispatched messages replay the lookup (context fidelity) and
+  //     carry no system message (the agent's instructions own that slot).
+  // -------------------------------------------------------------------------
+  it("lookup turn: getDueConcepts rows persist and feed the next turn's context", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      // Seed one concept due YESTERDAY so the real lookup projects it.
+      const concept = await upsertConcept({ courseId, name: "ownership", tier: 1 });
+      await updateConceptSm2(concept.id, {
+        easinessFactor: 2.5,
+        intervalDays: 1,
+        repetitionCount: 1,
+        lastQualityScore: 3,
+        lastReviewedAt: new Date(Date.now() - 2 * 86_400_000),
+        nextReviewAt: new Date(Date.now() - 86_400_000),
+      });
+
+      // Canned steps mirror what the REAL execute returns for the seeded row
+      // (asserted below) — persistence reads the step trail, not the execute.
+      const lookupOutput = { dueConcepts: [{ name: "ownership", tier: 1, lastQuality: 3 }] };
+      const captured: { lookup: unknown } = { lookup: null };
+      mockAgentAttempts(
+        {
+          parts: [
+            { type: "tool-input-start", id: "l1", toolName: "getDueConcepts" },
+            { type: "tool-call", toolCallId: "l1", toolName: "getDueConcepts", input: {} },
+            {
+              type: "tool-result",
+              toolCallId: "l1",
+              toolName: "getDueConcepts",
+              input: {},
+              output: lookupOutput,
+            },
+            textDelta("Let's revisit ownership."),
+          ],
+          steps: [
+            {
+              text: "",
+              toolCalls: [{ toolCallId: "l1", toolName: "getDueConcepts", input: {} }],
+              toolResults: [{ toolCallId: "l1", toolName: "getDueConcepts", output: lookupOutput }],
+              content: [],
+            },
+            { text: "Let's revisit ownership.", toolCalls: [], toolResults: [], content: [] },
+          ],
+          // Drive the REAL lookup execute against the testcontainer DB.
+          run: async (tools) => {
+            captured.lookup = await tools.getDueConcepts.execute!(
+              {},
+              { toolCallId: "l1", messages: [] },
+            );
+          },
+        },
+        // Turn 2: plain teaching — exists to capture the messages the next
+        // dispatch assembles from the persisted turn-1 trail.
+        {
+          parts: [textDelta("Onwards.")],
+          steps: [{ text: "Onwards.", toolCalls: [], toolResults: [], content: [] }],
+        },
+      );
+
+      const first = recordingWriter();
+      await streamWaveTurn(
+        {
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: { kind: "chat-text", text: "review something" },
+        },
+        first.writer,
+      );
+
+      // The real execute projected the seeded concept (capped, name-keyed).
+      expect(captured.lookup).toEqual(lookupOutput);
+      // Lookup tool chunks reached the client (generative UI lifecycle).
+      const toolTypes = first.parts.map((p) => p.type).filter((t) => t.startsWith("tool-"));
+      expect(toolTypes).toEqual([
+        "tool-input-start",
+        "tool-input-available",
+        "tool-output-available",
+      ]);
+
+      // The loop trail persisted with tool kinds; contents name the lookup.
+      const ctxRows = await getMessagesForWave(waveId);
+      expect(ctxRows.map((r) => r.kind)).toEqual([
+        "user_message",
+        "assistant_tool_call",
+        "tool_result",
+        "assistant_response",
+      ]);
+      expect(ctxRows[1]!.content).toContain("getDueConcepts");
+      expect(ctxRows[2]!.content).toContain("ownership");
+
+      // Turn 2: the dispatched context replays the lookup call + result.
+      const second = recordingWriter();
+      await streamWaveTurn(
+        { userId: USER_ID, courseId, waveNumber: 1, payload: { kind: "chat-text", text: "go on" } },
+        second.writer,
+      );
+      const turn2Messages = streamedMessages.at(-1)!;
+      // No system message crosses the wire in `messages` — the agent's
+      // instructions carry it (double-send would break the cache prefix).
+      expect(turn2Messages.some((m) => m.role === "system")).toBe(false);
+      const replayedCall = turn2Messages.find(
+        (m) =>
+          m.role === "assistant" &&
+          Array.isArray(m.content) &&
+          m.content.some((p) => p.type === "tool-call" && p.toolName === "getDueConcepts"),
+      );
+      expect(replayedCall).toBeDefined();
+      const replayedResult = turn2Messages.find((m) => m.role === "tool");
+      expect(JSON.stringify(replayedResult?.content)).toContain("ownership");
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // 3. Validation retry (gate: empty prose): reset part with attempt 1 + two
   //    distinct text ids; retry exhaust persists; the final result still lands.
   // -------------------------------------------------------------------------
   it("validation retry: emits data-turn-reset and re-streams under a new text id", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
-      mockToolChatAttempts(
+      mockAgentAttempts(
         // Attempt 0: the loop ends with NO learner-visible prose → gate fails.
         { parts: [], steps: [{ text: "", toolCalls: [], toolResults: [], content: [] }] },
         // Attempt 1: clean teaching turn.
@@ -424,7 +566,7 @@ describe("streamWaveTurn (integration)", () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
       const leakedJson = '{"questions": [{"id": "q1", "correct": "C"}]}';
-      mockToolChatAttempts(
+      mockAgentAttempts(
         // Attempt 0: greeting prose, then the raw JSON dump — the live-observed
         // failure shape (2026-07-08, transformers dev wave).
         {
@@ -529,7 +671,7 @@ describe("streamWaveTurn (integration)", () => {
       vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
         makeBlockingTurnMock(closeParsed) as unknown as typeof executeTurnModule.executeTurn,
       );
-      const toolChatSpy = vi.spyOn(streamToolChatModule, "streamToolChat");
+      const agentBuildSpy = vi.spyOn(waveMidTurnAgentModule, "buildWaveMidTurnAgent");
       const { parts, writer } = recordingWriter();
 
       await streamWaveTurn(
@@ -549,8 +691,8 @@ describe("streamWaveTurn (integration)", () => {
         closingMessage: "Closing chat.",
         nextWaveNumber: 2,
       });
-      // The streaming tool loop is never touched on a close turn.
-      expect(toolChatSpy).not.toHaveBeenCalled();
+      // The streaming agent loop is never touched on a close turn.
+      expect(agentBuildSpy).not.toHaveBeenCalled();
     });
   });
 });

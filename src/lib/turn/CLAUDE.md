@@ -12,9 +12,13 @@ budget, and ValidationGateFailure semantics are identical across both —
 tests assert the same row sequences for each.
 
 `executeToolTurnStream` is the third sibling for TOOL-loop turns
-(`streamToolChat` instead of `Output.object`): callers supply a
-`makeAttempt` factory (fresh tool set + collector per attempt — retries
-must not inherit staged state) and a post-loop `validateTurn` gate. Each
+(`agent.stream()` on a ToolLoopAgent from `src/lib/agents/` instead of
+`Output.object`): callers supply a `makeAttempt` factory (fresh agent +
+collector per attempt — retries must not inherit staged state) and a
+post-loop `validateTurn` gate. The dispatcher DROPS the assembled
+message list's leading system message — the agent's constructor
+`instructions` carries identical bytes (double-send would duplicate the
+system prompt on the wire). Each
 step persists `assistant_tool_call` + `tool_result` rows, then the final
 prose as `assistant_response`; failed attempts collapse to
 `failed_assistant_response` (JSON envelope of the step trail) +

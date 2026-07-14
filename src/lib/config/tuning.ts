@@ -225,13 +225,18 @@ export const BASELINE = {
  * without measurable user-visible latency (200ms × 6 worst-case retries
  * ≈ 1.2s, vs 78s at the slow-lane floor).
  *
- * `fastLaneCallsPerUser: 30`: per-user count of fast-lane calls before
- * the slow-lane floor kicks in. Sized to cover scoping (~4 calls) plus
- * 2 Waves (~22 calls) plus ~4 calls of retry headroom — a hiring-manager
- * demo can complete the full onboarding and reach the second Wave before
- * any slowdown. Counter is in-memory (module-level Map keyed by userId);
- * resets on lambda cold start, which is generous to the user and does
- * not affect wallet exposure (~$0.10/session regardless).
+ * `fastLaneCallsPerUser: 45`: per-user count of fast-lane calls before
+ * the slow-lane floor kicks in. Raised 30 → 45 when mid-turns gained
+ * lookup tools (agent-loop Task 4, cost gate:
+ * docs/status/2026-07-08-agent-loop-cost-gate.md): each lookup adds one
+ * full loop step, so a 10-turn Wave at 3 calls/turn hit 30 exactly at
+ * wave end — any retry or 4-step turn tipped mid-wave turns onto the 13s
+ * cliff. The paid-tier key allows 1000 RPM with no daily token cap, and
+ * 200ms spacing already caps a process at ≤300 calls/min — the raise
+ * changes pacing, not spend (+~10-15 calls/wave at ~0.01¢ each). Counter
+ * is in-memory (module-level Map keyed by userId); resets on lambda cold
+ * start, which is generous to the user and does not affect wallet
+ * exposure (~$0.10/session regardless).
  *
  * `lowTokenBudgetThreshold: 10000`: if a prior response's
  * `x-ratelimit-remaining-tokens-minute` header drops below this, the limiter
@@ -255,9 +260,21 @@ export const LLM = {
   maxRetries: 6,
   slowLaneSpacingMs: 13_000,
   fastLaneSpacingMs: 200,
-  fastLaneCallsPerUser: 30,
+  fastLaneCallsPerUser: 45,
   lowTokenBudgetThreshold: 10_000,
   maxToolSteps: 4,
+} as const;
+
+/**
+ * Agent lookup-tool caps (agent-loop plan Task 3): every lookup returns a
+ * bounded projection so a tool result can never blow the rendered context.
+ * - `dueConceptsLimit`: max concepts per getDueConcepts call (soonest first).
+ * - `historyAttemptsLimit`: max attempts per getConceptHistory call
+ *   (most recent first).
+ */
+export const AGENT_LOOKUP = {
+  dueConceptsLimit: 10,
+  historyAttemptsLimit: 5,
 } as const;
 
 /**
@@ -272,9 +289,21 @@ export const LLM = {
  *   without inflating per-question XP scaling — sized at roughly a tier-5
  *   medium-quality free-text answer, so the per-Wave commitment payoff is
  *   visible without dwarfing in-Wave grading.
+ * - `dueReviewInjection` (agent-loop plan Task 5): how the Wave system
+ *   prompt surfaces due concepts on the TOOLS contract. `"full"` injects
+ *   the whole `<due_for_review>` list (pre-agent behaviour); `"hint"`
+ *   replaces it with a one-line nudge to call getDueConcepts, shrinking
+ *   the static prompt now that the model can pull the live list on
+ *   demand. The json contract ALWAYS gets the full list — it has no
+ *   lookup tools. Default stays "full" until the live A/B in
+ *   docs/status/ shows hint mode preserves review coverage.
  */
 export const WAVE = {
   turnCount: 10,
   tierCheckInterval: 2,
   completionXp: 50,
+  dueReviewInjection: "full" as WaveDueReviewInjection,
 } as const;
+
+/** Due-review injection mode for the Wave system prompt — see `WAVE` docs. */
+export type WaveDueReviewInjection = "full" | "hint";

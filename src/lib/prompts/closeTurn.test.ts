@@ -79,21 +79,25 @@ describe("makeCloseTurnBaseSchema", () => {
     ).toThrow(/duplicate/);
   });
 
-  it("directs the model to an empty array when no questionnaire was answered", () => {
+  it("strips fabricated gradings when no questionnaire was answered", () => {
     // A chat-text close turn has no open questionnaire, so questionIds is
-    // empty and the model must emit gradings:[]. Any grading entry is then
-    // "unknown" — but the refine message must explicitly tell the model to
-    // emit an empty array, not merely list the ids, or the retry has nothing
-    // actionable to act on. Regression: live-smoke wave-close re-graded
-    // questions from earlier in the wave.
+    // empty and zero legitimate gradings exist — any entry is the model
+    // re-grading questions from earlier in the wave. The prior approach
+    // (reject + teacher-style retry directive) was only probabilistically
+    // obeyed (live-smoke wave-close flaked repeatedly, 2026-07-14), so the
+    // schema now strips deterministically: no XP can flow from a turn with
+    // no answered questions.
     const schema = makeCloseTurnBaseSchema({ ...baseParams, questionIds: [] });
-    const result = schema.safeParse(validPayload);
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const msg = result.error.issues.map((i) => i.message).join(" ");
-      expect(msg).toMatch(/no questionnaire/i);
-      expect(msg).toMatch(/empty array/i);
-    }
+    const result = schema.parse(validPayload);
+    expect(result.gradings).toEqual([]);
+    // Non-grading fields survive untouched.
+    expect(result.userMessage).toBe(validPayload.userMessage);
+  });
+
+  it("still accepts an honest empty gradings array when no questionnaire was answered", () => {
+    const schema = makeCloseTurnBaseSchema({ ...baseParams, questionIds: [] });
+    const result = schema.parse({ ...validPayload, gradings: [] });
+    expect(result.gradings).toEqual([]);
   });
 
   it("rejects gradings containing an unknown questionId", () => {

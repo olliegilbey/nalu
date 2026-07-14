@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
-import { executeToolTurnStream } from "./executeToolTurnStream";
+import { executeToolTurnStream, type ToolTurnAgent } from "./executeToolTurnStream";
 
-vi.mock("@/lib/llm/streamToolChat", () => ({
-  streamToolChat: vi.fn(),
-}));
 vi.mock("@/db/queries/contextMessages", () => ({
   appendMessages: vi.fn(),
   getMessagesForWave: vi.fn(),
@@ -17,7 +14,6 @@ vi.mock("@/lib/llm/renderContext", () => ({
   renderContext: vi.fn(() => ({ system: "SYS", messages: [] })),
 }));
 
-import { streamToolChat } from "@/lib/llm/streamToolChat";
 import {
   appendMessages,
   getMessagesForScopingPass,
@@ -54,18 +50,24 @@ const toolStep = (text: string) => ({
 /** Canned closing-prose step: no tool calls. */
 const textStep = (text: string) => ({ text, toolCalls: [], toolResults: [], content: [] });
 
-/** Builds a StreamToolChatHandle with canned stream parts + final steps. */
-function handleOf(parts: readonly { type: string; [k: string]: unknown }[], steps: unknown[]) {
-  return {
-    fullStream: (async function* () {
-      for (const p of parts) yield p;
-    })(),
-    final: async () => ({
-      text: (steps[steps.length - 1] as { text: string }).text,
-      steps,
-      usage,
+/**
+ * Stub agent exposing `.stream()` — the mock seam (plan Task 4 Step 1). Shape
+ * mirrors the slice of `StreamTextResult` the dispatcher consumes: fullStream
+ * to drain, then the `steps` / `totalUsage` promises.
+ */
+function agentOf(parts: readonly { type: string; [k: string]: unknown }[], steps: unknown[]) {
+  // Explicit fn generic (not an implementation param) so `stream.mock.calls`
+  // is typed without an unused-parameter warning.
+  const stream = vi.fn<(options: { messages: readonly { role: string }[] }) => Promise<unknown>>(
+    async () => ({
+      fullStream: (async function* () {
+        for (const p of parts) yield p;
+      })(),
+      steps: Promise.resolve(steps),
+      totalUsage: Promise.resolve(usage),
     }),
-  } as unknown as Awaited<ReturnType<typeof streamToolChat>>;
+  );
+  return { agent: { stream } as unknown as ToolTurnAgent, stream };
 }
 
 const noopHooks = {
@@ -74,7 +76,6 @@ const noopHooks = {
 };
 
 beforeEach(() => {
-  vi.mocked(streamToolChat).mockReset();
   vi.mocked(appendMessages).mockReset();
   vi.mocked(getMessagesForScopingPass).mockReset();
   vi.mocked(getMessagesForWave).mockReset();
@@ -87,15 +88,13 @@ beforeEach(() => {
 
 describe("executeToolTurnStream", () => {
   it("happy path persists user_message, assistant_tool_call, tool_result, assistant_response", async () => {
-    vi.mocked(streamToolChat).mockResolvedValueOnce(
-      handleOf([], [toolStep("Grading done."), textStep("Here is your quiz.")]),
-    );
+    const { agent } = agentOf([], [toolStep("Grading done."), textStep("Here is your quiz.")]);
 
     const result = await executeToolTurnStream({
       parent: { kind: "wave", id: WAVE_ID },
       seed: WAVE_SEED,
       userMessageContent: "<stage>teaching turn</stage>",
-      makeAttempt: () => ({ tools: {}, validateTurn: () => null }),
+      makeAttempt: () => ({ agent, validateTurn: () => null }),
       ...noopHooks,
     });
 
@@ -127,30 +126,46 @@ describe("executeToolTurnStream", () => {
   });
 
   it("a pure-text turn persists only user_message + assistant_response (Phase-2 shape)", async () => {
-    vi.mocked(streamToolChat).mockResolvedValueOnce(handleOf([], [textStep("Just teaching.")]));
+    const { agent } = agentOf([], [textStep("Just teaching.")]);
     await executeToolTurnStream({
       parent: { kind: "wave", id: WAVE_ID },
       seed: WAVE_SEED,
       userMessageContent: "u",
-      makeAttempt: () => ({ tools: {}, validateTurn: () => null }),
+      makeAttempt: () => ({ agent, validateTurn: () => null }),
       ...noopHooks,
     });
     const batch = vi.mocked(appendMessages).mock.calls[0]?.[0];
     expect(batch?.map((r) => r.kind)).toEqual(["user_message", "assistant_response"]);
   });
 
+  it("dispatches WITHOUT a leading system message — the agent carries instructions", async () => {
+    // assembleLlmMessages renders system-first (renderContext stub → "SYS");
+    // ToolLoopAgent maps constructor instructions → system and passes
+    // messages through untouched, so sending the rendered system row too
+    // would double it on the wire. The dispatcher must drop it.
+    const { agent, stream } = agentOf([], [textStep("Hi.")]);
+    await executeToolTurnStream({
+      parent: { kind: "wave", id: WAVE_ID },
+      seed: WAVE_SEED,
+      userMessageContent: "u",
+      makeAttempt: () => ({ agent, validateTurn: () => null }),
+      ...noopHooks,
+    });
+    expect(stream).toHaveBeenCalledTimes(1);
+    const messages = stream.mock.calls[0]![0].messages;
+    expect(messages.some((m) => m.role === "system")).toBe(false);
+  });
+
   it("forwards text deltas as-is and tool events to onToolEvent", async () => {
-    vi.mocked(streamToolChat).mockResolvedValueOnce(
-      handleOf(
-        [
-          { type: "text-delta", id: "t1", text: "Hel" },
-          { type: "tool-input-start", id: "c1", toolName: "presentQuestionnaire" },
-          { type: "tool-call", toolCallId: "c1", toolName: "presentQuestionnaire", input: {} },
-          { type: "text-delta", id: "t2", text: "lo" },
-          { type: "finish", finishReason: "stop" },
-        ],
-        [textStep("Hello")],
-      ),
+    const { agent } = agentOf(
+      [
+        { type: "text-delta", id: "t1", text: "Hel" },
+        { type: "tool-input-start", id: "c1", toolName: "presentQuestionnaire" },
+        { type: "tool-call", toolCallId: "c1", toolName: "presentQuestionnaire", input: {} },
+        { type: "text-delta", id: "t2", text: "lo" },
+        { type: "finish", finishReason: "stop" },
+      ],
+      [textStep("Hello")],
     );
     const deltas: string[] = [];
     const toolEvents: string[] = [];
@@ -158,7 +173,7 @@ describe("executeToolTurnStream", () => {
       parent: { kind: "wave", id: WAVE_ID },
       seed: WAVE_SEED,
       userMessageContent: "u",
-      makeAttempt: () => ({ tools: {}, validateTurn: () => null }),
+      makeAttempt: () => ({ agent, validateTurn: () => null }),
       onTextDelta: (d) => deltas.push(d),
       onAttemptStart: () => undefined,
       onToolEvent: (p) => toolEvents.push(p.type),
@@ -168,10 +183,9 @@ describe("executeToolTurnStream", () => {
     expect(toolEvents).toEqual(["tool-input-start", "tool-call"]);
   });
 
-  it("validateTurn failure persists a JSON exhaust envelope + directive, then retries with fresh tools", async () => {
-    vi.mocked(streamToolChat)
-      .mockResolvedValueOnce(handleOf([], [toolStep(""), textStep("no grading happened")]))
-      .mockResolvedValueOnce(handleOf([], [toolStep("fixed"), textStep("Recovered prose.")]));
+  it("validateTurn failure persists a JSON exhaust envelope + directive, then retries with a fresh agent", async () => {
+    const first = agentOf([], [toolStep(""), textStep("no grading happened")]);
+    const second = agentOf([], [toolStep("fixed"), textStep("Recovered prose.")]);
 
     const attempts: number[] = [];
     const result = await executeToolTurnStream({
@@ -181,7 +195,7 @@ describe("executeToolTurnStream", () => {
       makeAttempt: (i) => {
         attempts.push(i);
         return {
-          tools: {},
+          agent: i === 0 ? first.agent : second.agent,
           validateTurn: () =>
             i === 0 ? new ValidationGateFailure("missing_response", "call the grading tool") : null,
         };
@@ -191,6 +205,8 @@ describe("executeToolTurnStream", () => {
 
     expect(result.finalText).toBe("Recovered prose.");
     expect(attempts).toEqual([0, 1]); // fresh attempt surface each time
+    expect(first.stream).toHaveBeenCalledTimes(1);
+    expect(second.stream).toHaveBeenCalledTimes(1);
 
     const batch = vi.mocked(appendMessages).mock.calls[0]?.[0];
     expect(batch?.map((r) => [r.kind, r.seq])).toEqual([
@@ -210,15 +226,14 @@ describe("executeToolTurnStream", () => {
   });
 
   it("terminal exhaust persists the trail without a trailing directive and throws the gate", async () => {
-    vi.mocked(streamToolChat).mockResolvedValue(handleOf([], [textStep("still bad")]));
-
     await expect(
       executeToolTurnStream({
         parent: { kind: "wave", id: WAVE_ID },
         seed: WAVE_SEED,
         userMessageContent: "u",
+        // A fresh stub agent per attempt; every attempt fails the gate.
         makeAttempt: () => ({
-          tools: {},
+          agent: agentOf([], [textStep("still bad")]).agent,
           validateTurn: () => new ValidationGateFailure("missing_response", "nope"),
         }),
         ...noopHooks,
@@ -244,14 +259,12 @@ describe("executeToolTurnStream", () => {
         },
       ],
     };
-    vi.mocked(streamToolChat).mockResolvedValueOnce(
-      handleOf([], [stepWithError, textStep("recovered in-loop")]),
-    );
+    const { agent } = agentOf([], [stepWithError, textStep("recovered in-loop")]);
     await executeToolTurnStream({
       parent: { kind: "wave", id: WAVE_ID },
       seed: WAVE_SEED,
       userMessageContent: "u",
-      makeAttempt: () => ({ tools: {}, validateTurn: () => null }),
+      makeAttempt: () => ({ agent, validateTurn: () => null }),
       ...noopHooks,
     });
     const batch = vi.mocked(appendMessages).mock.calls[0]?.[0];

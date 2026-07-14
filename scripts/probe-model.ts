@@ -125,11 +125,14 @@ const probeQuestionnaireInput = jsonSchema<z.infer<typeof probeQuestionnaireSche
  *
  * GO criteria: ≥95% valid tool-call rate AND median loop depth ≤ 3 steps.
  *
- * Note on error surfacing (verified against installed ai@6.0.158):
- * schema-INVALID args and hallucinated tool names THROW from generateText
- * (InvalidToolInputError / NoSuchToolError) — they never appear as steps.
- * Only execute()-thrown errors surface as `tool-error` content parts. The
- * per-trial try/catch below classifies both shapes as invalid calls.
+ * Note on error surfacing (verified against installed ai@6.0.158, contra
+ * the doc's generateText blurb — probe verdict finding 3): in MULTI-STEP
+ * flows a schema-invalid call does NOT throw; it lands in `step.toolCalls`
+ * flagged `invalid: true, dynamic: true` with a matching `tool-error` part
+ * fed back to the model for in-loop self-correction. Hallucinated tool
+ * names behave the same way. The per-trial try/catch below is a backstop
+ * for genuinely thrown transport/config errors; invalid calls are counted
+ * from `step.toolCalls` (see the inline comment at the tally site).
  */
 async function probeToolCalling(): Promise<void> {
   const model = getLlmModel();

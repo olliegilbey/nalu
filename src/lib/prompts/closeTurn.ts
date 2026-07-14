@@ -123,11 +123,21 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
         .describe(
           "Message the learner sees as the closing of this turn. 2-3 sentences. Conversational.",
         ),
-      gradings: z
-        .array(closeGradingItemSchema)
-        .describe(
-          "Grade only questions the learner answered in THIS closing turn; earlier turns are already graded. Emit an empty array if they answered none this turn.",
-        ),
+      gradings: z.preprocess(
+        // A chat-text close turn (no questionnaire answered ⇒ empty idSet)
+        // has zero legitimate gradings — any entry is the model re-grading
+        // earlier turns. Strip deterministically instead of rejecting: the
+        // teacher-style retry directive was only probabilistically obeyed
+        // (live-smoke wave-close flake, 2026-07-14), and no XP can flow from
+        // a turn with no answered questions. Wire schema is unaffected —
+        // `z.toJSONSchema` serialises the output side (the array).
+        (v) => (idSet.size === 0 ? [] : v),
+        z
+          .array(closeGradingItemSchema)
+          .describe(
+            "Grade only questions the learner answered in THIS closing turn; earlier turns are already graded. Emit an empty array if they answered none this turn.",
+          ),
+      ),
       summary: z.string().min(1).describe("2-3 sentences capturing where the learner stands now."),
       nextUnitBlueprint: blueprintSchema,
     })
@@ -173,19 +183,14 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
       // 4. No unknown ids — every graded id must be one the prompt expected.
       // Without this, a payload covering all expected ids could still smuggle
       // in a fabricated id and (downstream) earn XP for a non-existent card.
+      // (The empty-idSet case never reaches here: the `gradings` preprocess
+      // strips every entry when no questionnaire was answered this turn.)
       const unknown = [...new Set(ids)].filter((id) => !idSet.has(id));
       if (unknown.length > 0) {
         ctx.addIssue({
           code: "custom",
           path: ["gradings"],
-          // When no questionnaire was answered this turn (a chat-text close
-          // turn), `questionIds` is empty so every grading reads as unknown.
-          // Give the model an actionable directive — emit [] — instead of a
-          // bare id list it cannot otherwise act on. See closeTurn.test.ts.
-          message:
-            idSet.size === 0
-              ? `No questionnaire was answered in this closing turn, so gradings must be an empty array. Grade only questions answered this turn; questions from earlier turns were already graded.`
-              : `gradings include unknown question ids: ${unknown.join(", ")}`,
+          message: `gradings include unknown question ids: ${unknown.join(", ")}`,
         });
       }
       // 5. plannedConcepts.role='review' names must be in reviewDueNames.

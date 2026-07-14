@@ -68,6 +68,28 @@ describe("renderTeachingSystem (JSON-everywhere)", () => {
   });
 });
 
+describe("renderTeachingSystem (due-review injection, default full)", () => {
+  const dueInputs: WaveSeedInputs = {
+    ...baseInputs,
+    dueConcepts: [{ conceptId: "c-1", name: "Markets", tier: 1, lastQuality: 3 }],
+  };
+
+  it("renders the full due-concept list under BOTH contracts", () => {
+    (["json", "tools"] as const).forEach((outputContract) => {
+      const out = renderTeachingSystem({ ...dueInputs, outputContract });
+      expect(out).toContain("<due_for_review>");
+      expect(out).toContain("Markets (tier 1): last scored 3/5");
+      // The hint copy belongs to hint mode only (teaching.dueInjection.test.ts).
+      expect(out).not.toContain("Call getDueConcepts for the current list");
+    });
+  });
+
+  it("renders no block when nothing is due", () => {
+    const out = renderTeachingSystem({ ...baseInputs, outputContract: "tools" });
+    expect(out).not.toContain("<due_for_review>");
+  });
+});
+
 describe("renderTeachingSystem (output contracts)", () => {
   it("absent outputContract renders byte-identically to explicit 'json'", () => {
     expect(renderTeachingSystem({ ...baseInputs, outputContract: "json" })).toBe(
@@ -81,12 +103,20 @@ describe("renderTeachingSystem (output contracts)", () => {
     expect(out).toContain("the questionnaire field");
     expect(out).not.toContain("presentQuestionnaire");
     expect(out).not.toContain("recordComprehensionSignals");
+    // Lookup tools exist only on the agent path (tools contract).
+    expect(out).not.toContain("getDueConcepts");
+    expect(out).not.toContain("getConceptHistory");
   });
 
-  it("tools contract names both tools, keeps single-JSON for the final turn, drops field vocab", () => {
+  it("tools contract names all four tools, keeps single-JSON for the final turn, drops field vocab", () => {
     const out = renderTeachingSystem({ ...baseInputs, outputContract: "tools" });
     expect(out).toContain("presentQuestionnaire");
     expect(out).toContain("recordComprehensionSignals");
+    // Lookup guidance (agent-loop plan Task 4): pull review state on demand,
+    // never fabricate it.
+    expect(out).toContain("getDueConcepts");
+    expect(out).toContain("getConceptHistory");
+    expect(out).toContain("Never invent or assume review history");
     // Close turns still run the blocking single-JSON path under this prompt.
     expect(out).toContain("final turn no tools are available");
     expect(out).toContain("single JSON object");
