@@ -61,9 +61,18 @@ export interface WaveMidTurnAgentInstance {
 export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTurnAgentInstance {
   const toolkit = buildWaveMidTurnTools();
   const lookupTools = buildWaveLookupTools({ courseId: params.courseId });
-  // The agent path IS the tool channel — force the "tools" prompt contract
-  // so a caller's seed can't render mega-schema instructions into a tool loop.
-  const instructions = renderTeachingSystem({ ...params.seed, outputContract: "tools" });
+  // The agent path IS the tool channel — a "json"-contract seed would render
+  // mega-schema instructions into a tool loop. Validate instead of silently
+  // rewriting: the caller's seed also drives its message-assembly path, and
+  // instructions must stay byte-identical to renderContext(seed).system
+  // (executeToolTurnStream drops that system message trusting the identity).
+  if (params.seed.outputContract !== "tools") {
+    throw new Error(
+      'buildWaveMidTurnAgent requires a seed with outputContract: "tools" (got ' +
+        `${JSON.stringify(params.seed.outputContract)})`,
+    );
+  }
+  const instructions = renderTeachingSystem(params.seed);
   const agent = new ToolLoopAgent({
     model: params.model ?? getLlmModel(),
     instructions,
