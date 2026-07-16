@@ -1,10 +1,10 @@
-import type { Turn } from "@/lib/types/turn";
-import { formatAnswers } from "./deriveTurns";
+import type { ChatEntry } from "@/lib/types/chatEntry";
+import { formatAnswers } from "./deriveChatEntries";
 import type { WaveChatLogEntryForClient } from "./redactWaveChatLog";
 import type { V3Question } from "@/lib/types/jsonb";
 
 /**
- * Project the wave's wire-redacted chat log to `Turn[]` for the chat scroll.
+ * Project the wave's wire-redacted chat log to `ChatEntry[]` for the chat scroll.
  *
  * Pure. Single linear pass + one `findLastIndex` for the open-questionnaire
  * id resolution. No DB, no DOM.
@@ -23,7 +23,9 @@ import type { V3Question } from "@/lib/types/jsonb";
  * `move-on-cta` is NOT emitted here — wave move-on is driven by
  * `useWaveState`'s `closeResult`, not by chat_log.
  */
-export function deriveWaveTurns(log: readonly WaveChatLogEntryForClient[]): readonly Turn[] {
+export function deriveWaveChatEntries(
+  log: readonly WaveChatLogEntryForClient[],
+): readonly ChatEntry[] {
   // Open questionnaire id = latest text_with_questionnaire whose id has no
   // later user.answers match. Computed once; used inside the map.
   const lastQIdx = log.findLastIndex(
@@ -46,7 +48,7 @@ export function deriveWaveTurns(log: readonly WaveChatLogEntryForClient[]): read
     return answered ? null : cand.questionnaireId;
   })();
 
-  return log.map((entry, idx): Turn => {
+  return log.map((entry, idx): ChatEntry => {
     if (entry.role === "user" && entry.kind === "text") {
       return { kind: "user-text", content: entry.content };
     }

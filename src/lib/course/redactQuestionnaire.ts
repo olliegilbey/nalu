@@ -8,7 +8,7 @@
  * and clarify/baseline never emitted a `correct` key in the first place.
  *
  * The `OpenQuestionForClient` type is still consumed by `adaptQuestionnaire`
- * (`adaptOpenQuestion` adapts it for the Composer) and `src/lib/types/turn.ts`,
+ * (`adaptOpenQuestion` adapts it for the Composer) and `src/lib/types/chatEntry.ts`,
  * so it remains here. Move it if a more natural home appears.
  */
 export type OpenQuestionForClient =

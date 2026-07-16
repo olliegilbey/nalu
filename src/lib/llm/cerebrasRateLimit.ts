@@ -10,9 +10,10 @@ import { userIdStore } from "./userIdStore";
  * The turn runner `executeTurn` validates each model reply and RETRIES on
  * a schema
  * failure — each retry is another back-to-back `generateChat` call. A flaky
- * model turns one logical turn into 2–6 actual API calls in a tight burst,
- * which blows past 5 RPM → 429 → the AI SDK exhausts its transport-retry
- * budget → `AI_RetryError`. This module paces at that single chokepoint so
+ * model expands one logical turn into 2–6 actual API calls (steps/retries)
+ * in a tight burst, which blows past the provider request budget → 429 →
+ * the AI SDK exhausts its transport-retry budget → `AI_RetryError`. This
+ * module paces at that single chokepoint so
  * every actual API call (including retry-burst calls) is throttled.
  *
  * It also reads Cerebras's `x-ratelimit-*` response headers, which report

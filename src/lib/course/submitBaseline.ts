@@ -157,7 +157,7 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
   const schemaJson = toSchemaJsonString(schema, { name: "scoping_close" });
 
   // Persist the learner's answers on the baseline row before calling the LLM,
-  // so a retry does not lose them and `deriveTurns` can render the user-baseline
+  // so a retry does not lose them and `deriveChatEntries` can render the user-baseline
   // bubble from `baseline.responses`. Mirrors generateFramework.ts:86-92.
   // Idempotent: overwrites the empty `responses: []` initialised by generateBaseline.
   await updateCourseScopingState(course.id, {

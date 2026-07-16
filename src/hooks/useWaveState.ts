@@ -6,12 +6,12 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { toast } from "sonner";
 import { useTRPC, devUserHeaders } from "@/lib/trpc";
-import { deriveWaveTurns } from "@/lib/course/deriveWaveTurns";
+import { deriveWaveChatEntries } from "@/lib/course/deriveWaveChatEntries";
 import { adaptOpenQuestion, adaptStreamedToolQuestion } from "@/lib/course/adaptQuestionnaire";
 import type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import { useCourseXp } from "./useCourseXp";
 import type { ActiveQuestionnaire } from "./useScopingState";
-import type { Turn } from "@/lib/types/turn";
+import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
 import type { WaveState } from "@/lib/course/getWaveState";
 import type { WaveTurnResultData, WaveTurnUIMessage } from "@/lib/types/waveStream";
@@ -29,9 +29,9 @@ export interface WaveCloseResult {
   readonly tierAdvancedTo: number | null;
 }
 
-/** Return shape of {@link useWaveState}; turns, active questionnaire, XP counters, submit handlers. */
+/** Return shape of {@link useWaveState}; chat entries, active questionnaire, XP counters, submit handlers. */
 export interface UseWaveStateResult {
-  readonly turns: readonly Turn[];
+  readonly chatEntries: readonly ChatEntry[];
   readonly activeQuestionnaire: ActiveQuestionnaire | null;
   /** Set once a close-turn lands; null otherwise. Cleared on next mount. */
   readonly closeResult: WaveCloseResult | null;
@@ -83,10 +83,10 @@ export interface UseWaveStateResult {
  *
  * Hybrid state model (streaming plan decision 1): `useChat` manages ONLY the
  * in-flight turn (status + streaming assistant text) against the streaming
- * route (`/api/course/[courseId]/wave/[waveNumber]/turn`); committed turns
- * keep rendering from `wave.getState` → `deriveWaveTurns`. On finish we
+ * route (`/api/course/[courseId]/wave/[waveNumber]/turn`); committed entries
+ * keep rendering from `wave.getState` → `deriveWaveChatEntries`. On finish we
  * invalidate the query, then clear `useChat`'s transient messages so the
- * canonical server-derived turn replaces the streamed bubble.
+ * canonical server-derived entry replaces the streamed bubble.
  *
  * Result `kind` branches (delivered as a transient `data-turn-result` part):
  * - `mid-turn` → sum server-graded free-text XP into the badge counter.
@@ -188,10 +188,10 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     },
   });
 
-  // Derive Turn[] from chat_log. Pure; safe to run on every render
+  // Derive ChatEntry[] from chat_log. Pure; safe to run on every render
   // (memoized for stability across consumer re-renders).
-  const turns = useMemo<readonly Turn[]>(
-    () => (state.data ? deriveWaveTurns(state.data.chatLog) : []),
+  const chatEntries = useMemo<readonly ChatEntry[]>(
+    () => (state.data ? deriveWaveChatEntries(state.data.chatLog) : []),
     [state.data],
   );
 
@@ -296,7 +296,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
   };
 
   return {
-    turns,
+    chatEntries,
     activeQuestionnaire,
     closeResult,
     // Server-authoritative status; null until the query resolves.

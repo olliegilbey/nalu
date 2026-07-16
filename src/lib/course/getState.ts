@@ -14,7 +14,7 @@ export interface GetStateParams {
 
 /**
  * The portion of `scopingResult` that exists only after `submitBaseline` has
- * closed scoping. `deriveTurns` gates `move-on-cta` on this being non-null.
+ * closed scoping. `deriveChatEntries` gates `move-on-cta` on this being non-null.
  */
 export interface ScopingResult {
   readonly closingMessage: string;
@@ -23,7 +23,7 @@ export interface ScopingResult {
 
 /**
  * Client-facing projection of a `courses` row. Each JSONB column is exposed
- * directly so `deriveTurns` can render the chat scroll from a single object.
+ * directly so `deriveChatEntries` can render the chat scroll from a single object.
  * `scopingResult` is the post-close summary; null while scoping is in progress.
  */
 export interface CourseState {

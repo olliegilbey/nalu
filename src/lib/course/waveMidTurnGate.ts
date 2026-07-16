@@ -33,7 +33,7 @@ export function validateWaveMidToolTurn(
   if (visibleProse.trim().length === 0) {
     return new ValidationGateFailure(
       "tool_turn_gate",
-      "Your turn ended without any teaching prose. The learner sees your plain text output — after any tool calls finish, always write the teaching message for this turn.",
+      "Your response ended without any teaching prose. The learner sees your plain text output — after any tool calls finish, always write the teaching message for this turn.",
     );
   }
 

@@ -75,12 +75,12 @@ beforeEach(() => {
 });
 
 describe("useScopingState", () => {
-  it("derives turns + an active clarify questionnaire", async () => {
+  it("derives chat entries + an active clarify questionnaire", async () => {
     const { result } = renderHook(() => useScopingState("c1"), { wrapper });
-    await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
+    await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
 
-    const kinds = result.current.turns.map((t) => t.kind);
-    // Turn union is phase-agnostic post-Task-15: topic becomes user-text and
+    const kinds = result.current.chatEntries.map((t) => t.kind);
+    // ChatEntry union is phase-agnostic post-Task-15: topic becomes user-text and
     // clarify-intro becomes assistant-text.
     expect(kinds).toContain("user-text");
     expect(kinds).toContain("assistant-text");

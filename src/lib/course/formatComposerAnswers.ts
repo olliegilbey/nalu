@@ -2,7 +2,7 @@ import type { RawComposerAnswer } from "./shapeQuestionnaireAnswers";
 
 /**
  * Format Composer-emitted `{ question, answer }` pairs as the same numbered
- * prose list that `formatAnswers` (`deriveTurns.ts`) produces from persisted
+ * prose list that `formatAnswers` (`deriveChatEntries.ts`) produces from persisted
  * responses: `"{n}. {prompt} — {answer}"` joined by newlines.
  *
  * Used to render the *optimistic* user-answers bubble the instant a

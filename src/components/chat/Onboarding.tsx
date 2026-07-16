@@ -16,14 +16,14 @@ import { t } from "@/i18n";
 /**
  * Drives the chat scroll + Composer mode for a given courseId.
  *
- * Reads turns/active questionnaire/result from `useScopingState`; maps Turn[]
- * to bubble JSX (with FrameworkTierList for the framework turn); selects
- * Composer mode (free-text idle / question / move-on) based on derived state.
+ * Reads chatEntries/active questionnaire/result from `useScopingState`; maps
+ * ChatEntry[] to bubble JSX (with FrameworkTierList for the framework entry);
+ * selects Composer mode (free-text idle / question / move-on) from derived state.
  */
 export function Onboarding({ courseId }: { readonly courseId: string }) {
   const router = useRouter();
   const {
-    turns,
+    chatEntries,
     activeQuestionnaire,
     scopingResult,
     topic,
@@ -38,42 +38,42 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
   const courseXp = useCourseXp(courseId);
 
   const [composerValue, setComposerValue] = useState("");
-  // Optimistic user message. `turnCountAtSubmit` is the `turns.length` captured
-  // at submit: the bubble shows while `turns` has not grown past it (server
-  // round-trip not yet landed, or it failed) and hides the instant the real
-  // turn appears. This prevents a duplicate during the framework→baseline gap
-  // (the real turn lands while baseline is still dispatching) and keeps the
-  // bubble visible on error.
+  // Optimistic user message. `entryCountAtSubmit` is the `chatEntries.length`
+  // captured at submit: the bubble shows while `chatEntries` has not grown past
+  // it (server round-trip not yet landed, or it failed) and hides the instant
+  // the real entry appears. This prevents a duplicate during the
+  // framework→baseline gap (the real entry lands while baseline is still
+  // dispatching) and keeps the bubble visible on error.
   const [optimistic, setOptimistic] = useState<{
     readonly content: string;
-    readonly turnCountAtSubmit: number;
+    readonly entryCountAtSubmit: number;
   } | null>(null);
   // The questionnaire key just submitted — its question card is hidden from the
   // Composer immediately, rather than lingering until the server round-trip.
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
-  // Map Turn[] → array of <MessageBubble> / structured renderers.
+  // Map ChatEntry[] → array of <MessageBubble> / structured renderers.
   // The scoping flow never emits `assistant-text-with-questionnaire` (that's a
   // wave-only variant) — we keep the case for exhaustiveness and fall through
   // to the plain assistant-text rendering so a misplaced row stays renderable.
-  const scroll = turns.map((turn, idx) => {
-    switch (turn.kind) {
+  const scroll = chatEntries.map((entry, idx) => {
+    switch (entry.kind) {
       case "user-text":
       case "user-questionnaire-answers": {
-        const msg: ChatMessage = { id: `t${idx}`, role: "user", content: turn.content };
+        const msg: ChatMessage = { id: `t${idx}`, role: "user", content: entry.content };
         return <MessageBubble key={idx} message={msg} />;
       }
       case "assistant-text":
       case "assistant-text-with-questionnaire": {
-        const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: turn.content };
+        const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: entry.content };
         return <MessageBubble key={idx} message={msg} />;
       }
       case "assistant-text-with-framework": {
-        const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: turn.userMessage };
+        const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: entry.userMessage };
         return (
           <div key={idx}>
             <MessageBubble message={msg} />
-            <FrameworkTierList tiers={turn.tiers} />
+            <FrameworkTierList tiers={entry.tiers} />
           </div>
         );
       }
@@ -125,7 +125,7 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
             // component stays a thin rendering shell.
             setOptimistic({
               content: formatComposerAnswers(answers),
-              turnCountAtSubmit: turns.length,
+              entryCountAtSubmit: chatEntries.length,
             });
             setDismissedKey(activeQuestionnaire.questionsKey);
             // On submit failure, un-dismiss the question card and drop the
@@ -152,7 +152,7 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
       }
     >
       {scroll}
-      {optimistic && turns.length === optimistic.turnCountAtSubmit && (
+      {optimistic && chatEntries.length === optimistic.entryCountAtSubmit && (
         <MessageBubble message={{ id: "pending", role: "user", content: optimistic.content }} />
       )}
       {isPending && <TypingBubble />}

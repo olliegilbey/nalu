@@ -215,7 +215,7 @@ CREATE TABLE waves (
   custom_instructions_snapshot text,                -- frozen from user_profiles at start
   due_concepts_snapshot        jsonb NOT NULL,      -- frozen SM-2 due list at start
   seed_source                  jsonb NOT NULL,      -- discriminated union: { kind:'scoping_handoff' } | { kind:'prior_blueprint', priorWaveId, blueprint }
-  turn_budget                  integer NOT NULL,    -- from config.WAVE_TURN_COUNT at Wave start
+  turn_budget                  integer NOT NULL,    -- from config WAVE.turnCount at Wave start
   status                       text NOT NULL DEFAULT 'open'
                                  CHECK (status IN ('open','closed')),
   summary                      text,                -- emitted on close
@@ -327,7 +327,7 @@ User types a topic
 
 ### 4.2 Learning Session Flow
 
-A teaching session is a sequence of **Waves** — fixed-length teaching units (`WAVE_TURN_COUNT` turns, default 10, in `src/lib/config/tuning.ts`). Each Wave is one append-only Context with a byte-stable prefix. See `docs/UBIQUITOUS_LANGUAGE.md` for the full Wave/Context/Turn definitions.
+A teaching session is a sequence of **Waves** — fixed-length teaching units (`WAVE.turnCount` turns, default 10, in `src/lib/config/tuning.ts`). Each Wave is one append-only Context with a byte-stable prefix. See `docs/UBIQUITOUS_LANGUAGE.md` for the full Wave/Context/Turn definitions.
 
 ```text
 User opens course
