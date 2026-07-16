@@ -1,8 +1,6 @@
-import { and, asc, desc, eq, max } from "drizzle-orm";
+import { asc, eq, max } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { contextMessages, type ContextMessage } from "@/db/schema";
-import { assessmentSchema, type AssessmentCard } from "@/lib/llm/tagVocabulary";
-import { extractTag } from "@/lib/llm/extractTag";
 
 /**
  * `context_messages` query surface (spec §3.5).
@@ -18,10 +16,6 @@ import { extractTag } from "@/lib/llm/extractTag";
  *
  * `getNextTurnIndex` returns 0 when no rows exist (first turn is index 0)
  * matching the spec's 0-based turn convention.
- *
- * `getLastAssessmentCard` extracts the most recent `<assessment>` tag from
- * the latest `assistant_response` row — used by the card-answer turn path
- * to look up correct answers without re-querying the LLM (spec §9.3 §2b).
  */
 
 // ---------------------------------------------------------------------------
@@ -210,42 +204,4 @@ export async function getNextTurnIndex(parent: ContextParent): Promise<number> {
   // `max()` returns null when no rows match; treat as -1 so +1 gives 0.
   const current = row?.maxTurnIndex ?? null;
   return current === null ? 0 : current + 1;
-}
-
-/**
- * Extract and validate the most recent `<assessment>` tag from the latest
- * `assistant_response` row for `waveId`.
- *
- * Used by the harness when processing a card-answer turn to look up the
- * correct answer without a second LLM call (spec §9.3 step 2b).
- *
- * Returns `null` when:
- *   - No `assistant_response` rows exist for the wave.
- *   - The latest response has no `<assessment>` tag.
- *   - The tag body is not valid JSON (JSON.parse throws → caught here).
- *   - The parsed JSON does not satisfy `assessmentSchema` (safeParse fails).
- */
-export async function getLastAssessmentCard(waveId: string): Promise<AssessmentCard | null> {
-  // Most recent assistant_response by (turn_index DESC, seq DESC).
-  const [row] = await db
-    .select()
-    .from(contextMessages)
-    .where(and(eq(contextMessages.waveId, waveId), eq(contextMessages.kind, "assistant_response")))
-    .orderBy(desc(contextMessages.turnIndex), desc(contextMessages.seq))
-    .limit(1);
-
-  if (!row) return null;
-
-  // Extract the XML tag body; returns null if tag is absent or unclosed.
-  const tag = extractTag(row.content, "assessment");
-  if (!tag) return null;
-
-  // JSON.parse throws on malformed input — wrap to ensure null return instead.
-  try {
-    const parsed = assessmentSchema.safeParse(JSON.parse(tag));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    // JSON.parse threw; the tag body was not valid JSON.
-    return null;
-  }
 }
