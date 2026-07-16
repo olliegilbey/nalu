@@ -7,6 +7,8 @@ Single LLM integration point for the entire application. Built on the Vercel AI 
 - `streamChat.ts` — streaming sibling of `generateChat` for structured turns: `streamText` + `Output.object`, same rate-limit gate and wire bytes. Yields display-only `partialOutputStream` partials; `final()` resolves the validated object or rejects with `NoObjectGeneratedError`.
 - `cerebrasToolLoopPrepareStep.ts` — shared per-step `prepareStep` for tool loops (fast-lane pacing + assistant `reasoning`-part strip); consumed by the `ToolLoopAgent` definitions in `src/lib/agents/`, which pair it with an `onStepFinish` recording rate-limit headers. Tool-loop DISPATCH lives there + `src/lib/turn/executeToolTurnStream.ts`, not here.
 - Structured calls are validated by the SDK against the supplied Zod schema before returning; transport retries are bounded by `LLM.maxRetries`.
+- `telemetry.ts` — env-gated (`LLM_TELEMETRY=true`) OTel spans on every LLM call, stage-labelled via `functionId`; `recordInputs`/`recordOutputs` are pinned FALSE (learner content stays out of traces — never weaken). Registered by `src/instrumentation.ts`; spans export nowhere until an OTLP endpoint is configured.
+- DevTools: `provider.ts` wraps the model with `devToolsMiddleware()` ONLY under `NODE_ENV=development` + `LLM_DEVTOOLS=1` (double gate — never in production; capture includes grading keys). `just dev-devtools` to capture, `just llm-devtools` for the viewer; data lands in gitignored `.devtools/`.
 - Token usage is returned on every call — propagate it, don't drop it.
 
 ## Render contract
