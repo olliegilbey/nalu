@@ -8,13 +8,12 @@ import { userIdStore } from "./userIdStore";
  * Cerebras's FREE tier caps at 5 requests/min (a 12.0s floor), 30,000
  * tokens/min, 1M tokens/hour, and 1M tokens/day. Exceeding any → HTTP 429.
  * The turn runner `executeTurn` validates each model reply and RETRIES on
- * a schema
- * failure — each retry is another back-to-back `generateChat` call. A flaky
- * model expands one logical turn into 2–6 actual API calls (steps/retries)
- * in a tight burst, which blows past the provider request budget → 429 →
- * the AI SDK exhausts its transport-retry budget → `AI_RetryError`. This
- * module paces at that single chokepoint so
- * every actual API call (including retry-burst calls) is throttled.
+ * a schema failure — each retry is another back-to-back `generateChat`
+ * call. A flaky model expands one logical turn into 2–6 actual API calls
+ * (steps/retries) in a tight burst, which blows past the provider request
+ * budget → 429 → the AI SDK exhausts its transport-retry budget →
+ * `AI_RetryError`. This module paces at that single chokepoint so every
+ * actual API call (including retry-burst calls) is throttled.
  *
  * It also reads Cerebras's `x-ratelimit-*` response headers, which report
  * the ACCOUNT-WIDE remaining budget. The same API key is shared with another

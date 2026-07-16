@@ -33,7 +33,9 @@ export function getLlmModel(): LanguageModelV3 {
   // .devtools/generations.json for the local viewer (`just llm-devtools`).
   // Double-gated — NODE_ENV must be development AND `LLM_DEVTOOLS=1` must be
   // set explicitly — so it can never activate in production and `just dev`
-  // opts in per run rather than always paying the overhead.
+  // opts in per run rather than always paying the overhead. The package sits
+  // in `dependencies` (not dev): this static import must resolve in pruned
+  // production installs even though the wrapper never activates there.
   // Docs: node_modules/ai/docs/03-ai-sdk-core/65-devtools.mdx
   if (process.env.NODE_ENV === "development" && process.env.LLM_DEVTOOLS === "1") {
     // Every published @ai-sdk/devtools types its middleware against provider

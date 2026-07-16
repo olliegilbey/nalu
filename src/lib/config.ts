@@ -24,13 +24,10 @@ const envSchema = z.object({
   // PostHog EU project public key (phc_…). Server-side only — proxy.ts captures
   // a $pageview per visit. Optional: absent = analytics disabled.
   POSTHOG_KEY: z.string().optional(),
-  // OTel spans on LLM calls (src/lib/llm/telemetry.ts). Catalogued here for
-  // completeness; the telemetry helper reads process.env directly so mocked
-  // test paths never trigger whole-schema validation.
-  LLM_TELEMETRY: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((v) => v === "true"),
+  // Observability flags LLM_TELEMETRY (src/lib/llm/telemetry.ts) and
+  // LLM_DEVTOOLS (src/lib/llm/provider.ts) are deliberately NOT in this
+  // schema: their helpers read process.env directly, and a strict entry here
+  // would turn a flag typo into a whole-app boot crash via schema validation.
 });
 
 /** Validated environment config. Throws on first access if env vars are missing/invalid. */
