@@ -6,23 +6,13 @@ Single LLM integration point for the entire application. Built on the Vercel AI 
 - `generate.ts` wraps the SDK: `generateChat` (→ `generateText`) for all LLM calls. When `responseSchema` is supplied, the call uses `output: Output.object({ schema: toOutputSchema(...) })` — the SDK sets the strict `json_schema` `response_format` on the wire (Cerebras-cleaned bytes preserved) and Zod-validates the response (refines included) before returning `parsed`. Parse/validation failure throws the SDK's `NoObjectGeneratedError`; `executeTurn` converts it to `ValidationGateFailure`. Applies `tuning.LLM` defaults; forwards `usage`.
 - `streamChat.ts` — streaming sibling of `generateChat` for structured turns: `streamText` + `Output.object`, same rate-limit gate and wire bytes. Yields display-only `partialOutputStream` partials; `final()` resolves the validated object or rejects with `NoObjectGeneratedError`.
 - `cerebrasToolLoopPrepareStep.ts` — shared per-step `prepareStep` for tool loops (fast-lane pacing + assistant `reasoning`-part strip); consumed by the `ToolLoopAgent` definitions in `src/lib/agents/`, which pair it with an `onStepFinish` recording rate-limit headers. Tool-loop DISPATCH lives there + `src/lib/turn/executeToolTurnStream.ts`, not here.
-- `extractTag.ts` — pure XML extractor for the prose+XML turns. Callers Zod-validate the extracted payload at that boundary (this is where the "no raw LLM output" rule is enforced for chat calls).
 - Structured calls are validated by the SDK against the supplied Zod schema before returning; transport retries are bounded by `LLM.maxRetries`.
 - Token usage is returned on every call — propagate it, don't drop it.
 
-## Render & parse contract
+## Render contract
 
-- `tagVocabulary.ts` is the single source of truth for the harness ↔ model
-  XML-tag contract (spec §6.5). Any new tag requires editing this file +
-  `src/lib/prompts/teaching.ts`'s `OUTPUT_FORMATS_BLOCK` together.
 - `renderContext.ts` is pure: same `(seed, messages)` → byte-identical
   output. The cache prefix is preserved when rows are appended. Tests
   assert both invariants — never weaken them.
-- `parseAssistantResponse.ts` enforces the validation gate:
-  `<response>` required every turn, `<next_lesson_blueprint>` +
-  `<course_summary_update>` required on a Wave's final turn. Optional
-  tags that fail their inner Zod schema are dropped silently; the rest
-  of the turn proceeds. `raw` is preserved verbatim for persistence.
-- The retry policy described in spec §9.2 lives in the harness loop
-  (next milestone) and uses the gate exposed here.
 - `renderContext` applies a per-turn retry filter: rows are grouped by `turn_index`; within a group containing an `assistant_response`, any `failed_assistant_response` + `harness_retry_directive` rows are dropped (they were intermediate retry exhaust). Terminal-exhaust groups (no `assistant_response`) keep every row so the model can see the failure context. This preserves cache-prefix stability — a recovered turn renders to the same bytes as a non-retry turn.
+- The legacy XML model→harness protocol (`parseAssistantResponse`, `extractTag`, `tagVocabulary`) was deleted 2026-07-16 (Phase 5) — validation gates live in `src/lib/turn/` (`validationGateFailure.ts`) and the Zod schemas in `src/lib/prompts/`.
