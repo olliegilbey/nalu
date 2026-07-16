@@ -192,6 +192,9 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       const result = await generateChat(llmMessages, {
         responseSchema: params.responseSchema,
         responseSchemaName: params.responseSchemaName ?? params.seed.kind,
+        // Stage-named OTel span (e.g. "clarify", "wave-close") — same label
+        // the live-smoke banners use.
+        telemetryFunctionId: label,
       });
       const dt = Date.now() - t0;
       if (live && !quiet) {

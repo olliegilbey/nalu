@@ -70,6 +70,8 @@ export async function executeTurnStream<T>(
     const handle = await streamChat(llmMessages, {
       responseSchema: params.responseSchema,
       responseSchemaName: params.responseSchemaName ?? params.seed.kind,
+      // Stage-named OTel span; seed.kind is the stage discriminator here.
+      telemetryFunctionId: params.seed.kind,
     });
 
     // Monotonic-prefix delta emission: only forward growth that extends

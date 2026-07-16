@@ -3,6 +3,7 @@ import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { getLlmModel } from "@/lib/llm/provider";
 import { cerebrasToolLoopPrepareStep } from "@/lib/llm/cerebrasToolLoopPrepareStep";
 import { recordCerebrasRateLimitHeaders } from "@/lib/llm/cerebrasRateLimit";
+import { llmTelemetry } from "@/lib/llm/telemetry";
 import { LLM } from "@/lib/config/tuning";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
 import {
@@ -81,6 +82,9 @@ export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTu
     temperature: LLM.defaultTemperature,
     maxRetries: LLM.maxRetries,
     prepareStep: cerebrasToolLoopPrepareStep,
+    // Env-gated OTel span, stage-labelled, learner content redacted
+    // (src/lib/llm/telemetry.ts). One span per turn, child spans per step.
+    experimental_telemetry: llmTelemetry("wave-mid"),
     // Feed observed x-ratelimit-* headers back to the pacing limiter after
     // EVERY loop step (each step is one provider call). Constructor-level so
     // no dispatch site can forget it.
