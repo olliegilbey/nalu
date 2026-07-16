@@ -8,7 +8,7 @@ import {
   isLive,
   isQuiet,
 } from "./formatTurn";
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 
 /**
  * These are pure-string assertions — we never touch real stderr.

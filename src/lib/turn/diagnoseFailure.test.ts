@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { diagnoseFailure } from "./diagnoseFailure";
 
 const fail = (msg: string) => new ValidationGateFailure("missing_response", msg);

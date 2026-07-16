@@ -9,7 +9,7 @@ import { appendMessage, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts";
 import { insertOpenAssessments } from "@/db/queries/assessments";
 import { WAVE } from "@/lib/config/tuning";
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";

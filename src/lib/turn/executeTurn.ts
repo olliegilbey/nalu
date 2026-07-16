@@ -8,7 +8,7 @@ import {
 } from "@/db/queries/contextMessages";
 import { NoObjectGeneratedError } from "ai";
 import { generateChat } from "@/lib/llm/generate";
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { JSON_PARSE_RETRY_DIRECTIVE } from "@/lib/prompts/turn";

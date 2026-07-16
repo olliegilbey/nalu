@@ -1,4 +1,4 @@
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 
 /**
  * Build a human-readable retry directive for a failed turn.

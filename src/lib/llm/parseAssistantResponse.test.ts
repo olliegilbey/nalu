@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { parseAssistantResponse, ValidationGateFailure } from "./parseAssistantResponse";
+import { parseAssistantResponse } from "./parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 
 describe("parseAssistantResponse", () => {
   it("extracts <response> on a regular turn", () => {

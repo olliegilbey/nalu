@@ -8,7 +8,7 @@ import {
 import { NoObjectGeneratedError } from "ai";
 import type { DeepPartial } from "ai";
 import { streamChat } from "@/lib/llm/streamChat";
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { JSON_PARSE_RETRY_DIRECTIVE } from "@/lib/prompts/turn";
 import { SCOPING } from "@/lib/config/tuning";
 import type { z } from "zod/v4";

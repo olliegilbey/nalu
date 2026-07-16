@@ -11,7 +11,7 @@
  */
 
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
-import type { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import type { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 
 // ---------------------------------------------------------------------------
 // Env gates

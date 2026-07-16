@@ -1,4 +1,4 @@
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import type { WaveTurnCollector } from "./waveTurnTools";
 import type { SubmitTurnPayload } from "./buildLearnerInput";
 
