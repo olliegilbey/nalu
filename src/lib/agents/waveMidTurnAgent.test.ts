@@ -59,14 +59,17 @@ describe("buildWaveMidTurnAgent", () => {
     expect(instructions).toBe(renderTeachingSystem(SEED));
   });
 
-  it("forces the tools output contract regardless of the seed's", () => {
-    const { instructions } = buildWaveMidTurnAgent({
-      seed: { ...SEED, outputContract: undefined },
-      courseId: COURSE_ID,
-    });
+  it("throws when the seed's output contract is not 'tools'", () => {
     // The agent path IS the tool channel; a "json"-contract prompt would
-    // instruct mega-schema output into a tool loop.
-    expect(instructions).toBe(renderTeachingSystem({ ...SEED, outputContract: "tools" }));
-    expect(instructions).toContain("presentQuestionnaire");
+    // instruct mega-schema output into a tool loop. Silently rewriting the
+    // seed would let the agent's instructions diverge from what the caller's
+    // message-assembly path rendered and persisted — throw instead, matching
+    // buildWaveSeed's loud-explicit contract param (PR #35 review).
+    expect(() =>
+      buildWaveMidTurnAgent({ seed: { ...SEED, outputContract: undefined }, courseId: COURSE_ID }),
+    ).toThrowError(/outputContract: "tools"/);
+    expect(() =>
+      buildWaveMidTurnAgent({ seed: { ...SEED, outputContract: "json" }, courseId: COURSE_ID }),
+    ).toThrowError(/outputContract: "tools"/);
   });
 });
