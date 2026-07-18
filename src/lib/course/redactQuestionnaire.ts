@@ -24,7 +24,6 @@ export type OpenQuestionForClient =
       };
       /** Base64-obfuscated correct index, bound to `id`. NOT cryptographic. */
       readonly correctEnc: string;
-      readonly freetextRubric: string;
       /** Concept tier — drives client-side `calculateMcXp`. Optional on the source. */
       readonly tier?: number;
     }
@@ -32,7 +31,6 @@ export type OpenQuestionForClient =
       readonly id: string;
       readonly type: "free_text";
       readonly prompt: string;
-      readonly freetextRubric: string;
       /** Concept tier — present for symmetry; free-text XP is server-graded. */
       readonly tier?: number;
     };

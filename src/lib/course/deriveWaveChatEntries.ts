@@ -67,6 +67,9 @@ export function deriveWaveChatEntries(
             e.kind === "text_with_questionnaire" &&
             e.questionnaireId === entry.questionnaireId,
         );
+      // `freetextRubric` is backfilled empty: the client wire shape no longer
+      // carries rubrics (grading keys — see redactWaveChatLog), and V3Question
+      // requires the field structurally while formatAnswers never reads it.
       const questions: readonly V3Question[] =
         qEntry?.role === "assistant" && qEntry.kind === "text_with_questionnaire"
           ? qEntry.questions.map((q) =>
@@ -76,13 +79,13 @@ export function deriveWaveChatEntries(
                     type: "multiple_choice",
                     prompt: q.prompt,
                     options: q.options,
-                    freetextRubric: q.freetextRubric,
+                    freetextRubric: "",
                   }
                 : {
                     id: q.id,
                     type: "free_text",
                     prompt: q.prompt,
-                    freetextRubric: q.freetextRubric,
+                    freetextRubric: "",
                   },
             )
           : [];

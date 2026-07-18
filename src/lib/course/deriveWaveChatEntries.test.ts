@@ -68,7 +68,6 @@ describe("deriveWaveChatEntries", () => {
           prompt: "?",
           options: { A: "1", B: "2", C: "3", D: "4" },
           correctEnc: "enc",
-          freetextRubric: "n/a",
         },
       ]),
       userAnswers("q-1", [{ questionId: "qa", choice: "B" }]),
@@ -84,13 +83,9 @@ describe("deriveWaveChatEntries", () => {
 
   it("emits assistant-text-with-questionnaire for the LATEST unanswered text_with_questionnaire", () => {
     const log: WaveChatLogEntryForClient[] = [
-      assistantQ("q-1", "Old card", [
-        { id: "qa", type: "free_text", prompt: "Why?", freetextRubric: "n/a" },
-      ]),
+      assistantQ("q-1", "Old card", [{ id: "qa", type: "free_text", prompt: "Why?" }]),
       userAnswers("q-1", [{ questionId: "qa", freetext: "because" }]),
-      assistantQ("q-2", "New card", [
-        { id: "qb", type: "free_text", prompt: "How?", freetextRubric: "n/a" },
-      ]),
+      assistantQ("q-2", "New card", [{ id: "qb", type: "free_text", prompt: "How?" }]),
     ];
     const chatEntries = deriveWaveChatEntries(log);
     expect(chatEntries[0]).toEqual({ kind: "assistant-text", content: "Old card" }); // answered → text
@@ -99,7 +94,7 @@ describe("deriveWaveChatEntries", () => {
       content: "New card",
       questionnaire: {
         questionnaireId: "q-2",
-        questions: [{ id: "qb", type: "free_text", prompt: "How?", freetextRubric: "n/a" }],
+        questions: [{ id: "qb", type: "free_text", prompt: "How?" }],
       },
     });
   });
