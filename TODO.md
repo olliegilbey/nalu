@@ -195,3 +195,17 @@ retention (~1hr) unless drained somewhere.
 shared. At minimum before the next batch of applications goes out.
 
 - Agent-loop follow-ups (2026-06-10 plan): close-turn agent (blueprint/summary tools); scoping clarify as adaptive agent (model decides clarification depth via askLearner/completeScoping emissions — design only, gated on product call); evaluate createAgentUIStreamResponse to replace the hand-rolled writer once full useChat message-state adoption lands; MCP tools explicitly out of scope until an external integration exists.
+
+## Deferred findings from CodeRabbit CLI review (2026-07-18, branch chore/llm-hygiene-observability)
+
+Reviewed with `coderabbit review --agent --base main`. Fixed on the branch: wave-wire `freetextRubric` leak (redactWaveChatLog), `containsResponseJsonBlob` fail-open >20k, provider-strategy BYOK overclaim, glossary Turn/Step cardinality. Deferred (pre-existing behavior, each needs its own pass):
+
+- **Scoping wire ships grading keys (product decision needed).** `clarify`/`generateBaseline` return raw `Question[]` to the client: `freetextRubric` plaintext AND (baseline MC) plaintext `correct` — `adaptQuestionnaire` deliberately uses `correct` for client-side instant feedback. Wave flow solved the same need with `correctEnc` + `decodeCorrect`. Options: mirror the wave scheme in scoping (project rubric out, swap correct→correctEnc), or accept for scoping (baseline is one-shot, low stakes). The rubric at minimum should be projected out - it has no client consumer.
+- **`forwardToolChunk` forwards internal tool chunks** (`streamWaveTurn`): lookup-tool and `recordComprehensionSignals` inputs/outputs stream to the client UI channel. Not an answer-key leak, but grading-signal/SR internals cross the wire with no client consumer. Consider an allowlist (`presentQuestionnaire` only) — review alongside the scoping-wire item.
+- **Rate limiter does not pace SDK-internal transport retries**: `awaitCerebrasCallSlot` gates per `generateText` call; the SDK's own `maxRetries` backoff re-requests without re-acquiring a slot. Mostly moot on paid tier; revisit if 429s return.
+- **`waveTurnTools` duplicate `questionId` staging**: signals for the same question can stage twice (within a call or across calls) before persistence. Add dedup-or-reject in the collector path.
+- **`waveLookupTools` caps applied post-query** (`.slice` after fetch) instead of SQL `LIMIT`; also `lastQuality` rides in the due-concepts projection to the model — decide whether scoring internals belong in lookup output.
+- **`presentQuestionnaire` schema lacks `.max(3)`** on questions (described "1-3" but unenforced). Wire-schema change — bundle with the next prompt-bytes-touching PR, not a drive-by.
+- **`context_messages` kind/role DB constraint** doesn't pin `assistant_tool_call`→assistant / `tool_result`→tool pairings. Schema hardening + migration.
+- **`probe-model.ts` trial semantics**: valid-rate counts valid tool calls, not trials-with-required-questionnaire-call; missing calls should count as failures. Fix before the next probe campaign.
+- **`streamWaveTurn.live.test.ts` uses `console.log`** in beforeAll (live-gated so the commit gate misses it); switch to `process.stderr.write`.

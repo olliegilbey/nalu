@@ -33,7 +33,7 @@ Decision-input note (Phase 5 Task 6, plan `2026-06-10-llm-hygiene-observability.
 
 | Limiter responsibility | Gateway impact |
 | --- | --- |
-| Absorbing account-wide contention from the **STT-shared key** (reads `x-ratelimit-*` headers) | **Replaced** — Gateway credits are a separate budget; the shared-key coupling disappears entirely. (A second Cerebras key would NOT achieve this: keys are tier-bound and the rate headers are account-wide.) |
+| Absorbing account-wide contention from the **STT-shared key** (reads `x-ratelimit-*` headers) | **Conditionally replaced** — decoupling only holds for requests on Gateway *system credentials* (credits). Under BYOK, successful requests still authenticate with our Cerebras key and count against the shared account's limits; only failed BYOK attempts fall back to system credentials (billed to credits). Full decoupling = route via credits, not BYOK. (A second Cerebras key would not achieve it either: keys are tier-bound and the rate headers are account-wide.) |
 | 429-avoidance request spacing (free-tier 5 RPM era) | **Already moot** on the paid tier; Gateway failover further reduces 429 exposure. |
 | **Per-user fast/slow lane** (`userIdStore` + `LLM.fastLaneCallsPerUser`) — a per-user cost/burst governor | **Not replaced.** Gateway has no per-user throttling; its `user` field is reporting-only. The lane logic is app-level and survives a gateway hop unchanged (it paces *before* dispatch; it doesn't care what's on the other end). |
 | Per-day token cap awareness (never implemented — no TPD header) | **Improved**: spend reports + credits balance give the cumulative view the limiter could never see. |
@@ -52,7 +52,7 @@ Switch **provider package** (`@ai-sdk/cerebras@3.x`) when:
 Switch to **AI Gateway** when any of:
 
 - a **second provider / failover** is needed — e.g. the next Cerebras model deprecation cliff (May 2026 took `llama3.1-8b` + `qwen-3-235b`; `gpt-oss-120b` is the current floor) or availability incidents;
-- **spend isolation from the STT workload** becomes a priority (the only clean decoupling available — second keys don't isolate);
+- **spend isolation from the STT workload** becomes a priority (the only clean decoupling available — second keys don't isolate; note this means running on Gateway credits, NOT BYOK, since BYOK keeps our key and its account limits in the loop);
 - we want **per-generation cost attribution** without building cumulative `usage` accounting ourselves.
 
 Before adopting Gateway: wire an OTLP endpoint, set `LLM_TELEMETRY=true`, and A/B the added hop latency with the stage-labelled spans from this branch.

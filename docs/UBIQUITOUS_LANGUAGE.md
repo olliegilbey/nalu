@@ -119,7 +119,7 @@ One rung of a course's framework. Users advance through tiers by accumulating XP
 
 ## Turn
 
-One ping-pong: User → Router → LLM → Router → User. Each turn is a single HTTP call the User triggers, resolved by one Step. Within a Wave, turns append messages to the growing Context; the Harness also appends `<turns_remaining>N</turns_remaining>` each turn so the LLM can pace its teaching and close within the Wave's turn budget (`WAVE.turnCount` in `src/lib/config/tuning.ts`). On the final turn the Harness additionally appends `<due_for_review>…</due_for_review>` and instructs the LLM to include the next Wave's blueprint (topic, outline, opening text) in its structured response.
+One ping-pong: User → Router → LLM → Router → User. Each turn is a single HTTP call the User triggers, resolved by one or more Steps (tool loops and validation retries add Steps — see the disambiguation below). Within a Wave, turns append messages to the growing Context; the Harness also appends `<turns_remaining>N</turns_remaining>` each turn so the LLM can pace its teaching and close within the Wave's turn budget (`WAVE.turnCount` in `src/lib/config/tuning.ts`). On the final turn the Harness additionally appends `<due_for_review>…</due_for_review>` and instructs the LLM to include the next Wave's blueprint (topic, outline, opening text) in its structured response.
 
 **Disambiguation — Turn vs Step vs ChatEntry.** This definition deliberately diverges from dialogue-systems literature, where a "turn" is ONE speaker's contribution. In Nalu:
 
