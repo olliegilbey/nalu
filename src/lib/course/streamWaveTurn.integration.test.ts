@@ -19,6 +19,7 @@ import { streamWaveTurn } from "./streamWaveTurn";
 // The provider needs env at build time; the stubbed agent stream never calls it.
 vi.mock("@/lib/llm/provider", () => ({
   getLlmModel: () => ({ modelId: "stub", specificationVersion: "v3" }),
+  llmProviderOptions: () => ({ "nalu-llm": { reasoningEffort: "high" } }),
 }));
 
 /**

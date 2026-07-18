@@ -257,6 +257,15 @@ export const BASELINE = {
  */
 export const LLM = {
   defaultTemperature: 0.3,
+  // Reasoning depth for gpt-oss-120b ("low" | "medium" | "high"). Cerebras
+  // defaults to "medium" when unset; we pin "high" after the 2026-07-18
+  // Japanese-course transcript showed medium-effort failures: baseline took
+  // 3 attempts (question-count miss, then tier-scope violation, then a
+  // relabel-not-rethink "fix"), and questions ignored the learner's stated
+  // can't-read-characters profile. Each schema retry is a full extra LLM
+  // call, so high effort is partly self-funding. Sent via providerOptions
+  // by `llmProviderOptions()` (src/lib/llm/provider.ts).
+  reasoningEffort: "high",
   maxRetries: 6,
   slowLaneSpacingMs: 13_000,
   fastLaneSpacingMs: 200,
