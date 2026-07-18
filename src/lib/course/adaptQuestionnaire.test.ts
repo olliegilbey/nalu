@@ -91,7 +91,6 @@ describe("adaptQuestionnaire", () => {
       prompt: "?",
       options: { A: "1", B: "2", C: "3", D: "4" },
       correctEnc: "unused",
-      freetextRubric: "n/a",
       tier: 2,
     });
     expect(adapted.tier).toBe(2);

@@ -64,6 +64,40 @@ describe("redactWaveChatLog", () => {
     expect(ft.prompt).toBe("Why?");
   });
 
+  it("strips freetextRubric from every question — grading rubrics never cross the wire", () => {
+    const log: WaveChatLogEntry[] = [
+      {
+        role: "assistant",
+        kind: "text_with_questionnaire",
+        questionnaireId: "q-1",
+        content: "Try these:",
+        questions: [
+          {
+            id: "qid-mc",
+            type: "multiple_choice",
+            prompt: "2+2?",
+            options: { A: "3", B: "4", C: "5", D: "6" },
+            correct: "B",
+            freetextRubric: "n/a",
+          },
+          {
+            id: "qid-ft",
+            type: "free_text",
+            prompt: "Why?",
+            freetextRubric: "award full marks if the answer mentions ownership transfer",
+          },
+        ],
+      },
+    ];
+    const [entry] = redactWaveChatLog(log);
+    if (!entry || entry.role !== "assistant" || entry.kind !== "text_with_questionnaire") {
+      throw new Error("expected text_with_questionnaire entry");
+    }
+    for (const q of entry.questions) {
+      expect("freetextRubric" in q).toBe(false);
+    }
+  });
+
   it("projects the optional per-question tier onto the client question", () => {
     const result = redactWaveChatLog([
       {

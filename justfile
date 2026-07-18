@@ -12,6 +12,14 @@ set dotenv-filename := ".env.local"
 dev:
     bun run dev
 
+# Start the dev server with AI SDK DevTools capture (dev-only middleware).
+dev-devtools:
+    LLM_DEVTOOLS=1 bun run dev
+
+# AI SDK DevTools viewer (http://localhost:4983) — inspects .devtools/ runs.
+llm-devtools:
+    bun x @ai-sdk/devtools
+
 # Production build
 build:
     bun run build

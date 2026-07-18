@@ -119,7 +119,15 @@ One rung of a course's framework. Users advance through tiers by accumulating XP
 
 ## Turn
 
-One ping-pong: User → Router → LLM → Router → User. Each turn is a single HTTP call the User triggers, resolved by one Step which makes one LLM call. Within a Wave, turns append messages to the growing Context; the Harness also appends `<turns_remaining>N</turns_remaining>` each turn so the LLM can pace its teaching and close within the Wave's turn budget (`WAVE_TURN_COUNT` in `src/lib/config/tuning.ts`). On the final turn the Harness additionally appends `<due_for_review>…</due_for_review>` and instructs the LLM to include the next Wave's blueprint (topic, outline, opening text) in its structured response.
+One ping-pong: User → Router → LLM → Router → User. Each turn is a single HTTP call the User triggers, resolved by one or more Steps (tool loops and validation retries add Steps — see the disambiguation below). Within a Wave, turns append messages to the growing Context; the Harness also appends `<turns_remaining>N</turns_remaining>` each turn so the LLM can pace its teaching and close within the Wave's turn budget (`WAVE.turnCount` in `src/lib/config/tuning.ts`). On the final turn the Harness additionally appends `<due_for_review>…</due_for_review>` and instructs the LLM to include the next Wave's blueprint (topic, outline, opening text) in its structured response.
+
+**Disambiguation — Turn vs Step vs ChatEntry.** This definition deliberately diverges from dialogue-systems literature, where a "turn" is ONE speaker's contribution. In Nalu:
+
+- **Turn** — the full exchange above (what the literature would call a round). `turn_index`, `turns_remaining`, `WAVE.turnCount`, `executeTurn` all count in this unit.
+- **Step** — one LLM API call inside a turn (the AI SDK's unit: the tool loop runs up to `LLM.maxToolSteps` steps per turn; validation retries also add calls). A turn spans 1..N steps.
+- **ChatEntry** (`src/lib/types/chatEntry.ts`) — one rendered message in the chat scroll, i.e. one speaker's contribution (the literature's "turn"). One Turn typically yields two ChatEntries.
+
+Never use "turn" for a single contribution or a single API call — say ChatEntry or Step.
 
 ## User
 
@@ -129,7 +137,7 @@ The learner. Distinct from the developer, admin, or agent. When docs say "the us
 
 A single ~5-7 minute teaching unit within a Teaching session — Nalu's equivalent of a Duolingo lesson. Each Wave is one Context (one append-only LLM conversation with a byte-stable prefix).
 
-**Fixed turn count.** A Wave runs for `WAVE_TURN_COUNT` turns (default 10, in `src/lib/config/tuning.ts`). Pacing is not LLM-decided — the Harness enforces it. On every turn the Harness appends `<turns_remaining>N</turns_remaining>` so the LLM knows where it is in the Wave and can land its closing quiz within the final few turns (wrap-up window ≈ `turns_remaining ≤ 3`). This gives Waves a consistent shape across a course.
+**Fixed turn count.** A Wave runs for `WAVE.turnCount` turns (default 10, in `src/lib/config/tuning.ts`). Pacing is not LLM-decided — the Harness enforces it. On every turn the Harness appends `<turns_remaining>N</turns_remaining>` so the LLM knows where it is in the Wave and can land its closing quiz within the final few turns (wrap-up window ≈ `turns_remaining ≤ 3`). This gives Waves a consistent shape across a course.
 
 **Final turn does double duty.** On the last turn (`turns_remaining == 0`), the Harness additionally injects `<due_for_review>…</due_for_review>` listing SM-2 concepts that are now due, and instructs the LLM to emit — in one structured response — both the closing exchange (quiz/summary) for the current Wave **and** the next Wave's _blueprint_: topic, outline, and opening user-facing text. The blueprint is persisted; when the User continues (immediately or after a pause), the next Wave's system prompt is built from it, opening a fresh Context. Pre-generating the opening text means the User returns to something to respond to, not a blank chat.
 

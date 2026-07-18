@@ -1,4 +1,4 @@
-import type { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import type { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 
 /**
  * Heuristic post-mortem for `ValidationGateFailure` during live smoke.

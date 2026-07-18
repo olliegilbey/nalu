@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveWaveTurns } from "./deriveWaveTurns";
+import { deriveWaveChatEntries } from "./deriveWaveChatEntries";
 import type { WaveChatLogEntryForClient } from "./redactWaveChatLog";
 
 const userText = (content: string): WaveChatLogEntryForClient => ({
@@ -41,9 +41,9 @@ const assistantQ = (
   questions,
 });
 
-describe("deriveWaveTurns", () => {
+describe("deriveWaveChatEntries", () => {
   it("returns empty array on empty log", () => {
-    expect(deriveWaveTurns([])).toEqual([]);
+    expect(deriveWaveChatEntries([])).toEqual([]);
   });
 
   it("maps user-text → user-text, assistant-text → assistant-text", () => {
@@ -52,7 +52,7 @@ describe("deriveWaveTurns", () => {
       userText("Tell me more."),
       assistantText("Sure."),
     ];
-    expect(deriveWaveTurns(log)).toEqual([
+    expect(deriveWaveChatEntries(log)).toEqual([
       { kind: "assistant-text", content: "Welcome." },
       { kind: "user-text", content: "Tell me more." },
       { kind: "assistant-text", content: "Sure." },
@@ -68,15 +68,14 @@ describe("deriveWaveTurns", () => {
           prompt: "?",
           options: { A: "1", B: "2", C: "3", D: "4" },
           correctEnc: "enc",
-          freetextRubric: "n/a",
         },
       ]),
       userAnswers("q-1", [{ questionId: "qa", choice: "B" }]),
     ];
-    const turns = deriveWaveTurns(log);
+    const chatEntries = deriveWaveChatEntries(log);
     // The answered questionnaire emits as plain assistant-text (no open Q).
-    expect(turns[0]).toEqual({ kind: "assistant-text", content: "Try this:" });
-    expect(turns[1]).toEqual({
+    expect(chatEntries[0]).toEqual({ kind: "assistant-text", content: "Try this:" });
+    expect(chatEntries[1]).toEqual({
       kind: "user-questionnaire-answers",
       content: "1. ? — 2",
     });
@@ -84,22 +83,18 @@ describe("deriveWaveTurns", () => {
 
   it("emits assistant-text-with-questionnaire for the LATEST unanswered text_with_questionnaire", () => {
     const log: WaveChatLogEntryForClient[] = [
-      assistantQ("q-1", "Old card", [
-        { id: "qa", type: "free_text", prompt: "Why?", freetextRubric: "n/a" },
-      ]),
+      assistantQ("q-1", "Old card", [{ id: "qa", type: "free_text", prompt: "Why?" }]),
       userAnswers("q-1", [{ questionId: "qa", freetext: "because" }]),
-      assistantQ("q-2", "New card", [
-        { id: "qb", type: "free_text", prompt: "How?", freetextRubric: "n/a" },
-      ]),
+      assistantQ("q-2", "New card", [{ id: "qb", type: "free_text", prompt: "How?" }]),
     ];
-    const turns = deriveWaveTurns(log);
-    expect(turns[0]).toEqual({ kind: "assistant-text", content: "Old card" }); // answered → text
-    expect(turns[2]).toEqual({
+    const chatEntries = deriveWaveChatEntries(log);
+    expect(chatEntries[0]).toEqual({ kind: "assistant-text", content: "Old card" }); // answered → text
+    expect(chatEntries[2]).toEqual({
       kind: "assistant-text-with-questionnaire",
       content: "New card",
       questionnaire: {
         questionnaireId: "q-2",
-        questions: [{ id: "qb", type: "free_text", prompt: "How?", freetextRubric: "n/a" }],
+        questions: [{ id: "qb", type: "free_text", prompt: "How?" }],
       },
     });
   });

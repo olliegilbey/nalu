@@ -7,7 +7,7 @@ import {
   type AppendMessageParams,
   type ContextParent,
 } from "@/db/queries/contextMessages";
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { SCOPING } from "@/lib/config/tuning";
 import type { SeedInputs } from "@/lib/types/context";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";

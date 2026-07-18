@@ -1,36 +1,36 @@
-import type { Turn } from "@/lib/types/turn";
+import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { CourseState } from "./getState";
 import type { V3Question, V3Response } from "@/lib/types/jsonb";
 
 /**
- * Project a `CourseState` to the chat scroll `Turn[]`.
+ * Project a `CourseState` to the chat scroll `ChatEntry[]`.
  *
- * Deterministic and pure. Each downstream turn depends on the presence of a
+ * Deterministic and pure. Each downstream entry depends on the presence of a
  * specific JSONB column on the row, in this order:
  *
  *   topic → clarification → (clarify responses present → framework) → baseline
  *   → (scopingResult present → close + move-on-cta)
  *
- * The active questionnaire (clarify or baseline) is not a turn — the Composer
+ * The active questionnaire (clarify or baseline) is not an entry — the Composer
  * renders it separately from `useScopingState.activeQuestionnaire`.
  */
-export function deriveTurns(state: CourseState): readonly Turn[] {
-  const turns: Turn[] = [{ kind: "user-text", content: state.topic }];
+export function deriveChatEntries(state: CourseState): readonly ChatEntry[] {
+  const chatEntries: ChatEntry[] = [{ kind: "user-text", content: state.topic }];
 
   if (state.clarification) {
-    turns.push({ kind: "assistant-text", content: state.clarification.userMessage });
+    chatEntries.push({ kind: "assistant-text", content: state.clarification.userMessage });
   }
 
   // Once the framework lands, clarify responses are guaranteed to be saved
   // (generateFramework persists them before calling the LLM — see
   // src/lib/course/generateFramework.ts:82-92). Emit the user-questionnaire-answers
-  // turn from the persisted responses so a reload renders identically.
+  // entry from the persisted responses so a reload renders identically.
   if (state.framework && state.clarification) {
-    turns.push({
+    chatEntries.push({
       kind: "user-questionnaire-answers",
       content: formatAnswers(state.clarification.questions, state.clarification.responses),
     });
-    turns.push({
+    chatEntries.push({
       kind: "assistant-text-with-framework",
       userMessage: state.framework.userMessage,
       tiers: state.framework.tiers.map((t) => ({
@@ -42,19 +42,19 @@ export function deriveTurns(state: CourseState): readonly Turn[] {
   }
 
   if (state.baseline) {
-    turns.push({ kind: "assistant-text", content: state.baseline.userMessage });
+    chatEntries.push({ kind: "assistant-text", content: state.baseline.userMessage });
   }
 
   if (state.scopingResult && state.baseline) {
-    turns.push({
+    chatEntries.push({
       kind: "user-questionnaire-answers",
       content: formatAnswers(state.baseline.questions, state.baseline.responses),
     });
-    turns.push({ kind: "assistant-text", content: state.scopingResult.closingMessage });
-    turns.push({ kind: "move-on-cta", next: { phase: "wave", n: 1 } });
+    chatEntries.push({ kind: "assistant-text", content: state.scopingResult.closingMessage });
+    chatEntries.push({ kind: "move-on-cta", next: { phase: "wave", n: 1 } });
   }
 
-  return turns;
+  return chatEntries;
 }
 
 /**
@@ -67,7 +67,7 @@ export function deriveTurns(state: CourseState): readonly Turn[] {
  * than a crash.
  *
  * Exported (and renamed from the prior `concatBaselineAnswers`) so wave's
- * `deriveWaveTurns` can reuse it. Clarify's prior dedicated helper
+ * `deriveWaveChatEntries` can reuse it. Clarify's prior dedicated helper
  * (`concatClarifyAnswers`) is deleted; clarify responses never carry `choice`
  * so the baseline-shaped formatter handles them identically.
  */

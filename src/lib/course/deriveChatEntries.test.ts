@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveTurns, formatAnswers } from "./deriveTurns";
+import { deriveChatEntries, formatAnswers } from "./deriveChatEntries";
 import type { CourseState } from "./getState";
 import type { V3Question, V3Response } from "@/lib/types/jsonb";
 
@@ -16,14 +16,14 @@ function baseState(overrides: Partial<CourseState>): CourseState {
   };
 }
 
-describe("deriveTurns", () => {
+describe("deriveChatEntries", () => {
   it("emits only user-text (topic) when only topic exists", () => {
-    const turns = deriveTurns(baseState({}));
-    expect(turns).toEqual([{ kind: "user-text", content: "Linear algebra" }]);
+    const chatEntries = deriveChatEntries(baseState({}));
+    expect(chatEntries).toEqual([{ kind: "user-text", content: "Linear algebra" }]);
   });
 
   it("adds assistant-text (clarify intro) when clarification is present", () => {
-    const turns = deriveTurns(
+    const chatEntries = deriveChatEntries(
       baseState({
         clarification: {
           userMessage: "Let's narrow this down.",
@@ -32,14 +32,14 @@ describe("deriveTurns", () => {
         },
       }),
     );
-    expect(turns).toEqual([
+    expect(chatEntries).toEqual([
       { kind: "user-text", content: "Linear algebra" },
       { kind: "assistant-text", content: "Let's narrow this down." },
     ]);
   });
 
   it("emits user-questionnaire-answers + assistant-text-with-framework once framework lands", () => {
-    const turns = deriveTurns(
+    const chatEntries = deriveChatEntries(
       baseState({
         clarification: {
           userMessage: "Let's narrow this down.",
@@ -64,23 +64,23 @@ describe("deriveTurns", () => {
       }),
     );
 
-    const kinds = turns.map((t) => t.kind);
+    const kinds = chatEntries.map((t) => t.kind);
     expect(kinds).toEqual([
       "user-text",
       "assistant-text",
       "user-questionnaire-answers",
       "assistant-text-with-framework",
     ]);
-    // Find clarify answer turn — it's the user-questionnaire-answers between
+    // Find clarify answer entry — it's the user-questionnaire-answers between
     // the clarify-intro and the framework reveal.
-    const userAnswers = turns.find((t) => t.kind === "user-questionnaire-answers")!;
+    const userAnswers = chatEntries.find((t) => t.kind === "user-questionnaire-answers")!;
     expect(userAnswers).toMatchObject({
       content: expect.stringContaining("Why are you learning?"),
     });
     expect(userAnswers).toMatchObject({
       content: expect.stringContaining("to pass an exam"),
     });
-    const framework = turns.find((t) => t.kind === "assistant-text-with-framework")!;
+    const framework = chatEntries.find((t) => t.kind === "assistant-text-with-framework")!;
     expect(framework).toMatchObject({
       userMessage: "Here's your ladder.",
       tiers: [
@@ -91,7 +91,7 @@ describe("deriveTurns", () => {
   });
 
   it("adds assistant-text (baseline intro) once baseline questions exist (still scoping)", () => {
-    const turns = deriveTurns(
+    const chatEntries = deriveChatEntries(
       baseState({
         clarification: {
           userMessage: "c",
@@ -113,17 +113,17 @@ describe("deriveTurns", () => {
       }),
     );
 
-    // The baseline-intro is an assistant-text turn. Distinguish it by content
-    // since multiple assistant-text turns exist in the full scoping projection.
-    const intro = turns.find(
+    // The baseline-intro is an assistant-text entry. Distinguish it by content
+    // since multiple assistant-text entries exist in the full scoping projection.
+    const intro = chatEntries.find(
       (t) => t.kind === "assistant-text" && t.content === "Let's check what you know.",
     )!;
     expect(intro).toEqual({ kind: "assistant-text", content: "Let's check what you know." });
-    expect(turns.find((t) => t.kind === "move-on-cta")).toBeUndefined();
+    expect(chatEntries.find((t) => t.kind === "move-on-cta")).toBeUndefined();
   });
 
   it("emits user-questionnaire-answers + close + move-on-cta when scopingResult lands", () => {
-    const turns = deriveTurns(
+    const chatEntries = deriveChatEntries(
       baseState({
         status: "active",
         clarification: {
@@ -159,7 +159,7 @@ describe("deriveTurns", () => {
       }),
     );
 
-    const kinds = turns.map((t) => t.kind);
+    const kinds = chatEntries.map((t) => t.kind);
     expect(kinds).toEqual([
       "user-text",
       "assistant-text",
@@ -170,7 +170,7 @@ describe("deriveTurns", () => {
       "assistant-text",
       "move-on-cta",
     ]);
-    expect(turns.at(-1)).toEqual({
+    expect(chatEntries.at(-1)).toEqual({
       kind: "move-on-cta",
       next: { phase: "wave", n: 1 },
     });

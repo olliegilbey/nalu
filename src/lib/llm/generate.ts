@@ -4,6 +4,7 @@ import type { z } from "zod/v4";
 import { LLM } from "@/lib/config/tuning";
 import { getLlmModel } from "./provider";
 import { toOutputSchema } from "./toCerebrasJsonSchema";
+import { llmTelemetry } from "./telemetry";
 import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "./cerebrasRateLimit";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 
@@ -31,6 +32,8 @@ export interface GenerateOptions {
 export interface ChatOptions<T = unknown> extends GenerateOptions {
   readonly responseSchema?: z.ZodType<T>;
   readonly responseSchemaName?: string;
+  /** OTel span label (pipeline stage, e.g. "wave-close"); default "generateChat". */
+  readonly telemetryFunctionId?: string;
 }
 
 /**
@@ -91,6 +94,8 @@ export async function generateChat<T>(
     messages: [...messages],
     temperature: opts.temperature ?? LLM.defaultTemperature,
     maxRetries: opts.maxRetries ?? LLM.maxRetries,
+    // Env-gated OTel span, stage-labelled, learner content redacted.
+    experimental_telemetry: llmTelemetry(opts.telemetryFunctionId ?? "generateChat"),
   };
 
   // Plain-text path: no schema, no output wrapper.

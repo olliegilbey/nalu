@@ -8,7 +8,7 @@ import {
 } from "@/db/queries/contextMessages";
 import { NoObjectGeneratedError } from "ai";
 import { generateChat } from "@/lib/llm/generate";
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { JSON_PARSE_RETRY_DIRECTIVE } from "@/lib/prompts/turn";
@@ -192,6 +192,9 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       const result = await generateChat(llmMessages, {
         responseSchema: params.responseSchema,
         responseSchemaName: params.responseSchemaName ?? params.seed.kind,
+        // Stage-named OTel span (e.g. "clarify", "wave-close") — same label
+        // the live-smoke banners use.
+        telemetryFunctionId: label,
       });
       const dt = Date.now() - t0;
       if (live && !quiet) {

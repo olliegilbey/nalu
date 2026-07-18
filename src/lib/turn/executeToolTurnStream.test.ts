@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { executeToolTurnStream, type ToolTurnAgent } from "./executeToolTurnStream";
 
 vi.mock("@/db/queries/contextMessages", () => ({

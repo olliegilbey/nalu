@@ -1,4 +1,4 @@
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import type { WaveTurnCollector } from "./waveTurnTools";
 import type { SubmitTurnPayload } from "./buildLearnerInput";
 
@@ -33,7 +33,7 @@ export function validateWaveMidToolTurn(
   if (visibleProse.trim().length === 0) {
     return new ValidationGateFailure(
       "tool_turn_gate",
-      "Your turn ended without any teaching prose. The learner sees your plain text output — after any tool calls finish, always write the teaching message for this turn.",
+      "Your response ended without any teaching prose. The learner sees your plain text output — after any tool calls finish, always write the teaching message for this turn.",
     );
   }
 
@@ -94,8 +94,11 @@ export function findJsonProseLeakIndex(prose: string): number | null {
  */
 function containsResponseJsonBlob(prose: string): boolean {
   const trimmed = prose.trim();
-  // Pathological-length guard: the scan is O(braces × length).
-  if (trimmed.length > 20_000) return false;
+  // Pathological-length guard: the scan is O(braces × length). FAIL CLOSED —
+  // beyond the bound we cannot prove the prose is clean, and legit teaching
+  // prose never approaches 20k chars; reject rather than let an oversized
+  // JSON-imitation leak (answer keys ride in those blobs) through the gate.
+  if (trimmed.length > 20_000) return true;
   const braceIndices = [...trimmed.matchAll(/\{/g)].slice(0, 20).map((m) => m.index);
   return braceIndices.some((i) => {
     const candidate = (() => {

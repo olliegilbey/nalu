@@ -24,6 +24,10 @@ const envSchema = z.object({
   // PostHog EU project public key (phc_…). Server-side only — proxy.ts captures
   // a $pageview per visit. Optional: absent = analytics disabled.
   POSTHOG_KEY: z.string().optional(),
+  // Observability flags LLM_TELEMETRY (src/lib/llm/telemetry.ts) and
+  // LLM_DEVTOOLS (src/lib/llm/provider.ts) are deliberately NOT in this
+  // schema: their helpers read process.env directly, and a strict entry here
+  // would turn a flag typo into a whole-app boot crash via schema validation.
 });
 
 /** Validated environment config. Throws on first access if env vars are missing/invalid. */

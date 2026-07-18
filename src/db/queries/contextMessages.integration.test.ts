@@ -9,7 +9,6 @@ import {
   getMessagesForWave,
   getMessagesForScopingPass,
   getNextTurnIndex,
-  getLastAssessmentCard,
 } from "./contextMessages";
 
 /** Fixed UUIDs per plan §D7. */
@@ -153,92 +152,6 @@ describe("contextMessages queries", () => {
               VALUES (0, 0, 'user_message', 'user', 'x')`,
         ),
       ).rejects.toThrow();
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Test 5: getLastAssessmentCard — extracts and validates <assessment> JSON
-  // -------------------------------------------------------------------------
-  it("getLastAssessmentCard extracts JSON from <assessment> tag", async () => {
-    await withTestDb(async (db) => {
-      await seedFixtures(db);
-
-      // Minimal valid AssessmentCard payload (multiple_choice variant).
-      // PRD mandates exactly 4 options; updated fixture to match tightened schema.
-      const assessmentPayload = {
-        questions: [
-          {
-            question_id: "q1",
-            concept_name: "c",
-            tier: 1,
-            type: "multiple_choice",
-            question: "?",
-            options: { A: "a", B: "b", C: "c", D: "d" },
-            correct: "A",
-          },
-        ],
-      };
-
-      await appendMessage({
-        parent: { kind: "wave", id: WAVE },
-        turnIndex: 0,
-        seq: 0,
-        kind: "assistant_response",
-        role: "assistant",
-        content:
-          "<response>hi</response>\n<assessment>" +
-          JSON.stringify(assessmentPayload) +
-          "</assessment>",
-      });
-
-      const card = await getLastAssessmentCard(WAVE);
-      expect(card).not.toBeNull();
-      expect(card?.questions[0]?.question_id).toBe("q1");
-      expect(card?.questions[0]?.type).toBe("multiple_choice");
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Test 6: getLastAssessmentCard — null when wave has no assistant_response rows
-  // -------------------------------------------------------------------------
-  it("getLastAssessmentCard returns null when wave has only user_message rows", async () => {
-    await withTestDb(async (db) => {
-      await seedFixtures(db);
-
-      // Only a user message — no assistant_response rows exist for this wave.
-      await appendMessage({
-        parent: { kind: "wave", id: WAVE },
-        turnIndex: 0,
-        seq: 0,
-        kind: "user_message",
-        role: "user",
-        content: "<user_message>hello</user_message>",
-      });
-
-      const card = await getLastAssessmentCard(WAVE);
-      expect(card).toBeNull();
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Test 7: getLastAssessmentCard — null when assistant_response has no <assessment> tag
-  // -------------------------------------------------------------------------
-  it("getLastAssessmentCard returns null when assistant_response contains no <assessment> tag", async () => {
-    await withTestDb(async (db) => {
-      await seedFixtures(db);
-
-      // An assistant response with no <assessment> block — teaching turn only.
-      await appendMessage({
-        parent: { kind: "wave", id: WAVE },
-        turnIndex: 0,
-        seq: 0,
-        kind: "assistant_response",
-        role: "assistant",
-        content: "<response>hi</response>",
-      });
-
-      const card = await getLastAssessmentCard(WAVE);
-      expect(card).toBeNull();
     });
   });
 

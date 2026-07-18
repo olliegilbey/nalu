@@ -44,3 +44,6 @@ CLAUDE.local.md
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ai sdk devtools local capture (learner content + grading keys)
+.devtools/

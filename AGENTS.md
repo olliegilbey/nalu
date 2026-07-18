@@ -22,7 +22,8 @@ Quick glossary of relevant parties in this document:
 
 - **LLM** is stateless. Harness loads the current **Context** (append-only message list) from DB and sends as-is — never rebuilt from components per turn.
 - **Router** (`src/server/routers/`) = tRPC transport. **Step** (`src/lib/course/*.ts`) = per-turn heuristic. Pure algorithms live in `src/lib/{scoring,spaced-repetition,progression}/`.
-- **Wave** = fixed-length teaching unit (`WAVE_TURN_COUNT` turns, default 10). Harness-enforced, not model-decided. Called a "lesson" in LLM-facing prompts.
+- **Wave** = fixed-length teaching unit (`WAVE.turnCount` turns, default 10). Harness-enforced, not model-decided. Called a "lesson" in LLM-facing prompts.
+- **Turn** = one full learner↔model exchange (NOT one message — that's a ChatEntry; one LLM API call is a Step). See the disambiguation block in `docs/UBIQUITOUS_LANGUAGE.md`.
 
 ## Turn principle
 

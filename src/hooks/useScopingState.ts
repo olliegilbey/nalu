@@ -5,9 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
 import { formatMutationError } from "@/lib/errors";
-import { deriveTurns } from "@/lib/course/deriveTurns";
+import { deriveChatEntries } from "@/lib/course/deriveChatEntries";
 import { adaptQuestionnaire, type ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
-import type { Turn } from "@/lib/types/turn";
+import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { CourseState } from "@/lib/course/getState";
 
 /**
@@ -28,9 +28,9 @@ export interface ActiveQuestionnaire {
   readonly persistKey: string;
 }
 
-/** Return shape of {@link useScopingState}; turns + active questionnaire + submit handlers. */
+/** Return shape of {@link useScopingState}; chat entries + active questionnaire + submit handlers. */
 export interface UseScopingStateResult {
-  readonly turns: readonly Turn[];
+  readonly chatEntries: readonly ChatEntry[];
   readonly activeQuestionnaire: ActiveQuestionnaire | null;
   readonly scopingResult: CourseState["scopingResult"];
   /** Course topic — drives the chat header title. Null until the query resolves. */
@@ -63,7 +63,7 @@ export interface UseScopingStateResult {
  * Drive the scoping flow for one course.
  *
  * Reads server state via `course.getState`; on mutation success, invalidates
- * the query so derived `turns` re-compute. Auto-dispatches `generateBaseline`
+ * the query so derived `chatEntries` re-compute. Auto-dispatches `generateBaseline`
  * once `framework` lands and `baseline` is still null — gated on the mutation
  * not already being in flight to avoid double-fire during refetch races.
  *
@@ -103,7 +103,10 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     }),
   );
 
-  const turns = useMemo(() => (state.data ? deriveTurns(state.data) : []), [state.data]);
+  const chatEntries = useMemo(
+    () => (state.data ? deriveChatEntries(state.data) : []),
+    [state.data],
+  );
 
   const activeQuestionnaire = useMemo<ActiveQuestionnaire | null>(() => {
     if (!state.data) return null;
@@ -191,7 +194,7 @@ export function useScopingState(courseId: string): UseScopingStateResult {
   };
 
   return {
-    turns,
+    chatEntries,
     activeQuestionnaire,
     scopingResult: state.data?.scopingResult ?? null,
     topic: state.data?.topic ?? null,

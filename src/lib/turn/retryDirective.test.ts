@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { buildRetryDirective } from "./retryDirective";
 
 /**

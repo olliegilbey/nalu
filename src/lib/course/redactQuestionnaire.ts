@@ -8,7 +8,7 @@
  * and clarify/baseline never emitted a `correct` key in the first place.
  *
  * The `OpenQuestionForClient` type is still consumed by `adaptQuestionnaire`
- * (`adaptOpenQuestion` adapts it for the Composer) and `src/lib/types/turn.ts`,
+ * (`adaptOpenQuestion` adapts it for the Composer) and `src/lib/types/chatEntry.ts`,
  * so it remains here. Move it if a more natural home appears.
  */
 export type OpenQuestionForClient =
@@ -24,7 +24,6 @@ export type OpenQuestionForClient =
       };
       /** Base64-obfuscated correct index, bound to `id`. NOT cryptographic. */
       readonly correctEnc: string;
-      readonly freetextRubric: string;
       /** Concept tier — drives client-side `calculateMcXp`. Optional on the source. */
       readonly tier?: number;
     }
@@ -32,7 +31,6 @@ export type OpenQuestionForClient =
       readonly id: string;
       readonly type: "free_text";
       readonly prompt: string;
-      readonly freetextRubric: string;
       /** Concept tier — present for symmetry; free-text XP is server-graded. */
       readonly tier?: number;
     };

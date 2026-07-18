@@ -10,13 +10,13 @@ import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
 import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
 import { t } from "@/i18n";
-import type { Turn } from "@/lib/types/turn";
+import type { ChatEntry } from "@/lib/types/chatEntry";
 
 /**
  * Drives the wave teaching chat scroll + Composer mode (spec §7).
  *
- * Parallel to `Onboarding.tsx`. Reads turns/activeQuestionnaire/closeResult/
- * status from `useWaveState`; maps `Turn[]` to bubble JSX. The Composer enters
+ * Parallel to `Onboarding.tsx`. Reads chatEntries/activeQuestionnaire/closeResult/
+ * status from `useWaveState`; maps `ChatEntry[]` to bubble JSX. The Composer enters
  * question mode whenever an open questionnaire is present; chat-text mode
  * otherwise; move-on mode whenever the wave is closed (either the transient
  * `closeResult` from this tab's close-turn, or a server-reported
@@ -32,7 +32,7 @@ export function WaveSession({
 }) {
   const router = useRouter();
   const {
-    turns,
+    chatEntries,
     activeQuestionnaire,
     closeResult,
     status,
@@ -50,22 +50,22 @@ export function WaveSession({
   } = useWaveState(courseId, waveNumber);
 
   const [composerValue, setComposerValue] = useState("");
-  // Optimistic user message. `turnCountAtSubmit` is the `turns.length` captured
-  // at submit: the bubble shows while `turns` has not grown past it (server
-  // round-trip not yet landed, or it failed) and hides the instant the real
-  // turn appears — so it never duplicates the real turn, and it survives an
-  // error rather than vanishing with `isPending`.
+  // Optimistic user message. `entryCountAtSubmit` is the `chatEntries.length`
+  // captured at submit: the bubble shows while `chatEntries` has not grown past
+  // it (server round-trip not yet landed, or it failed) and hides the instant
+  // the real entry appears — so it never duplicates the real entry, and it
+  // survives an error rather than vanishing with `isPending`.
   const [optimistic, setOptimistic] = useState<{
     readonly content: string;
-    readonly turnCountAtSubmit: number;
+    readonly entryCountAtSubmit: number;
   } | null>(null);
   // The questionnaire key just submitted — its question card is hidden from the
   // Composer immediately, rather than lingering until the server round-trip.
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
-  // Map Turn[] → scroll JSX. The switch is exhaustive over Turn's kinds so a
-  // future variant addition becomes a compile-time error here.
-  const scroll = turns.map((turn, idx) => renderTurn(turn, idx));
+  // Map ChatEntry[] → scroll JSX. The switch is exhaustive over ChatEntry's
+  // kinds so a future variant addition becomes a compile-time error here.
+  const scroll = chatEntries.map((entry, idx) => renderChatEntry(entry, idx));
 
   // Move-on CTA: shown whenever the wave is finished, NOT only when the
   // transient `closeResult` is present. `closeResult` is component-local state
@@ -104,7 +104,7 @@ export function WaveSession({
             // already filters empty strings (it disables the send button).
             const text = composerValue.trim();
             if (text.length === 0) return;
-            setOptimistic({ content: text, turnCountAtSubmit: turns.length });
+            setOptimistic({ content: text, entryCountAtSubmit: chatEntries.length });
             submitChatText(text);
             setComposerValue("");
           }}
@@ -132,7 +132,7 @@ export function WaveSession({
             // mapper lives in `src/lib/` so this component stays a thin shell.
             setOptimistic({
               content: formatComposerAnswers(answers),
-              turnCountAtSubmit: turns.length,
+              entryCountAtSubmit: chatEntries.length,
             });
             setDismissedKey(activeQuestionnaire.questionsKey);
             // On submit failure, un-dismiss the question card and drop the
@@ -149,7 +149,7 @@ export function WaveSession({
       }
     >
       {scroll}
-      {optimistic && turns.length === optimistic.turnCountAtSubmit && (
+      {optimistic && chatEntries.length === optimistic.entryCountAtSubmit && (
         <MessageBubble message={{ id: "pending", role: "user", content: optimistic.content }} />
       )}
       {/* Streaming bubble: teaching prose arrives token-by-token from the
@@ -166,35 +166,35 @@ export function WaveSession({
 }
 
 /**
- * Render one Turn as scroll JSX. Hoisted out so the switch is easy to scan
- * and the parent's render body stays compact. Exhaustive over Turn's kinds.
+ * Render one ChatEntry as scroll JSX. Hoisted out so the switch is easy to scan
+ * and the parent's render body stays compact. Exhaustive over ChatEntry's kinds.
  *
  * `assistant-text-with-framework` and `move-on-cta` are not emitted by
- * `deriveWaveTurns` in the current spec — they exist in the union for
+ * `deriveWaveChatEntries` in the current spec — they exist in the union for
  * surface symmetry with the scoping projection. The framework case has a
  * defensive render path; move-on is driven by the Composer's `moveOn` prop
  * (see WaveSession above) and renders nothing inline.
  */
-function renderTurn(turn: Turn, idx: number) {
-  switch (turn.kind) {
+function renderChatEntry(entry: ChatEntry, idx: number) {
+  switch (entry.kind) {
     case "user-text":
     case "user-questionnaire-answers": {
-      const msg: ChatMessage = { id: `t${idx}`, role: "user", content: turn.content };
+      const msg: ChatMessage = { id: `t${idx}`, role: "user", content: entry.content };
       return <MessageBubble key={idx} message={msg} />;
     }
     case "assistant-text":
     case "assistant-text-with-questionnaire": {
       // The questionnaire itself is rendered via the Composer; the prose
-      // body of this turn still renders inline as an assistant bubble.
-      const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: turn.content };
+      // body of this entry still renders inline as an assistant bubble.
+      const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: entry.content };
       return <MessageBubble key={idx} message={msg} />;
     }
     case "assistant-text-with-framework": {
-      const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: turn.userMessage };
+      const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: entry.userMessage };
       return (
         <div key={idx}>
           <MessageBubble message={msg} />
-          <FrameworkTierList tiers={turn.tiers} />
+          <FrameworkTierList tiers={entry.tiers} />
         </div>
       );
     }

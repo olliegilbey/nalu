@@ -6,6 +6,7 @@ import { LLM } from "@/lib/config/tuning";
 import { getLlmModel } from "./provider";
 import { toOutputSchema } from "./toCerebrasJsonSchema";
 import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "./cerebrasRateLimit";
+import { llmTelemetry } from "./telemetry";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 
 /** Options for {@link streamChat}; schema is REQUIRED (streaming is only used for structured turns). */
@@ -15,6 +16,8 @@ export interface StreamChatOptions<T> {
   readonly temperature?: number;
   readonly maxRetries?: number;
   readonly model?: LanguageModelV3;
+  /** OTel span label (pipeline stage, e.g. "wave-mid"); default "streamChat". */
+  readonly telemetryFunctionId?: string;
 }
 
 /** Resolved end-of-stream result: validated object + raw text + usage. */
@@ -56,6 +59,8 @@ export async function streamChat<T>(
     temperature: opts.temperature ?? LLM.defaultTemperature,
     maxRetries: opts.maxRetries ?? LLM.maxRetries,
     output: Output.object({ schema: toOutputSchema(opts.responseSchema, { name }), name }),
+    // Env-gated OTel span, stage-labelled, learner content redacted.
+    experimental_telemetry: llmTelemetry(opts.telemetryFunctionId ?? "streamChat"),
   });
 
   // Pre-register rejection handling so an output validation failure can't

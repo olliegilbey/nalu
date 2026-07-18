@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z } from "zod/v4";
 import { NoObjectGeneratedError } from "ai";
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { executeTurn } from "./executeTurn";
 
 vi.mock("@/lib/llm/generate", () => ({

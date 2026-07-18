@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ValidationGateFailure } from "@/lib/llm/parseAssistantResponse";
+import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import type { WaveTurnCollector } from "./waveTurnTools";
 import type { SubmitTurnPayload } from "./buildLearnerInput";
 import { findJsonProseLeakIndex, validateWaveMidToolTurn } from "./waveMidTurnGate";
@@ -36,6 +36,18 @@ describe("validateWaveMidToolTurn", () => {
     const failure = validateWaveMidToolTurn(emptyCollector(), blob, CHAT_PAYLOAD);
     expect(failure?.reason).toBe("tool_turn_gate");
     expect(failure?.detail).toContain("raw JSON object");
+  });
+
+  it("fails CLOSED on prose beyond the blob-scan length bound (oversized leak must not pass)", () => {
+    // The blob scan is O(braces × length) and bounded at 20k chars. Beyond
+    // the bound we cannot prove the prose is clean, so the gate must reject
+    // rather than wave a potentially JSON-laden wall of text through.
+    const oversized =
+      "word ".repeat(4_100) +
+      `\n{ "questions": [{ "id": "q1", "type": "multiple_choice", "prompt": "?" }] }`;
+    expect(oversized.length).toBeGreaterThan(20_000);
+    const failure = validateWaveMidToolTurn(emptyCollector(), oversized, CHAT_PAYLOAD);
+    expect(failure?.reason).toBe("tool_turn_gate");
   });
 
   it("rejects prose with a TRAILING questionnaire JSON blob (observed live)", () => {

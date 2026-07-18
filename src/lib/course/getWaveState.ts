@@ -24,7 +24,7 @@ import { redactWaveChatLog, type WaveChatLogEntryForClient } from "./redactWaveC
  *   - `chatLog`: ordered, redacted projection of `waves.chat_log`. Each
  *     entry is `WaveChatLogEntryForClient`; MC `correct` keys are replaced
  *     by questionId-bound `correctEnc` blobs. The client folds these into
- *     its `Turn[]` via `deriveWaveTurns` (Task 14 will update that helper).
+ *     its `ChatEntry[]` via `deriveWaveChatEntries`.
  *   - `turnsRemaining`: count of user-role entries subtracted from
  *     `WAVE.turnCount`. The chat_log is the single source of truth for
  *     "what has the learner submitted" so the count is a one-line filter.

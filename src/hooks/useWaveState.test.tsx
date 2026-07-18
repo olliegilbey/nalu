@@ -102,10 +102,10 @@ beforeEach(() => {
 });
 
 describe("useWaveState", () => {
-  it("derives turns from the chat log", async () => {
+  it("derives chat entries from the chat log", async () => {
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
-    await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
-    expect(result.current.turns).toEqual([
+    await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
+    expect(result.current.chatEntries).toEqual([
       { kind: "assistant-text", content: "Welcome to wave 1." },
     ]);
     expect(result.current.activeQuestionnaire).toBeNull();
@@ -130,7 +130,6 @@ describe("useWaveState", () => {
               prompt: "?",
               options: { A: "1", B: "2", C: "3", D: "4" },
               correctEnc: "enc",
-              freetextRubric: "n/a",
             },
           ],
         },
@@ -144,7 +143,7 @@ describe("useWaveState", () => {
 
   it("submitChatText forwards a chat-text payload via sendMessage", async () => {
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
-    await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
+    await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
 
     act(() => result.current.submitChatText("hello"));
     expect(sendMessageCalls).toHaveLength(1);
@@ -156,7 +155,7 @@ describe("useWaveState", () => {
 
   it("captures closeResult from a close-turn data-turn-result part", async () => {
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
-    await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
+    await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
 
     // Drive the transient result part by hand — the streaming analogue of
     // the old mutation onSuccess.
@@ -187,7 +186,7 @@ describe("useWaveState", () => {
 
   it("adds free-text XP to the badge and skips mc-index signals", async () => {
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
-    await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
+    await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
 
     act(() =>
       latestChatOptions?.onData?.({
@@ -290,7 +289,7 @@ describe("useWaveState", () => {
     // onError forwards the guard message into the stream, and the hook's
     // onError must turn that into a visible toast instead of failing silently.
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
-    await waitFor(() => expect(result.current.turns.length).toBeGreaterThan(0));
+    await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
 
     act(() => latestChatOptions?.onError?.(new Error("wave is closed")));
     expect(toast.error).toHaveBeenCalledWith(

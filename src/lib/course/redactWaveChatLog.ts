@@ -6,16 +6,16 @@ import type { WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 /**
  * Server → client projection of `waves.chat_log`.
  *
- * The on-disk schema stores raw MC `correct` keys (the LLM-facing path needs
- * them for grading + envelope rendering). The wire must never carry the raw
- * key — we substitute `correctEnc` (questionId-bound base64) the same way
- * `redactQuestionnaire` does for the currently-open questionnaire. The
- * substitution applies to BOTH currently-open and already-answered
- * questionnaire entries — the wire is uniformly redacted; the UI never sees
- * plaintext `correct`.
+ * The on-disk schema stores raw MC `correct` keys and `freetextRubric`
+ * grading rubrics (the LLM-facing path needs them for grading + envelope
+ * rendering). The wire must never carry either: `correct` becomes
+ * `correctEnc` (questionId-bound base64 — the Composer needs it for instant
+ * MC feedback), and `freetextRubric` is DROPPED outright (no client purpose;
+ * free-text is server-graded, and the rubric is the free-text answer key).
+ * Both apply to currently-open AND already-answered questionnaire entries —
+ * the wire is uniformly redacted.
  *
- * Free-text branches pass through (no `correct` to hide). User-side entries
- * (text + answers) carry no secret; they pass through.
+ * User-side entries (text + answers) carry no secret; they pass through.
  *
  * Pure function. Single-pass map; no DB, no env. Tested in
  * `redactWaveChatLog.test.ts`.
@@ -35,7 +35,6 @@ export type WaveQuestionForClient =
       };
       /** Base64-obfuscated correct index, bound to `id`. NOT cryptographic. */
       readonly correctEnc: string;
-      readonly freetextRubric: string;
       /** Concept tier — drives client-side `calculateMcXp`. Optional on the source. */
       readonly tier?: number;
     }
@@ -43,7 +42,6 @@ export type WaveQuestionForClient =
       readonly id: string;
       readonly type: "free_text";
       readonly prompt: string;
-      readonly freetextRubric: string;
       /** Concept tier — present for symmetry; free-text XP is server-graded. */
       readonly tier?: number;
     };
@@ -95,7 +93,6 @@ export function redactWaveChatLog(
           prompt: q.prompt,
           options: q.options,
           correctEnc: encodeCorrect(q.id, KEY_TO_INDEX[q.correct]),
-          freetextRubric: q.freetextRubric,
           tier: q.tier,
         };
       }
@@ -103,7 +100,6 @@ export function redactWaveChatLog(
         id: q.id,
         type: "free_text",
         prompt: q.prompt,
-        freetextRubric: q.freetextRubric,
         tier: q.tier,
       };
     });
