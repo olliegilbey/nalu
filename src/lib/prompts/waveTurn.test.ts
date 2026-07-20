@@ -188,15 +188,11 @@ describe("renderWaveTurnEnvelope", () => {
     expect(out).toContain("<learner_reply>hello</learner_reply>");
   });
 
-  it("inlines responseSchema when supplied (non-strict-mode path)", () => {
+  it("never inlines a <response_schema> block (schema rides the wire response_format)", () => {
     const out = renderWaveTurnEnvelope({
       learnerInput: "x",
       turnsRemaining: 0,
-      responseSchema: '{"type":"object"}',
     });
-    expect(out).toContain('<response_schema>{"type":"object"}</response_schema>');
-    // No blank line between turns_remaining and response_schema — bytes matter
-    // for cache-prefix stability across turns.
-    expect(out).not.toMatch(/<\/turns_remaining>\n\n<response_schema>/);
+    expect(out).not.toContain("<response_schema>");
   });
 });

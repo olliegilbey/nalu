@@ -88,14 +88,11 @@ describe("renderWaveCloseEnvelope", () => {
     expect(out).toContain("<concepts_for_next_wave>");
   });
 
-  it("inlines responseSchema without a blank line before it", () => {
+  it("never inlines a <response_schema> block (schema rides the wire response_format)", () => {
     const out = renderWaveCloseEnvelope({
       learnerInput: "x",
       conceptsForNextWaveBlock: "<concepts_for_next_wave>...</concepts_for_next_wave>",
-      responseSchema: '{"type":"object"}',
     });
-    expect(out).toContain('<response_schema>{"type":"object"}</response_schema>');
-    // Bytes matter for cache-prefix stability across turns.
-    expect(out).not.toMatch(/<\/concepts_for_next_wave>\n\n<response_schema>/);
+    expect(out).not.toContain("<response_schema>");
   });
 });
