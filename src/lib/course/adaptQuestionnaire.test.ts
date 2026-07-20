@@ -1,6 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { adaptQuestionnaire, adaptOpenQuestion } from "./adaptQuestionnaire";
+import { adaptQuestionnaire, adaptOpenQuestion, deriveMcFeedback } from "./adaptQuestionnaire";
 import type { Question } from "@/lib/prompts/questionnaire";
+
+describe("deriveMcFeedback", () => {
+  it("returns null for ungraded questions regardless of selection", () => {
+    expect(deriveMcFeedback(undefined, 0)).toBeNull();
+    expect(deriveMcFeedback(undefined, 3)).toBeNull();
+  });
+
+  it("returns 'correct' when the selection matches the correct index", () => {
+    expect(deriveMcFeedback(2, 2)).toBe("correct");
+  });
+
+  it("returns 'wrong' when the selection misses the correct index", () => {
+    expect(deriveMcFeedback(2, 0)).toBe("wrong");
+  });
+});
 
 describe("adaptQuestionnaire", () => {
   it("adapts MC questions and derives correctIndex from `correct` letter key", () => {

@@ -16,6 +16,7 @@ import { parseQuestionnaireBuffer } from "@/lib/course/parseQuestionnaireBuffer"
 
 export type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
+import { deriveMcFeedback } from "@/lib/course/adaptQuestionnaire";
 
 /** Read a localStorage key, returning null if storage is unavailable. */
 function safeGetItem(key: string): string | null {
@@ -231,20 +232,23 @@ export function Composer({
 
   const confirmSelection = () => {
     if (!hasQuestions || !current || currentPending == null || locked) return;
-    const correctIdx = current.correctIndex;
-    const isCorrect = correctIdx != null && currentPending === correctIdx;
+    const result = deriveMcFeedback(current.correctIndex, currentPending);
     const fb = [...feedback];
-    fb[step] = isCorrect ? "correct" : "wrong";
+    fb[step] = result;
     setFeedback(fb);
     setLocked(true);
-    if (isCorrect) {
+    if (result === "correct") {
       // Exact XP for a correct MC, computed client-side from the question's
       // tier — the designated `calculateMcXp` instant path. Falls back to the
       // wave tier, then to tier 1, when no per-question tier is present.
       // `onCorrectAnswer` routes through `useCourseXp.addXp`, which plays the
       // correct-answer sound centrally — no direct `playCorrect()` here.
       onCorrectAnswer?.(calculateMcXp(current.tier ?? waveTier ?? 1, true));
-    } else playWrong();
+    } else if (result === "wrong") playWrong();
+    // result === null: ungraded MC (clarify preference questions carry no
+    // answer key). No feedback styling, no sound, no XP — punishing an opinion
+    // with a red "wrong" outline + buzzer was the bug. The answer still locks
+    // and advances below on the same uniform 750ms timer.
 
     const chosen = current.options[currentPending]!;
     // Hold the pulse briefly so it's perceivable, then advance.
