@@ -6,6 +6,7 @@ import { LLM } from "@/lib/config/tuning";
 import { getLlmModel, llmProviderOptions } from "./provider";
 import { toOutputSchema } from "./toCerebrasJsonSchema";
 import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "./cerebrasRateLimit";
+import { recordUsage } from "./runUsageTally";
 import { llmTelemetry } from "./telemetry";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 
@@ -81,6 +82,8 @@ export async function streamChat<T>(
     partialOutputStream: result.partialOutputStream,
     final: async () => {
       const [parsed, text, usage] = await Promise.all([result.output, result.text, result.usage]);
+      // Fold this streaming call's tokens into the per-run cost tally (issue #25).
+      recordUsage(usage);
       return { parsed, text, usage };
     },
   };
