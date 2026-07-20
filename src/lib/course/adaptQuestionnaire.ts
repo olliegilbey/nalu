@@ -15,6 +15,15 @@ export interface ChoiceQuestion {
 
 const KEY_TO_INDEX: Record<McOptionKey, number> = { A: 0, B: 1, C: 2, D: 3 };
 
+/** Three-way MC feedback: "correct" | "wrong", or null for ungraded (no correctIndex) questions. */
+export function deriveMcFeedback(
+  correctIndex: number | undefined,
+  selectedIndex: number,
+): "correct" | "wrong" | null {
+  if (correctIndex === undefined) return null;
+  return selectedIndex === correctIndex ? "correct" : "wrong";
+}
+
 /** Output of {@link adaptQuestionnaire}; `mode` is informational for headers. */
 export interface AdaptedQuestionnaire {
   readonly mode: "mc" | "free-text" | "mixed";
