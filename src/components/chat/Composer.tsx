@@ -137,6 +137,33 @@ export function Composer({
     }
   }, [persistKey, questionsKey, answers, step, drafts, hasQuestions]);
 
+  // Hydration recovery (issue #14): on a cold load of "/", a learner can type
+  // into the topic composer before React hydrates. The textarea is fully
+  // controlled (value=""), so hydration reconciles the raw DOM value back to the
+  // empty parent state and the pre-hydration keystrokes are silently dropped —
+  // the first submit does nothing and only retyping works. React preserves the
+  // user's input on the DOM node across hydration, so at mount we can still read
+  // it from the ref and adopt it into React state via the normal setInputValue
+  // router (which forwards to the parent onChange). We deliberately do NOT try
+  // to replay a pre-hydration Enter-press — preserving the text is the fix; the
+  // learner presses Enter once more.
+  //
+  // Scoped to the free-text / first-message path (!hasQuestions): in
+  // questionnaire mode the buffer-restore effect above owns textarea state, and
+  // adopting a stale DOM value would fight it.
+  useEffect(() => {
+    if (hasQuestions) return;
+    const dom = ref.current?.value ?? "";
+    // Only adopt when the DOM holds pre-hydration text that the controlled value
+    // lost. If React's controlled value already won (non-empty), leave it be.
+    if (dom.length > 0 && value.length === 0) setInputValue(dom);
+    // Mount-only: this reconciles a one-time hydration mismatch. Re-running on
+    // value/setInputValue changes would re-adopt stale DOM text after the user
+    // clears the field, so those deps are intentionally omitted — mirrors the
+    // scoped disable on the buffer-init effect above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
