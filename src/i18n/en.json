@@ -56,5 +56,6 @@
     "baseline": { "indicator": "Baseline check" }
   },
   "moveOn": { "toWave": "Move on to Wave {n}" },
+  "retry": { "message": "That step failed.", "action": "Retry" },
   "xp": { "gained": "10 XP Gained" }
 }
