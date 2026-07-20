@@ -82,6 +82,53 @@ literal key (`op read "op://…"` to resolve it, or copy from 1Password).
   scoping/teaching turns ever 504, raise `maxDuration` on
   `src/app/api/trpc/[trpc]/route.ts`.
 
+## Observability: exporting OTel traces (OTLP)
+
+`src/instrumentation.ts` registers the OTel SDK on every boot, and every LLM
+call carries stage-labelled spans gated by `LLM_TELEMETRY` (timing, tokens,
+model, retries — `recordInputs`/`recordOutputs` pinned false so learner
+content never enters traces). Spans export **nowhere** until an OTLP
+destination is configured; `@vercel/otel` picks it up from the standard
+[OTLP env vars](https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/#otlp-exporter)
+— no code change involved.
+
+Verified locally (2026-07-21) against a stub collector: setting
+`OTEL_EXPORTER_OTLP_ENDPOINT` alone makes the app POST protobuf spans to
+`<endpoint>/v1/traces`, and `OTEL_EXPORTER_OTLP_HEADERS` parses the
+comma-separated `Header=Value` list correctly, including the space in
+`Bearer <token>`.
+
+To turn it on in production, add to Vercel env (Production; Preview too if
+wanted) and redeploy:
+
+| Variable                      | Value                                   |
+| ----------------------------- | --------------------------------------- |
+| `LLM_TELEMETRY`               | `true` — enables the per-LLM-call spans |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | provider base URL (below)               |
+| `OTEL_EXPORTER_OTLP_HEADERS`  | provider auth headers (below)           |
+
+**Axiom** (recommended: one bearer token + dataset header, generous free
+tier). Create a dataset (e.g. `nalu`) and an API token with ingest
+permission at [axiom.co](https://axiom.co), then:
+
+```
+OTEL_EXPORTER_OTLP_ENDPOINT=https://api.axiom.co
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <xaat-token>, X-Axiom-Dataset=nalu
+```
+
+**Grafana Cloud** (alternative). From the Cloud portal's OTLP page, copy the
+zone gateway + a base64 `instanceID:token` pair:
+
+```
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-<zone>.grafana.net/otlp
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(instanceID:token)>
+```
+
+Once live, wave-turn latency is measurable per stage (`functionId`:
+"wave-mid", "clarify", …), step, and tool call — the data needed for the
+`reasoning_effort: high` latency watch item.
+
 ## Post-deploy smoke
 
 1. Open the deployment URL → first load sets an `sb-…-auth-token` cookie.
