@@ -6,6 +6,7 @@ import { buildWaveMidTurnAgent } from "./waveMidTurnAgent";
 // The provider needs env at import time — stub it; these tests never call.
 vi.mock("@/lib/llm/provider", () => ({
   getLlmModel: () => ({ modelId: "stub", specificationVersion: "v3" }),
+  llmProviderOptions: () => ({ "nalu-llm": { reasoningEffort: "high" } }),
 }));
 
 const SEED: WaveSeedInputs = {

@@ -3,7 +3,7 @@ import type { DeepPartial } from "ai";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import type { z } from "zod/v4";
 import { LLM } from "@/lib/config/tuning";
-import { getLlmModel } from "./provider";
+import { getLlmModel, llmProviderOptions } from "./provider";
 import { toOutputSchema } from "./toCerebrasJsonSchema";
 import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "./cerebrasRateLimit";
 import { llmTelemetry } from "./telemetry";
@@ -58,6 +58,8 @@ export async function streamChat<T>(
     messages: [...messages],
     temperature: opts.temperature ?? LLM.defaultTemperature,
     maxRetries: opts.maxRetries ?? LLM.maxRetries,
+    // reasoning_effort on the wire (tuning LLM.reasoningEffort).
+    providerOptions: llmProviderOptions(),
     output: Output.object({ schema: toOutputSchema(opts.responseSchema, { name }), name }),
     // Env-gated OTel span, stage-labelled, learner content redacted.
     experimental_telemetry: llmTelemetry(opts.telemetryFunctionId ?? "streamChat"),
