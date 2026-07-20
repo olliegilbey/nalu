@@ -209,3 +209,10 @@ Reviewed with `coderabbit review --agent --base main`. Fixed on the branch: wave
 - **`context_messages` kind/role DB constraint** doesn't pin `assistant_tool_call`→assistant / `tool_result`→tool pairings. Schema hardening + migration.
 - **`probe-model.ts` trial semantics**: valid-rate counts valid tool calls, not trials-with-required-questionnaire-call; missing calls should count as failures. Fix before the next probe campaign.
 - **`streamWaveTurn.live.test.ts` uses `console.log`** in beforeAll (live-gated so the commit gate misses it); switch to `process.stderr.write`.
+
+## Session backlog (2026-07-20)
+
+- **Migrate TODO.md → public GitHub Issues.** Decision pending Ollie's yes. Recommendation: public issues (this file is already committed to a public repo, so a private tracker protects nothing extra); PRs auto-close via "Fixes #N", subagents read them with `gh issue view`, and a groomed issue list is good public signal. Add a private GitHub Project later only if a private prioritization layer earns its keep.
+- **Ungraded MC: confirmed option keeps the green selection border** (PR #40 reviewer note). It's the pre-existing pending/selection indicator, not grading feedback, but green-on-confirm can read as "correct". Decide: accept, or freeze confirmed ungraded selections in a neutral color (small Composer-only change).
+- **Wire an OTLP endpoint + set `LLM_TELEMETRY=true` in Vercel env.** Phase 5 spans currently export nowhere (`src/instrumentation.ts` registers, no destination). Low-friction candidates: Vercel OTel drain → Axiom or Grafana Cloud. Then wave-turn latency becomes measurable per stage/step/tool-call.
+- **Watch `reasoning_effort: high` latency** (PR #39, live since 2026-07-20). High effort spends reasoning tokens before the first visible byte; partly offset by fewer schema-retry round-trips. If wave mid-turn latency degrades, drop `LLM.reasoningEffort` to "medium" or split per-stage (high for framework/baseline/close, medium for mid-turns) - one-line tuning change either way.
