@@ -275,6 +275,34 @@ export const LLM = {
 } as const;
 
 /**
+ * Cerebras token pricing, in USD per MILLION tokens. Consumed only by
+ * `src/lib/llm/usageCost.ts` to turn the provider-reported `usage` object
+ * into a per-run "≈ $X" readout. Never influences scoring, XP, or the LLM
+ * (it never sees cost) — it is a pure observability tunable.
+ *
+ * Source: Cerebras GPT-OSS-120B inference pricing — $0.35 / M input,
+ * $0.75 / M output. Figures from GitHub issue #25 (May 2026) and
+ * re-verified 2026-07-20 via web search across multiple pricing trackers
+ * (pricepertoken.com, futureagi.com) all reporting $0.35 in / $0.75 out;
+ * the official cerebras.ai/pricing table was not machine-readable at fetch
+ * time, so the issue's rates stand as the cited baseline for this date.
+ *
+ * ⚠️ Caching is NOT a discount on Cerebras: cached input tokens bill at the
+ * FULL input rate. `usage.cachedInputTokens` /
+ * `inputTokenDetails.cacheReadTokens` are surfaced for DISPLAY only and MUST
+ * NOT reduce the computed cost — see the explicit cached-not-discounted test
+ * in `src/lib/llm/usageCost.test.ts`.
+ *
+ * Reasoning tokens bill as OUTPUT. The AI SDK already folds reasoning into
+ * `usage.outputTokens` (`outputTokenDetails.reasoningTokens` is a subset),
+ * so charging `outputTokens × outputRate` captures reasoning automatically.
+ */
+export const CEREBRAS_PRICING = {
+  inputUsdPerMillionTokens: 0.35,
+  outputUsdPerMillionTokens: 0.75,
+} as const;
+
+/**
  * Agent lookup-tool caps (agent-loop plan Task 3): every lookup returns a
  * bounded projection so a tool result can never blow the rendered context.
  * - `dueConceptsLimit`: max concepts per getDueConcepts call (soonest first).

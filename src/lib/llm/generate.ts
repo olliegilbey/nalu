@@ -6,6 +6,7 @@ import { getLlmModel, llmProviderOptions } from "./provider";
 import { toOutputSchema } from "./toCerebrasJsonSchema";
 import { llmTelemetry } from "./telemetry";
 import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "./cerebrasRateLimit";
+import { recordUsage } from "./runUsageTally";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 
 /**
@@ -104,6 +105,8 @@ export async function generateChat<T>(
   if (opts.responseSchema === undefined) {
     const result = await generateText(common);
     recordCerebrasRateLimitHeaders(result.response.headers);
+    // Fold this call's tokens into the per-run cost tally (issue #25).
+    recordUsage(result.usage);
     return { text: result.text, usage: result.usage };
   }
 
@@ -120,6 +123,8 @@ export async function generateChat<T>(
       }),
     });
     recordCerebrasRateLimitHeaders(result.response.headers);
+    // Fold this call's tokens into the per-run cost tally (issue #25).
+    recordUsage(result.usage);
     return { text: result.text, parsed: result.output, usage: result.usage };
   } catch (err) {
     // Validation failure still means the HTTP call succeeded — record the

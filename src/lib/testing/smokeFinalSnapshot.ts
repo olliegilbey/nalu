@@ -21,6 +21,7 @@ import type { drizzle } from "drizzle-orm/postgres-js";
 import { contextMessages, scopingPasses } from "@/db/schema";
 import type * as schema from "@/db/schema";
 import { renderContext } from "@/lib/llm/renderContext";
+import { getRunUsageTally, formatRunUsageTally } from "@/lib/llm/runUsageTally";
 import type { LlmMessage } from "@/lib/types/llm";
 import { formatPromptBlock, isLive } from "@/lib/turn/formatTurn";
 
@@ -122,5 +123,9 @@ export async function emitSmokeFinalSnapshot(args: SmokeFinalSnapshotArgs): Prom
   );
   process.stderr.write(`${bar}\n`);
   process.stderr.write(formatPromptBlock(llmMessages));
+  process.stderr.write(`${bar}\n`);
+  // Cumulative token + cost tally for the run so far (issue #25). Emitted
+  // per-topic block; the LAST block carries the whole-run grand total.
+  process.stderr.write(`${formatRunUsageTally(getRunUsageTally())}\n`);
   process.stderr.write(`${bar}\n\n`);
 }
