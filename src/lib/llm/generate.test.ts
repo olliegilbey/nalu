@@ -45,6 +45,18 @@ describe("generateChat", () => {
     expect(model.doGenerateCalls[0]?.temperature).toBe(LLM.defaultTemperature);
   });
 
+  it("sends reasoningEffort under the provider-name key so it reaches the wire", async () => {
+    const model = mockModel("hello");
+
+    await generateChat([{ role: "user", content: "hi" }], { model });
+
+    // The openai-compatible adapter reads options under its own provider
+    // name ("nalu-llm") and maps reasoningEffort -> reasoning_effort.
+    expect(model.doGenerateCalls[0]?.providerOptions).toEqual({
+      "nalu-llm": { reasoningEffort: LLM.reasoningEffort },
+    });
+  });
+
   it("sends the schema to the model as a strict json response_format", async () => {
     const model = mockModel('{"x":"hi"}');
 

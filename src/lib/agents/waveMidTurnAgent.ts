@@ -1,6 +1,6 @@
 import { ToolLoopAgent, stepCountIs } from "ai";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
-import { getLlmModel } from "@/lib/llm/provider";
+import { getLlmModel, llmProviderOptions } from "@/lib/llm/provider";
 import { cerebrasToolLoopPrepareStep } from "@/lib/llm/cerebrasToolLoopPrepareStep";
 import { recordCerebrasRateLimitHeaders } from "@/lib/llm/cerebrasRateLimit";
 import { llmTelemetry } from "@/lib/llm/telemetry";
@@ -81,6 +81,8 @@ export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTu
     stopWhen: stepCountIs(LLM.maxToolSteps),
     temperature: LLM.defaultTemperature,
     maxRetries: LLM.maxRetries,
+    // reasoning_effort on the wire (tuning LLM.reasoningEffort).
+    providerOptions: llmProviderOptions(),
     prepareStep: cerebrasToolLoopPrepareStep,
     // Env-gated OTel span, stage-labelled, learner content redacted
     // (src/lib/llm/telemetry.ts). One span per turn, child spans per step.

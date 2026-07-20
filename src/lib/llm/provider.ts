@@ -3,6 +3,17 @@ import { wrapLanguageModel } from "ai";
 import { devToolsMiddleware } from "@ai-sdk/devtools";
 import type { LanguageModelV3, LanguageModelV3Middleware } from "@ai-sdk/provider";
 import { getEnv } from "@/lib/config";
+import { LLM } from "@/lib/config/tuning";
+
+/**
+ * Per-call `providerOptions` for every LLM call: sets `reasoning_effort` on
+ * the wire (tuning `LLM.reasoningEffort`). The outer key MUST match the
+ * provider `name` below — the openai-compatible adapter looks up options
+ * under its own name and merges unknown keys into the request body.
+ */
+export function llmProviderOptions(): Record<string, Record<string, string>> {
+  return { "nalu-llm": { reasoningEffort: LLM.reasoningEffort } };
+}
 
 /**
  * Single swap-point for the underlying LLM provider.
