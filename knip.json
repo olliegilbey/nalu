@@ -16,7 +16,8 @@
     "scripts/inspect-wave.ts",
     "scripts/probe-model.ts",
     ".claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts",
-    ".claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts"
+    ".claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts",
+    ".claude/skills/nalu-visitor-forensics/inspect-visitor.ts"
   ],
   "ignore": [],
   "ignoreExportsUsedInFile": true,
