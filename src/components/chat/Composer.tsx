@@ -366,6 +366,12 @@ export function Composer({
                     const isPending = currentPending === i;
                     const fb = feedback[step];
                     const isLockedAnswer = answers[step] != null;
+                    // An ungraded (no answer key) selection that has been
+                    // confirmed — either mid-pulse (`locked`, answer not yet
+                    // recorded) or on revisit (`isLockedAnswer`). Frozen in
+                    // neutral crystal: the green selection border would read
+                    // as "correct" once confirmed (PR #40 reviewer note).
+                    const ungradedConfirmed = isPending && fb == null && (isLockedAnswer || locked);
                     const pulseClass =
                       isPending && fb === "correct"
                         ? " pulse-correct border-spring-green text-foreground"
@@ -381,7 +387,9 @@ export function Composer({
                           "group flex items-center gap-2.5 text-left rounded-xl px-3 py-2.5 text-[14px] leading-snug transition-all active:scale-[0.99] border disabled:cursor-not-allowed " +
                           (isLockedAnswer && !isPending ? "opacity-40 " : "") +
                           (isPending
-                            ? "bg-sumi-3 border-spring-green text-foreground"
+                            ? ungradedConfirmed
+                              ? "bg-sumi-3 border-crystal text-foreground"
+                              : "bg-sumi-3 border-spring-green text-foreground"
                             : "bg-sumi-2 hover:bg-sumi-3 border-sumi-4 hover:border-crystal/50 text-foreground/90") +
                           pulseClass
                         }
@@ -392,7 +400,9 @@ export function Composer({
                             (isPending
                               ? fb === "wrong"
                                 ? "text-wave-red"
-                                : "text-spring-green"
+                                : ungradedConfirmed
+                                  ? "text-crystal"
+                                  : "text-spring-green"
                               : "text-fuji-gray group-hover:text-crystal")
                           }
                         >
