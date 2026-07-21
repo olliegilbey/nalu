@@ -37,6 +37,8 @@ yarn-error.log*
 # Claude Code local overrides (personal, not committed)
 CLAUDE.local.md
 .claude/scheduled_tasks.lock
+# ephemeral subagent worktrees created during parallel agent sessions
+.claude/worktrees/
 
 # vercel
 .vercel
