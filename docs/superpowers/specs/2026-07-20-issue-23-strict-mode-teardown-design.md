@@ -41,7 +41,7 @@ entries are `honorsStrictMode: true`, so the gate is dead weight.
 - Prompt-builder signature changes ripple into their callers and tests —
   update snapshots/fixtures; do not leave dead optional params.
 - Cross-check TODO.md's "inline-schema fallback" note: the fallback being
-  removed here is the *capability-gated* inline path; the retry-directive
+  removed here is the _capability-gated_ inline path; the retry-directive
   fallback (kept) is separate. Don't touch the mid-turn mega-schema rollback
   debt (separate TODO item).
 - Conflicts with #15 (merge framework+baseline) in two files — this PR merges

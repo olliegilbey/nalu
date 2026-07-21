@@ -16,7 +16,7 @@ product call). **Nothing here is implemented yet — Ollie picks a direction.**
   (`:118-148`) sums only `kind === "free-text"` gradedSignals, deliberately
   skipping `mc-index` to avoid double-counting the confirm-time awards.
 
-Server signals carry no marker of *how* the answer arrived
+Server signals carry no marker of _how_ the answer arrived
 (`executeWaveMid.grade.ts:16-22`), so the client cannot reconcile the two
 streams. That gap produces both bugs:
 
@@ -39,16 +39,16 @@ parity-locked to kanagawa-whispers ("splitting would diverge from upstream")
 Remove confirm-time XP entirely; count **all** gradedSignals (mc-index +
 free-text) at turn-result time.
 
-- Kills #18 and #21 in one move with *less* code: `onCorrectAnswer` prop, the
+- Kills #18 and #21 in one move with _less_ code: `onCorrectAnswer` prop, the
   confirm-time `calculateMcXp` call, and the skip-mc-index filters all
   disappear. No new markers, no reconciliation, one counting authority —
   matches the core design principle (deterministic server scoring; LLM/client
   never influence XP).
-- Composer keeps instant *feedback* (green pulse, sounds) — only the badge
+- Composer keeps instant _feedback_ (green pulse, sounds) — only the badge
   increment moves to submit-response time.
 - Cost: badge XP lands ~1-3s later (at turn submit) instead of instantly on
   confirm. For mid-wave MCs the learner is mid-questionnaire anyway; the
-  deferred tick is arguably *more* honest (server-graded).
+  deferred tick is arguably _more_ honest (server-graded).
 - Also shrinks the #19 surface: scoring exits the Composer entirely
   (a Nalu delta layer, exactly what the parity-lock note says layered deltas
   are for).
@@ -57,7 +57,7 @@ free-text) at turn-result time.
 
 Keep instant awards; add (i) awarded-questionId set persisted in the
 localStorage buffer (fixes #21), and (ii) plumb that set to `useWaveState` so
-mc-index signals for *unawarded* questionIds get counted (fixes #18).
+mc-index signals for _unawarded_ questionIds get counted (fixes #18).
 
 - Preserves instant-XP UX exactly.
 - Cost: new cross-component plumbing (Composer buffer ↔ wave hook), buffer

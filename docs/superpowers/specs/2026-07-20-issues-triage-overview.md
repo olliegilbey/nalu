@@ -5,18 +5,18 @@ verification agents, file:line evidence posted as a comment on each issue).
 
 ## Verdicts
 
-| Issue | Title (short) | Verdict | Priority | Action |
-|---|---|---|---|---|
-| #14 | Topic typed twice (hydration loss) | Not fixed, hypothesis confirmed | **P1** | Fix PR |
-| #22 | Free-text answers award no XP | Not fixed, still un-instrumented | **P1** | Instrumentation PR |
-| #16 | No retry path for failed scoping step | Not fixed | **P1** | Fix PR (Retry affordance) |
-| #23 | Strict-mode gating teardown | Not fixed, unblocked since 2026-05-27 | P2 | Teardown PR |
-| #25 | Cerebras token + cost tally | Not fixed (greenfield) | P2 | Feature PR |
-| #15 | Merge framework+baseline LLM calls | Not fixed | P2 | Fix PR (after #23) |
-| #20 | Split useWaveState (316 lines) | Not fixed (lint rule since removed) | P3 | Refactor PR |
-| #18 | XP undercount via typed-MC escape | Not fixed | P3 | Decision doc |
-| #21 | Double-award on failed final-turn retry | Not fixed | P3 | Decision doc |
-| #19 | Extract Composer logic to lib | **Partial** (eslint half done via `eb70a42`; extraction blocked by parity-lock note) | P3 | Decision doc |
+| Issue | Title (short)                           | Verdict                                                                              | Priority | Action                    |
+| ----- | --------------------------------------- | ------------------------------------------------------------------------------------ | -------- | ------------------------- |
+| #14   | Topic typed twice (hydration loss)      | Not fixed, hypothesis confirmed                                                      | **P1**   | Fix PR                    |
+| #22   | Free-text answers award no XP           | Not fixed, still un-instrumented                                                     | **P1**   | Instrumentation PR        |
+| #16   | No retry path for failed scoping step   | Not fixed                                                                            | **P1**   | Fix PR (Retry affordance) |
+| #23   | Strict-mode gating teardown             | Not fixed, unblocked since 2026-05-27                                                | P2       | Teardown PR               |
+| #25   | Cerebras token + cost tally             | Not fixed (greenfield)                                                               | P2       | Feature PR                |
+| #15   | Merge framework+baseline LLM calls      | Not fixed                                                                            | P2       | Fix PR (after #23)        |
+| #20   | Split useWaveState (316 lines)          | Not fixed (lint rule since removed)                                                  | P3       | Refactor PR               |
+| #18   | XP undercount via typed-MC escape       | Not fixed                                                                            | P3       | Decision doc              |
+| #21   | Double-award on failed final-turn retry | Not fixed                                                                            | P3       | Decision doc              |
+| #19   | Extract Composer logic to lib           | **Partial** (eslint half done via `eb70a42`; extraction blocked by parity-lock note) | P3       | Decision doc              |
 
 **Closed: none.** No issue was fully completed by the 18 PRs merged since
 filing; #19 is the only partial.

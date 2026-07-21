@@ -48,4 +48,5 @@ easier to test, whichever option is chosen.
 ## Files
 
 `src/hooks/useWaveState.ts`, new `src/lib/course/deriveActiveQuestionnaire.ts`
-+ `deriveTurnResultEffects.ts` (names negotiable, boring and explicit) + tests.
+
+- `deriveTurnResultEffects.ts` (names negotiable, boring and explicit) + tests.
