@@ -9,6 +9,9 @@ import {
   renderConceptInjection,
 } from "@/lib/spaced-repetition/scheduler";
 import { getConceptsByCourse } from "@/db/queries/concepts";
+import { getWaveChatLog } from "@/db/queries/waves";
+import { calculateXP } from "@/lib/scoring/xp";
+import { formatGradingDebugLine, isGradingDebugEnabled } from "@/lib/observability/gradingDebug";
 import type { WaveOutputContract } from "@/lib/types/context";
 import type { FrameworkJsonb } from "@/lib/types/jsonb";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
@@ -117,6 +120,37 @@ export async function executeWaveClose(
       `gradings=${p.gradings.length} updates=${p.conceptUpdates.length} planned=${p.nextUnitBlueprint.plannedConcepts.length}`,
   });
 
+  // Issue #22 diagnosis (gated by LLM_DEBUG_GRADINGS — true no-op when off).
+  // Fires AFTER Zod parse succeeds, BEFORE persistence, so it shows exactly
+  // what the model graded and the XP each grading maps to. Distinguishes
+  // hypothesis (1) — the LLM omitted a free-text grading entirely (absent from
+  // the lines below) — from (2) — it graded the answer q0/q1, which
+  // `calculateXP` maps to 0 by design (`xp≈0`). `conceptTier` here is the
+  // LLM-emitted wire value (an estimate); the 0-vs-nonzero XP split is
+  // tier-independent (q0/q1 multiplier is 0 for every tier), so it is faithful
+  // for the diagnosis. Content is gated because free-text excerpts are learner
+  // answers and must never reach prod logs.
+  if (isGradingDebugEnabled()) {
+    const freeTextAnswers = await buildCloseFreeTextMap(
+      ctx.wave.id,
+      openQuestionnaire?.questionnaireId,
+    );
+    for (const g of parsed.gradings) {
+      process.stderr.write(
+        `${formatGradingDebugLine({
+          context: "wave-close",
+          questionId: g.questionId,
+          kind: g.kind,
+          verdict: g.kind === "free-text" ? g.verdict : undefined,
+          qualityScore: g.kind === "free-text" ? g.qualityScore : undefined,
+          computedXp:
+            g.kind === "free-text" ? calculateXP(g.conceptTier, g.qualityScore) : undefined,
+          answerExcerpt: g.kind === "free-text" ? freeTextAnswers.get(g.questionId) : undefined,
+        })}\n`,
+      );
+    }
+  }
+
   // Delegate to the transactional persistence body. Throws on any rollback;
   // executeTurn's user/assistant rows have already been persisted by the time
   // we reach persistence (they're outside this tx — the harness commits them
@@ -133,4 +167,27 @@ export async function executeWaveClose(
     tierAdvancedTo: persisted.tierAdvancedTo,
     gradedSignals: persisted.gradedSignals,
   };
+}
+
+/**
+ * Issue #22 diagnosis helper: raw question id → learner's free-text answer for
+ * the open questionnaire, read from the LIVE `chat_log` (the close-turn answer
+ * committed before this call, so it is not in `ctx.wave.chatLog`'s snapshot —
+ * same reasoning as `buildCloseMcChoiceMap`). Only called behind
+ * `isGradingDebugEnabled()`, so this DB read never happens with the flag off.
+ */
+async function buildCloseFreeTextMap(
+  waveId: string,
+  openQuestionnaireId: string | undefined,
+): Promise<ReadonlyMap<string, string>> {
+  if (openQuestionnaireId === undefined) return new Map();
+  const liveLog = await getWaveChatLog(waveId);
+  const entries = liveLog.flatMap((e) =>
+    e.role === "user" && e.kind === "answers" && e.questionnaireId === openQuestionnaireId
+      ? e.responses
+          .filter((r): r is typeof r & { readonly freetext: string } => r.freetext !== undefined)
+          .map((r) => [r.questionId, r.freetext] as const)
+      : [],
+  );
+  return new Map(entries);
 }

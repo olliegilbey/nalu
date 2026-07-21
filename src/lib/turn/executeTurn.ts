@@ -13,6 +13,7 @@ import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { JSON_PARSE_RETRY_DIRECTIVE } from "@/lib/prompts/turn";
 import { SCOPING } from "@/lib/config/tuning";
+import { isGradingDebugEnabled, truncateForDebug } from "@/lib/observability/gradingDebug";
 import type { LlmUsage } from "@/lib/types/llm";
 import type { SeedInputs } from "@/lib/types/context";
 import type { z } from "zod/v4";
@@ -224,6 +225,20 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       const dt = Date.now() - t0;
       const raw = err.text ?? "";
       const gate = toValidationGateFailure(raw, params.responseSchema);
+      // Issue #22 Zod-drop visibility (gated by LLM_DEBUG_GRADINGS — no-op when
+      // off). On a validation failure the raw candidate carrying the failing
+      // `gradings` fragment is persisted as a `failed_assistant_response` row
+      // but is never surfaced to stderr outside live-smoke mode. Under the flag,
+      // dump a truncated view so a malformed / Zod-dropped grading shape (issue
+      // #22 hypothesis 1) is observable in dev without a DB dig. Stage-agnostic
+      // by design: this is a generic candidate dump, not per-stage logic.
+      if (isGradingDebugEnabled()) {
+        process.stderr.write(
+          `[grading-debug] parse-failure label=${label} reason=${gate.reason} candidate=${JSON.stringify(
+            truncateForDebug(raw, 600),
+          )}\n`,
+        );
+      }
       // Failure observability: flush the prompt + response trail (verbose
       // already printed the prompt; quiet retroactively flushes both).
       if (live) {
