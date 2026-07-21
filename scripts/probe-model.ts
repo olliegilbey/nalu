@@ -9,7 +9,7 @@
  *
  * Used when picking the floor model — Cerebras free-tier availability and
  * deprecation cliffs shift; this script verifies a candidate before we
- * commit to it in `.env.local` / `modelCapabilities.ts`.
+ * commit to it in `.env.local`.
  */
 
 /* eslint-disable no-console -- CLI script: console is the output channel. */
@@ -306,7 +306,7 @@ async function main(): Promise<void> {
   // strict decoding. This is the deciding capability — production needs it
   // for prompt-LLM contract enforcement without inline schemas.
   // generateChat sends response_format whenever a schema is supplied (the
-  // old honorsStrictMode gate is gone), so supplying responseSchema alone
+  // old per-model strict-mode gate is gone), so supplying responseSchema alone
   // exercises the wire path against env LLM_MODEL.
   const strictStarted = Date.now();
   try {

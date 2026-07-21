@@ -52,7 +52,6 @@ describe("renderScopingCloseStage", () => {
   it("emits an XML envelope with the stage label and learner payload", () => {
     const out = renderScopingCloseStage({
       learnerInput: '{"items":[]}',
-      responseSchema: undefined,
     });
     expect(out).toContain("<stage>close scoping</stage>");
     expect(out).toContain("<learner_input>");

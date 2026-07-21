@@ -113,10 +113,11 @@ describe("generateChat", () => {
   });
 
   it("sends response_format regardless of model capability (gate removed)", async () => {
-    // Pre-Output behavior gated response_format on honorsStrictMode; the gate
-    // is gone — Cerebras treats response_format as soft guidance, so sending
-    // it universally is harmless and keeps one code path.
-    vi.stubEnv("LLM_MODEL", "llama3.1-8b"); // a non-honouring model name
+    // Pre-Output behavior gated response_format on a per-model strict-mode
+    // capability flag; that gate is gone — Cerebras treats response_format as
+    // soft guidance, so sending it universally is harmless and keeps one code
+    // path.
+    vi.stubEnv("LLM_MODEL", "some-model"); // model name is now irrelevant to the gate
     const model = mockModel('{"x":"hi"}');
 
     await generateChat([{ role: "user", content: "hi" }], {

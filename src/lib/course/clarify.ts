@@ -5,7 +5,6 @@ import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { clarifySchema, type ClarifyTurn } from "@/lib/prompts/clarify";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
-import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { notifyEvent } from "@/lib/notify/ntfy";
 import type { ClarificationJsonb } from "@/lib/types/jsonb";
 
@@ -61,14 +60,13 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
   }
 
   const pass = await ensureOpenScopingPass(course.id);
-  // Build schema string regardless — retry directive always needs it (the
-  // model failed and must see the contract again even on strong models).
+  // Schema string retained only for the retry directive — a failed model must
+  // see the contract again inline (`buildRetryDirective`). The wire-side
+  // `response_format` carries the schema on every normal turn.
   // `sanitiseUserInput` is intentionally NOT applied here: the
   // `<user_message>` wrapper was a teaching-layer convention and the new
   // scoping system prompt doesn't reference it. `renderStageEnvelope`
   // already XML-escapes `learnerInput`, so passing the raw topic is safe.
-  const modelName = process.env.LLM_MODEL ?? "(default)";
-  const capabilities = getModelCapabilities(modelName);
   const schemaJson = toSchemaJsonString(clarifySchema, { name: "clarify" });
   const { parsed } = await executeTurn({
     parent: { kind: "scoping", id: pass.id },
@@ -76,15 +74,9 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
     userMessageContent: renderStageEnvelope({
       stage: "clarify",
       learnerInput: params.topic,
-      // Inline schema only for models that ignore wire response_format.
-      // Strong models read the schema from the wire; sending it inline too
-      // wastes ~3-5 KB per turn without adding reliability.
-      responseSchema: capabilities.honorsStrictMode ? undefined : schemaJson,
     }),
     responseSchema: clarifySchema,
     responseSchemaName: "clarify",
-    // Schema always provided to retry directive — a failed model must see the
-    // contract again regardless of whether it normally honours strict-mode.
     retryDirective: (err) => buildRetryDirective(err, schemaJson),
     label: "clarify",
     successSummary: (p) => `questions=${p.questions.questions.length}`,

@@ -51,13 +51,11 @@ export type ScopingCloseTurn = z.infer<ReturnType<typeof makeScopingCloseSchema>
  * Stage envelope for the close-scoping turn. The learner-input payload carries
  * the per-question answers and mechanical MC results so the model can read
  * what was submitted without re-asking. Cache-prefix stability is preserved —
- * only the stage label, the escaped input, and the schema JSON change per turn.
+ * only the stage label and the escaped input change per turn.
  */
 export interface RenderScopingCloseStageParams {
   /** Already-serialised JSON of `{ items: [...] }` for the close turn. */
   readonly learnerInput: string;
-  /** Optional inline JSON-schema string for non-strict-mode models. */
-  readonly responseSchema?: string;
 }
 
 /** Render the user-role envelope for the close-scoping turn. */
@@ -65,6 +63,5 @@ export function renderScopingCloseStage(params: RenderScopingCloseStageParams): 
   return renderStageEnvelope({
     stage: "close scoping",
     learnerInput: params.learnerInput,
-    responseSchema: params.responseSchema,
   });
 }
