@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
+import { isGradingDebugEnabled, summariseStrippedGradings } from "@/lib/observability/gradingDebug";
 
 const VERDICT_QUALITY_BANDS: Readonly<
   Record<"correct" | "partial" | "incorrect", readonly [number, number]>
@@ -131,7 +132,20 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
         // (live-smoke wave-close flake, 2026-07-14), and no XP can flow from
         // a turn with no answered questions. Wire schema is unaffected —
         // `z.toJSONSchema` serialises the output side (the array).
-        (v) => (idSet.size === 0 ? [] : v),
+        (v) => {
+          if (idSet.size !== 0) return v;
+          // Issue #22 masking-path visibility (commit c3ed970). When no
+          // questionnaire was answered this turn (empty idSet), every grading
+          // is stripped. If the model DID grade a free-text answer here, this
+          // is exactly where it silently vanishes before any XP can flow — so
+          // log what is being discarded. Gated behind LLM_DEBUG_GRADINGS and
+          // best-effort (ids/kinds are LLM-emitted, not learner text); flag-off
+          // is a true no-op that preserves the original strip behaviour.
+          if (isGradingDebugEnabled() && Array.isArray(v) && v.length > 0) {
+            process.stderr.write(`${summariseStrippedGradings("close-turn", v)}\n`);
+          }
+          return [];
+        },
         z
           .array(closeGradingItemSchema)
           .describe(
