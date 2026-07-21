@@ -388,7 +388,7 @@ export function Composer({
                           (isLockedAnswer && !isPending ? "opacity-40 " : "") +
                           (isPending
                             ? ungradedConfirmed
-                              ? "bg-sumi-3 border-crystal/60 text-foreground"
+                              ? "bg-sumi-3 border-crystal text-foreground"
                               : "bg-sumi-3 border-spring-green text-foreground"
                             : "bg-sumi-2 hover:bg-sumi-3 border-sumi-4 hover:border-crystal/50 text-foreground/90") +
                           pulseClass
