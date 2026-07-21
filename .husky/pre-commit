@@ -13,6 +13,13 @@
 #
 # Skip only in emergency: git commit --no-verify
 
+# husky v9 invokes hooks with 'sh -e'; on Linux that's dash, which misparses
+# bashisms in this script ('&>' guards, '(( ))' timing arithmetic). Re-exec
+# under bash so the script always runs with the interpreter it was written for.
+if [ -z "$BASH_VERSION" ]; then
+  exec bash "$0" "$@"
+fi
+
 set -e
 
 # Colors
