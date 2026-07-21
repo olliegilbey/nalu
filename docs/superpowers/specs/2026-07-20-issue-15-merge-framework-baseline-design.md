@@ -17,6 +17,7 @@ bigger latency win than when filed.
 ## Design
 
 **Server**
+
 - New merged step `src/lib/course/generateFrameworkAndBaseline.ts` (or merge
   into `generateFramework.ts` if the file stays ~200 lines): one `generateChat`
   call whose structured response returns `{ framework, baseline }`.
@@ -38,6 +39,7 @@ bigger latency win than when filed.
 - Old `generateBaseline.ts` step: delete (knip will police).
 
 **Client**
+
 - `useScopingState.ts`: delete the auto-dispatch effect (`:142-169`) and the
   `baselineDispatchedFor` ref + the `generateBaseline` mutation. `submitClarify`
   now triggers the merged mutation; baseline arrives on its result /
@@ -49,8 +51,9 @@ bigger latency win than when filed.
 
 **Degradation risk (name it in the PR):** one merged response asks more of the
 model per call. Mitigations already in place: `executeTurn` validate-and-retry
-+ `buildRetryDirective`. If smoke shows persistent validation failures on the
-merged schema, stop and report on the issue rather than forcing it.
+
+- `buildRetryDirective`. If smoke shows persistent validation failures on the
+  merged schema, stop and report on the issue rather than forcing it.
 
 ## Verification
 
