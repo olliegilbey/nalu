@@ -236,7 +236,7 @@ describe("course.clarify", () => {
       await seedUser(db);
       vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validClarifyText()));
 
-      const caller = appRouter.createCaller({ userId: USER });
+      const caller = appRouter.createCaller({ userId: USER, llmProvider: undefined });
       const result = await caller.course.clarify({ topic: "Rust" });
 
       // Router return value — clarification is { userMessage, questions: { questions: [...] } }.
@@ -278,7 +278,7 @@ describe("course.clarify", () => {
         .mockRejectedValueOnce(noObjectError("<response>thinking...</response>"))
         .mockResolvedValueOnce(llmSuccess(validClarifyText()));
 
-      const caller = appRouter.createCaller({ userId: USER });
+      const caller = appRouter.createCaller({ userId: USER, llmProvider: undefined });
       const result = await caller.course.clarify({ topic: "Rust" });
 
       expect(result.clarification.questions.questions).toHaveLength(2);
@@ -312,7 +312,7 @@ describe("course.clarify", () => {
         noObjectError("<response>still no questions</response>"),
       );
 
-      const caller = appRouter.createCaller({ userId: USER });
+      const caller = appRouter.createCaller({ userId: USER, llmProvider: undefined });
       await expect(caller.course.clarify({ topic: "Rust" })).rejects.toThrow();
 
       // DB: user + [failed, directive] + [failed, directive] + failed = 6 rows.
@@ -343,7 +343,7 @@ describe("course.clarify", () => {
   // -------------------------------------------------------------------------
   it("UNAUTHORIZED: rejects with code UNAUTHORIZED when userId is undefined", async () => {
     // Middleware fires before any DB call — no withTestDb body needed.
-    const caller = appRouter.createCaller({ userId: undefined });
+    const caller = appRouter.createCaller({ userId: undefined, llmProvider: undefined });
     await expect(caller.course.clarify({ topic: "Rust" })).rejects.toMatchObject({
       code: "UNAUTHORIZED",
     });
@@ -364,7 +364,7 @@ describe("course.generateFramework", () => {
 
       // Step 1: clarify to populate the course.
       vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validClarifyText()));
-      const caller = appRouter.createCaller({ userId: USER });
+      const caller = appRouter.createCaller({ userId: USER, llmProvider: undefined });
       const clarifyResult = await caller.course.clarify({ topic: "Rust" });
 
       // Step 2: mock framework LLM call.
@@ -400,7 +400,7 @@ describe("course.generateFramework", () => {
 
       // Run clarify to create the course.
       vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validClarifyText()));
-      const caller = appRouter.createCaller({ userId: USER });
+      const caller = appRouter.createCaller({ userId: USER, llmProvider: undefined });
       const clarifyResult = await caller.course.clarify({ topic: "Rust" });
 
       // Pre-populate the framework directly — simulates a prior successful call.
@@ -459,7 +459,7 @@ describe("course.generateFramework", () => {
 
       // Create a course without running clarify.
       const course = await createCourse({ userId: USER, topic: "Rust" });
-      const caller = appRouter.createCaller({ userId: USER });
+      const caller = appRouter.createCaller({ userId: USER, llmProvider: undefined });
 
       await expect(
         caller.course.generateFramework({
@@ -484,7 +484,7 @@ describe("course.generateFramework", () => {
 
       // UserA creates and clarifies a course.
       vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validClarifyText()));
-      const callerA = appRouter.createCaller({ userId: USER });
+      const callerA = appRouter.createCaller({ userId: USER, llmProvider: undefined });
       const clarifyResult = await callerA.course.clarify({ topic: "Rust" });
 
       // UserB attempts to run generateFramework on UserA's course.
@@ -493,7 +493,7 @@ describe("course.generateFramework", () => {
       // client gets a semantic 404, not a 500. Ownership remains info-leak
       // safe — same response shape whether the id is unknown or owned by
       // another user.
-      const callerB = appRouter.createCaller({ userId: OTHER_USER });
+      const callerB = appRouter.createCaller({ userId: OTHER_USER, llmProvider: undefined });
       await expect(
         callerB.course.generateFramework({
           courseId: clarifyResult.courseId,
@@ -577,7 +577,7 @@ describe("course.generateBaseline", () => {
 
       vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validBaselineText()));
 
-      const caller = appRouter.createCaller({ userId: USER });
+      const caller = appRouter.createCaller({ userId: USER, llmProvider: undefined });
       const result = await caller.course.generateBaseline({ courseId });
 
       // Router return value — baseline is BaselineTurn: { userMessage, questions: { questions: [...] } }.
@@ -621,7 +621,7 @@ describe("course.generateBaseline", () => {
 
       vi.mocked(generateChat).mockReset();
 
-      const caller = appRouter.createCaller({ userId: USER });
+      const caller = appRouter.createCaller({ userId: USER, llmProvider: undefined });
       const result = await caller.course.generateBaseline({ courseId });
 
       expect(result.nextStage).toBe("answering");
@@ -650,7 +650,7 @@ describe("course.generateBaseline", () => {
         },
       });
 
-      const caller = appRouter.createCaller({ userId: USER });
+      const caller = appRouter.createCaller({ userId: USER, llmProvider: undefined });
       await expect(caller.course.generateBaseline({ courseId: course.id })).rejects.toMatchObject({
         code: "PRECONDITION_FAILED",
       });
@@ -670,7 +670,7 @@ describe("course.generateBaseline", () => {
         .mockRejectedValueOnce(noObjectError("<response>thinking...</response>"))
         .mockResolvedValueOnce(llmSuccess(validBaselineText()));
 
-      const caller = appRouter.createCaller({ userId: USER });
+      const caller = appRouter.createCaller({ userId: USER, llmProvider: undefined });
       const result = await caller.course.generateBaseline({ courseId });
 
       expect(result.nextStage).toBe("answering");
@@ -720,7 +720,7 @@ describe("course.submitBaseline", () => {
         .mockResolvedValueOnce(llmSuccess(validBaselineText()))
         .mockResolvedValueOnce(llmSuccess(validScopingCloseText()));
 
-      const caller = appRouter.createCaller({ userId: USER });
+      const caller = appRouter.createCaller({ userId: USER, llmProvider: undefined });
 
       // Stage 1.
       const clarifyResult = await caller.course.clarify({ topic: "Rust" });

@@ -11,6 +11,7 @@ import { generateChat } from "@/lib/llm/generate";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
+import { getActiveModelName } from "@/lib/llm/provider";
 import { JSON_PARSE_RETRY_DIRECTIVE } from "@/lib/prompts/turn";
 import { SCOPING } from "@/lib/config/tuning";
 import type { LlmUsage } from "@/lib/types/llm";
@@ -140,7 +141,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   const quiet = isQuiet();
   const label = params.label ?? params.seed.kind;
   const headerTopic = params.seed.kind === "scoping" ? params.seed.topic : params.seed.courseTopic;
-  const modelName = process.env.LLM_MODEL ?? "(default)";
+  const modelName = getActiveModelName();
   const capabilities = getModelCapabilities(modelName);
   // Wire-side response_format schema string — only built and displayed in live
   // mode AND only when the model actually honours strict-mode (i.e. will receive

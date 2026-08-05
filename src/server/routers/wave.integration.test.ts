@@ -252,7 +252,7 @@ describe("wave.getState", () => {
         content: "hello back",
       });
 
-      const caller = appRouter.createCaller({ userId: USER_ID });
+      const caller = appRouter.createCaller({ userId: USER_ID, llmProvider: undefined });
       const state = await caller.wave.getState({ courseId, waveNumber: 1 });
 
       expect(state.status).toBe("active");
@@ -280,7 +280,7 @@ describe("wave.getState", () => {
   it("throws NOT_FOUND when the wave doesn't exist", async () => {
     await withTestDb(async () => {
       const { courseId } = await seedCourseWithOpenWave();
-      const caller = appRouter.createCaller({ userId: USER_ID });
+      const caller = appRouter.createCaller({ userId: USER_ID, llmProvider: undefined });
       await expect(caller.wave.getState({ courseId, waveNumber: 99 })).rejects.toMatchObject({
         code: "NOT_FOUND",
       });
@@ -306,7 +306,7 @@ describe("wave.submitTurn", () => {
         makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
       );
 
-      const caller = appRouter.createCaller({ userId: USER_ID });
+      const caller = appRouter.createCaller({ userId: USER_ID, llmProvider: undefined });
       const result = await caller.wave.submitTurn({
         courseId,
         waveNumber: 1,
@@ -338,7 +338,7 @@ describe("wave.submitTurn", () => {
         makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
       );
 
-      const caller = appRouter.createCaller({ userId: USER_ID });
+      const caller = appRouter.createCaller({ userId: USER_ID, llmProvider: undefined });
       const result = await caller.wave.submitTurn({
         courseId,
         waveNumber: 1,
@@ -367,7 +367,7 @@ describe("wave.submitTurn", () => {
       // Spy on executeTurn so a regression past the guard fails loud.
       const spy = vi.spyOn(executeTurnModule, "executeTurn");
 
-      const caller = appRouter.createCaller({ userId: USER_ID });
+      const caller = appRouter.createCaller({ userId: USER_ID, llmProvider: undefined });
       const promise = caller.wave.submitTurn({
         courseId,
         waveNumber: 1,
@@ -387,7 +387,7 @@ describe("wave.submitTurn", () => {
       const { courseId } = await seedCourseWithOpenWave();
       const spy = vi.spyOn(executeTurnModule, "executeTurn");
 
-      const caller = appRouter.createCaller({ userId: USER_ID });
+      const caller = appRouter.createCaller({ userId: USER_ID, llmProvider: undefined });
       const promise = caller.wave.submitTurn({
         courseId,
         waveNumber: 1,
@@ -412,7 +412,7 @@ describe("wave.submitTurn", () => {
       await seedOpenMcQuestionnaire(courseId, waveId);
       const spy = vi.spyOn(executeTurnModule, "executeTurn");
 
-      const caller = appRouter.createCaller({ userId: USER_ID });
+      const caller = appRouter.createCaller({ userId: USER_ID, llmProvider: undefined });
       const promise = caller.wave.submitTurn({
         courseId,
         waveNumber: 1,
@@ -440,7 +440,7 @@ describe("wave.submitTurn", () => {
       const { questionnaireMsgId } = await seedOpenMcQuestionnaire(courseId, waveId);
       const spy = vi.spyOn(executeTurnModule, "executeTurn");
 
-      const caller = appRouter.createCaller({ userId: USER_ID });
+      const caller = appRouter.createCaller({ userId: USER_ID, llmProvider: undefined });
       const promise = caller.wave.submitTurn({
         courseId,
         waveNumber: 1,
@@ -502,7 +502,7 @@ describe("wave.submitTurn", () => {
         makeExecuteTurnMock(closeParsed) as unknown as typeof executeTurnModule.executeTurn,
       );
 
-      const caller = appRouter.createCaller({ userId: USER_ID });
+      const caller = appRouter.createCaller({ userId: USER_ID, llmProvider: undefined });
       const result = await caller.wave.submitTurn({
         courseId,
         waveNumber: 1,

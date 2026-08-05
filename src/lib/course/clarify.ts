@@ -6,6 +6,7 @@ import { clarifySchema, type ClarifyTurn } from "@/lib/prompts/clarify";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
+import { getActiveModelName } from "@/lib/llm/provider";
 import { notifyEvent } from "@/lib/notify/ntfy";
 import type { ClarificationJsonb } from "@/lib/types/jsonb";
 
@@ -67,7 +68,7 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
   // `<user_message>` wrapper was a teaching-layer convention and the new
   // scoping system prompt doesn't reference it. `renderStageEnvelope`
   // already XML-escapes `learnerInput`, so passing the raw topic is safe.
-  const modelName = process.env.LLM_MODEL ?? "(default)";
+  const modelName = getActiveModelName();
   const capabilities = getModelCapabilities(modelName);
   const schemaJson = toSchemaJsonString(clarifySchema, { name: "clarify" });
   const { parsed } = await executeTurn({

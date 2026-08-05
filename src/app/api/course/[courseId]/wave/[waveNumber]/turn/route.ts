@@ -4,6 +4,7 @@ import { resolveRequestUserId } from "@/server/requestUser";
 import { submitTurnInputSchema } from "@/server/routers/waveTurnInput";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
+import { parseLlmProviderCookie, runWithLlmProvider } from "@/lib/llm/llmProviderStore";
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
 import type { WaveTurnUIMessage } from "@/lib/types/waveStream";
 
@@ -46,19 +47,23 @@ export async function POST(
     // Bind userId into ALS for the Cerebras rate limiter — same contract
     // as protectedProcedure (src/server/trpc.ts).
     execute: ({ writer }) =>
-      userIdStore.run(userId, async () => {
-        // Return value (token usage, logged by the live smoke only) is
-        // deliberately dropped on the route.
-        await streamWaveTurn(
-          {
-            userId,
-            courseId: input.data.courseId,
-            waveNumber: input.data.waveNumber,
-            payload: input.data.payload,
-          },
-          writer,
-        );
-      }),
+      // Provider cookie binds alongside userId — same contract as
+      // protectedProcedure (src/server/trpc.ts).
+      runWithLlmProvider(parseLlmProviderCookie(req.headers.get("cookie")), () =>
+        userIdStore.run(userId, async () => {
+          // Return value (token usage, logged by the live smoke only) is
+          // deliberately dropped on the route.
+          await streamWaveTurn(
+            {
+              userId,
+              courseId: input.data.courseId,
+              waveNumber: input.data.waveNumber,
+              payload: input.data.payload,
+            },
+            writer,
+          );
+        }),
+      ),
     // Surfaced to useChat's onError. Keep messages generic; TRPCError codes
     // from the guards (PRECONDITION_FAILED etc.) map to their message text.
     onError: (error) => (error instanceof Error ? error.message : "turn failed"),

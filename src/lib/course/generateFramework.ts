@@ -8,6 +8,7 @@ import { frameworkSchema, type Framework } from "@/lib/prompts/framework";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
+import { getActiveModelName } from "@/lib/llm/provider";
 import type { ClarificationJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
 /** Parameters for {@link generateFramework}; responses are the learner's clarify answers. */
@@ -112,7 +113,7 @@ export async function generateFramework(
   // Gate the inline on model capability: weak models (honorsStrictMode=false)
   // get the schema inlined in the envelope; strong models read it from the
   // wire response_format and don't need the extra tokens.
-  const modelName = process.env.LLM_MODEL ?? "(default)";
+  const modelName = getActiveModelName();
   const capabilities = getModelCapabilities(modelName);
   const schemaJson = toSchemaJsonString(frameworkSchema, { name: "framework" });
   const { parsed } = await executeTurn({

@@ -7,6 +7,7 @@ import { makeBaselineSchema, type BaselineTurn } from "@/lib/prompts/baseline";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
+import { getActiveModelName } from "@/lib/llm/provider";
 import type { BaselineJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
 /** Parameters for {@link generateBaseline}. */
@@ -59,7 +60,7 @@ export async function generateBaseline(
   // Build schema string regardless — retry directive always needs it.
   // Gate the inline on model capability: only non-strict-mode models get the
   // inline block. Strong models get the schema via the wire response_format.
-  const modelName = process.env.LLM_MODEL ?? "(default)";
+  const modelName = getActiveModelName();
   const capabilities = getModelCapabilities(modelName);
   const schemaJson = toSchemaJsonString(schema, { name: "baseline" });
   const { parsed } = await executeTurn({

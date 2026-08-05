@@ -17,7 +17,10 @@
     "scripts/probe-model.ts",
     ".claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts",
     ".claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts",
-    ".claude/skills/nalu-visitor-forensics/inspect-visitor.ts"
+    ".claude/skills/nalu-visitor-forensics/inspect-visitor.ts",
+    ".agents/skills/debugging-nalu-llm-pipeline/inspect-db.ts",
+    ".agents/skills/debugging-nalu-llm-pipeline/dump-chat.ts",
+    ".agents/skills/nalu-visitor-forensics/inspect-visitor.ts"
   ],
   "ignore": [],
   "ignoreExportsUsedInFile": true,

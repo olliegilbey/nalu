@@ -4,41 +4,99 @@ import { devToolsMiddleware } from "@ai-sdk/devtools";
 import type { LanguageModelV3, LanguageModelV3Middleware } from "@ai-sdk/provider";
 import { getEnv } from "@/lib/config";
 import { LLM } from "@/lib/config/tuning";
+import { getActiveLlmProvider, llmProviderStore } from "./llmProviderStore";
 
 /**
  * Per-call `providerOptions` for every LLM call: sets `reasoning_effort` on
  * the wire (tuning `LLM.reasoningEffort`). The outer key MUST match the
  * provider `name` below — the openai-compatible adapter looks up options
  * under its own name and merges unknown keys into the request body.
+ * Deliberately keyed to "nalu-llm" (Cerebras) only: the Corti provider is
+ * named "nalu-corti", so this option never reaches Corti's API — whether
+ * corti-s1 accepts `reasoning_effort` is unverified, and reasoning depth is
+ * selected there by model variant (`-instant`) rather than a parameter.
  */
 export function llmProviderOptions(): Record<string, Record<string, string>> {
   return { "nalu-llm": { reasoningEffort: LLM.reasoningEffort } };
 }
 
 /**
- * Single swap-point for the underlying LLM provider.
+ * Model name string for the ACTIVE provider (cookie/env selected) — the key
+ * used for `getModelCapabilities` lookups. corti-s1 is deliberately absent
+ * from the capabilities registry: the 2026-08-05 probe showed Corti silently
+ * drops `response_format`, so the unknown-model path (inline
+ * `<response_schema>`) is the correct one.
  *
- * Uses the OpenAI-compatible adapter because our starter provider
- * (Cerebras) exposes an OpenAI Chat Completions endpoint, and so do
- * most others. Swapping to a non-compatible provider (e.g. Anthropic
- * native) is a one-line change in this file plus env vars — nothing
- * else in the codebase imports a provider package directly.
+ * Reads raw `process.env` (not `getEnv()`): course-step unit tests call this
+ * with no env configured, and a full schema parse would throw there. This is
+ * a lookup key with fallbacks, not validated config — mirrors the previous
+ * `process.env.LLM_MODEL ?? "(default)"` behaviour at the call sites.
+ */
+export function getActiveModelName(): string {
+  const active = llmProviderStore.getStore() ?? process.env.LLM_PROVIDER ?? "cerebras";
+  return active === "corti"
+    ? (process.env.CORTI_MODEL ?? "corti-s1")
+    : (process.env.LLM_MODEL ?? "(default)");
+}
+
+/**
+ * Corti bearer for the OpenAI-compatible endpoint: explicit CORTI_API_KEY if
+ * set, else derived from the console's client-credential trio using the same
+ * construction @corti/cli writes into coding-agent configs:
+ * base64("<tenant>:client_credentials:<client_id>:<client_secret>").
+ */
+function resolveCortiApiKey(env: ReturnType<typeof getEnv>): string {
+  if (env.CORTI_API_KEY) return env.CORTI_API_KEY;
+  if (env.CORTI_TENANT_NAME && env.CORTI_CLIENT_ID && env.CORTI_CLIENT_SECRET) {
+    return Buffer.from(
+      `${env.CORTI_TENANT_NAME}:client_credentials:${env.CORTI_CLIENT_ID}:${env.CORTI_CLIENT_SECRET}`,
+    ).toString("base64");
+  }
+  throw new Error(
+    "The corti LLM provider is selected (LLM_PROVIDER env or nalu-llm-provider " +
+      "cookie) but neither CORTI_API_KEY nor the CORTI_TENANT_NAME / " +
+      "CORTI_CLIENT_ID / CORTI_CLIENT_SECRET trio is set in the environment.",
+  );
+}
+
+/**
+ * Single swap-point for the underlying LLM provider, selected per request
+ * via `getActiveLlmProvider()` (cookie/ALS, else LLM_PROVIDER env).
+ *
+ * Uses the OpenAI-compatible adapter for both providers: Cerebras and
+ * Corti each expose an OpenAI Chat Completions endpoint. Nothing else in
+ * the codebase imports a provider package directly.
  *
  * Lazily constructed: env vars are validated on first call, not at
  * import time, so client bundles and test harnesses don't blow up.
  */
 export function getLlmModel(): LanguageModelV3 {
   const env = getEnv();
-  const provider = createOpenAICompatible({
-    name: "nalu-llm",
-    baseURL: env.LLM_BASE_URL,
-    apiKey: env.LLM_API_KEY,
-    // Provider-level flag: equivalent to model-level because this provider
-    // exposes a single chat model. Enables generateObject to use the
-    // JSON-schema structured-output path rather than JSON-mode fallback.
-    supportsStructuredOutputs: true,
-  });
-  const model = provider.chatModel(env.LLM_MODEL);
+  const active = getActiveLlmProvider();
+  const provider =
+    active === "corti"
+      ? createOpenAICompatible({
+          // Distinct name: keeps the "nalu-llm"-keyed providerOptions
+          // (reasoning_effort) from being merged into Corti requests.
+          name: "nalu-corti",
+          baseURL: env.CORTI_BASE_URL,
+          apiKey: resolveCortiApiKey(env),
+          // Sent optimistically; whether Corti enforces strict json_schema is
+          // unverified, so the capabilities layer ALSO sends the inline
+          // schema (corti models are unknown → honorsStrictMode false), and
+          // Zod validate-and-retry remains the real safety net either way.
+          supportsStructuredOutputs: true,
+        })
+      : createOpenAICompatible({
+          name: "nalu-llm",
+          baseURL: env.LLM_BASE_URL,
+          apiKey: env.LLM_API_KEY,
+          // Provider-level flag: equivalent to model-level because this provider
+          // exposes a single chat model. Enables generateObject to use the
+          // JSON-schema structured-output path rather than JSON-mode fallback.
+          supportsStructuredOutputs: true,
+        });
+  const model = provider.chatModel(active === "corti" ? env.CORTI_MODEL : env.LLM_MODEL);
   // DevTools capture is development-only: the middleware writes every
   // request/response (learner content + grading keys included) to
   // .devtools/generations.json for the local viewer (`just llm-devtools`).

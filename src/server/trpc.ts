@@ -3,15 +3,20 @@ import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { NotFoundError } from "@/db/queries/errors";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
+import { parseLlmProviderCookie, runWithLlmProvider } from "@/lib/llm/llmProviderStore";
 import { resolveRequestUserId } from "./requestUser";
 
 /**
  * Build the tRPC request context. Resolves `userId` (possibly undefined)
  * via `resolveRequestUserId` — the auth story shared with the streaming
- * wave-turn route handler.
+ * wave-turn route handler — and the per-request LLM provider choice from
+ * the `nalu-llm-provider` cookie (set by the Splash model picker).
  */
 export const createTRPCContext = async (opts: FetchCreateContextFnOptions) => {
-  return { userId: await resolveRequestUserId(opts.req) };
+  return {
+    userId: await resolveRequestUserId(opts.req),
+    llmProvider: parseLlmProviderCookie(opts.req.headers.get("cookie")),
+  };
 };
 
 const t = initTRPC.context<typeof createTRPCContext>().create();
@@ -63,5 +68,8 @@ export const protectedProcedure = t.procedure.use(mapNotFound).use(async ({ ctx,
   // so the AI SDK transport preserves the binding. Hoist into `userId`
   // first to keep the override ctx well-typed across the callback boundary.
   const userId = ctx.userId;
-  return userIdStore.run(userId, () => next({ ctx: { ...ctx, userId } }));
+  // Provider cookie binds alongside userId — same ALS pattern, same scope.
+  return runWithLlmProvider(ctx.llmProvider, () =>
+    userIdStore.run(userId, () => next({ ctx: { ...ctx, userId } })),
+  );
 });

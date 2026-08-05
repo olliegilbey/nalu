@@ -9,6 +9,8 @@ const KIND_COLORS: Record<string, string> = {
   concept: "var(--crystal-blue)",
   skill: "var(--wave-aqua-2)",
   history: "var(--carp-yellow)",
+  clinical: "var(--spring-green)",
+  coding: "var(--carp-yellow)",
   plan: "var(--crystal-blue)",
   explain: "var(--sakura-pink)",
   write: "var(--wave-aqua-2)",
@@ -60,7 +62,11 @@ export function EmptyState({ onPick }: { onPick: (t: string) => void }) {
         {suggestions.map((s) => (
           <button
             key={s.label}
-            onClick={() => onPick(`${s.kind} ${s.label}`)}
+            // Send ONLY the label as the course topic: the kind word is a
+            // visual category chip, not part of the topic (previously
+            // "language conversational Japanese" leaked the kind into the
+            // clarify prompt).
+            onClick={() => onPick(s.label)}
             className="group w-full flex items-center justify-between gap-3 py-3.5 border-b border-sumi-4/70 text-left hover:border-sumi-5 transition-colors"
           >
             <span className="flex items-baseline gap-2.5 min-w-0">

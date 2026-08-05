@@ -27,6 +27,9 @@ describe("cerebrasRateLimit", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     __resetCerebrasRateLimitStateForTests();
+    // Pin the cerebras provider: `bun run test` loads .env.local, whose
+    // LLM_PROVIDER=corti would otherwise no-op the limiter under test.
+    vi.stubEnv("LLM_PROVIDER", "cerebras");
   });
 
   afterEach(() => {

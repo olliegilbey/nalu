@@ -14,6 +14,22 @@ const envSchema = z.object({
   LLM_BASE_URL: z.url(),
   LLM_API_KEY: z.string().min(1),
   LLM_MODEL: z.string().min(1),
+  // Default LLM provider when no per-request `nalu-llm-provider` cookie is
+  // present. "cerebras" = the LLM_* vars above; "corti" = the CORTI_* vars
+  // below. The corti-nalu deployment sets LLM_PROVIDER=corti.
+  LLM_PROVIDER: z.enum(["cerebras", "corti"]).default("cerebras"),
+  CORTI_BASE_URL: z.url().default("https://ai.eu.corti.app/v1"),
+  // Either a ready bearer (CORTI_API_KEY) or the console's client-credential
+  // trio, from which provider.ts derives the bearer as
+  // base64(tenant:client_credentials:client_id:client_secret) — the same
+  // construction @corti/cli uses for the OpenAI-compatible endpoint.
+  // All optional at boot so cerebras-only environments still start; a call
+  // that selects corti without either form throws a descriptive error.
+  CORTI_API_KEY: z.string().min(1).optional(),
+  CORTI_TENANT_NAME: z.string().min(1).optional(),
+  CORTI_CLIENT_ID: z.string().min(1).optional(),
+  CORTI_CLIENT_SECRET: z.string().min(1).optional(),
+  CORTI_MODEL: z.string().min(1).default("corti-s1"),
   NEXT_PUBLIC_DEV_MODE: z
     .enum(["true", "false"])
     .default("false")

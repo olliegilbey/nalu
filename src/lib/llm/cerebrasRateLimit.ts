@@ -1,5 +1,16 @@
 import { LLM } from "@/lib/config/tuning";
 import { userIdStore } from "./userIdStore";
+import { llmProviderStore } from "./llmProviderStore";
+
+/**
+ * Lightweight provider check: ALS binding, else raw env. Deliberately NOT
+ * `getActiveLlmProvider()`/`getEnv()` — the full env schema parse would
+ * throw in unit/CI contexts that stub only CEREBRAS_LIVE, and this module
+ * must stay inert-safe there.
+ */
+function isCerebrasActive(): boolean {
+  return (llmProviderStore.getStore() ?? process.env.LLM_PROVIDER ?? "cerebras") === "cerebras";
+}
 
 /**
  * Header-aware Cerebras rate limiter for the entire application.
@@ -141,6 +152,9 @@ function sleep(ms: number): Promise<void> {
 export async function awaitCerebrasCallSlot(): Promise<void> {
   // Gate: outside production / live smoke this does nothing at all.
   if (!isRateLimiterActive()) return;
+  // Cerebras-specific pacing: when the active provider is corti this call
+  // never hits Cerebras, so no slot is needed and no counters are touched.
+  if (!isCerebrasActive()) return;
 
   // Resolve the per-user lane. No userId in scope → fast lane, no counter
   // mutation. The lane choice is per-user; the spacing gate itself is
@@ -216,6 +230,9 @@ export function recordCerebrasRateLimitHeaders(
 ): void {
   // No work to do when the limiter is inert or no headers were returned.
   if (!isRateLimiterActive() || headers === undefined) return;
+  // Corti responses carry no Cerebras x-ratelimit-* headers; recording them
+  // would clobber the Cerebras budget state with absent values.
+  if (!isCerebrasActive()) return;
 
   // Header keys are lower-cased by the AI SDK / fetch; read them directly.
   const remainingRaw = headers["x-ratelimit-remaining-tokens-minute"];

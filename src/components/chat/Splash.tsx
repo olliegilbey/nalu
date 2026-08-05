@@ -1,6 +1,20 @@
 "use client";
 
 import { Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+
+/** Cookie values read server-side by `parseLlmProviderCookie`. */
+type ProviderChoice = "corti" | "cerebras";
+
+const PROVIDER_OPTIONS: ReadonlyArray<{ value: ProviderChoice; label: string; sub: string }> = [
+  { value: "corti", label: "corti-s1", sub: "clinical" },
+  { value: "cerebras", label: "gpt-oss-120b", sub: "general" },
+];
+
+/** Persist the model choice; server reads it per request (ALS binding). */
+function writeProviderCookie(value: ProviderChoice) {
+  document.cookie = `nalu-llm-provider=${value}; path=/; max-age=31536000; samesite=lax`;
+}
 
 /**
  * Full-screen intro overlay shown on every visit to the home screen. Ported
@@ -9,6 +23,19 @@ import { Sparkles } from "lucide-react";
  * is replaced with the `.animate-fade-in` utility added in `globals.css`.
  */
 export function Splash({ onStart }: { readonly onStart: () => void }) {
+  // Default corti on this deployment; hydrate any prior choice from the
+  // cookie post-mount (same SSR-mismatch pattern as EmptyState's greeting).
+  const [provider, setProvider] = useState<ProviderChoice>("corti");
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: client-only cookie hydration
+    if (document.cookie.includes("nalu-llm-provider=cerebras")) setProvider("cerebras");
+  }, []);
+
+  const pick = (value: ProviderChoice) => {
+    setProvider(value);
+    writeProviderCookie(value);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-kanagawa-atmos text-foreground noise animate-fade-in">
       <div className="flex-1 overflow-y-auto px-6 py-10 flex items-center justify-center">
@@ -44,6 +71,27 @@ export function Splash({ onStart }: { readonly onStart: () => void }) {
 
       <div className="px-6 pb-8 pt-2">
         <div className="mx-auto w-full max-w-md">
+          <div className="mb-3">
+            <p className="mb-1.5 text-[10px] font-mono uppercase tracking-[0.2em] text-fuji-gray">
+              model
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {PROVIDER_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => pick(opt.value)}
+                  aria-pressed={provider === opt.value}
+                  className={`h-10 rounded-xl border text-[13px] font-medium transition ${
+                    provider === opt.value
+                      ? "border-spring-green/60 bg-sumi-3/60 text-foreground"
+                      : "border-sumi-4/60 bg-transparent text-fuji-gray hover:border-sumi-5"
+                  }`}
+                >
+                  {opt.label} <span className="font-normal text-fuji-gray">· {opt.sub}</span>
+                </button>
+              ))}
+            </div>
+          </div>
           <button
             onClick={onStart}
             style={{ color: "var(--sumi-ink-0)" }}

@@ -7,6 +7,7 @@ import { getOpenWaveByCourse } from "@/db/queries/waves";
 import { makeScopingCloseSchema, renderScopingCloseStage } from "@/lib/prompts/scopingClose";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
+import { getActiveModelName } from "@/lib/llm/provider";
 import { splitOne, type BaselineAnswer } from "./submitBaseline.internal";
 import { mergeAndComputeXp } from "@/lib/scoring/baselineMerge";
 import { persistScopingClose } from "./submitBaseline.persist";
@@ -152,7 +153,7 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
     reviewDueNames: [],
     existingConceptNames: [],
   });
-  const modelName = process.env.LLM_MODEL ?? "(default)";
+  const modelName = getActiveModelName();
   const capabilities = getModelCapabilities(modelName);
   const schemaJson = toSchemaJsonString(schema, { name: "scoping_close" });
 

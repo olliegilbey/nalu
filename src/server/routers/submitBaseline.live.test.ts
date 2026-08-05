@@ -58,7 +58,7 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
         .insert(userProfiles)
         .values({ id: LIVE_TEST_USER, displayName: "Live Test User (close)" });
 
-      const caller = appRouter.createCaller({ userId: LIVE_TEST_USER });
+      const caller = appRouter.createCaller({ userId: LIVE_TEST_USER, llmProvider: undefined });
 
       // 1. clarify
       const clarifyResult = await caller.course.clarify({ topic: TOPIC.topic });

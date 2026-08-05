@@ -2,6 +2,7 @@ import { executeTurn } from "@/lib/turn/executeTurn";
 import { buildRetryDirective } from "@/lib/turn/retryDirective";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
+import { getActiveModelName } from "@/lib/llm/provider";
 import { makeWaveCloseSchema, renderWaveCloseEnvelope } from "@/lib/prompts/waveClose";
 import {
   getFreshConcepts,
@@ -96,7 +97,7 @@ export async function executeWaveClose(
   // Wire-side schema selection mirrors executeWaveMid: strong models honour
   // strict-mode and receive the schema via response_format; weak models get
   // it inline in the envelope so they can self-check.
-  const modelName = process.env.LLM_MODEL ?? "(default)";
+  const modelName = getActiveModelName();
   const capabilities = getModelCapabilities(modelName);
   const schemaJson = toSchemaJsonString(schema, { name: "wave_close" });
   const conceptsBlock = renderConceptInjection(fresh, due);

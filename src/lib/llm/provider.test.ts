@@ -26,6 +26,13 @@ describe("getLlmModel", () => {
     );
     vi.stubEnv("DIRECT_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres");
     vi.stubEnv("DEV_USER_ID", "00000000-0000-0000-0000-000000000000");
+    // Pin provider selection: `bun run test` loads .env.local, whose
+    // LLM_PROVIDER=corti + CORTI_* credentials would otherwise leak in.
+    vi.stubEnv("LLM_PROVIDER", "cerebras");
+    vi.stubEnv("CORTI_API_KEY", undefined);
+    vi.stubEnv("CORTI_TENANT_NAME", undefined);
+    vi.stubEnv("CORTI_CLIENT_ID", undefined);
+    vi.stubEnv("CORTI_CLIENT_SECRET", undefined);
   });
 
   afterEach(() => {
@@ -43,5 +50,30 @@ describe("getLlmModel", () => {
     vi.stubEnv("LLM_API_KEY", "");
     const { getLlmModel } = await import("./provider");
     expect(() => getLlmModel()).toThrow();
+  });
+
+  it("returns the corti model when LLM_PROVIDER=corti with client credentials", async () => {
+    vi.stubEnv("LLM_PROVIDER", "corti");
+    vi.stubEnv("CORTI_TENANT_NAME", "tenant");
+    vi.stubEnv("CORTI_CLIENT_ID", "client");
+    vi.stubEnv("CORTI_CLIENT_SECRET", "secret");
+    const { getLlmModel, getActiveModelName } = await import("./provider");
+    expect(getLlmModel()).toMatchObject({ modelId: "corti-s1" });
+    expect(getActiveModelName()).toBe("corti-s1");
+  });
+
+  it("throws a descriptive error when corti is selected without credentials", async () => {
+    vi.stubEnv("LLM_PROVIDER", "corti");
+    const { getLlmModel } = await import("./provider");
+    expect(() => getLlmModel()).toThrow(/CORTI_API_KEY/);
+  });
+
+  it("cookie-scoped provider overrides the env default", async () => {
+    // Env default stays cerebras; a request-scoped ALS binding picks corti.
+    vi.stubEnv("CORTI_API_KEY", "test-bearer");
+    const { getLlmModel } = await import("./provider");
+    const { runWithLlmProvider } = await import("./llmProviderStore");
+    const model = runWithLlmProvider("corti", () => getLlmModel());
+    expect(model).toMatchObject({ modelId: "corti-s1" });
   });
 });

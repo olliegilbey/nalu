@@ -75,7 +75,7 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
         .insert(userProfiles)
         .values({ id: LIVE_TEST_USER, displayName: "Live Test User (wave-loop)" });
 
-      const caller = appRouter.createCaller({ userId: LIVE_TEST_USER });
+      const caller = appRouter.createCaller({ userId: LIVE_TEST_USER, llmProvider: undefined });
 
       // ===================================================================
       // PHASE A: Scoping (copy of submitBaseline.live.test.ts). Brings us
