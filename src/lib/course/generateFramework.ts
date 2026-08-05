@@ -9,6 +9,9 @@ import { renderStageEnvelope } from "@/lib/prompts/scoping";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { getActiveModelName } from "@/lib/llm/provider";
+import { getActiveLlmProvider } from "@/lib/llm/llmProviderStore";
+import { askClinicalExpert } from "@/lib/llm/cortiExpert";
+import { renderExpertBriefingQuestion } from "@/lib/prompts/clinicalExpert";
 import type { ClarificationJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
 /** Parameters for {@link generateFramework}; responses are the learner's clarify answers. */
@@ -109,6 +112,18 @@ export async function generateFramework(
     .join("\n\n");
 
   const pass = await ensureOpenScopingPass(course.id);
+  // Corti-powered courses: fetch a domain-expert briefing BEFORE designing
+  // the framework, so course structure is grounded in expert knowledge, not
+  // the teaching model's memory. Harness-side (deterministic) delegation —
+  // scoping runs the blocking executeTurn and has no tool loop. Best-effort:
+  // an expert outage must never block course creation.
+  const expertBriefing =
+    getActiveLlmProvider() === "corti"
+      ? await askClinicalExpert(renderExpertBriefingQuestion(course.topic)).then(
+          (r) => r.answer,
+          () => undefined,
+        )
+      : undefined;
   // Build schema string regardless — retry directive always needs it.
   // Gate the inline on model capability: weak models (honorsStrictMode=false)
   // get the schema inlined in the envelope; strong models read it from the
@@ -122,6 +137,7 @@ export async function generateFramework(
     userMessageContent: renderStageEnvelope({
       stage: "generate framework",
       learnerInput: qaPairs,
+      expertBriefing,
       responseSchema: capabilities.honorsStrictMode ? undefined : schemaJson,
     }),
     responseSchema: frameworkSchema,

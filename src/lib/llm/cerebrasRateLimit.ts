@@ -1,15 +1,10 @@
 import { LLM } from "@/lib/config/tuning";
 import { userIdStore } from "./userIdStore";
-import { llmProviderStore } from "./llmProviderStore";
+import { getActiveLlmProvider } from "./llmProviderStore";
 
-/**
- * Lightweight provider check: ALS binding, else raw env. Deliberately NOT
- * `getActiveLlmProvider()`/`getEnv()` — the full env schema parse would
- * throw in unit/CI contexts that stub only CEREBRAS_LIVE, and this module
- * must stay inert-safe there.
- */
+/** True when the active provider is cerebras (env-light — safe in unit/CI). */
 function isCerebrasActive(): boolean {
-  return (llmProviderStore.getStore() ?? process.env.LLM_PROVIDER ?? "cerebras") === "cerebras";
+  return getActiveLlmProvider() === "cerebras";
 }
 
 /**

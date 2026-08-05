@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock all external dependencies before importing SUT.
 vi.mock("@/lib/turn/executeTurn", () => ({ executeTurn: vi.fn() }));
+vi.mock("@/lib/llm/cortiExpert", () => ({ askClinicalExpert: vi.fn() }));
 vi.mock("@/db/queries/courses", async () => {
   const actual =
     await vi.importActual<typeof import("@/db/queries/courses")>("@/db/queries/courses");
@@ -17,6 +18,7 @@ vi.mock("@/db/queries/scopingPasses", () => ({
 
 import { generateFramework } from "./generateFramework";
 import { executeTurn } from "@/lib/turn/executeTurn";
+import { askClinicalExpert } from "@/lib/llm/cortiExpert";
 import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { SCOPING } from "@/lib/config/tuning";
@@ -111,6 +113,10 @@ beforeEach(() => {
   vi.mocked(getCourseById).mockReset();
   vi.mocked(updateCourseScopingState).mockReset();
   vi.mocked(ensureOpenScopingPass).mockReset();
+  // Pin the cerebras path: `bun run test` loads .env.local (LLM_PROVIDER=
+  // corti), which would send generateFramework through the real
+  // clinical-expert pre-consult (network) in a unit test.
+  vi.stubEnv("LLM_PROVIDER", "cerebras");
 });
 
 describe("generateFramework", () => {
@@ -242,6 +248,57 @@ describe("generateFramework", () => {
     // The envelope wraps the Q/A pairs.
     expect(callArgs?.userMessageContent).toContain("Q: Goal?");
     expect(callArgs?.userMessageContent).toContain("A: learn Rust");
+  });
+
+  // Corti path: the harness pre-consults the clinical expert and injects the
+  // briefing into the envelope; an expert failure must not block the course.
+  it("injects the expert briefing on the corti provider path", async () => {
+    vi.stubEnv("LLM_PROVIDER", "corti");
+    vi.mocked(askClinicalExpert).mockResolvedValue({ answer: "EXPERT-BRIEFING-TEXT" });
+    vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
+    vi.mocked(ensureOpenScopingPass).mockResolvedValue({ id: "p3" } as never);
+    vi.mocked(executeTurn).mockResolvedValue({
+      parsed: PARSED_FRAMEWORK,
+      usage: MOCK_USAGE,
+    });
+    vi.mocked(updateCourseScopingState).mockResolvedValue(SCOPING_COURSE);
+
+    await generateFramework({
+      courseId: COURSE_ID,
+      userId: USER_ID,
+      responses: [
+        { questionId: "q1", freetext: "ECG basics" },
+        { questionId: "q2", freetext: "beginner" },
+      ],
+    });
+
+    const callArgs = vi.mocked(executeTurn).mock.calls[0]?.[0];
+    expect(callArgs?.userMessageContent).toContain("<clinical_expert_briefing>");
+    expect(callArgs?.userMessageContent).toContain("EXPERT-BRIEFING-TEXT");
+  });
+
+  it("proceeds without a briefing when the expert call fails", async () => {
+    vi.stubEnv("LLM_PROVIDER", "corti");
+    vi.mocked(askClinicalExpert).mockRejectedValue(new Error("expert down"));
+    vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
+    vi.mocked(ensureOpenScopingPass).mockResolvedValue({ id: "p4" } as never);
+    vi.mocked(executeTurn).mockResolvedValue({
+      parsed: PARSED_FRAMEWORK,
+      usage: MOCK_USAGE,
+    });
+    vi.mocked(updateCourseScopingState).mockResolvedValue(SCOPING_COURSE);
+
+    await generateFramework({
+      courseId: COURSE_ID,
+      userId: USER_ID,
+      responses: [
+        { questionId: "q1", freetext: "ECG basics" },
+        { questionId: "q2", freetext: "beginner" },
+      ],
+    });
+
+    const callArgs = vi.mocked(executeTurn).mock.calls[0]?.[0];
+    expect(callArgs?.userMessageContent).not.toContain("<clinical_expert_briefing>");
   });
 
   // Case 6: empty responses array throws BAD_REQUEST immediately (before DB).

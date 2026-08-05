@@ -45,6 +45,13 @@ export interface RenderStageEnvelopeParams {
    * stable across all turns of a scoping pass.
    */
   readonly responseSchema?: string;
+  /**
+   * Optional domain-expert briefing (Corti clinical expert, fetched by the
+   * harness before the LLM call) — grounds course design in expert knowledge
+   * instead of the teaching model's memory. Rendered as its own block;
+   * XML-escaped like learner input since it is third-party model output.
+   */
+  readonly expertBriefing?: string;
 }
 
 /**
@@ -64,8 +71,12 @@ export function renderStageEnvelope(params: RenderStageEnvelopeParams): string {
     params.responseSchema !== undefined
       ? `\n<response_schema>\n${params.responseSchema}\n</response_schema>`
       : "";
+  const briefingBlock =
+    params.expertBriefing !== undefined
+      ? `\n<clinical_expert_briefing>\nA clinical domain expert provided this briefing for the course design. Treat it as authoritative: build the framework around its concepts, ordering, and safety-critical points.\n${escapeXmlText(params.expertBriefing)}\n</clinical_expert_briefing>`
+      : "";
   return `<stage>${params.stage}</stage>
 <learner_input>
 ${escapeXmlText(params.learnerInput)}
-</learner_input>${schemaBlock}`;
+</learner_input>${briefingBlock}${schemaBlock}`;
 }

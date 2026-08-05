@@ -13,14 +13,18 @@ import {
 } from "@/lib/course/waveTurnTools";
 import type { WaveSeedInputs } from "@/lib/types/context";
 import { buildWaveLookupTools } from "./waveLookupTools";
+import { buildAskClinicalExpertTool } from "./clinicalExpertTool";
 
 /**
- * The mid-turn agent's full tool map: emission staging + read-only lookups.
- * `src/lib/types/waveStream.ts` derives the client's typed UI tool parts from
- * this, so the wire and the client can never drift on the tool surface.
+ * The mid-turn agent's full tool map: emission staging + read-only lookups
+ * + the Corti clinical-expert delegation tool. `src/lib/types/waveStream.ts`
+ * derives the client's typed UI tool parts from this, so the wire and the
+ * client can never drift on the tool surface.
  */
 export type WaveMidTurnAgentTools = WaveMidTurnToolkit["tools"] &
-  ReturnType<typeof buildWaveLookupTools>;
+  ReturnType<typeof buildWaveLookupTools> & {
+    askClinicalExpert: ReturnType<typeof buildAskClinicalExpertTool>;
+  };
 
 /** Inputs that scope one agent instance to one wave turn. */
 export interface WaveMidTurnAgentParams {
@@ -77,7 +81,7 @@ export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTu
   const agent = new ToolLoopAgent({
     model: params.model ?? getLlmModel(),
     instructions,
-    tools: { ...toolkit.tools, ...lookupTools },
+    tools: { ...toolkit.tools, ...lookupTools, askClinicalExpert: buildAskClinicalExpertTool() },
     stopWhen: stepCountIs(LLM.maxToolSteps),
     temperature: LLM.defaultTemperature,
     maxRetries: LLM.maxRetries,

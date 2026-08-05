@@ -316,3 +316,18 @@ export const WAVE = {
 
 /** Due-review injection mode for the Wave system prompt — see `WAVE` docs. */
 export type WaveDueReviewInjection = "full" | "hint";
+
+/**
+ * Corti hosted clinical-expert delegation (feat/corti-path-a).
+ * - `agentName`: find-or-create key for the hosted agent (Corti marks
+ *   agents ephemeral; `src/lib/llm/cortiExpert.ts` recreates on 404).
+ * - `requestTimeoutMs`: per-HTTP-call abort; expert answers observed ~3s,
+ *   sized for tail latency without hanging a teaching turn.
+ * - `tokenRefreshMarginMs`: OAuth tokens live 300s; refresh this margin
+ *   early so a token never expires mid-request.
+ */
+export const CORTI_EXPERT = {
+  agentName: "Clinical Expert Lecturer",
+  requestTimeoutMs: 30_000,
+  tokenRefreshMarginMs: 30_000,
+} as const;

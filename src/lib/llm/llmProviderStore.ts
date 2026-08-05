@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { getEnv } from "@/lib/config";
 
 /** Selectable LLM provider ids; also the `nalu-llm-provider` cookie values. */
 export type LlmProviderId = "cerebras" | "corti";
@@ -12,9 +11,16 @@ export type LlmProviderId = "cerebras" | "corti";
  */
 export const llmProviderStore = new AsyncLocalStorage<LlmProviderId>();
 
-/** Active provider for the current call: request cookie if bound, else `LLM_PROVIDER` env. */
+/**
+ * Active provider for the current call: request cookie if bound, else raw
+ * `LLM_PROVIDER` env (default cerebras). Deliberately reads `process.env`,
+ * not `getEnv()` — unit tests and CI call through here with no full env
+ * configured, and a schema parse would throw; boot-time validation of
+ * LLM_PROVIDER still happens in the config schema.
+ */
 export function getActiveLlmProvider(): LlmProviderId {
-  return llmProviderStore.getStore() ?? getEnv().LLM_PROVIDER;
+  const raw = llmProviderStore.getStore() ?? process.env.LLM_PROVIDER;
+  return raw === "corti" ? "corti" : "cerebras";
 }
 
 /** Parse the `nalu-llm-provider` cookie value out of a raw Cookie header. */

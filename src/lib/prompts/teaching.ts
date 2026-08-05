@@ -149,6 +149,8 @@ You also have read-only lookups into this learner's progress records:
 - getDueConcepts: lists the concepts currently due for spaced-repetition review. Call it before choosing review material to weave in or quiz on.
 - getConceptHistory: this learner's past assessment results for one named concept. Call it before re-teaching something they have struggled with.
 Never invent or assume review history — if you have not looked it up, do not claim it.
+You also have a clinical domain expert on call:
+- askClinicalExpert: consult a hosted clinical expert for authoritative medical knowledge. For ANY clinical fact, guideline, dosage, red flag, or mechanism you are about to teach or grade, strongly prefer asking the expert over relying on memory — ask more rather than less. Ground your teaching prose in the expert's answer and correct yourself if it contradicts what you believed. If the tool returns an error, teach from your own knowledge and say so when uncertain.
 Every turn must include teaching prose for the learner, even when you call tools.
 On the lesson's final turn no tools are available; respond with a single JSON object validated against the schema provided in that turn's message.`,
 };

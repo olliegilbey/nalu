@@ -37,6 +37,7 @@ describe("buildWaveMidTurnAgent", () => {
     const { agent, collector } = buildWaveMidTurnAgent({ seed: SEED, courseId: COURSE_ID });
     // Tool surface is the contract the prompt + client rely on.
     expect(Object.keys(agent.tools).sort()).toEqual([
+      "askClinicalExpert",
       "getConceptHistory",
       "getDueConcepts",
       "presentQuestionnaire",
