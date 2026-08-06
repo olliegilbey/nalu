@@ -47,3 +47,6 @@ next-env.d.ts
 
 # ai sdk devtools local capture (learner content + grading keys)
 .devtools/
+
+# generated Codex mirror of .claude/skills/ — derived, drifts from source; regenerate as needed
+.agents/skills/
