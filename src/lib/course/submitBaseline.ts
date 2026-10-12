@@ -236,9 +236,9 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
     });
 
     // persistScopingClose: widens baseline JSONB (overwriting userMessage with
-    // the closing framing), upserts concepts, opens Wave 1, inserts the opening
-    // assistant message, flips status, closes the scoping pass, bumps XP — all
-    // in one transaction.
+    // the closing framing), closes the scoping pass, upserts concepts, opens
+    // Wave 1, inserts the opening assistant message, flips status, bumps XP —
+    // all in one transaction.
     const { wave1Id } = await persistScopingClose({
       courseId: course.id,
       scopingPassId: pass.id,

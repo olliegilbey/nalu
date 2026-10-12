@@ -127,7 +127,7 @@ describe("persistScopingClose (integration)", () => {
   // rolls back EVERY write inside the tx — baseline JSONB widen, status flip,
   // tier set, XP bump, AND the concept upsert (now threaded through `tx`).
   // -------------------------------------------------------------------------
-  it("rolls back the baseline widen, status flip, and concept upsert when Wave 1 insert fails", async () => {
+  it("rolls back the baseline widen, pass close, status flip, and concept upsert when Wave 1 insert fails", async () => {
     await seedScopingCourseAndRun(async (courseId, scopingPassId) => {
       // Pre-create an open Wave 1 so the partial unique index rejects the
       // second insert inside persistScopingClose.
@@ -182,7 +182,9 @@ describe("persistScopingClose (integration)", () => {
       const concepts = await getConceptsByCourse(courseId);
       expect(concepts).toHaveLength(0);
 
-      // The pass close rolls back too: scoping is still open for a retry.
+      // The pass closed at step 2b, before the failing `openWave`. That close
+      // rolls back too, so scoping is still open for a retry. A close outside
+      // `tx` would survive the rollback and fail this check.
       expect((await getOpenScopingPassByCourse(courseId))?.id).toBe(scopingPassId);
     });
   });

@@ -38,8 +38,8 @@ export interface PersistScopingCloseResult {
  * Transactional persistence body that closes scoping and seeds Wave 1.
  *
  * Order (top → bottom): re-fetch baseline+framework → widen baseline JSONB →
- * upsert concepts → open Wave 1 → append opening message → flip status +
- * tiers + summary → close the scoping pass → bump total_xp. Status flip is
+ * close the scoping pass → upsert concepts → open Wave 1 → append opening
+ * message → flip status + tiers + summary → bump total_xp. Status flip is
  * last so any failure leaves the course in `scoping`, retryable by the
  * orchestrator (status-gated idempotency — NOT enforced here).
  *
@@ -119,6 +119,10 @@ export async function persistScopingClose(
           updated_at = NOW()
       WHERE id = ${courseId}
     `);
+
+    // 2b. Close the scoping pass: its Context is done; Wave 1 opens a fresh
+    //     one below. Same tx, so a rollback leaves the pass open for a retry.
+    await closeScopingPass(scopingPassId, tx);
 
     // 3. Upsert one concept per distinct `conceptName` (case-insensitive dedup
     //    matches `upsertConcept`'s ON CONFLICT (course_id, lower(name))).
@@ -203,10 +207,6 @@ export async function persistScopingClose(
       WHERE id = ${courseId}
         AND status = 'scoping'
     `);
-
-    // 6b. Close the scoping pass: its Context is done, and Wave 1 opened a
-    //     fresh one. Same tx, so a rollback leaves the pass open for a retry.
-    await closeScopingPass(scopingPassId, tx);
 
     // 7. Bump total_xp atomically. Skip the call when totalXp is 0 — saves a
     //    round-trip on no-XP runs (e.g. all q=0 gradings).
