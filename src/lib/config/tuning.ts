@@ -275,6 +275,36 @@ export const LLM = {
 } as const;
 
 /**
+ * Cerebras token pricing, in USD per MILLION tokens. Consumed only by
+ * `src/lib/llm/usageCost.ts` to turn the provider-reported `usage` object
+ * into a per-run "≈ $X" readout. Never influences scoring, XP, or the LLM
+ * (it never sees cost) — it is a pure observability tunable.
+ *
+ * Rates are for `gpt-oss-120b`, the default `LLM_MODEL`. Change the model,
+ * change these. Nalu runs on the Cerebras paid tier (since 2026-07-16).
+ *
+ * Source: Cerebras model docs, "$0.35 / M tokens" input and
+ * "$0.75 / M tokens" output, https://inference-docs.cerebras.ai/models/openai-oss
+ * (checked 2026-10-12).
+ *
+ * ⚠️ Caching is NOT a discount on Cerebras: cached input tokens bill at the
+ * FULL input rate. Source: "billed at the standard input token rate",
+ * https://inference-docs.cerebras.ai/capabilities/prompt-caching
+ * (checked 2026-10-12). `usage.cachedInputTokens` /
+ * `inputTokenDetails.cacheReadTokens` are surfaced for DISPLAY only and MUST
+ * NOT reduce the computed cost — see the explicit cached-not-discounted test
+ * in `src/lib/llm/usageCost.test.ts`.
+ *
+ * Reasoning tokens bill as OUTPUT. The AI SDK already folds reasoning into
+ * `usage.outputTokens` (`outputTokenDetails.reasoningTokens` is a subset),
+ * so charging `outputTokens × outputRate` captures reasoning automatically.
+ */
+export const CEREBRAS_PRICING = {
+  inputUsdPerMillionTokens: 0.35,
+  outputUsdPerMillionTokens: 0.75,
+} as const;
+
+/**
  * Agent lookup-tool caps (agent-loop plan Task 3): every lookup returns a
  * bounded projection so a tool result can never blow the rendered context.
  * - `dueConceptsLimit`: max concepts per getDueConcepts call (soonest first).

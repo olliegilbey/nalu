@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { z } from "zod/v4";
 import { MockLanguageModelV3 } from "ai/test";
 import { NoObjectGeneratedError } from "ai";
 import { generateChat } from "./generate";
+import { getRunUsageTally, resetRunUsageTally } from "./runUsageTally";
 import { LLM } from "@/lib/config/tuning";
 
 /**
@@ -28,6 +29,9 @@ function mockModel(text: string): MockLanguageModelV3 {
 }
 
 describe("generateChat", () => {
+  // The run tally is module state; each test starts from zero.
+  beforeEach(() => resetRunUsageTally());
+
   it("returns the model text and usage", async () => {
     const model = mockModel("hello");
 
@@ -110,5 +114,23 @@ describe("generateChat", () => {
       if (!NoObjectGeneratedError.isInstance(err)) return false;
       return err.text === '{"x":42}';
     });
+  });
+
+  it("folds the Step's usage into the run tally", async () => {
+    await generateChat([{ role: "user", content: "hi" }], { model: mockModel("hello") });
+
+    expect(getRunUsageTally()).toMatchObject({ steps: 1, inputTokens: 10, outputTokens: 20 });
+  });
+
+  it("folds a validation-failed Step's usage into the run tally", async () => {
+    // The HTTP call succeeded and Cerebras billed it, so the tally counts it.
+    await expect(
+      generateChat([{ role: "user", content: "hi" }], {
+        model: mockModel('{"x":42}'),
+        responseSchema: z.object({ x: z.string() }),
+      }),
+    ).rejects.toSatisfy((err: unknown) => NoObjectGeneratedError.isInstance(err));
+
+    expect(getRunUsageTally()).toMatchObject({ steps: 1, inputTokens: 10, outputTokens: 20 });
   });
 });

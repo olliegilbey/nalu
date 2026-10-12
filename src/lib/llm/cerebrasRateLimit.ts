@@ -38,8 +38,9 @@ import { userIdStore } from "./userIdStore";
  * Two responsibilities, both consumed by `generateChat`:
  *   - `awaitCerebrasCallSlot()` — BEFORE `generateText`: enforces request
  *     spacing AND token-budget backoff.
- *   - `recordCerebrasRateLimitHeaders(headers)` — AFTER `generateText`:
- *     captures the `x-ratelimit-*` headers for the next call to consult.
+ *   - `recordCerebrasRateLimitHeaders(headers)` — AFTER each Step, via
+ *     `recordStepFinished`: captures the `x-ratelimit-*` headers for the
+ *     next call to consult.
  *
  * Gating: active in PRODUCTION and LIVE SMOKE (`CEREBRAS_LIVE=1`); a complete
  * no-op in mocked unit/integration suites (where a 13s wait would hang the
@@ -60,9 +61,10 @@ import { userIdStore } from "./userIdStore";
  * so we treat "under vitest" as inert UNLESS the live-smoke project opted
  * in with `CEREBRAS_LIVE=1`. Production sets neither var, so it stays
  * active there. Env is read at CALL time (not module-load) so a harness
- * that sets the vars after import still takes effect.
+ * that sets the vars after import still takes effect. `runUsageTally.ts`
+ * reuses it to gate its per-Step stderr line.
  */
-function isRateLimiterActive(): boolean {
+export function isRateLimiterActive(): boolean {
   const underVitest = process.env.VITEST === "true" || process.env.VITEST === "1";
   return !underVitest || process.env.CEREBRAS_LIVE === "1";
 }

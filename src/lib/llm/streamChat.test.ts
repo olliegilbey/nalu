@@ -4,6 +4,7 @@ import { streamText, Output, NoObjectGeneratedError } from "ai";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
 import { toOutputSchema } from "./toCerebrasJsonSchema";
 import { streamChat } from "./streamChat";
+import { getRunUsageTally, resetRunUsageTally } from "./runUsageTally";
 import type { LlmMessage } from "@/lib/types/llm";
 
 /** Mock model that streams `chunks` of text then finishes. */
@@ -92,5 +93,37 @@ describe("streamChat", () => {
     await expect(handle.final()).rejects.toSatisfy((e: unknown) =>
       NoObjectGeneratedError.isInstance(e),
     );
+  });
+
+  it("folds the Step's usage into the run tally once, even when final() runs twice", async () => {
+    resetRunUsageTally();
+    const handle = await streamChat(messages, {
+      model: mockStreamModel(['{ "userMessage": "Hi!" }']),
+      responseSchema: schema,
+      responseSchemaName: "t",
+    });
+    for await (const chunk of handle.partialOutputStream) {
+      void chunk; // drain
+    }
+    await handle.final();
+    await handle.final();
+    expect(getRunUsageTally()).toMatchObject({ steps: 1, inputTokens: 3, outputTokens: 10 });
+  });
+
+  it("folds a validation-failed Step's usage into the run tally", async () => {
+    // The HTTP call succeeded and Cerebras billed it, so the tally counts it.
+    resetRunUsageTally();
+    const handle = await streamChat(messages, {
+      model: mockStreamModel(['{ "wrong": 1 }']),
+      responseSchema: schema,
+      responseSchemaName: "t",
+    });
+    for await (const chunk of handle.partialOutputStream) {
+      void chunk; // drain
+    }
+    await expect(handle.final()).rejects.toSatisfy((e: unknown) =>
+      NoObjectGeneratedError.isInstance(e),
+    );
+    expect(getRunUsageTally()).toMatchObject({ steps: 1, inputTokens: 3, outputTokens: 10 });
   });
 });

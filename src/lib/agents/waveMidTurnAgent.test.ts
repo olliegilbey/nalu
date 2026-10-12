@@ -1,13 +1,87 @@
 import { describe, it, expect, vi } from "vitest";
+import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import type { WaveSeedInputs } from "@/lib/types/context";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
+import { getRunUsageTally, resetRunUsageTally } from "@/lib/llm/runUsageTally";
 import { buildWaveMidTurnAgent } from "./waveMidTurnAgent";
 
-// The provider needs env at import time — stub it; these tests never call.
+// The provider needs env at import time — stub it. Tests that run the
+// loop inject a MockLanguageModelV3 instead.
 vi.mock("@/lib/llm/provider", () => ({
   getLlmModel: () => ({ modelId: "stub", specificationVersion: "v3" }),
   llmProviderOptions: () => ({ "nalu-llm": { reasoningEffort: "high" } }),
 }));
+
+// The getDueConcepts lookup reads the DB; nothing is due in these tests.
+vi.mock("@/db/queries/concepts", () => ({
+  getDueConceptsByCourse: vi.fn().mockResolvedValue([]),
+  getConceptByNameForCourse: vi.fn(),
+}));
+
+/** Token usage every mocked Step reports. */
+const STEP_USAGE = {
+  inputTokens: { total: 100, noCache: 100, cacheRead: undefined, cacheWrite: undefined },
+  outputTokens: { total: 40, text: 40, reasoning: undefined },
+} as const;
+
+/**
+ * Two-Step mock: a getDueConcepts tool call, then closing prose. A function,
+ * not the mock's array form: the array form indexes after recording the
+ * call, so its first Step would return element 1.
+ */
+function twoStepModel(): MockLanguageModelV3 {
+  const model: MockLanguageModelV3 = new MockLanguageModelV3({
+    doGenerate: async () =>
+      model.doGenerateCalls.length === 1
+        ? {
+            content: [
+              { type: "tool-call", toolCallId: "call-1", toolName: "getDueConcepts", input: "{}" },
+            ],
+            finishReason: { unified: "tool-calls", raw: undefined },
+            usage: STEP_USAGE,
+            warnings: [],
+          }
+        : {
+            content: [{ type: "text", text: "Nothing is due yet." }],
+            finishReason: { unified: "stop", raw: undefined },
+            usage: STEP_USAGE,
+            warnings: [],
+          },
+  });
+  return model;
+}
+
+/**
+ * Streamed twin of {@link twoStepModel}: the production path, since every
+ * mid-Wave turn runs `agent.stream`. Usage rides on each Step's finish
+ * chunk, as with `stream_options.include_usage` on the wire.
+ */
+function twoStepStreamModel(): MockLanguageModelV3 {
+  const finish = (unified: "tool-calls" | "stop"): LanguageModelV3StreamPart => ({
+    type: "finish",
+    finishReason: { unified, raw: undefined },
+    usage: STEP_USAGE,
+  });
+  const toolCallStep: readonly LanguageModelV3StreamPart[] = [
+    { type: "tool-call", toolCallId: "call-1", toolName: "getDueConcepts", input: "{}" },
+    finish("tool-calls"),
+  ];
+  const proseStep: readonly LanguageModelV3StreamPart[] = [
+    { type: "text-start", id: "t1" },
+    { type: "text-delta", id: "t1", delta: "Nothing is due yet." },
+    { type: "text-end", id: "t1" },
+    finish("stop"),
+  ];
+  const model: MockLanguageModelV3 = new MockLanguageModelV3({
+    doStream: async () => ({
+      stream: simulateReadableStream({
+        chunks: [...(model.doStreamCalls.length === 1 ? toolCallStep : proseStep)],
+      }),
+    }),
+  });
+  return model;
+}
 
 const SEED: WaveSeedInputs = {
   kind: "wave",
@@ -72,5 +146,42 @@ describe("buildWaveMidTurnAgent", () => {
     expect(() =>
       buildWaveMidTurnAgent({ seed: { ...SEED, outputContract: "json" }, courseId: COURSE_ID }),
     ).toThrowError(/outputContract: "tools"/);
+  });
+
+  it("folds every loop Step's usage into the run tally", async () => {
+    // Each Step is one billed provider call. The tool loop bypasses
+    // generateChat, so the agent's onStepFinish must record usage itself.
+    resetRunUsageTally();
+    const { agent } = buildWaveMidTurnAgent({
+      seed: SEED,
+      courseId: COURSE_ID,
+      model: twoStepModel(),
+    });
+
+    const result = await agent.generate({ messages: [{ role: "user", content: "hi" }] });
+
+    // Guard the fixture: the loop really ran two Steps.
+    expect(result.steps).toHaveLength(2);
+
+    expect(getRunUsageTally()).toMatchObject({ steps: 2, inputTokens: 200, outputTokens: 80 });
+  });
+
+  it("folds every streamed loop Step's usage into the run tally", async () => {
+    // The production path: executeToolTurnStream drives agent.stream.
+    resetRunUsageTally();
+    const { agent } = buildWaveMidTurnAgent({
+      seed: SEED,
+      courseId: COURSE_ID,
+      model: twoStepStreamModel(),
+    });
+
+    const result = await agent.stream({ messages: [{ role: "user", content: "hi" }] });
+    for await (const part of result.fullStream) {
+      void part; // drain, as executeToolTurnStream does
+    }
+
+    // Guard the fixture: the loop really ran two Steps.
+    expect(await result.steps).toHaveLength(2);
+    expect(getRunUsageTally()).toMatchObject({ steps: 2, inputTokens: 200, outputTokens: 80 });
   });
 });

@@ -30,6 +30,26 @@ describe("getLlmModel", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("asks for token usage on streamed calls", async () => {
+    // Without stream_options.include_usage an OpenAI-compatible stream may
+    // end with no usage, and every streamed Step would tally 0 tokens.
+    const bodies: unknown[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response("data: [DONE]\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+    const { getLlmModel } = await import("./provider");
+
+    await getLlmModel().doStream({
+      prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+    });
+
+    expect(bodies[0]).toMatchObject({ stream_options: { include_usage: true } });
   });
 
   it("returns a model handle when env is valid", async () => {

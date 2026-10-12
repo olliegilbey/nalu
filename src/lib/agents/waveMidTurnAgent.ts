@@ -2,7 +2,7 @@ import { ToolLoopAgent, stepCountIs } from "ai";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { getLlmModel, llmProviderOptions } from "@/lib/llm/provider";
 import { cerebrasToolLoopPrepareStep } from "@/lib/llm/cerebrasToolLoopPrepareStep";
-import { recordCerebrasRateLimitHeaders } from "@/lib/llm/cerebrasRateLimit";
+import { recordStepFinished } from "@/lib/llm/recordStepFinished";
 import { llmTelemetry } from "@/lib/llm/telemetry";
 import { LLM } from "@/lib/config/tuning";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
@@ -87,11 +87,13 @@ export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTu
     // Env-gated OTel span, stage-labelled, learner content redacted
     // (src/lib/llm/telemetry.ts). One span per turn, child spans per step.
     experimental_telemetry: llmTelemetry("wave-mid"),
-    // Feed observed x-ratelimit-* headers back to the pacing limiter after
-    // EVERY loop step (each step is one provider call). Constructor-level so
-    // no dispatch site can forget it.
+    // After EVERY loop Step (each is one provider call): feed observed
+    // x-ratelimit-* headers back to the pacing limiter, and fold the Step's
+    // tokens into the per-run cost tally. The loop bypasses generateChat,
+    // so this is the only place its usage is seen. Constructor-level so no
+    // dispatch site can forget it.
     onStepFinish: (step) => {
-      recordCerebrasRateLimitHeaders(step.response.headers);
+      recordStepFinished(step.response.headers, step.usage);
     },
   });
   return { agent, collector: toolkit.collector, instructions };
