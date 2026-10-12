@@ -74,7 +74,7 @@ export function mergeAndComputeXp(params: MergeAndComputeXpParams): MergeAndComp
   // discard the model's entry and keep the mechanical one. Ordering the
   // `Map` so mechanical entries land LAST makes them win the last-write
   // dedupe. Using `Map` constructed from a flat array keeps the function
-  // pure — no per-element mutation, no `immutable-data` lint warning.
+  // pure — no per-element mutation.
   const byId = new Map<string, StoredGrading>(
     [...params.parsed.gradings, ...params.mechanicalGradings].map((g) => [g.questionId, g]),
   );

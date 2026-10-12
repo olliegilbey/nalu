@@ -99,8 +99,8 @@ export async function applyCloseGradings(
   const clickByQuestionId = openQuestionnaire
     ? await buildCloseMcChoiceMap(tx, ctx.wave.id, openQuestionnaire.questionnaireId)
     : new Map<string, "A" | "B" | "C" | "D">();
-  // Reduce keeps `eslint-plugin-functional/immutable-data` happy when we need
-  // to accumulate results; the awaited accumulator threads them through.
+  // Reduce accumulates results without mutation; the awaited accumulator
+  // threads them through.
   // Sequential by design — writes share one tx handle and grading counts at
   // close are tiny (0–1 free-text items). The SM-2 loop in
   // `persistWaveClose.ts` uses a plain `for…of` because it's purely effectful

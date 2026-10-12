@@ -233,9 +233,8 @@ describe("cerebrasRateLimit", () => {
       const first = await measureForUser("user-a");
       expect(first).toBe(0);
 
-      // Iterate (threshold - 1) more times. Codebase uses for...of only
-      // (eslint-plugin-functional `no-let`); `Array.from({ length })` is
-      // the idiomatic way to spin a fixed count without an index var.
+      // Iterate (threshold - 1) more times. `Array.from({ length })` spins a
+      // fixed count without a `let` index var (house immutability preference).
       for (const _ of Array.from({ length: LLM.fastLaneCallsPerUser - 1 })) {
         const delay = await measureForUser("user-a");
         expect(delay).toBe(LLM.fastLaneSpacingMs);

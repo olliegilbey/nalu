@@ -20,8 +20,7 @@ import { NotFoundError } from "./errors";
  * `blueprintEmitted`) are validated via Zod on every read so consumers
  * receive typed, safe payloads.
  *
- * All UPDATE statements use raw `db.execute(sql\`...\`)` because
- * `db.update().set()` crashes `eslint-plugin-functional/immutable-data`.
+ * All UPDATE statements use raw `db.execute(sql\`...\`)` (house style).
  * After each UPDATE, we re-fetch via Drizzle's typed select for camelCase
  * mapping — `RETURNING *` would give snake_case rows from the driver.
  */

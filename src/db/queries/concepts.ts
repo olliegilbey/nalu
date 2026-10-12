@@ -7,16 +7,14 @@ import { NotFoundError } from "./errors";
 /**
  * `concepts` query surface (spec §3.6 / §8).
  *
- * Dedup: `INSERT … ON CONFLICT (course_id, lower(name)) DO UPDATE`. On
+ * Dedup: `INSERT … ON CONFLICT (course_id, lower(name)) DO NOTHING`. On
  * conflict the existing `tier` is preserved — it is immutable post-first-sight
- * (spec §3 decisions). The conflict SET clause is a no-op that keeps the
- * existing row while still ensuring the row is present.
+ * (spec §3 decisions). `upsertConcept` then re-fetches the row by natural key.
  *
  * `getDueConceptsByCourse` is the hot Wave-start query, backed by
  * `concepts_due_idx` (partial WHERE next_review_at IS NOT NULL).
  *
- * All UPDATE statements use raw `db.execute(sql\`...\`)` because
- * `db.update().set()` crashes `eslint-plugin-functional/immutable-data`.
+ * All UPDATE statements use raw `db.execute(sql\`...\`)` (house style).
  * After updates that need the return value, we re-fetch via `getConceptById`
  * so Drizzle's camelCase mapping applies (mirrors the `closeWave` pattern).
  */
@@ -218,9 +216,9 @@ export async function upsertConcept(params: UpsertConceptParams, tx?: DbOrTx): P
 /**
  * Persist SM-2 review results for a concept.
  *
- * Uses raw SQL UPDATE to avoid `eslint-plugin-functional/immutable-data` crash
- * on `db.update().set()`. Re-fetches via `getConceptById` so the returned row
- * goes through Drizzle's camelCase mapping (mirrors the `closeWave` pattern).
+ * Uses raw SQL UPDATE (house style). Re-fetches via `getConceptById` so the
+ * returned row goes through Drizzle's camelCase mapping (mirrors the
+ * `closeWave` pattern).
  *
  * Optional `tx` opts the UPDATE and re-fetch into a caller's transaction.
  * BOTH operations must run on the same executor — using `db` for the re-fetch

@@ -6,8 +6,10 @@ import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
 /**
  * `user_profiles` — one row per learner (spec §3.1).
  *
- * `id` mirrors `auth.users(id)` so the column shape is production-correct
- * from day one; until auth lands, the seed inserts a row at `DEV_USER_ID`.
+ * `id` mirrors `auth.users(id)` (no FK). Production: the anonymous Supabase
+ * user minted in `src/proxy.ts`; `ensureUserProfile` inserts the row.
+ * Outside production: the seeded `DEV_USER_ID` row, claimed via the
+ * `x-dev-user-id` header (`src/server/requestUser.ts`).
  *
  * `total_xp` is a cached aggregate over `assessments.xp_awarded` (via
  * `courses.total_xp`). The query layer reconciles; we never trust this

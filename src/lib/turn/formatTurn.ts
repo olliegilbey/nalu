@@ -238,7 +238,7 @@ export function formatParseFailure(
 function colorizeDirectiveLines(detail: string): string {
   const lines = detail.split("\n");
   // Track whether we're inside the schema block to choose a per-line style.
-  // `reduce` keeps the function `let`-free under `functional/no-let`.
+  // `reduce` keeps the function `let`-free (house immutability preference).
   return lines
     .reduce<{ readonly out: readonly string[]; readonly inSchema: boolean }>(
       (acc, line) => {

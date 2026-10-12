@@ -104,8 +104,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
 
   // closeResult lives in component-local state because the wire's `getState`
   // never returns a close-turn payload (see WaveState TSDoc). We capture it
-  // from the turn-result data part and surface it to the page. useState
-  // is allowed under eslint-plugin-functional's React-hook exception.
+  // from the turn-result data part and surface it to the page.
   const [closeResult, setCloseResult] = useState<WaveCloseResult | null>(null);
 
   // Per-call error hook for questionnaire submissions: WaveSession re-shows

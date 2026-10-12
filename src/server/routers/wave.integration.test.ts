@@ -476,7 +476,7 @@ describe("wave.submitTurn", () => {
       // (the UI/turn-budget source) — post-T11 `submitWaveTurn` derives
       // `consumed` from chat_log, so close-turn dispatch requires the
       // chat_log user entries to be present.
-      // Array.reduce instead of for/let to satisfy `functional/no-let`.
+      // Array.reduce instead of for/let (house immutability preference).
       await Array.from({ length: WAVE.turnCount - 1 }).reduce<Promise<void>>(
         async (accP, _v, i) => {
           await accP;

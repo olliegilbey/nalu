@@ -69,8 +69,8 @@ function isRateLimiterActive(): boolean {
 
 // --- Module-level mutable state -------------------------------------------
 // A rate limiter is inherently stateful: it must remember the previous
-// call's dispatch time and the last-seen token budget. This is the one
-// honest exception to `eslint-plugin-functional`'s `no-let` rule.
+// call's dispatch time and the last-seen token budget. Module-level `let`
+// is the honest tool here; AGENTS.md names rate-limiter clocks as a fine use.
 
 /**
  * Dispatch timestamp (ms epoch) of the previous LLM call. Initialised to 0

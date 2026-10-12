@@ -80,7 +80,7 @@ export async function emitSmokeFinalSnapshot(args: SmokeFinalSnapshotArgs): Prom
 
   // Retry count per step = number of failed_assistant_response rows at that
   // turn_index. Plain object accumulator (spread, not Map.set) keeps the
-  // fold immutable under functional/immutable-data.
+  // fold immutable.
   const retryCounts: Readonly<Record<number, number>> = rows.reduce<
     Readonly<Record<number, number>>
   >((acc, r) => {

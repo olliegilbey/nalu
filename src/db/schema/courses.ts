@@ -11,9 +11,10 @@ import { userProfiles } from "./userProfiles";
  * are immutable once scoping closes. `current_tier` is mutable post-scoping
  * via `progression.ts` (promotion or demotion).
  *
- * `summary` is the cumulative LLM-rewritten course summary, seeded from the
- * baseline batch evaluation's `<course_summary>` and overwritten on every
- * Wave close via `<course_summary_update>`.
+ * `summary` is the course summary. Scoping close sets it from the close
+ * turn's `summary` field (`submitBaseline.persist.ts`). Nothing rewrites it
+ * after that: the Wave-close `summary` goes to `waves.summary`, and
+ * `updateCourseSummary` has no production caller.
  *
  * `total_xp` is a cached aggregate (see §3 decisions) — reconciled from
  * `assessments.xp_awarded`.

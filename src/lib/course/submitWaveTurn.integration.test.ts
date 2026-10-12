@@ -400,7 +400,7 @@ describe("submitWaveTurn (integration)", () => {
       // both stores to keep parity with what real production turns persist.
       // No `text_with_questionnaire` entry → no open questionnaire → chat-text
       // branch is open and §7.4 doesn't trip.
-      // Array-reduce instead of for/let to satisfy `functional/no-let`.
+      // Array-reduce instead of for/let (house immutability preference).
       await Array.from({ length: WAVE.turnCount - 1 }).reduce<Promise<void>>(
         async (accP, _v, i) => {
           await accP;
