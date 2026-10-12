@@ -344,7 +344,7 @@ Before any user text enters a prompt:
 
 - HTML-encode `&`, `<` and `>`
 - Wrap Wave learner text in `<user_message>` tags. Scoping input is escaped inside its stage envelope and not wrapped.
-- System prompt explicitly instructs the model to treat `<user_message>` content as data. The scoping prompt lacks this line today (issue #98).
+- The teaching and scoping system prompts explicitly instruct the model to treat user-envelope content as data.
 
 ### 8.2 Anti-Gaming
 
