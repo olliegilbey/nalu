@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
-import { formatMutationError } from "@/lib/errors";
+import { formatMutationError, isNotFoundError } from "@/lib/errors";
 import { deriveChatEntries } from "@/lib/course/deriveChatEntries";
 import { adaptQuestionnaire, type ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
 import type { ChatEntry } from "@/lib/types/chatEntry";
@@ -31,6 +31,8 @@ export interface UseScopingStateResult {
   readonly isPending: boolean;
   /** Non-null while the last scoping Turn failed and awaits a learner Retry. */
   readonly failedTurn: FailedScopingTurn | null;
+  /** True when `course.getState` found no course for this learner: a wrong URL, or another browser's course. */
+  readonly courseNotFound: boolean;
   readonly submitClarify: (
     answers: ReadonlyArray<{ readonly questionId: string; readonly freetext: string }>,
     opts?: { readonly onError?: () => void },
@@ -62,6 +64,8 @@ export interface UseScopingStateResult {
  * once `framework` lands and `baseline` is still null — gated on the mutation
  * not already being in flight to avoid double-fire during refetch races.
  * A failed scoping Turn lands in `failedTurn`, with a closure that re-sends it.
+ * A `getState` NOT_FOUND sets `courseNotFound`. The app's QueryClient
+ * (`src/lib/queryClient.ts`) never retries it.
  *
  * Hook is portable: no DOM, no Next imports. The mutations are dispatched via
  * `@trpc/tanstack-react-query` mutation options.
@@ -251,6 +255,7 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     topic: state.data?.topic ?? null,
     isPending,
     failedTurn: openFailedTurn,
+    courseNotFound: isNotFoundError(state.error),
     submitClarify,
     submitBaselineAnswers,
   };

@@ -1,9 +1,10 @@
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { useState } from "react";
 import { TRPCProvider, getBaseUrl, devUserHeaders } from "@/lib/trpc";
+import { createQueryClient } from "@/lib/queryClient";
 import type { AppRouter } from "@/server/routers";
 
 /**
@@ -12,7 +13,7 @@ import type { AppRouter } from "@/server/routers";
  * a user without real auth. Swap for a Supabase session token when auth lands.
  */
 export function Providers({ children }: { readonly children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
+  const [queryClient] = useState(() => createQueryClient());
   const [trpcClient] = useState(() =>
     createTRPCClient<AppRouter>({
       links: [

@@ -52,7 +52,7 @@ export function ChatHeader({
 
       {showTitle ? (
         <div className="flex items-center gap-2 min-w-0 px-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-sakura-pink shrink-0" />
+          <span className="h-1.5 w-1.5 rounded-full bg-sakura shrink-0" />
           <p className="text-[14px] font-medium tracking-tight truncate max-w-[60vw]">{title}</p>
         </div>
       ) : (

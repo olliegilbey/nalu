@@ -43,7 +43,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
         prose-pre:prose-code:bg-transparent prose-pre:prose-code:text-foreground/90 prose-pre:prose-code:p-0
         prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 prose-li:text-foreground/85 prose-li:marker:text-fuji-gray
         prose-hr:my-4 prose-hr:border-sumi-4
-        prose-blockquote:border-l-2 prose-blockquote:border-sakura-pink/60 prose-blockquote:text-foreground/80 prose-blockquote:not-italic prose-blockquote:pl-3 prose-blockquote:my-3
+        prose-blockquote:border-l-2 prose-blockquote:border-sakura/60 prose-blockquote:text-foreground/80 prose-blockquote:not-italic prose-blockquote:pl-3 prose-blockquote:my-3
         prose-table:my-3 prose-table:text-[13px]
         prose-th:text-left prose-th:font-medium prose-th:text-foreground prose-th:border-b prose-th:border-sumi-4 prose-th:px-2 prose-th:py-1.5
         prose-td:px-2 prose-td:py-1.5 prose-td:border-b prose-td:border-sumi-4/60 prose-td:text-foreground/85

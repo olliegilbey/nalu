@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  focusManager,
+  onlineManager,
+} from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 // Mock tRPC context with hand-shaped queryOptions/mutationOptions. Unlike a
@@ -26,6 +31,10 @@ const hoisted = vi.hoisted(() => {
   return {
     clarifyState,
     stateData: clarifyState as Record<string, unknown>,
+    // When set, `course.getState` rejects with it. `getStateCalls` counts
+    // fetches, so a test can assert the hook did not retry.
+    stateError: null as unknown,
+    getStateCalls: 0,
     // Typed via `vi.fn`'s generic so `.mock.calls[i][0]` is the passed vars
     // (tests assert on it) while the implementation itself ignores the arg.
     frameworkFn: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({})),
@@ -75,7 +84,11 @@ const frameworkOnlyState: Record<string, unknown> = {
 vi.mock("@/lib/trpc", () => {
   const stateOpts = {
     queryKey: ["course.getState", { courseId: "c1" }] as const,
-    queryFn: async () => hoisted.stateData,
+    queryFn: async () => {
+      hoisted.getStateCalls += 1;
+      if (hoisted.stateError) throw hoisted.stateError;
+      return hoisted.stateData;
+    },
   };
   type Opts = Record<string, unknown>;
   return {
@@ -96,6 +109,7 @@ vi.mock("@/lib/trpc", () => {
   };
 });
 
+import { createQueryClient } from "@/lib/queryClient";
 import { useScopingState } from "./useScopingState";
 
 // Scoping closed: the state a refetch returns once submitBaseline committed.
@@ -119,6 +133,8 @@ function wrapper({ children }: { children: ReactNode }) {
 beforeEach(() => {
   // Reset shared mock state so tests don't leak stage/rejection setup.
   hoisted.stateData = hoisted.clarifyState;
+  hoisted.stateError = null;
+  hoisted.getStateCalls = 0;
   hoisted.frameworkFn.mockReset();
   hoisted.baselineFn.mockReset();
   hoisted.submitBaselineFn.mockReset();
@@ -228,5 +244,60 @@ describe("useScopingState", () => {
     });
     await waitFor(() => expect(result.current.scopingResult).not.toBeNull());
     expect(result.current.failedTurn).toBeNull();
+  });
+});
+
+describe("useScopingState course not found", () => {
+  afterEach(() => {
+    // Hand focus and network state back to the browser defaults.
+    focusManager.setFocused(undefined);
+    onlineManager.setOnline(true);
+  });
+
+  /** Render the hook against a NOT_FOUND getState, on the app's QueryClient. */
+  async function renderNotFound() {
+    // getState is ownership-scoped: another browser's course is NOT_FOUND too.
+    hoisted.stateError = Object.assign(new Error("course not found"), {
+      data: { code: "NOT_FOUND", httpStatus: 404 },
+    });
+    // The app's QueryClient, unlike the shared wrapper (`retry: false`). Its
+    // defaults must stop refetching a course that will not appear.
+    const qc = createQueryClient();
+    const { result } = renderHook(() => useScopingState("c1"), {
+      wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+    });
+    await waitFor(() => expect(result.current.courseNotFound).toBe(true));
+    return result;
+  }
+
+  it("flags a NOT_FOUND course at once, without retrying", async () => {
+    const result = await renderNotFound();
+    expect(hoisted.getStateCalls).toBe(1);
+    expect(result.current.isPending).toBe(false);
+  });
+
+  it("keeps the not-found state when the tab regains focus or the network returns", async () => {
+    // A refetch of a query that never had data clears its error until the
+    // reply lands, so the not-found message would vanish for that round-trip.
+    const result = await renderNotFound();
+
+    // Async act: the QueryClient's focus handler awaits before it refetches.
+    await act(async () => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await act(async () => {
+      onlineManager.setOnline(false);
+      onlineManager.setOnline(true);
+    });
+
+    expect(result.current.courseNotFound).toBe(true);
+    expect(hoisted.getStateCalls).toBe(1);
+  });
+
+  it("does not flag a course that loads", async () => {
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+    await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
+    expect(result.current.courseNotFound).toBe(false);
   });
 });

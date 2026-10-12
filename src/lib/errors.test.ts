@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatMutationError } from "./errors";
+import { formatMutationError, isNotFoundError } from "./errors";
 
 describe("formatMutationError", () => {
   it("includes HTTP status and code for a tRPC-shaped error", () => {
@@ -27,5 +27,23 @@ describe("formatMutationError", () => {
   it("handles a non-error, non-string input", () => {
     expect(formatMutationError(null)).toBe("Unknown error");
     expect(formatMutationError(undefined)).toBe("Unknown error");
+  });
+});
+
+describe("isNotFoundError", () => {
+  it("is true for a tRPC NOT_FOUND error", () => {
+    const err = Object.assign(new Error("course not found"), {
+      data: { code: "NOT_FOUND", httpStatus: 404 },
+    });
+    expect(isNotFoundError(err)).toBe(true);
+  });
+
+  it("is false for any other error", () => {
+    const serverError = Object.assign(new Error("boom"), {
+      data: { code: "INTERNAL_SERVER_ERROR" },
+    });
+    expect(isNotFoundError(serverError)).toBe(false);
+    expect(isNotFoundError(new Error("no data"))).toBe(false);
+    expect(isNotFoundError(null)).toBe(false);
   });
 });

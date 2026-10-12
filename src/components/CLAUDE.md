@@ -31,6 +31,8 @@ Thin rendering layer. Components get data through hooks in `src/hooks/`. Scoping
 | Accent violet            | oniViolet    |
 | Accent orange            | surimiOrange |
 
+The Kanagawa colours are Tailwind theme colours (`@theme inline` in `globals.css`). Every utility, variant and `/NN` modifier works on them, e.g. `hover:border-crystal/50`. Class names: `sumi-0`…`sumi-5`, `wave-blue-1`, `wave-blue-2`, `fuji-gray`, `crystal`, `sakura`, `spring-green`, `carp`, `aqua`, `oni`, `wave-red`. Add a new colour to `@theme`, never as a plain class in `@layer utilities`: Tailwind builds no variants or modifiers for a plain class. `src/app/globals.test.ts` fails on any Kanagawa class that generates no CSS.
+
 springGreen also marks an MC option picked but not yet confirmed. Once the learner confirms an ungraded MC question (no answer key), the pick freezes in crystalBlue. Green after Confirm would read as "correct" (`Composer.tsx`).
 
 Glassmorphic, Apple liquid glass inspired. Rounded corners. Generous whitespace. Translucent panels with subtle blur.
