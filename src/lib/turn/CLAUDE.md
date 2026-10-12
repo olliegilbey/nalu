@@ -39,7 +39,8 @@ deltas accumulated at the call site, NOT `finalText` (last step only).
   default retry directive. Every current caller overrides it with
   `buildRetryDirective` (`retryDirective.ts`), which flattens the issues
   to `- field path: message` bullets and re-attaches the schema. Weak
-  models (e.g. `llama3.1-8b`) act on that prose but misread raw issue JSON.
+  models act on that prose but misread raw issue JSON (seen on the retired
+  `llama3.1-8b`).
 - Transport errors (timeouts, 5xx) propagate untouched; no rows are
   persisted on transport failure.
 

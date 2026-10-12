@@ -74,8 +74,6 @@ export interface RenderWaveCloseEnvelopeParams {
   readonly learnerInput: string;
   /** Pre-rendered `<concepts_for_next_wave>…</concepts_for_next_wave>` block from `scheduler.renderConceptInjection`. */
   readonly conceptsForNextWaveBlock: string;
-  /** Optional inline JSON schema for non-strict-mode models. */
-  readonly responseSchema?: string;
 }
 
 /**
@@ -87,15 +85,11 @@ export interface RenderWaveCloseEnvelopeParams {
  * by the caller; this function only stitches.
  */
 export function renderWaveCloseEnvelope(params: RenderWaveCloseEnvelopeParams): string {
-  const schemaBlock = params.responseSchema
-    ? `<response_schema>${params.responseSchema}</response_schema>`
-    : "";
   return [
     "<stage>close wave</stage>",
     params.learnerInput,
     "<turns_remaining>0</turns_remaining>",
     params.conceptsForNextWaveBlock,
-    schemaBlock,
   ]
     .filter((s) => s !== "")
     .join("\n");

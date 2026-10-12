@@ -24,8 +24,8 @@ export interface GenerateOptions {
 
 /**
  * Chat-call extension: when `responseSchema` is provided, the call sends a
- * strict `json_schema` response_format (soft guidance on Cerebras) AND the
- * SDK validates the response against the Zod schema before returning.
+ * strict `json_schema` response_format (constrained decoding on Cerebras) AND
+ * the SDK validates the response against the Zod schema before returning.
  * `responseSchemaName` is the JSON Schema `name` field on the wire
  * (defaults to "response").
  */

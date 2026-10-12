@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { z } from "zod/v4";
 import { MockLanguageModelV3 } from "ai/test";
 import { NoObjectGeneratedError } from "ai";
@@ -110,21 +110,5 @@ describe("generateChat", () => {
       if (!NoObjectGeneratedError.isInstance(err)) return false;
       return err.text === '{"x":42}';
     });
-  });
-
-  it("sends response_format regardless of model capability (gate removed)", async () => {
-    // Pre-Output behavior gated response_format on honorsStrictMode; the gate
-    // is gone — Cerebras treats response_format as soft guidance, so sending
-    // it universally is harmless and keeps one code path.
-    vi.stubEnv("LLM_MODEL", "llama3.1-8b"); // a non-honouring model name
-    const model = mockModel('{"x":"hi"}');
-
-    await generateChat([{ role: "user", content: "hi" }], {
-      model,
-      responseSchema: z.object({ x: z.string() }),
-    });
-
-    expect(model.doGenerateCalls[0]?.responseFormat?.type).toBe("json");
-    vi.unstubAllEnvs();
   });
 });

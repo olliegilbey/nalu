@@ -4,7 +4,7 @@ import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
  * Build a human-readable retry directive for a failed turn.
  *
  * Why this exists: by default `executeTurn` surfaces Zod's raw issue-list
- * JSON as the retry message. Free-tier Cerebras models (notably
+ * JSON as the retry message. Weak models (seen on the retired
  * `llama3.1-8b`) interpret that JSON conversationally — they reply with
  * "please provide a valid input" prose instead of treating it as
  * compiler-style feedback. Wrapping the issues in imperative prose and
@@ -20,8 +20,9 @@ import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
  *      wrong. The detail is Zod's full issue list as a JSON string; we
  *      flatten it to a `- field {path}: {message}` bullet list.
  *
- * The schema is re-attached in both cases so the model doesn't have to
- * scroll back to the original user message to recall the shape.
+ * Both cases re-attach the schema inline. The wire's `response_format`
+ * already enforces it; the inline copy puts the contract beside the error,
+ * in text the model reads.
  */
 
 /** Wire shape: a single entry from Zod's `error.issues`. */
@@ -60,9 +61,9 @@ function summariseZodIssues(detail: string): string | null {
 
 /**
  * Build the retry directive string the model will see verbatim on the
- * next attempt. `schemaJson` is the same JSON-Schema body inlined in the
- * user envelope on the original turn — re-attaching it here means the
- * model has the contract right above its retry without scrollback.
+ * next attempt. `schemaJson` is the cleaned JSON-Schema body that the wire
+ * `response_format` already enforces (`toSchemaJsonString`). Re-attaching
+ * it here puts the contract right above the retry, as readable text.
  */
 export function buildRetryDirective(err: ValidationGateFailure, schemaJson: string): string {
   // JSON.parse-failure branch — `toValidationGateFailure` writes this exact prefix.

@@ -92,8 +92,8 @@ export async function streamWaveTurn(
   const { usage } = await executeToolTurnStream({
     parent: { kind: "wave", id: prep.dispatchCtx.wave.id },
     seed,
-    // No inline responseSchema block: tool definitions ARE the schema channel
-    // on this path (the envelope's param stays alive for the blocking path).
+    // Tool definitions ARE the schema channel on this path; the envelope
+    // carries no schema.
     userMessageContent: renderWaveTurnEnvelope({
       learnerInput: prep.learnerInput,
       turnsRemaining: prep.turnsRemaining,
