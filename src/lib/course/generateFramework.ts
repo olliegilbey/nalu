@@ -7,7 +7,6 @@ import { SCOPING } from "@/lib/config/tuning";
 import { frameworkSchema, type Framework } from "@/lib/prompts/framework";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
-import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import type { ClarificationJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
 /** Parameters for {@link generateFramework}; responses are the learner's clarify answers. */
@@ -108,12 +107,8 @@ export async function generateFramework(
     .join("\n\n");
 
   const pass = await ensureOpenScopingPass(course.id);
-  // Build schema string regardless — retry directive always needs it.
-  // Gate the inline on model capability: weak models (honorsStrictMode=false)
-  // get the schema inlined in the envelope; strong models read it from the
-  // wire response_format and don't need the extra tokens.
-  const modelName = process.env.LLM_MODEL ?? "(default)";
-  const capabilities = getModelCapabilities(modelName);
+  // Schema string retained only for the retry directive — the wire-side
+  // `response_format` carries the schema on every normal turn.
   const schemaJson = toSchemaJsonString(frameworkSchema, { name: "framework" });
   const { parsed } = await executeTurn({
     parent: { kind: "scoping", id: pass.id },
@@ -121,7 +116,6 @@ export async function generateFramework(
     userMessageContent: renderStageEnvelope({
       stage: "generate framework",
       learnerInput: qaPairs,
-      responseSchema: capabilities.honorsStrictMode ? undefined : schemaJson,
     }),
     responseSchema: frameworkSchema,
     responseSchemaName: "framework",

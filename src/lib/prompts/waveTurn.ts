@@ -116,8 +116,6 @@ export interface RenderWaveTurnEnvelopeParams {
   readonly learnerInput: string;
   /** Turns remaining AFTER this turn completes (0 means the next call is the close turn). */
   readonly turnsRemaining: number;
-  /** Optional inline JSON schema for non-strict-mode models. */
-  readonly responseSchema?: string;
 }
 
 /**
@@ -126,14 +124,10 @@ export interface RenderWaveTurnEnvelopeParams {
  * upstream by callers building `learnerInput`; this function only stitches.
  */
 export function renderWaveTurnEnvelope(params: RenderWaveTurnEnvelopeParams): string {
-  const schemaBlock = params.responseSchema
-    ? `<response_schema>${params.responseSchema}</response_schema>`
-    : "";
   return [
     "<stage>teaching turn</stage>",
     params.learnerInput,
     `<turns_remaining>${params.turnsRemaining}</turns_remaining>`,
-    schemaBlock,
   ]
     .filter((s) => s !== "")
     .join("\n");

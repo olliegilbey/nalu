@@ -6,7 +6,6 @@ import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { makeBaselineSchema, type BaselineTurn } from "@/lib/prompts/baseline";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
-import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import type { BaselineJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
 /** Parameters for {@link generateBaseline}. */
@@ -56,11 +55,8 @@ export async function generateBaseline(
   }
 
   const pass = await ensureOpenScopingPass(course.id);
-  // Build schema string regardless — retry directive always needs it.
-  // Gate the inline on model capability: only non-strict-mode models get the
-  // inline block. Strong models get the schema via the wire response_format.
-  const modelName = process.env.LLM_MODEL ?? "(default)";
-  const capabilities = getModelCapabilities(modelName);
+  // Schema string retained only for the retry directive — the wire-side
+  // `response_format` carries the schema on every normal turn.
   const schemaJson = toSchemaJsonString(schema, { name: "baseline" });
   const { parsed } = await executeTurn({
     parent: { kind: "scoping", id: pass.id },
@@ -70,7 +66,6 @@ export async function generateBaseline(
       // Stage envelope carries no learner input on this turn — scope is in the
       // schema description. Empty learner_input is the bare-stage signal.
       learnerInput: "",
-      responseSchema: capabilities.honorsStrictMode ? undefined : schemaJson,
     }),
     responseSchema: schema,
     responseSchemaName: "baseline",

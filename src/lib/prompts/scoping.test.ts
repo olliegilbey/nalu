@@ -40,21 +40,8 @@ describe("renderStageEnvelope", () => {
     expect(out).not.toMatch(/<\/learner_input>\s*<\/learner_input>/);
   });
 
-  it("omits <response_schema> when no schema is supplied", () => {
+  it("never inlines a <response_schema> block (schema rides the wire response_format)", () => {
     const out = renderStageEnvelope({ stage: "clarify", learnerInput: "hi" });
     expect(out).not.toContain("<response_schema>");
-  });
-
-  it("inlines <response_schema> with the supplied JSON verbatim", () => {
-    // We feed a stub schema string so this stays pure — no z.toJSONSchema dep.
-    const schemaJson = '{"type":"object","required":["userMessage"]}';
-    const out = renderStageEnvelope({
-      stage: "clarify",
-      learnerInput: "hi",
-      responseSchema: schemaJson,
-    });
-    expect(out).toContain("<response_schema>");
-    expect(out).toContain(schemaJson);
-    expect(out).toContain("</response_schema>");
   });
 });

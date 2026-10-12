@@ -1,7 +1,6 @@
 import { executeTurn } from "@/lib/turn/executeTurn";
 import { buildRetryDirective } from "@/lib/turn/retryDirective";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
-import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { waveMidTurnSchema, renderWaveTurnEnvelope } from "@/lib/prompts/waveTurn";
 import { type SubmitTurnPayload } from "./buildLearnerInput";
 import { buildWaveSeed } from "./buildWaveSeed";
@@ -24,11 +23,8 @@ export async function executeWaveMid(
   turnsRemaining: number,
   payload: SubmitTurnPayload,
 ): Promise<ExecuteWaveMidResult> {
-  // Wire-side schema selection mirrors generateBaseline: strong models honour
-  // strict-mode and receive the schema via response_format; weak models get
-  // it inline in the envelope.
-  const modelName = process.env.LLM_MODEL ?? "(default)";
-  const capabilities = getModelCapabilities(modelName);
+  // Schema string retained only for the retry directive — the wire-side
+  // `response_format` carries the schema on every normal turn.
   const schemaJson = toSchemaJsonString(waveMidTurnSchema, { name: "wave_mid_turn" });
 
   const { parsed } = await executeTurn({
@@ -39,7 +35,6 @@ export async function executeWaveMid(
     userMessageContent: renderWaveTurnEnvelope({
       learnerInput,
       turnsRemaining,
-      responseSchema: capabilities.honorsStrictMode ? undefined : schemaJson,
     }),
     responseSchema: waveMidTurnSchema,
     responseSchemaName: "wave_mid_turn",

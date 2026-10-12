@@ -10,7 +10,6 @@ import { NoObjectGeneratedError } from "ai";
 import { generateChat } from "@/lib/llm/generate";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
-import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { JSON_PARSE_RETRY_DIRECTIVE } from "@/lib/prompts/turn";
 import { SCOPING } from "@/lib/config/tuning";
 import type { LlmUsage } from "@/lib/types/llm";
@@ -141,17 +140,16 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   const label = params.label ?? params.seed.kind;
   const headerTopic = params.seed.kind === "scoping" ? params.seed.topic : params.seed.courseTopic;
   const modelName = process.env.LLM_MODEL ?? "(default)";
-  const capabilities = getModelCapabilities(modelName);
-  // Wire-side response_format schema string — only built and displayed in live
-  // mode AND only when the model actually honours strict-mode (i.e. will receive
-  // response_format). Weak models get the schema inline in the user envelope
-  // instead; showing it here would misrepresent the wire payload.
-  const liveSchemaJson =
-    live && capabilities.honorsStrictMode
-      ? toSchemaJsonString(params.responseSchema, {
-          name: params.responseSchemaName ?? params.seed.kind,
-        })
-      : undefined;
+  // Wire-side response_format schema string — built and displayed only in live
+  // mode. Every model now receives the schema via `response_format` on the
+  // wire (the per-model strict-mode gate was removed once the last
+  // non-honouring model was deprecated), so the live banner always mirrors the
+  // real wire payload.
+  const liveSchemaJson = live
+    ? toSchemaJsonString(params.responseSchema, {
+        name: params.responseSchemaName ?? params.seed.kind,
+      })
+    : undefined;
 
   /**
    * Recursive attempt loop — functional alternative to mutable loop state.

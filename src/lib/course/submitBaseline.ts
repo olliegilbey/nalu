@@ -6,7 +6,6 @@ import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { getOpenWaveByCourse } from "@/db/queries/waves";
 import { makeScopingCloseSchema, renderScopingCloseStage } from "@/lib/prompts/scopingClose";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
-import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { splitOne, type BaselineAnswer } from "./submitBaseline.internal";
 import { mergeAndComputeXp } from "@/lib/scoring/baselineMerge";
 import { persistScopingClose } from "./submitBaseline.persist";
@@ -137,8 +136,7 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
   const mechanicalGradings = splits.flatMap((s) => (s.kind === "mechanical" ? [s.grading] : []));
 
   // Schema closed over runtime scope + question ids so refine messages name
-  // the specific values that triggered any violation. Wire-side JSON schema
-  // only inlined for non-strict-mode models (see modelCapabilities).
+  // the specific values that triggered any violation.
   //
   // freshConceptNames: all example concepts from the framework tiers (the
   // model may pick from these or introduce novel ones — validated loosely).
@@ -152,8 +150,8 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
     reviewDueNames: [],
     existingConceptNames: [],
   });
-  const modelName = process.env.LLM_MODEL ?? "(default)";
-  const capabilities = getModelCapabilities(modelName);
+  // Schema string retained only for the retry directive — the wire-side
+  // `response_format` carries the schema on every normal turn.
   const schemaJson = toSchemaJsonString(schema, { name: "scoping_close" });
 
   // Persist the learner's answers on the baseline row before calling the LLM,
@@ -186,7 +184,6 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
     seed: { kind: "scoping", topic: course.topic },
     userMessageContent: renderScopingCloseStage({
       learnerInput,
-      responseSchema: capabilities.honorsStrictMode ? undefined : schemaJson,
     }),
     responseSchema: schema,
     responseSchemaName: "scoping_close",
