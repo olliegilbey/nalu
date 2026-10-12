@@ -14,8 +14,8 @@ Layout:
   `queries/CLAUDE.md` for the transactional exceptions in `src/lib/course/`.
 - `seed.ts` — idempotent dev-user seed.
 - `reset.ts` — `just db-reset` wipe: drops the `public` and `drizzle`
-  schemas at `DIRECT_URL`. Refuses unless `isLocalDatabaseUrl` says the
-  host is this machine; `.env.local` may point at production.
+  schemas at `DIRECT_URL`. Refuses unless `everyHostIsLoopback` passes
+  the hosts postgres-js parsed; `.env.local` may point at production.
 - `testing/` — testcontainers harness for integration tests.
 - `client.ts` — Drizzle singleton against `DATABASE_URL` (pooled).
 

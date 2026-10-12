@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { getEnv } from "@/lib/config";
-import { isLocalDatabaseUrl } from "./isLocalDatabaseUrl";
+import { everyHostIsLoopback } from "./everyHostIsLoopback";
 
 /**
  * Wipes the local database for `just db-reset`, which then re-migrates and
@@ -11,24 +11,24 @@ import { isLocalDatabaseUrl } from "./isLocalDatabaseUrl";
  * `public`. Other schemas, such as a local Supabase stack's `auth`, are left
  * alone. One transaction: a failure leaves the database as it was.
  *
- * Refuses unless `DIRECT_URL` points at this machine. `.env.local` may hold
- * the production Supabase URL (see `docs/DEPLOY.md`), and this is
+ * Refuses unless every host in `DIRECT_URL` is this machine. `.env.local`
+ * may hold the production Supabase URL (see `docs/DEPLOY.md`), and this is
  * destructive.
  */
 async function main(): Promise<void> {
   const env = getEnv();
-  if (!isLocalDatabaseUrl(env.DIRECT_URL)) {
-    // Name the host only: the URL carries the password.
-    const host = URL.canParse(env.DIRECT_URL) ? new URL(env.DIRECT_URL).hostname : "(unparseable)";
-    throw new Error(
-      `refusing to reset: DIRECT_URL host is ${host}, not this machine. ` +
-        "Point DIRECT_URL at a local Postgres to reset it.",
-    );
-  }
-
+  // Build the client first: postgres-js does no I/O until the first query.
+  // The gate then checks the hosts this client will dial, from one parser.
   const client = postgres(env.DIRECT_URL, { max: 1 });
   // Without this finally block, a failed reset hangs on the open socket.
   try {
+    if (!everyHostIsLoopback(client.options.host)) {
+      // Name no host: a malformed URL can leak part of the password into it.
+      throw new Error(
+        "refusing to reset: DIRECT_URL must point only at localhost or 127.0.0.1. " +
+          "Point DIRECT_URL at a local Postgres to reset it.",
+      );
+    }
     await client.begin(async (tx) => {
       await tx`DROP SCHEMA IF EXISTS drizzle CASCADE`;
       await tx`DROP SCHEMA IF EXISTS public CASCADE`;
