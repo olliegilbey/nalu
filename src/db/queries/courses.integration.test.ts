@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles } from "@/db/schema";
-import { NotFoundError } from "./errors";
+import { CourseNotScopingError, NotFoundError } from "./errors";
 import {
   createCourse,
   getCourseById,
@@ -273,6 +273,26 @@ describe("courses queries", () => {
       // Confirm the framework column was NOT written (parse threw before UPDATE).
       const fetched = await getCourseById(course.id);
       expect(fetched.framework).toBeNull();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // updateCourseScopingState writes only while the course is in scoping
+  // -----------------------------------------------------------------------
+  it("updateCourseScopingState refuses a course that has left scoping and writes nothing", async () => {
+    await seedUserAndRun(async () => {
+      const course = await createCourse({ userId: USER, topic: "Closed course" });
+      await setCourseStartingState(course.id, {
+        initialSummary: "s",
+        startingTier: 1,
+        currentTier: 1,
+      });
+
+      const clarification = { userMessage: "late", questions: [], responses: [] };
+      await expect(updateCourseScopingState(course.id, { clarification })).rejects.toBeInstanceOf(
+        CourseNotScopingError,
+      );
+      expect((await getCourseById(course.id)).clarification).toBeNull();
     });
   });
 });

@@ -6,7 +6,7 @@ import {
   frameworkJsonbSchema,
   baselineJsonbSchema,
 } from "@/lib/types/jsonb";
-import { NotFoundError } from "./errors";
+import { CourseNotScopingError, NotFoundError } from "./errors";
 
 /**
  * `courses` query surface (spec §8).
@@ -153,6 +153,12 @@ export async function listCoursesByUser(userId: string): Promise<readonly Course
  * Re-fetches via `getCourseById` after the update so the returned row goes
  * through Drizzle's camelCase mapping instead of being hand-mapped from
  * the snake_case columns that `RETURNING *` provides.
+ *
+ * Writes only while the course is in `scoping`. A write that races a scoping
+ * close must not overwrite the closed baseline with a pre-close shape: that
+ * course would fail `getState`'s invariant on every load.
+ *
+ * @throws {CourseNotScopingError} when the course has left `scoping`; nothing was written.
  */
 export async function updateCourseScopingState(
   id: string,
@@ -196,14 +202,20 @@ export async function updateCourseScopingState(
   // single comma-separated SQL fragment via the helper below.
   const combined = joinSqlFragments(setClauses);
 
-  await db.execute(sql`
+  // `RETURNING id` tells a write the status guard skipped apart from one it applied.
+  const updated = await db.execute<{ readonly id: string }>(sql`
     UPDATE courses
     SET ${combined}
     WHERE id = ${id}
+      AND status = 'scoping'
+    RETURNING id
   `);
 
-  // Re-fetch so the row goes through Drizzle's camelCase mapping.
-  return getCourseById(id);
+  // Re-fetch so the row goes through Drizzle's camelCase mapping. An unknown
+  // id throws NotFoundError here.
+  const course = await getCourseById(id);
+  if (updated.length === 0) throw new CourseNotScopingError(id, course.status);
+  return course;
 }
 
 /**

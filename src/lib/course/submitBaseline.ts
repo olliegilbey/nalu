@@ -165,14 +165,20 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
       ? { questionId: a.id, choice: a.selected }
       : { questionId: a.id, freetext: a.text },
   );
-  await updateCourseScopingState(course.id, {
-    baseline: {
-      userMessage: baseline.userMessage,
-      questions: baseline.questions,
-      gradings: baseline.gradings,
-      responses,
-    },
-  });
+  // The write is status-guarded. It throws if a concurrent close won since
+  // our read: the original Turn, still running when a reloaded tab re-sent it.
+  try {
+    await updateCourseScopingState(course.id, {
+      baseline: {
+        userMessage: baseline.userMessage,
+        questions: baseline.questions,
+        gradings: baseline.gradings,
+        responses,
+      },
+    });
+  } catch (err) {
+    return replayIfClosed(err, course.id, params.userId);
+  }
 
   // Idempotent under single-writer invariant; handles concurrent-writer race
   // via re-read on unique-violation.
@@ -245,12 +251,23 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
     });
     return { userMessage: parsed.userMessage, wave1Id, freeTextXpAwarded: merged.freeTextXp };
   } catch (err) {
-    const refreshed = await getCourseById(course.id, params.userId);
-    if (refreshed.status !== "active") throw err;
-    // Winner committed during our persist — return their persisted payload
-    // via the same code path as the top-level idempotent replay.
-    return buildCachedPayload(refreshed.id, refreshed.baseline as BaselineJsonb | null);
+    return replayIfClosed(err, course.id, params.userId);
   }
+}
+
+/**
+ * Recover from losing a race to a concurrent scoping close. If the course is
+ * now active, the winner committed: return its persisted payload, via the
+ * same path as the top-level idempotent replay. Otherwise rethrow `err`.
+ */
+async function replayIfClosed(
+  err: unknown,
+  courseId: string,
+  userId: string,
+): Promise<SubmitBaselineResult> {
+  const refreshed = await getCourseById(courseId, userId);
+  if (refreshed.status !== "active") throw err;
+  return buildCachedPayload(refreshed.id, refreshed.baseline as BaselineJsonb | null);
 }
 
 /**

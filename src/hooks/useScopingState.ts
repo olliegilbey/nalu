@@ -252,7 +252,9 @@ export function useScopingState(courseId: string): UseScopingStateResult {
   // A reload drops `failedTurn`, and a saved-answers Turn shows no question
   // card. Rebuild its Retry from server state (issue #103). Skip while a Turn
   // is in flight: its answers are saved before the LLM call, so a mid-call
-  // refetch looks the same as a failure.
+  // refetch looks the same as a failure. The gate is in-tab only. After a
+  // reload mid-Turn, or in a second tab, Retry shows while the server still
+  // runs the original. The server keeps that re-send safe (`submitBaseline`).
   const turnInFlight = generateFramework.isPending || submitBaseline.isPending;
   const stranded = state.data && !turnInFlight ? deriveStrandedScopingTurn(state.data) : null;
   const strandedTurn: FailedScopingTurn | null =
