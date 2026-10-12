@@ -137,6 +137,47 @@ describe("assessments queries", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Test 1c: tied `assessedAt` breaks on `id` ASC. One quiz's rows share the
+  // transaction's `now()`, so without a tiebreaker the order (and which rows
+  // a `limit` keeps) is up to the planner.
+  // -------------------------------------------------------------------------
+  it("getAssessmentsByConcept orders tied assessedAt rows by id", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      const sameInstant = new Date(Date.now() - 60 * 1000);
+      const ids = [
+        "00000000-0000-4000-8000-000000000003",
+        "00000000-0000-4000-8000-000000000002",
+        "00000000-0000-4000-8000-000000000001",
+      ];
+      // Inserted in DESCENDING id order, so heap order cannot pass for the
+      // tiebreaker.
+      await db.insert(assessments).values(
+        ids.map((id, i) => ({
+          id,
+          waveId: WAVE,
+          conceptId: CONCEPT,
+          turnIndex: 1,
+          question: `q${i}?`,
+          questionId: `q-tie-${i}`,
+          userAnswer: "A",
+          isCorrect: true,
+          qualityScore: 4,
+          assessmentKind: "card_mc",
+          assessedAt: sameInstant,
+        })),
+      );
+
+      const ascendingIds = ids.toSorted();
+      expect((await getAssessmentsByConcept(CONCEPT)).map((r) => r.id)).toEqual(ascendingIds);
+      expect((await getAssessmentsByConcept(CONCEPT, 2)).map((r) => r.id)).toEqual(
+        ascendingIds.slice(0, 2),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Test 2: DB CHECK rejects card_mc with NULL question
   // The rejection is DB-level (assessments_question_required_for_card_kinds);
   // the TS type permits null in `question` (it's nullable), so the guard is

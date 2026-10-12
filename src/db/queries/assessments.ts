@@ -154,7 +154,10 @@ export async function getAssessmentsByConcept(
     .select()
     .from(assessments)
     .where(eq(assessments.conceptId, conceptId))
-    .orderBy(desc(assessments.assessedAt));
+    // id ASC breaks ties: one quiz's rows share the transaction's `now()`,
+    // and a tie with no tiebreaker lets the planner pick which rows a
+    // `limit` keeps. Same tiebreaker as `getDueConceptsByCourse`.
+    .orderBy(desc(assessments.assessedAt), asc(assessments.id));
   return limit === undefined ? query : query.limit(limit);
 }
 
