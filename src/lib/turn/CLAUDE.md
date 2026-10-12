@@ -60,8 +60,9 @@ TTY and `NO_COLOR` is unset. Callers tag their turns with `label`
 for the ✓ line.
 
 `LLM_DEBUG_GRADINGS=1` adds `[grading-debug]` stderr lines for issue #22:
-a parse-failure candidate dump here, the close-turn strip path in
-`src/lib/prompts/closeTurn.ts`, and per-grading lines at both close paths
-in `src/lib/course/`. Gate and formatters live in
-`src/lib/observability/gradingDebug.ts`, which refuses the flag under
-`NODE_ENV=production`. Wrap any new content log in that gate.
+a parse-failure line here (Zod issue paths + the `gradings` fragment), and
+per-grading and strip-path lines at both close paths
+(`src/lib/course/closeGradingDebug.ts`). Gate and formatters live in
+`src/lib/observability/gradingDebug.ts`. The gate fails closed: it is on
+only under `NODE_ENV` `development` or `test`. Wrap any new content log in
+that gate.

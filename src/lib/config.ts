@@ -23,7 +23,7 @@ const envSchema = z.object({
   // Observability flags LLM_TELEMETRY (src/lib/llm/telemetry.ts),
   // LLM_DEVTOOLS (src/lib/llm/provider.ts), and LLM_DEBUG_GRADINGS
   // (src/lib/observability/gradingDebug.ts — issue #22 free-text grading
-  // diagnosis; emits learner-content grading lines to stderr, refused in production)
+  // diagnosis; emits learner-content grading lines to stderr, dev/test only)
   // are deliberately NOT in this schema: their helpers read process.env
   // directly, and a strict entry here would turn a flag typo into a whole-app
   // boot crash via schema validation.

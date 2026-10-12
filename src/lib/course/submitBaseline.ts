@@ -9,8 +9,7 @@ import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { splitOne, type BaselineAnswer } from "./submitBaseline.internal";
 import { mergeAndComputeXp } from "@/lib/scoring/baselineMerge";
-import { calculateXP } from "@/lib/scoring/xp";
-import { formatGradingDebugLine, isGradingDebugEnabled } from "@/lib/observability/gradingDebug";
+import { logScopingCloseGradings } from "./closeGradingDebug";
 import { persistScopingClose } from "./submitBaseline.persist";
 import type { BaselineJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
@@ -162,16 +161,18 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
   // so a retry does not lose them and `deriveChatEntries` can render the user-baseline
   // bubble from `baseline.responses`. Mirrors generateFramework.ts:86-92.
   // Idempotent: overwrites the empty `responses: []` initialised by generateBaseline.
+  // The same Responses feed the issue #22 debug log after the close turn.
+  const responses = params.answers.map((a) =>
+    a.kind === "mc"
+      ? { questionId: a.id, choice: a.selected }
+      : { questionId: a.id, freetext: a.text },
+  );
   await updateCourseScopingState(course.id, {
     baseline: {
       userMessage: baseline.userMessage,
       questions: baseline.questions,
       gradings: baseline.gradings,
-      responses: params.answers.map((a) =>
-        a.kind === "mc"
-          ? { questionId: a.id, choice: a.selected }
-          : { questionId: a.id, freetext: a.text },
-      ),
+      responses,
     },
   });
 
@@ -197,33 +198,14 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
     successSummary: (p) => `gradings=${p.gradings.length} startingTier=${p.startingTier}`,
   });
 
-  // Issue #22 diagnosis (gated by LLM_DEBUG_GRADINGS — true no-op when off).
-  // Same intent as `executeWaveClose`: after Zod parse succeeds, log every
-  // free-text grading with its computed XP so a correct answer scoring 0 is
-  // attributable to hypothesis (1) — the LLM omitted the grading (absent
-  // below) — vs (2) — it graded q0/q1, which `calculateXP` floors to 0
-  // (`xp≈0`). Baseline XP uses `startingTier` for every question (see
-  // `mergeAndComputeXp`), so that is the authoritative tier here — not an
-  // estimate. Content is gated: excerpts are learner answers.
-  if (isGradingDebugEnabled()) {
-    const freeTextAnswers = new Map(
-      params.answers.flatMap((a) => (a.kind === "freetext" ? [[a.id, a.text] as const] : [])),
-    );
-    for (const g of parsed.gradings) {
-      process.stderr.write(
-        `${formatGradingDebugLine({
-          context: "scoping-close",
-          questionId: g.questionId,
-          kind: g.kind,
-          verdict: g.kind === "free-text" ? g.verdict : undefined,
-          qualityScore: g.kind === "free-text" ? g.qualityScore : undefined,
-          computedXp:
-            g.kind === "free-text" ? calculateXP(parsed.startingTier, g.qualityScore) : undefined,
-          answerExcerpt: g.kind === "free-text" ? freeTextAnswers.get(g.questionId) : undefined,
-        })}\n`,
-      );
-    }
-  }
+  // Issue #22 diagnosis: no-op unless LLM_DEBUG_GRADINGS is on, and never
+  // throws. Same lines as `executeWaveClose`: grading kind beside Response
+  // kind, plus verdict, quality and XP for free-text gradings.
+  logScopingCloseGradings({
+    gradings: parsed.gradings,
+    responses,
+    startingTier: parsed.startingTier,
+  });
 
   // Defence-in-depth: the schema already enforced tier scope + id coverage,
   // but mergeAndComputeXp re-checks at the orchestration layer so a future

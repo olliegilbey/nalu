@@ -14,9 +14,8 @@ import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { JSON_PARSE_RETRY_DIRECTIVE } from "@/lib/prompts/turn";
 import { SCOPING } from "@/lib/config/tuning";
 import {
-  GRADING_DEBUG_CANDIDATE_MAX,
+  formatParseFailureDebugLine,
   isGradingDebugEnabled,
-  truncateForDebug,
 } from "@/lib/observability/gradingDebug";
 import type { LlmUsage } from "@/lib/types/llm";
 import type { SeedInputs } from "@/lib/types/context";
@@ -230,18 +229,14 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       const raw = err.text ?? "";
       const gate = toValidationGateFailure(raw, params.responseSchema);
       // Issue #22 Zod-drop visibility (gated by LLM_DEBUG_GRADINGS — no-op when
-      // off). On a validation failure the raw candidate carrying the failing
-      // `gradings` fragment is persisted as a `failed_assistant_response` row
-      // but is never surfaced to stderr outside live-smoke mode. Under the flag,
-      // dump a truncated view so a malformed / Zod-dropped grading shape (issue
-      // #22 hypothesis 1) is observable in dev without a DB dig. Stage-agnostic
-      // by design: this is a generic candidate dump, not per-stage logic.
+      // off). On a validation failure the raw candidate is persisted as a
+      // `failed_assistant_response` row but never reaches stderr outside
+      // live-smoke mode. Under the flag, print the Zod issue paths and the
+      // candidate's `gradings` fragment. An omitted grading (hypothesis 1)
+      // shows here: the coverage refine rejects it. Stage-agnostic by design:
+      // the formatter prints `gradings=absent` for stages without one.
       if (isGradingDebugEnabled()) {
-        process.stderr.write(
-          `[grading-debug] parse-failure label=${label} reason=${gate.reason} candidate=${JSON.stringify(
-            truncateForDebug(raw, GRADING_DEBUG_CANDIDATE_MAX),
-          )}\n`,
-        );
+        process.stderr.write(`${formatParseFailureDebugLine(label, gate.detail, raw)}\n`);
       }
       // Failure observability: flush the prompt + response trail (verbose
       // already printed the prompt; quiet retroactively flushes both).

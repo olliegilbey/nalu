@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { calculateXP } from "@/lib/scoring/xp";
 import {
   formatGradingDebugLine,
+  formatParseFailureDebugLine,
+  GRADING_DEBUG_CANDIDATE_MAX,
   GRADING_DEBUG_EXCERPT_MAX,
   isGradingDebugEnabled,
   summariseStrippedGradings,
@@ -8,41 +11,40 @@ import {
 } from "./gradingDebug";
 
 describe("isGradingDebugEnabled", () => {
-  const original = process.env.LLM_DEBUG_GRADINGS;
+  // stubEnv restores both vars after each test, so nothing leaks into siblings.
   afterEach(() => {
-    // Restore so tests can't leak the flag into siblings.
-    if (original === undefined) delete process.env.LLM_DEBUG_GRADINGS;
-    else process.env.LLM_DEBUG_GRADINGS = original;
+    vi.unstubAllEnvs();
   });
 
   it("is false when the flag is unset (true no-op default)", () => {
-    delete process.env.LLM_DEBUG_GRADINGS;
+    vi.stubEnv("LLM_DEBUG_GRADINGS", undefined);
     expect(isGradingDebugEnabled()).toBe(false);
   });
 
   it("is false for any value other than exactly '1'", () => {
-    process.env.LLM_DEBUG_GRADINGS = "true";
+    vi.stubEnv("LLM_DEBUG_GRADINGS", "true");
     expect(isGradingDebugEnabled()).toBe(false);
-    process.env.LLM_DEBUG_GRADINGS = "0";
+    vi.stubEnv("LLM_DEBUG_GRADINGS", "0");
     expect(isGradingDebugEnabled()).toBe(false);
   });
 
-  it("is true only when set to '1'", () => {
-    process.env.LLM_DEBUG_GRADINGS = "1";
+  it.each(["development", "test"])("is true when set to '1' under NODE_ENV=%s", (env) => {
+    vi.stubEnv("LLM_DEBUG_GRADINGS", "1");
+    vi.stubEnv("NODE_ENV", env);
     expect(isGradingDebugEnabled()).toBe(true);
   });
 
-  it("refuses the flag under NODE_ENV=production (Vercel Production and Preview)", () => {
-    // Guardrail: learner content must never reach production logs, even when
-    // the flag is copied into a production env by mistake.
-    process.env.LLM_DEBUG_GRADINGS = "1";
-    vi.stubEnv("NODE_ENV", "production");
-    try {
+  it.each([["production"], [undefined], ["staging"]])(
+    "fails closed under NODE_ENV=%s, even with the flag on",
+    (env) => {
+      // Guardrail: learner content must never reach production logs, even
+      // when the flag is copied into a production env by mistake. Allowlist,
+      // so an unset or unexpected NODE_ENV is refused too.
+      vi.stubEnv("LLM_DEBUG_GRADINGS", "1");
+      vi.stubEnv("NODE_ENV", env);
       expect(isGradingDebugEnabled()).toBe(false);
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
+    },
+  );
 });
 
 describe("truncateForDebug", () => {
@@ -51,94 +53,122 @@ describe("truncateForDebug", () => {
   });
 
   it("truncates and appends an ellipsis when over the cap", () => {
-    const long = "x".repeat(100);
-    const out = truncateForDebug(long, 80);
+    const out = truncateForDebug("x".repeat(100), 80);
     expect(out).toBe(`${"x".repeat(80)}…`);
-    // The ellipsis is one extra char beyond the cap; the payload itself is capped.
-    expect(out.slice(0, 80)).toBe("x".repeat(80));
   });
 
   it("collapses whitespace/newlines to single spaces (one line per grading)", () => {
     expect(truncateForDebug("a\n  b\t c", 80)).toBe("a b c");
   });
-
-  it("caps at exactly GRADING_DEBUG_EXCERPT_MAX chars of payload", () => {
-    const out = truncateForDebug("y".repeat(200), GRADING_DEBUG_EXCERPT_MAX);
-    expect(out.replace("…", "")).toHaveLength(GRADING_DEBUG_EXCERPT_MAX);
-  });
 });
 
+/** A valid free-text grading; override fields per test. */
+const freeText = {
+  kind: "free-text",
+  questionId: "q3",
+  verdict: "correct",
+  qualityScore: 5,
+  conceptName: "Borrowing",
+  conceptTier: 2,
+  rationale: "r",
+} as const;
+
 describe("formatGradingDebugLine", () => {
-  it("includes verdict, qualityScore, and computed XP for free-text", () => {
+  it("shows verdict, quality, XP and the freetext Response for a free-text grading", () => {
     const line = formatGradingDebugLine({
       context: "wave-close",
-      questionId: "q3",
-      kind: "free-text",
-      verdict: "correct",
-      qualityScore: 5,
-      computedXp: 75,
+      grading: freeText,
+      response: { questionId: "q3", freetext: "ownership moves" },
     });
-    expect(line).toContain("[grading-debug]");
-    expect(line).toContain("wave-close");
-    expect(line).toContain('qid="q3"');
-    expect(line).toContain("kind=free-text");
-    expect(line).toContain("verdict=correct");
-    expect(line).toContain("q=5");
-    expect(line).toContain("xp≈75");
+    expect(line).toBe(
+      `[grading-debug] wave-close qid="q3" kind=free-text verdict=correct q=5 xp≈${calculateXP(2, 5)} responseKind=freetext response="ownership moves"`,
+    );
   });
 
-  it("surfaces the zero-XP case (hypothesis 2: correct-looking answer, q1 → 0 XP)", () => {
+  it("scores XP at xpTier when given (scoping close uses startingTier)", () => {
     const line = formatGradingDebugLine({
-      context: "wave-close",
-      questionId: "q1",
-      kind: "free-text",
-      verdict: "incorrect",
-      qualityScore: 1,
-      computedXp: 0,
+      context: "scoping-close",
+      grading: freeText,
+      response: undefined,
+      xpTier: 3,
     });
-    expect(line).toContain("q=1");
-    expect(line).toContain("xp≈0");
+    expect(line).toContain(`xp≈${calculateXP(3, 5)}`);
   });
 
-  it("stays compact for mc-index (no verdict/quality/xp/answer)", () => {
+  it("surfaces the zero-XP case (hypothesis 2: q1 → 0 XP)", () => {
     const line = formatGradingDebugLine({
       context: "wave-close",
-      questionId: "q2",
-      kind: "mc-index",
+      grading: { ...freeText, verdict: "incorrect", qualityScore: 1 },
+      response: { questionId: "q3", freetext: "ownership moves" },
     });
-    expect(line).toBe('[grading-debug] wave-close qid="q2" kind=mc-index');
-    expect(line).not.toContain("verdict");
-    expect(line).not.toContain("xp≈");
-  });
-
-  it("truncates the learner answer excerpt to the redaction cap", () => {
-    const line = formatGradingDebugLine({
-      context: "wave-close",
-      questionId: "q4",
-      kind: "free-text",
-      answerExcerpt: "z".repeat(200),
-    });
-    // The excerpt is JSON-quoted; the payload inside must be capped + ellipsis.
-    expect(line).toContain(`${"z".repeat(GRADING_DEBUG_EXCERPT_MAX)}…`);
-    expect(line).not.toContain("z".repeat(GRADING_DEBUG_EXCERPT_MAX + 1));
+    expect(line).toContain("q=1 xp≈0");
   });
 
   it("keeps qualityScore=0 (present, not dropped as falsy)", () => {
     const line = formatGradingDebugLine({
       context: "scoping-close",
-      questionId: "q0",
-      kind: "free-text",
-      qualityScore: 0,
-      computedXp: 0,
+      grading: { ...freeText, verdict: "incorrect", qualityScore: 0 },
+      response: undefined,
     });
-    expect(line).toContain("q=0");
-    expect(line).toContain("xp≈0");
+    expect(line).toContain("q=0 xp≈0");
+  });
+
+  it("shows the choice for an mc-index grading of a choice Response, with no mismatch", () => {
+    const line = formatGradingDebugLine({
+      context: "wave-close",
+      grading: { kind: "mc-index", questionId: "q2", rationale: "r" },
+      response: { questionId: "q2", choice: "B" },
+    });
+    expect(line).toBe(
+      '[grading-debug] wave-close qid="q2" kind=mc-index responseKind=choice response="B"',
+    );
+  });
+
+  it("flags a freetext Response graded mc-index (the silent 0-XP path)", () => {
+    const line = formatGradingDebugLine({
+      context: "wave-close",
+      grading: { kind: "mc-index", questionId: "q4", rationale: "r" },
+      response: { questionId: "q4", freetext: "a correct prose answer" },
+    });
+    expect(line).toContain("kind=mc-index responseKind=freetext");
+    expect(line).toContain('response="a correct prose answer"');
+    expect(line).toMatch(/KIND-MISMATCH$/);
+  });
+
+  it("flags a choice Response graded free-text", () => {
+    const line = formatGradingDebugLine({
+      context: "wave-close",
+      grading: freeText,
+      response: { questionId: "q3", choice: "A" },
+    });
+    expect(line).toMatch(/KIND-MISMATCH$/);
+  });
+
+  it("says responseKind=none, with no mismatch, when no Response was found", () => {
+    const line = formatGradingDebugLine({
+      context: "wave-close",
+      grading: freeText,
+      response: undefined,
+    });
+    expect(line).toContain("responseKind=none");
+    expect(line).not.toContain("response=");
+    expect(line).not.toContain("KIND-MISMATCH");
+  });
+
+  it("truncates the Response excerpt to the redaction cap", () => {
+    const line = formatGradingDebugLine({
+      context: "wave-close",
+      grading: freeText,
+      response: { questionId: "q3", freetext: "z".repeat(200) },
+    });
+    expect(line).toContain(`"${"z".repeat(GRADING_DEBUG_EXCERPT_MAX)}…"`);
+    expect(line).not.toContain("z".repeat(GRADING_DEBUG_EXCERPT_MAX + 1));
   });
 });
 
 describe("summariseStrippedGradings", () => {
   it("names each stripped grading's id and kind", () => {
-    const out = summariseStrippedGradings("strip", [
+    const out = summariseStrippedGradings("wave-close", [
       { kind: "free-text", questionId: "q1", verdict: "correct" },
       { kind: "mc-index", questionId: "q2" },
     ]);
@@ -148,12 +178,44 @@ describe("summariseStrippedGradings", () => {
   });
 
   it("defensively handles a non-array value (raw pre-parse unknown)", () => {
-    expect(summariseStrippedGradings("strip", "oops")).toContain("non-array");
+    expect(summariseStrippedGradings("wave-close", "oops")).toContain("non-array");
   });
 
   it("tolerates malformed entries without throwing", () => {
-    const out = summariseStrippedGradings("strip", [null, 42, { questionId: "q9" }]);
+    const out = summariseStrippedGradings("wave-close", [null, 42, { questionId: "q9" }]);
     expect(out).toContain("?(?)");
     expect(out).toContain("q9(?)");
+  });
+});
+
+describe("formatParseFailureDebugLine", () => {
+  // Zod's issue-list JSON, as `toValidationGateFailure` puts it on `gate.detail`.
+  const detail = JSON.stringify([
+    { code: "custom", path: ["gradings"], message: "gradings missing for question ids: q2" },
+    { code: "invalid_type", path: ["gradings", 0, "verdict"], message: "Required" },
+  ]);
+
+  it("prints Zod issue paths and the gradings fragment, not the leading userMessage", () => {
+    const raw = JSON.stringify({
+      userMessage: "u".repeat(2000),
+      gradings: [{ kind: "free-text", questionId: "q1" }],
+    });
+    const line = formatParseFailureDebugLine("wave-close", detail, raw);
+    expect(line).toContain("label=wave-close");
+    expect(line).toContain("gradings: gradings missing for question ids: q2");
+    expect(line).toContain("gradings.0.verdict: Required");
+    expect(line).toContain('gradings=[{"kind":"free-text","questionId":"q1"}]');
+    expect(line).not.toContain("uuuu");
+  });
+
+  it("says gradings=absent when the candidate has no gradings key", () => {
+    const line = formatParseFailureDebugLine("clarify", detail, JSON.stringify({ a: 1 }));
+    expect(line).toMatch(/gradings=absent$/);
+  });
+
+  it("falls back to a capped raw prefix when the candidate is not JSON", () => {
+    const line = formatParseFailureDebugLine("wave-close", "not json", "x".repeat(1000));
+    expect(line).toContain('issues="not json"');
+    expect(line).toContain(`candidate="${"x".repeat(GRADING_DEBUG_CANDIDATE_MAX)}…"`);
   });
 });
