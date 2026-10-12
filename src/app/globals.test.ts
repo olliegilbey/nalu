@@ -21,20 +21,31 @@ const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const SRC_DIR = path.dirname(APP_DIR);
 const require = createRequire(import.meta.url);
 
-/** A colour utility on a Kanagawa palette name, with any variants and opacity modifier. */
+/**
+ * A colour utility on a Kanagawa palette name, with any variants and opacity
+ * modifier. Covers side borders (`border-t-…`) and coloured shadows.
+ */
 const KANAGAWA_CLASS =
-  /^(?:[\w-]+:)*(?:bg|text|border|ring|outline|fill|stroke|from|via|to|decoration|divide|caret|accent)-(?:sumi|wave|fuji|old-white|katana|crystal|spring|light-blue|aqua|autumn|carp|boat|surimi|sakura|peach|oni|samurai)[\w-]*(?:\/\d+)?$/;
+  /^(?:[\w-]+:)*(?:bg|text|border(?:-[xytrblse])?|ring|outline|fill|stroke|from|via|to|decoration|divide|caret|accent|shadow)-(?:sumi|wave|fuji|old-white|katana|crystal|spring|light-blue|aqua|autumn|carp|boat|surimi|sakura|peach|oni|samurai)[\w-]*(?:\/\d+)?$/;
 
-/** Every Kanagawa colour class in the `.tsx` source of components and routes. */
+/**
+ * Every Kanagawa colour class in the non-test `.ts` and `.tsx` source under
+ * `src/`. Names built from template parts are out of reach; write them whole.
+ */
 function kanagawaClassesInUse(): string[] {
-  const files = ["components", "app"].flatMap((dir) =>
-    readdirSync(path.join(SRC_DIR, dir), { recursive: true, encoding: "utf8" })
-      .filter((file) => file.endsWith(".tsx") && !file.endsWith(".test.tsx"))
-      .map((file) => path.join(SRC_DIR, dir, file)),
-  );
+  const files = readdirSync(SRC_DIR, { recursive: true, encoding: "utf8" })
+    .filter((file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file))
+    .map((file) => path.join(SRC_DIR, file));
   // Split on quotes, whitespace and braces: class strings break into tokens.
   const tokens = files.flatMap((file) => readFileSync(file, "utf8").split(/[\s"'`{}()]+/));
   return [...new Set(tokens.filter((token) => KANAGAWA_CLASS.test(token)))].sort();
+}
+
+/** The body of the first `selector { … }` block in `css`. The blocks checked here hold no nested braces. */
+function blockBody(css: string, selector: string): string {
+  const start = css.indexOf(`${selector} {`);
+  if (start === -1) throw new Error(`no ${selector} block in globals.css`);
+  return css.slice(start, css.indexOf("}", start));
 }
 
 /** Compile `globals.css` the way the app build does: Tailwind core plus the typography plugin. */
@@ -76,5 +87,20 @@ describe("globals.css Kanagawa colours", () => {
     const css = (await compileGlobals()).build(classes);
     const missing = classes.filter((className) => !hasRule(css, className));
     expect(missing).toEqual([]);
+  });
+
+  it("points every theme colour at a variable defined in :root", () => {
+    // A typo such as `var(--carp-yelow)` compiles fine and renders nothing.
+    const css = readFileSync(path.join(APP_DIR, "globals.css"), "utf8");
+    const theme = blockBody(css, "@theme inline");
+    const rootVariables = new Set(
+      [...blockBody(css, ":root").matchAll(/(--[\w-]+):/g)].map((match) => match[1]),
+    );
+    const colourTargets = [...theme.matchAll(/--color-[\w-]+:\s*var\((--[\w-]+)\)/g)].map(
+      (match) => match[1],
+    );
+
+    expect(colourTargets).toContain("--crystal-blue");
+    expect(colourTargets.filter((target) => !rootVariables.has(target))).toEqual([]);
   });
 });
