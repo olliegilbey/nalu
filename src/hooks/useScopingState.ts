@@ -7,6 +7,7 @@ import { useTRPC } from "@/lib/trpc";
 import { formatMutationError, isNotFoundError } from "@/lib/errors";
 import { deriveChatEntries } from "@/lib/course/deriveChatEntries";
 import { adaptQuestionnaire, type ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
+import { deriveStrandedScopingTurn } from "@/lib/course/deriveStrandedScopingTurn";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { CourseState } from "@/lib/course/getState";
 
@@ -14,7 +15,8 @@ import type { CourseState } from "@/lib/course/getState";
  * The last scoping Turn that failed, with a closure that re-sends it. Drives the
  * inline Retry row: a toast alone fades and leaves the learner with no way on.
  * `kind` names the scoping stage that failed; `scopingClose` is `submitBaseline`.
- * `retry` re-runs the same mutation with the same variables.
+ * `retry` re-runs the same mutation with the same variables. After a reload,
+ * it re-sends the answers the server saved (`deriveStrandedScopingTurn`).
  */
 export interface FailedScopingTurn {
   readonly kind: "framework" | "baseline" | "scopingClose";
@@ -66,6 +68,7 @@ export interface UseScopingStateResult {
  * A failed scoping Turn lands in `failedTurn`, with a closure that re-sends it.
  * A `getState` NOT_FOUND sets `courseNotFound`. The app's QueryClient
  * (`src/lib/queryClient.ts`) never retries it.
+ * A reload rebuilds `failedTurn` from server state, so the learner is not stranded.
  *
  * Hook is portable: no DOM, no Next imports. The mutations are dispatched via
  * `@trpc/tanstack-react-query` mutation options.
@@ -246,7 +249,19 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     baseline: Boolean(state.data?.baseline),
     scopingClose: Boolean(state.data?.scopingResult),
   };
-  const openFailedTurn = failedTurn && !landed[failedTurn.kind] ? failedTurn : null;
+  // A reload drops `failedTurn`, and a saved-answers Turn shows no question
+  // card. Rebuild its Retry from server state (issue #103). Skip while a Turn
+  // is in flight: its answers are saved before the LLM call, so a mid-call
+  // refetch looks the same as a failure.
+  const turnInFlight = generateFramework.isPending || submitBaseline.isPending;
+  const stranded = state.data && !turnInFlight ? deriveStrandedScopingTurn(state.data) : null;
+  const strandedTurn: FailedScopingTurn | null =
+    stranded === null
+      ? null
+      : stranded.kind === "framework"
+        ? { kind: "framework", retry: () => submitClarify(stranded.responses) }
+        : { kind: "scopingClose", retry: () => submitBaselineAnswers(stranded.answers) };
+  const openFailedTurn = failedTurn && !landed[failedTurn.kind] ? failedTurn : strandedTurn;
 
   return {
     chatEntries,
