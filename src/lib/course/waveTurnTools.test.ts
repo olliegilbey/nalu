@@ -145,13 +145,24 @@ describe("buildWaveMidTurnTools", () => {
             qualityScore: 0,
             rationale: "Second take. Should be refused.",
           },
+          {
+            kind: "free-text",
+            questionId: "q1",
+            verdict: "partial",
+            qualityScore: 2,
+            rationale: "Third take. Should be refused.",
+          },
         ],
       },
       callOpts("c1"),
     );
     expect(collector.signals).toHaveLength(1);
     expect(collector.signals[0]).toMatchObject({ questionId: "q1", verdict: "correct" });
+    // Each refused id is named once, however many times it repeated.
     expect(result).toMatchObject({ recorded: 1, rejected: ["q1"] });
+    // The refusal names the next step, so the model does not resend and
+    // burn loop Steps.
+    expect((result as { reason?: string }).reason).toContain("Do not resend");
   });
 
   it("refuses a questionId already staged by an earlier call", async () => {

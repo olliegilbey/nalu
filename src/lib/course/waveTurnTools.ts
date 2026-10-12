@@ -263,16 +263,21 @@ function buildRecordSignalsTool(collector: WaveTurnCollector) {
         !staged.has(s.questionId) &&
         signals.findIndex((o) => o.questionId === s.questionId) === idx;
       const accepted = signals.filter(isFirst);
-      const rejected = signals.filter((s, idx) => !isFirst(s, idx)).map((s) => s.questionId);
+      // Each refused id once: three q1 signals refuse "q1", not "q1","q1".
+      const rejected = [
+        ...new Set(signals.filter((s, idx) => !isFirst(s, idx)).map((s) => s.questionId)),
+      ];
       collector.signals.push(...accepted.map(toCanonicalSignal));
       // The common case keeps its old result bytes; the refusal fields
-      // appear only when something was refused.
+      // appear only when something was refused. The reason names the next
+      // step, so the model does not resend the ids and burn loop Steps.
       return rejected.length === 0
         ? { recorded: accepted.length }
         : {
             recorded: accepted.length,
             rejected,
-            reason: "a grading signal for these questions was already recorded this turn",
+            reason:
+              "a grading signal for these questions was already recorded this turn. The first grading stands. Do not resend it; continue teaching.",
           };
     },
   });
