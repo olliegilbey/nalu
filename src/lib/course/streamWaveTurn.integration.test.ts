@@ -277,6 +277,23 @@ describe("streamWaveTurn (integration)", () => {
         // Prose before the call, tool lifecycle, short wrap-up after — the
         // shape the probe observed (median 2 steps).
         parts: [
+          // A grading-signal call on the stream only (forwarding reads the
+          // parts; persistence reads `steps`). It must not reach the client:
+          // grading signals have no client consumer (issue #59).
+          { type: "tool-input-start", id: "s1", toolName: "recordComprehensionSignals" },
+          {
+            type: "tool-call",
+            toolCallId: "s1",
+            toolName: "recordComprehensionSignals",
+            input: { signals: [] },
+          },
+          {
+            type: "tool-result",
+            toolCallId: "s1",
+            toolName: "recordComprehensionSignals",
+            input: { signals: [] },
+            output: { recorded: 0 },
+          },
           textDelta("Let's check. "),
           { type: "tool-input-start", id: "c1", toolName: "presentQuestionnaire" },
           { type: "tool-input-delta", id: "c1", delta: '{"questions":' },
@@ -330,8 +347,9 @@ describe("streamWaveTurn (integration)", () => {
         writer,
       );
 
-      // Tool chunk lifecycle reached the client in order. NO tool-input-delta:
-      // raw input deltas carry the plaintext `correct` key and are dropped.
+      // Only the questionnaire's tool chunk lifecycle reached the client, in
+      // order. NO tool-input-delta: raw input deltas carry the plaintext
+      // `correct` key and are dropped.
       const toolTypes = parts.map((p) => p.type).filter((t) => t.startsWith("tool-"));
       expect(toolTypes).toEqual([
         "tool-input-start",
@@ -460,13 +478,10 @@ describe("streamWaveTurn (integration)", () => {
 
       // The real execute projected the seeded concept (capped, name-keyed).
       expect(captured.lookup).toEqual(lookupOutput);
-      // Lookup tool chunks reached the client (generative UI lifecycle).
+      // Lookup tool chunks stay server-side (issue #59): only
+      // presentQuestionnaire has a client consumer, so nothing else crosses.
       const toolTypes = first.parts.map((p) => p.type).filter((t) => t.startsWith("tool-"));
-      expect(toolTypes).toEqual([
-        "tool-input-start",
-        "tool-input-available",
-        "tool-output-available",
-      ]);
+      expect(toolTypes).toEqual([]);
 
       // The loop trail persisted with tool kinds; contents name the lookup.
       const ctxRows = await getMessagesForWave(waveId);

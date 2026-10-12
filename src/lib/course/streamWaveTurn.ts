@@ -2,7 +2,7 @@ import type { TextStreamPart, ToolSet, UIMessageStreamWriter } from "ai";
 import { executeToolTurnStream } from "@/lib/turn/executeToolTurnStream";
 import { buildWaveMidTurnAgent } from "@/lib/agents/waveMidTurnAgent";
 import { renderWaveTurnEnvelope, type WaveMidTurn } from "@/lib/prompts/waveTurn";
-import type { WaveTurnUIMessage } from "@/lib/types/waveStream";
+import type { ClientForwardedToolName, WaveTurnUIMessage } from "@/lib/types/waveStream";
 import type { LlmUsage } from "@/lib/types/llm";
 import { buildWaveSeed } from "./buildWaveSeed";
 import { prepareWaveTurn, type PreparedWaveTurn } from "./prepareWaveTurn";
@@ -19,7 +19,8 @@ import type { SubmitWaveTurnParams } from "./submitWaveTurn";
  * mid-turns dispatch through the wave mid-turn agent (`executeToolTurnStream`
  * + `buildWaveMidTurnAgent`, one fresh agent per attempt) — teaching prose
  * streams as plain text parts, structured actions arrive as tool calls
- * forwarded to the client as typed tool chunks (generative UI), the
+ * (only `presentQuestionnaire` is forwarded to the client, as typed tool
+ * chunks for generative UI), the
  * finished-turn projection arrives as a transient `data-turn-result` part,
  * and validation retries emit a non-transient `data-turn-reset` marker part
  * (the client slices the message's parts on it).
@@ -177,6 +178,17 @@ export async function streamWaveTurn(
 }
 
 /**
+ * Tools whose chunks cross the wire to the client (issue #59). Only
+ * `presentQuestionnaire` has a consumer: the streamed quiz preview in
+ * `useWaveState`. Lookup results (SR state) and grading signals (verdicts)
+ * have none, so they stay server-side. Typed by the client's tool-part
+ * contract, so the set can never name a tool the client does not type.
+ */
+const CLIENT_FORWARDED_TOOLS: ReadonlySet<string> = new Set<ClientForwardedToolName>([
+  "presentQuestionnaire",
+]);
+
+/**
  * Map a `streamText` fullStream tool part to its UIMessage chunk and write it
  * — the same conversion the SDK's `toUIMessageStream` applies (verified in
  * installed ai@6.0.158), inlined because this route hand-writes its stream
@@ -186,6 +198,8 @@ export async function streamWaveTurn(
  * states for schema-invalid inputs the model then self-corrects in-loop).
  *
  * DELIBERATE deviations from the SDK conversion:
+ * - Only allowlisted tools forward (`CLIENT_FORWARDED_TOOLS`). Lookup and
+ *   grading-signal chunks stay server-side (issue #59).
  * - `tool-input-delta` is NOT forwarded: the raw input text contains the
  *   plaintext `correct` key while it streams. The client renders from
  *   `input-available` (redacted) anyway.
@@ -197,6 +211,11 @@ function forwardToolChunk<TOOLS extends ToolSet>(
   writer: UIMessageStreamWriter<WaveTurnUIMessage>,
   part: TextStreamPart<TOOLS>,
 ): void {
+  // Allowlist gate. Every part type forwarded below carries `toolName`; the
+  // two that lack it (tool-input-delta, tool-input-end) are never forwarded.
+  // Dropping ALL of a tool's chunks keeps each forwarded toolCallId whole,
+  // which the client's stream processor requires.
+  if ("toolName" in part && !CLIENT_FORWARDED_TOOLS.has(part.toolName)) return;
   switch (part.type) {
     case "tool-input-start":
       writer.write({ type: "tool-input-start", toolCallId: part.id, toolName: part.toolName });

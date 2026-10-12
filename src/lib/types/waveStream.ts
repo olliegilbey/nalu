@@ -20,16 +20,20 @@ export interface WaveTurnResetData {
 }
 
 /**
- * Mid-turn tool set as UI tool types — gives the client typed
- * `tool-recordComprehensionSignals` / `tool-presentQuestionnaire` /
- * `tool-getDueConcepts` / `tool-getConceptHistory` message parts
- * (`part.input` is the tool's validated input shape). Derived from the
- * agent's full tool map (agent-loop plan Task 4) so client and loop can
- * never drift — lookup parts stream to the client too (harmless read-only
- * projections; the UI currently ignores them).
+ * Mid-turn tools whose chunks reach the client (issue #59). Only the quiz
+ * card has a consumer; lookup and grading-signal chunks stay server-side.
+ * `streamWaveTurn`'s forwarding allowlist is typed by this.
+ */
+export type ClientForwardedToolName = keyof Pick<WaveMidTurnAgentTools, "presentQuestionnaire">;
+
+/**
+ * Forwarded mid-turn tools as UI tool types — gives the client a typed
+ * `tool-presentQuestionnaire` message part (`part.input` is the tool's
+ * validated input shape). Picked from the agent's full tool map (agent-loop
+ * plan Task 4) so client and loop can never drift.
  * Docs: node_modules/ai/docs/04-ai-sdk-ui/03-chatbot-tool-usage.mdx
  */
-export type WaveTurnUITools = InferUITools<WaveMidTurnAgentTools>;
+export type WaveTurnUITools = InferUITools<Pick<WaveMidTurnAgentTools, ClientForwardedToolName>>;
 
 /**
  * The wave-turn UI message type: no metadata; two custom data parts; typed
