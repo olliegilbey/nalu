@@ -21,9 +21,6 @@ export interface FailedScopingTurn {
   readonly retry: () => void;
 }
 
-/** TanStack Query's default retry count for a failed query. */
-const DEFAULT_QUERY_RETRY_COUNT = 3;
-
 /** Return shape of {@link useScopingState}; chat entries + active questionnaire + submit handlers. */
 export interface UseScopingStateResult {
   readonly chatEntries: readonly ChatEntry[];
@@ -67,7 +64,8 @@ export interface UseScopingStateResult {
  * once `framework` lands and `baseline` is still null — gated on the mutation
  * not already being in flight to avoid double-fire during refetch races.
  * A failed scoping Turn lands in `failedTurn`, with a closure that re-sends it.
- * A `getState` NOT_FOUND sets `courseNotFound`, with no retries.
+ * A `getState` NOT_FOUND sets `courseNotFound`. The app's QueryClient
+ * (`src/lib/queryClient.ts`) never retries it.
  *
  * Hook is portable: no DOM, no Next imports. The mutations are dispatched via
  * `@trpc/tanstack-react-query` mutation options.
@@ -77,12 +75,7 @@ export function useScopingState(courseId: string): UseScopingStateResult {
   const qc = useQueryClient();
 
   const stateOpts = trpc.course.getState.queryOptions({ courseId });
-  const state = useQuery({
-    ...stateOpts,
-    // A missing course stays missing, so show the not-found state at once.
-    // Other failures keep TanStack's default of three retries.
-    retry: (failureCount, err) => !isNotFoundError(err) && failureCount < DEFAULT_QUERY_RETRY_COUNT,
-  });
+  const state = useQuery(stateOpts);
 
   const invalidateState = () => qc.invalidateQueries({ queryKey: stateOpts.queryKey });
 

@@ -104,6 +104,7 @@ vi.mock("@/lib/trpc", () => {
   };
 });
 
+import { createQueryClient } from "@/lib/queryClient";
 import { useScopingState } from "./useScopingState";
 
 // Scoping closed: the state a refetch returns once submitBaseline committed.
@@ -247,9 +248,9 @@ describe("useScopingState course not found", () => {
     hoisted.stateError = Object.assign(new Error("course not found"), {
       data: { code: "NOT_FOUND", httpStatus: 404 },
     });
-    // TanStack's default retry (3, with backoff), unlike the shared wrapper.
-    // The hook itself must stop retrying a course that will not appear.
-    const qc = new QueryClient();
+    // The app's QueryClient, unlike the shared wrapper (`retry: false`). Its
+    // defaults must stop retrying a course that will not appear.
+    const qc = createQueryClient();
     const { result } = renderHook(() => useScopingState("c1"), {
       wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
     });
