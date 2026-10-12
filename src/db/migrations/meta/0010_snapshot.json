@@ -1,5 +1,5 @@
 {
-  "id": "4cf48ce1-b7aa-4bc6-bb61-3886a73d9d45",
+  "id": "038e0fcd-451f-4455-a275-ac7a8bdb87b2",
   "prevId": "0ac1e809-b2eb-441b-ae72-111b2d73899c",
   "version": "7",
   "dialect": "postgresql",
@@ -549,10 +549,6 @@
         "context_messages_kind_check": {
           "name": "context_messages_kind_check",
           "value": "\"context_messages\".\"kind\" IN (\n        'user_message','card_answer','assistant_response',\n        'harness_turn_counter','harness_review_block',\n        'failed_assistant_response','harness_retry_directive',\n        'assistant_tool_call','tool_result'\n      )"
-        },
-        "context_messages_role_check": {
-          "name": "context_messages_role_check",
-          "value": "\"context_messages\".\"role\" IN ('user','assistant','tool')"
         },
         "context_messages_kind_role_pair": {
           "name": "context_messages_kind_role_pair",

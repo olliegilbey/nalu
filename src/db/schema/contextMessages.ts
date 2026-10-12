@@ -33,7 +33,8 @@ import { scopingPasses } from "./scopingPasses";
  * intentionally excluded — system content is rendered from seed columns at
  * send time and never persisted (principle P3).
  *
- * Each kind has exactly one role; `context_messages_kind_role_pair` pins it:
+ * Each kind has exactly one role. `context_messages_kind_role_pair` pins it,
+ * and so also enforces the role restriction above:
  *   - user: user_message, card_answer, harness_turn_counter,
  *     harness_review_block, harness_retry_directive.
  *   - assistant: assistant_response, failed_assistant_response,
@@ -93,11 +94,11 @@ export const contextMessages = pgTable(
         'assistant_tool_call','tool_result'
       )`,
     ),
-    // Restrict role to known LLM roles — 'system' excluded; system content is never persisted (P3).
-    check("context_messages_role_check", sql`${t.role} IN ('user','assistant','tool')`),
     // Pin each kind to its one role. renderContext replays plain rows under their
-    // stored role, so a mis-roled row would speak as the wrong party. The two checks
-    // above stay for their sharper error names; this one rejects mismatched pairs.
+    // stored role, so a mis-roled row would speak as the wrong party. It also owns
+    // the role rule: no kind maps to 'system', so system content is never persisted (P3).
+    // Postgres runs CHECKs in name order. kind_check sorts first and stays for its
+    // sharper error name on an unknown kind; any bad role reports this constraint.
     check(
       "context_messages_kind_role_pair",
       sql`(${t.role} = 'user' AND ${t.kind} IN (

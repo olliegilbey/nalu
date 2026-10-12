@@ -204,7 +204,7 @@ describe("context_messages constraints", () => {
     });
   });
 
-  it("rejects an unknown kind", async () => {
+  it("rejects an unknown kind under kind_check", async () => {
     await withTestDb(async (db) => {
       const waveId = await seedWave(db);
       await expect(
@@ -216,23 +216,10 @@ describe("context_messages constraints", () => {
           role: "user",
           content: "hi",
         }),
-      ).rejects.toMatchObject({ cause: { code: "23514" } });
-    });
-  });
-
-  it("rejects role 'system' (system content is never persisted)", async () => {
-    await withTestDb(async (db) => {
-      const waveId = await seedWave(db);
-      await expect(
-        db.insert(contextMessages).values({
-          waveId,
-          turnIndex: 0,
-          seq: 0,
-          kind: "user_message",
-          role: "system",
-          content: "hi",
-        }),
-      ).rejects.toMatchObject({ cause: { code: "23514" } });
+      ).rejects.toMatchObject({
+        // Postgres runs CHECKs in name order; kind_check sorts before kind_role_pair.
+        cause: { code: "23514", constraint_name: "context_messages_kind_check" },
+      });
     });
   });
 
@@ -283,8 +270,9 @@ describe("context_messages constraints", () => {
     assistant_tool_call: "assistant",
     tool_result: "tool",
   } as const;
-  const ROLES = ["user", "assistant", "tool"] as const;
-  // Every (kind, role) combination the role table forbids: 9 kinds × 3 roles − 9 legal = 18.
+  // The three legal roles, plus 'system' (never persisted, P3) and an unknown role.
+  const ROLES = ["user", "assistant", "tool", "system", "narrator"] as const;
+  // Every (kind, role) combination the role table forbids: 9 kinds × 5 roles − 9 legal = 36.
   const MISMATCHED_PAIRS = Object.entries(ROLE_BY_KIND).flatMap(([kind, legalRole]) =>
     ROLES.filter((role) => role !== legalRole).map((role) => ({ kind, role })),
   );
@@ -319,7 +307,7 @@ describe("context_messages constraints", () => {
           .insert(contextMessages)
           .values({ waveId, turnIndex: 0, seq: 0, kind, role, content: "x" }),
       ).rejects.toMatchObject({
-        // Name the constraint: kind and role are each legal alone, so only the pair CHECK can fire.
+        // Every kind here is legal, so kind_check passes; the pair CHECK owns every role failure.
         cause: { code: "23514", constraint_name: "context_messages_kind_role_pair" },
       });
     });
