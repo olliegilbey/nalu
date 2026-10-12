@@ -85,9 +85,9 @@ describe("buildWaveLookupTools", () => {
       expect(Object.keys(out.dueConcepts[0]!).sort()).toEqual(["lastQuality", "name", "tier"]);
       // Scoped by the closure's courseId, never model input. The cap rides
       // into the query as SQL LIMIT (issue #62), not a post-fetch slice.
-      const [courseId, , opts] = vi.mocked(getDueConceptsByCourse).mock.calls[0]!;
+      const [courseId, , limit] = vi.mocked(getDueConceptsByCourse).mock.calls[0]!;
       expect(courseId).toBe(COURSE_ID);
-      expect(opts).toEqual({ limit: AGENT_LOOKUP.dueConceptsLimit });
+      expect(limit).toBe(AGENT_LOOKUP.dueConceptsLimit);
     });
 
     it("returns an empty list (not an error) when nothing is due", async () => {

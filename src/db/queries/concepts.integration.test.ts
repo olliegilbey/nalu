@@ -125,7 +125,7 @@ describe("concepts queries", () => {
         });
       }
 
-      const capped = await getDueConceptsByCourse(COURSE, new Date(), { limit: 2 });
+      const capped = await getDueConceptsByCourse(COURSE, new Date(), 2);
       expect(capped.map((c) => c.name)).toEqual(["three-days", "two-days"]);
       // No limit: the full due list.
       expect(await getDueConceptsByCourse(COURSE, new Date())).toHaveLength(3);

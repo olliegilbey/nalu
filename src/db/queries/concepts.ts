@@ -111,14 +111,13 @@ export async function getConceptsByCourse(
  * Never-reviewed rows (next_review_at = NULL) are excluded by both the
  * index and the `lte` predicate (SQL `<=` returns false for NULL).
  *
- * Optional `opts.tx` opts the read into a caller's transaction so SM-2
- * advances earlier in the same tx are observed (e.g. the Wave-close
- * transaction captures the next Wave's due-snapshot AFTER applying its own
- * conceptUpdates).
+ * Optional `limit` caps the result in SQL (`LIMIT`), after the ORDER BY, so
+ * it keeps the most overdue rows. The agent lookup tool passes its cap;
+ * Wave-boundary callers want the full list and pass `undefined`.
  *
- * Optional `opts.limit` caps the result in SQL (`LIMIT`), after the ORDER BY,
- * so it keeps the most overdue rows. The agent lookup tool passes its cap;
- * Wave-boundary callers want the full list and omit it.
+ * Optional `tx` opts the read into a caller's transaction so SM-2 advances
+ * earlier in the same tx are observed (e.g. the Wave-close transaction
+ * captures the next Wave's due-snapshot AFTER applying its own conceptUpdates).
  *
  * @param courseId - Scopes results to a single course.
  * @param now      - Caller-supplied reference time; inject for deterministic tests.
@@ -126,9 +125,10 @@ export async function getConceptsByCourse(
 export async function getDueConceptsByCourse(
   courseId: string,
   now: Date,
-  opts: { readonly tx?: DbOrTx; readonly limit?: number } = {},
+  limit?: number,
+  tx?: DbOrTx,
 ): Promise<readonly Concept[]> {
-  const exec = opts.tx ?? db;
+  const exec = tx ?? db;
   const query = exec
     .select()
     .from(concepts)
@@ -147,7 +147,7 @@ export async function getDueConceptsByCourse(
     // these rows feed the Wave-start prompt, and the rendered byte sequence
     // must be stable across calls or the OpenAI-compatible prompt cache misses.
     .orderBy(asc(concepts.nextReviewAt), asc(concepts.id));
-  return opts.limit === undefined ? query : query.limit(opts.limit);
+  return limit === undefined ? query : query.limit(limit);
 }
 
 // ---------------------------------------------------------------------------

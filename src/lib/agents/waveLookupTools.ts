@@ -33,9 +33,11 @@ export function buildWaveLookupTools(scope: WaveLookupScope) {
       inputSchema: toToolInputSchema(z.object({}), { name: "get_due_concepts_input" }),
       execute: async () => {
         // The cap is SQL LIMIT: an overdue backlog is never fetched whole.
-        const due = await getDueConceptsByCourse(scope.courseId, new Date(), {
-          limit: AGENT_LOOKUP.dueConceptsLimit,
-        });
+        const due = await getDueConceptsByCourse(
+          scope.courseId,
+          new Date(),
+          AGENT_LOOKUP.dueConceptsLimit,
+        );
         return {
           dueConcepts: due.map((c) => ({
             name: c.name,
