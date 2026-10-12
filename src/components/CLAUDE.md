@@ -5,7 +5,7 @@ Thin rendering layer. Components get data through hooks in `src/hooks/`. Scoping
 - Tailwind only. No CSS modules, no styled-components.
 - Assessment cards must be visually distinct from chat. Interactive (buttons for MC, input for free-text).
 - Comprehension signals are invisible to the user. XP shows only as the header badge and its `+N XP` floater (`ChatHeader.tsx`).
-- An answer card's questions and its buffer `persistKey` always come from one questionnaire (`selectComposerQuestionnaire`). A Wave's streaming preview has no id yet, so it gets no key. The Composer re-reads its buffer when the question ids or the key change. Wave questionnaires reuse raw ids like `q1`, so ids alone never identify one (issue #118).
+- An answer card's questions and its buffer `persistKey` always come from one questionnaire (`selectComposerQuestionnaire`). A Wave's streaming preview has no id yet, so it gets no key. The Composer treats a keyless card as a read-only preview: `readOnly` textarea, prev/next disabled. Otherwise the commit's re-init would wipe a draft typed there. The Composer re-reads its buffer when the question ids or the key change. Wave questionnaires reuse raw ids like `q1`, so ids alone never identify one (issue #118).
 - Keep components small. Extract sub-components approaching 150 lines.
 - No `any` in props. All props typed with interfaces or inferred from tRPC.
 

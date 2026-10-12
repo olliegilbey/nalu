@@ -115,8 +115,9 @@ export function WaveSession({
           disabled={isPending}
           // Committed questionnaire (server-derived, interactive) wins;
           // while a turn streams, the tool-part preview shows instead. The
-          // preview is effectively read-only: isPending disables options +
-          // send until the turn result lands and getState refetches.
+          // preview is read-only: isPending disables options + send until
+          // the turn result lands and getState refetches, and the Composer
+          // locks a keyless card's textarea and prev/next.
           // Questions and buffer key come as one pair. A preview has no key,
           // so it never reads or writes another questionnaire's buffer; the
           // Composer re-inits when the committed key arrives (issue #118).

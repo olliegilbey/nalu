@@ -130,6 +130,27 @@ describe("WaveSession questionnaire swap (issue #118)", () => {
     );
   });
 
+  it("keeps a keyless preview read-only, so its commit wipes no draft", () => {
+    // A Wave's first questionnaire: nothing committed yet, B streams in.
+    wave.value = waveState({ isPending: true, streamingQuestions: qsB });
+    const { rerender } = render(<WaveSession courseId="c1" waveNumber={1} />);
+    const textbox = () => screen.getByRole("textbox") as HTMLTextAreaElement;
+    const next = () => screen.getByRole("button", { name: "Next question" }) as HTMLButtonElement;
+
+    // The commit brings B's key and re-inits the card, so a preview draft
+    // would be lost. jsdom's fireEvent ignores readOnly; a browser does not.
+    expect(textbox().readOnly).toBe(true);
+    expect(next().disabled).toBe(true);
+
+    wave.value = waveState({ activeQuestionnaire: committed("qB", qsB) });
+    rerender(<WaveSession courseId="c1" waveNumber={1} />);
+
+    expect(textbox().readOnly).toBe(false);
+    expect(next().disabled).toBe(false);
+    fireEvent.change(textbox(), { target: { value: "draft" } });
+    expect(textbox().value).toBe("draft");
+  });
+
   it("restores A's buffer when the turn fails after B's preview showed", () => {
     wave.value = waveState({ activeQuestionnaire: committed("qA", qsA) });
     const { rerender } = render(<WaveSession courseId="c1" waveNumber={1} />);

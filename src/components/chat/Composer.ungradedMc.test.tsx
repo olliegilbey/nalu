@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, within, act } from "@testing-library/react";
+import { installMemoryStorage } from "@/lib/testing/memoryStorage";
 import { Composer, type ChoiceQuestion } from "./Composer";
 
 /*
@@ -32,7 +33,18 @@ function optionParts(label: string) {
 
 beforeEach(() => {
   vi.useFakeTimers();
-  render(<Composer value="" onChange={noop} onSend={noop} questions={questions} />);
+  // A live card needs a buffer key; a keyless one is a read-only preview.
+  // Fresh storage per test keeps one test's buffer out of the next.
+  installMemoryStorage();
+  render(
+    <Composer
+      value=""
+      onChange={noop}
+      onSend={noop}
+      questions={questions}
+      persistKey="nalu:test:ungraded"
+    />,
+  );
 });
 
 afterEach(() => {

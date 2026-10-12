@@ -51,7 +51,7 @@ export function Composer({
   onComplete?: (answers: { question: ChoiceQuestion; answer: string }[]) => void;
   /** When true, show the "What do you want to learn…" prompt. */
   isFirstMessage?: boolean;
-  /** localStorage key for refresh-resilient questionnaire buffer. */
+  /** localStorage key for refresh-resilient questionnaire buffer. A card without one is a read-only preview. */
   persistKey?: string;
   /** When set, replaces the input row with a single advance button. */
   moveOn?: { readonly label: string; readonly onAdvance: () => void };
@@ -192,6 +192,11 @@ export function Composer({
   // stays editable on revisit. MC questions still lock on confirm.
   const currentIsFreeText = !!current && current.options.length === 0;
   const textareaLocked = stepLocked && !currentIsFreeText;
+  // A card with no buffer key is a Wave's streaming preview: no questionnaire
+  // id yet. Keep it read-only. Its commit brings a key and re-inits the card,
+  // which would wipe a draft typed here (#118). `disabled` covers options and
+  // Send; the textarea gets `readOnly` (`disabled` would drop focus).
+  const isPreview = hasQuestions && !persistKey;
 
   // Placeholder is dynamic by interaction type: an MC question keeps "or type
   // your own answer" (options exist to pick instead); a free-text question
@@ -356,7 +361,7 @@ export function Composer({
               <button
                 aria-label={t<string>("composer.prev")}
                 onClick={goPrev}
-                disabled={step === 0}
+                disabled={step === 0 || isPreview}
                 className="h-6 w-6 grid place-items-center rounded-md text-fuji-gray hover:text-foreground hover:bg-sumi-3 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fuji-gray"
               >
                 <ChevronLeft className="h-3.5 w-3.5" strokeWidth={2} />
@@ -367,7 +372,7 @@ export function Composer({
               <button
                 aria-label={t<string>("composer.next")}
                 onClick={goNext}
-                disabled={step >= total - 1}
+                disabled={step >= total - 1 || isPreview}
                 className="h-6 w-6 grid place-items-center rounded-md text-fuji-gray hover:text-foreground hover:bg-sumi-3 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fuji-gray"
               >
                 <ChevronRight className="h-3.5 w-3.5" strokeWidth={2} />
@@ -462,6 +467,7 @@ export function Composer({
           rows={1}
           value={inputValue}
           disabled={textareaLocked}
+          readOnly={isPreview}
           onChange={(e) => {
             if (e.target.value.length > 0) clearPending();
             setInputValue(e.target.value);
