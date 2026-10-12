@@ -67,9 +67,8 @@ describe("buildWaveLookupTools", () => {
   });
 
   describe("getDueConcepts", () => {
-    it("returns a name-keyed projection capped at the limit, soonest-due first", async () => {
-      // 12 due concepts from the query; the tool must cap at AGENT_LOOKUP.dueConceptsLimit.
-      const due = Array.from({ length: 12 }, (_v, i) =>
+    it("returns a name-keyed projection, capped in SQL, soonest-due first", async () => {
+      const due = Array.from({ length: 3 }, (_v, i) =>
         fakeConcept({ id: `c${i}`, name: `concept-${i}`, tier: 1 + (i % 2) }),
       );
       vi.mocked(getDueConceptsByCourse).mockResolvedValue(due);
@@ -79,13 +78,16 @@ describe("buildWaveLookupTools", () => {
         dueConcepts: readonly { name: string; tier: number; lastQuality: number | null }[];
       };
 
-      expect(out.dueConcepts).toHaveLength(AGENT_LOOKUP.dueConceptsLimit);
-      // Query order (soonest-due first) is preserved by the cap.
+      // Query order (soonest-due first) is preserved.
+      expect(out.dueConcepts.map((c) => c.name)).toEqual(["concept-0", "concept-1", "concept-2"]);
       expect(out.dueConcepts[0]).toEqual({ name: "concept-0", tier: 1, lastQuality: 3 });
       // Projection carries NO ids, SM-2 internals, or XP.
       expect(Object.keys(out.dueConcepts[0]!).sort()).toEqual(["lastQuality", "name", "tier"]);
-      // Scoped by the closure's courseId, never model input.
-      expect(vi.mocked(getDueConceptsByCourse).mock.calls[0]![0]).toBe(COURSE_ID);
+      // Scoped by the closure's courseId, never model input. The cap rides
+      // into the query as SQL LIMIT (issue #62), not a post-fetch slice.
+      const [courseId, , opts] = vi.mocked(getDueConceptsByCourse).mock.calls[0]!;
+      expect(courseId).toBe(COURSE_ID);
+      expect(opts).toEqual({ limit: AGENT_LOOKUP.dueConceptsLimit });
     });
 
     it("returns an empty list (not an error) when nothing is due", async () => {
@@ -97,10 +99,10 @@ describe("buildWaveLookupTools", () => {
   });
 
   describe("getConceptHistory", () => {
-    it("returns capped attempts (most recent first) without XP or ids", async () => {
+    it("returns attempts capped in SQL (most recent first) without XP or ids", async () => {
       vi.mocked(getConceptByNameForCourse).mockResolvedValue(fakeConcept({ id: "c-hist" }));
-      const rows = Array.from({ length: 8 }, (_v, i) =>
-        fakeAssessment({ id: `a${i}`, qualityScore: i % 6, isCorrect: i % 2 === 0 }),
+      const rows = Array.from({ length: 2 }, (_v, i) =>
+        fakeAssessment({ id: `a${i}`, qualityScore: i, isCorrect: i % 2 === 0 }),
       );
       vi.mocked(getAssessmentsByConcept).mockResolvedValue(rows);
       const tools = buildWaveLookupTools({ courseId: COURSE_ID });
@@ -114,7 +116,16 @@ describe("buildWaveLookupTools", () => {
       };
 
       expect(out.conceptName).toBe("ownership");
-      expect(out.attempts).toHaveLength(AGENT_LOOKUP.historyAttemptsLimit);
+      // Query order (most recent first) is preserved.
+      expect(out.attempts).toEqual([
+        { isCorrect: true, qualityScore: 0 },
+        { isCorrect: false, qualityScore: 1 },
+      ]);
+      // The cap rides into the query as SQL LIMIT (issue #62).
+      expect(vi.mocked(getAssessmentsByConcept).mock.calls[0]).toEqual([
+        "c-hist",
+        AGENT_LOOKUP.historyAttemptsLimit,
+      ]);
       // XP and row ids must never reach the model (Core Design Principle).
       expect(Object.keys(out.attempts[0]!).sort()).toEqual(["isCorrect", "qualityScore"]);
       // Name resolution is scoped by the closure's courseId.

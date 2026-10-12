@@ -141,15 +141,21 @@ export async function getAssessmentsByWave(waveId: string): Promise<readonly Ass
 }
 
 /**
- * Return all assessments for a concept across all Waves, ordered by
+ * Return assessments for a concept across all Waves, ordered by
  * `assessedAt` DESC (most recent first — typical for spaced-repetition reads).
+ * Optional `limit` caps the result in SQL (`LIMIT`), after the ORDER BY, so
+ * it keeps the most recent rows; omit it for the full history.
  */
-export async function getAssessmentsByConcept(conceptId: string): Promise<readonly Assessment[]> {
-  return db
+export async function getAssessmentsByConcept(
+  conceptId: string,
+  limit?: number,
+): Promise<readonly Assessment[]> {
+  const query = db
     .select()
     .from(assessments)
     .where(eq(assessments.conceptId, conceptId))
     .orderBy(desc(assessments.assessedAt));
+  return limit === undefined ? query : query.limit(limit);
 }
 
 /**

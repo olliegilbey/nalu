@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { WAVE as WAVE_CONFIG } from "@/lib/config/tuning";
 import { withTestDb } from "@/db/testing/withTestDb";
-import { userProfiles, courses, waves, concepts } from "@/db/schema";
+import { userProfiles, courses, waves, concepts, assessments } from "@/db/schema";
 import { namespaceQuestionId } from "@/lib/course/namespaceQuestionId";
 import {
   recordAssessment,
@@ -100,6 +100,39 @@ describe("assessments queries", () => {
 
       // Cross-filter also returns it.
       expect((await getAssessmentsByWaveAndConcept(WAVE, CONCEPT)).length).toBe(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 1b: getAssessmentsByConcept `limit` caps in SQL, most recent first
+  // (issue #62). Rows are inserted directly with explicit `assessedAt`:
+  // inside the test transaction `now()` is constant, so defaults would tie.
+  // -------------------------------------------------------------------------
+  it("getAssessmentsByConcept applies limit after the most-recent-first order", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      const minutesAgo = (n: number) => new Date(Date.now() - n * 60 * 1000);
+      // Inserted oldest first so insertion order cannot pass for the ORDER BY.
+      await db.insert(assessments).values(
+        [30, 20, 10].map((age, i) => ({
+          waveId: WAVE,
+          conceptId: CONCEPT,
+          turnIndex: i + 1,
+          question: `q${age}?`,
+          questionId: `q-${age}`,
+          userAnswer: "A",
+          isCorrect: true,
+          qualityScore: 4,
+          assessmentKind: "card_mc",
+          assessedAt: minutesAgo(age),
+        })),
+      );
+
+      const capped = await getAssessmentsByConcept(CONCEPT, 2);
+      expect(capped.map((r) => r.questionId)).toEqual(["q-10", "q-20"]);
+      // No limit: the full history.
+      expect(await getAssessmentsByConcept(CONCEPT)).toHaveLength(3);
     });
   });
 

@@ -111,9 +111,14 @@ export async function getConceptsByCourse(
  * Never-reviewed rows (next_review_at = NULL) are excluded by both the
  * index and the `lte` predicate (SQL `<=` returns false for NULL).
  *
- * Optional `tx` opts the read into a caller's transaction so SM-2 advances
- * earlier in the same tx are observed (e.g. the Wave-close transaction
- * captures the next Wave's due-snapshot AFTER applying its own conceptUpdates).
+ * Optional `opts.tx` opts the read into a caller's transaction so SM-2
+ * advances earlier in the same tx are observed (e.g. the Wave-close
+ * transaction captures the next Wave's due-snapshot AFTER applying its own
+ * conceptUpdates).
+ *
+ * Optional `opts.limit` caps the result in SQL (`LIMIT`), after the ORDER BY,
+ * so it keeps the most overdue rows. The agent lookup tool passes its cap;
+ * Wave-boundary callers want the full list and omit it.
  *
  * @param courseId - Scopes results to a single course.
  * @param now      - Caller-supplied reference time; inject for deterministic tests.
@@ -121,29 +126,28 @@ export async function getConceptsByCourse(
 export async function getDueConceptsByCourse(
   courseId: string,
   now: Date,
-  tx?: DbOrTx,
+  opts: { readonly tx?: DbOrTx; readonly limit?: number } = {},
 ): Promise<readonly Concept[]> {
-  const exec = tx ?? db;
-  return (
-    exec
-      .select()
-      .from(concepts)
-      .where(
-        and(
-          eq(concepts.courseId, courseId),
-          // Belt-and-suspenders: IS NOT NULL makes index use explicit; lte
-          // already returns false for NULL but the planner benefits from the hint.
-          sql`${concepts.nextReviewAt} IS NOT NULL`,
-          lte(concepts.nextReviewAt, now),
-        ),
-      )
-      // Deterministic ordering: nextReviewAt ASC means oldest-due first (matches
-      // SM-2's "review what's most overdue" semantics); id ASC is a stable
-      // tie-breaker for rows due at the exact same instant. WHY this matters:
-      // these rows feed the Wave-start prompt, and the rendered byte sequence
-      // must be stable across calls or the OpenAI-compatible prompt cache misses.
-      .orderBy(asc(concepts.nextReviewAt), asc(concepts.id))
-  );
+  const exec = opts.tx ?? db;
+  const query = exec
+    .select()
+    .from(concepts)
+    .where(
+      and(
+        eq(concepts.courseId, courseId),
+        // Belt-and-suspenders: IS NOT NULL makes index use explicit; lte
+        // already returns false for NULL but the planner benefits from the hint.
+        sql`${concepts.nextReviewAt} IS NOT NULL`,
+        lte(concepts.nextReviewAt, now),
+      ),
+    )
+    // Deterministic ordering: nextReviewAt ASC means oldest-due first (matches
+    // SM-2's "review what's most overdue" semantics); id ASC is a stable
+    // tie-breaker for rows due at the exact same instant. WHY this matters:
+    // these rows feed the Wave-start prompt, and the rendered byte sequence
+    // must be stable across calls or the OpenAI-compatible prompt cache misses.
+    .orderBy(asc(concepts.nextReviewAt), asc(concepts.id));
+  return opts.limit === undefined ? query : query.limit(opts.limit);
 }
 
 // ---------------------------------------------------------------------------
