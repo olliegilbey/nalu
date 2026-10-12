@@ -13,6 +13,7 @@ import { t } from "@/i18n";
 import { playWrong } from "@/lib/sound";
 import { calculateMcXp } from "@/lib/scoring/xp";
 import { parseQuestionnaireBuffer } from "@/lib/course/parseQuestionnaireBuffer";
+import { matchOptionIndex } from "@/lib/course/shapeQuestionnaireAnswers";
 
 export type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
@@ -55,7 +56,7 @@ export function Composer({
   persistKey?: string;
   /** When set, replaces the input row with a single advance button. */
   moveOn?: { readonly label: string; readonly onAdvance: () => void };
-  /** Called with exact XP when the learner confirms a correct MC answer. */
+  /** Called with exact XP for a correct MC answer, confirmed or typed verbatim; once per question. */
   onCorrectAnswer?: (amount: number) => void;
   /** Wave tier — fallback for MC XP when a question carries no per-question tier. */
   waveTier?: number;
@@ -82,6 +83,11 @@ export function Composer({
   const [feedback, setFeedback] = useState<("correct" | "wrong" | null)[]>([]);
   // While true, the option grid is locked (during the pulse).
   const [locked, setLocked] = useState(false);
+  // Questions already awarded MC XP, so each awards at most once (issue #21).
+  // A failed submit re-shows the card, and the restored buffer drops the final
+  // answer, so the learner answers that step twice. A ref, not state: it must
+  // outlive the buffer re-init below, and it never drives rendering.
+  const mcXpAwardedRef = useRef(new Set<string>());
 
   // The textarea's value: a per-question draft while a questionnaire is
   // active, otherwise the parent-owned chat-input string. `setInputValue`
@@ -266,6 +272,22 @@ export function Composer({
     setPending(next);
   };
 
+  // Award a correct MC answer's XP, once per question. Exact XP is computed
+  // client-side from the question's tier — the designated `calculateMcXp`
+  // instant path. Falls back to the wave tier, then to tier 1, when no
+  // per-question tier is present. `onCorrectAnswer` routes through
+  // `useCourseXp.addXp`, which plays the correct-answer sound centrally — no
+  // direct `playCorrect()` here.
+  const awardMcXpOnce = (question: ChoiceQuestion) => {
+    // Scope the key to its questionnaire: a Wave's questionnaires reuse raw
+    // ids like `q1`, so the id alone would block the next one's award.
+    // persistKey is unique per questionnaire; without one, the ids stand in.
+    const awardKey = `${persistKey ?? questionsKey}:${question.id}`;
+    if (mcXpAwardedRef.current.has(awardKey)) return;
+    mcXpAwardedRef.current.add(awardKey);
+    onCorrectAnswer?.(calculateMcXp(question.tier ?? waveTier ?? 1, true));
+  };
+
   const confirmSelection = () => {
     if (!hasQuestions || !current || currentPending == null || locked) return;
     const result = deriveMcFeedback(current.correctIndex, currentPending);
@@ -273,14 +295,8 @@ export function Composer({
     fb[step] = result;
     setFeedback(fb);
     setLocked(true);
-    if (result === "correct") {
-      // Exact XP for a correct MC, computed client-side from the question's
-      // tier — the designated `calculateMcXp` instant path. Falls back to the
-      // wave tier, then to tier 1, when no per-question tier is present.
-      // `onCorrectAnswer` routes through `useCourseXp.addXp`, which plays the
-      // correct-answer sound centrally — no direct `playCorrect()` here.
-      onCorrectAnswer?.(calculateMcXp(current.tier ?? waveTier ?? 1, true));
-    } else if (result === "wrong") playWrong();
+    if (result === "correct") awardMcXpOnce(current);
+    else if (result === "wrong") playWrong();
     // result === null: ungraded MC (clarify preference questions carry no
     // answer key). No feedback styling, no sound, no XP — punishing an opinion
     // with a red "wrong" outline + buzzer was the bug. The answer still locks
@@ -316,6 +332,13 @@ export function Composer({
       const answer = inputValue.trim();
       // Keep the draft — a free-text answer stays editable on revisit.
       clearPending();
+      // Typed text that names an option verbatim ships as an MC answer
+      // (`matchOptionIndex`, shared with the shaper), and the server grades
+      // it as one. The turn result skips MC XP, so award it here, as Confirm
+      // would (#18).
+      if (current && matchOptionIndex(current, answer) === current.correctIndex) {
+        awardMcXpOnce(current);
+      }
       advanceAfterAnswer(answer);
     } else {
       onSend();

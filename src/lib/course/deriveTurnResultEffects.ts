@@ -30,14 +30,14 @@ export interface TurnResultEffects {
  * Decide the badge XP, close banner and tier-up toast for a turn result.
  *
  * Pure: the caller owns the side-effects (badge XP, close state, toast).
- * The free-text-only signal filter is deliberate and open for review:
- * issues #18 and #21 hold a pending XP-counting decision on these branches.
- * Change it there, not as part of a refactor.
+ * The free-text-only signal filter is deliberate. The Composer awards every
+ * correct MC answer at answer time, once per question, whether confirmed or
+ * typed verbatim (issues #18, #21). Counting `mc-index` here would double it.
  */
 export function deriveTurnResultEffects(result: WaveTurnResultData): TurnResultEffects {
   if (result.kind === "mid-turn") {
     // Free-text XP is server-graded; sum it into one badge pulse. MC XP
-    // is already counted client-side at confirm time (Composer
+    // is already counted client-side at answer time (Composer
     // onCorrectAnswer) — skip `mc-index` signals to avoid double-counting.
     const freeTextXp = result.gradedSignals
       .filter((s) => s.kind === "free-text")

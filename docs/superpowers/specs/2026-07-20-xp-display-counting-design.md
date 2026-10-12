@@ -4,6 +4,13 @@
 `main`@`f3fbc25`. Priority P3 (display-only drift + a refactor gated on a
 product call). **Nothing here is implemented yet — Ollie picks a direction.**
 
+**Update 2026-10-12:** #18 and #21 are fixed without a UX change (branch
+`fix/xp-display-drift`). Instant client MC XP stays. The Composer now awards a
+typed answer that names the correct option verbatim (#18). It awards each
+question once per questionnaire, through an in-memory set keyed by
+`persistKey` (#21). No new plumbing, buffer field, or wire field. Option A
+remains open as a product choice; #19 is untouched.
+
 ## The shared design space
 
 `useCourseXp` is a non-authoritative display counter fed from two places:
