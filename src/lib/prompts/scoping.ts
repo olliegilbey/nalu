@@ -11,9 +11,9 @@ import type { ScopingSeedInputs } from "@/lib/types/context";
  * `response_format`. Every turn's schema rides the wire; the system prompt
  * only carries the contract "reply with a single JSON object matching it".
  *
- * Emitted exactly once per scoping pass — `renderContext` only renders a
- * `role: "system"` row when one is present at the top of the message log.
- * Subsequent turns append user/assistant rows; the prefix stays byte-stable.
+ * Never persisted: `renderContext` rebuilds it fresh from the scoping seed on
+ * every LLM call. The renderer is pure, so its bytes stay identical across the
+ * scoping pass and the cache prefix stays warm (`docs/ARCHITECTURE.md`).
  */
 export function renderScopingSystem(inputs: ScopingSeedInputs): string {
   return `<role>

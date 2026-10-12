@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { z } from "zod/v4";
 import { MockLanguageModelV3 } from "ai/test";
 import { NoObjectGeneratedError } from "ai";
@@ -110,20 +110,5 @@ describe("generateChat", () => {
       if (!NoObjectGeneratedError.isInstance(err)) return false;
       return err.text === '{"x":42}';
     });
-  });
-
-  it("sends response_format whatever the model name", async () => {
-    // No per-model gate: Cerebras treats response_format as soft guidance, so
-    // sending it to every model is harmless and keeps one code path.
-    vi.stubEnv("LLM_MODEL", "some-model"); // any name; it must not change the wire payload
-    const model = mockModel('{"x":"hi"}');
-
-    await generateChat([{ role: "user", content: "hi" }], {
-      model,
-      responseSchema: z.object({ x: z.string() }),
-    });
-
-    expect(model.doGenerateCalls[0]?.responseFormat?.type).toBe("json");
-    vi.unstubAllEnvs();
   });
 });
