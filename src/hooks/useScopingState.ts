@@ -77,15 +77,21 @@ export function useScopingState(courseId: string): UseScopingStateResult {
 
   // Last failed scoping Turn + its re-send closure. Each Turn's per-call
   // `onError` sets it, because the mutation variables are in scope there. Each
-  // mutation's `onMutate` clears it, so any fresh attempt, including a Retry,
-  // drops the stale row before it runs.
+  // mutation's `onMutate` and `onSuccess` clear it, so any fresh attempt,
+  // including a Retry, drops the stale row before it runs.
   const [failedTurn, setFailedTurn] = useState<FailedScopingTurn | null>(null);
   const clearFailedTurn = () => setFailedTurn(null);
+  // Returns the invalidation promise, so the mutation stays pending until the
+  // refetched state lands.
+  const onTurnSuccess = () => {
+    clearFailedTurn();
+    return invalidateState();
+  };
 
   const generateFramework = useMutation(
     trpc.course.generateFramework.mutationOptions({
       onMutate: clearFailedTurn,
-      onSuccess: invalidateState,
+      onSuccess: onTurnSuccess,
       onError: (err) => {
         toast.error("Couldn't build your course outline", {
           description: formatMutationError(err),
@@ -96,13 +102,13 @@ export function useScopingState(courseId: string): UseScopingStateResult {
   const generateBaseline = useMutation(
     trpc.course.generateBaseline.mutationOptions({
       onMutate: clearFailedTurn,
-      onSuccess: invalidateState,
+      onSuccess: onTurnSuccess,
     }),
   );
   const submitBaseline = useMutation(
     trpc.course.submitBaseline.mutationOptions({
       onMutate: clearFailedTurn,
-      onSuccess: invalidateState,
+      onSuccess: onTurnSuccess,
       onError: (err) => {
         toast.error("Couldn't save your answers", {
           description: formatMutationError(err),
@@ -228,13 +234,23 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     );
   };
 
+  // The server can commit a Turn whose reply never reached the client (a
+  // network drop). Once a refetch shows that stage landed, the failure is
+  // stale, so hide it. Otherwise "Move on" could sit beside a Retry row.
+  const landed = {
+    framework: Boolean(state.data?.framework),
+    baseline: Boolean(state.data?.baseline),
+    scopingClose: Boolean(state.data?.scopingResult),
+  };
+  const openFailedTurn = failedTurn && !landed[failedTurn.kind] ? failedTurn : null;
+
   return {
     chatEntries,
     activeQuestionnaire,
     scopingResult: state.data?.scopingResult ?? null,
     topic: state.data?.topic ?? null,
     isPending,
-    failedTurn,
+    failedTurn: openFailedTurn,
     submitClarify,
     submitBaselineAnswers,
   };

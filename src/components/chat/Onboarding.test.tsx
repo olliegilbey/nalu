@@ -61,10 +61,31 @@ describe("Onboarding retry affordance", () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
-  it("hides the retry row while a fresh attempt is pending", () => {
+  it("disables Retry and ignores clicks while a scoping turn is pending", () => {
+    const retry = vi.fn();
+    scopingState.value = baseState({
+      failedTurn: { kind: "baseline", retry },
+      isPending: true,
+    });
+    render(<Onboarding courseId="c1" />);
+
+    const button = screen.getByRole("button", { name: "Retry" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it("hides the retry row while the failed turn's question card is restored", () => {
+    // The card's own submit is the retry, so the row would be a second,
+    // stale-answer affordance.
     scopingState.value = baseState({
       failedTurn: { kind: "framework", retry: vi.fn() },
-      isPending: true,
+      activeQuestionnaire: {
+        kind: "clarify",
+        questions: [],
+        questionsKey: "q1",
+        persistKey: "nalu:scoping:c1:clarify",
+      },
     });
     render(<Onboarding courseId="c1" />);
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();

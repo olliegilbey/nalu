@@ -98,10 +98,21 @@ vi.mock("@/lib/trpc", () => {
 
 import { useScopingState } from "./useScopingState";
 
+// Scoping closed: the state a refetch returns once submitBaseline committed.
+const closedState: Record<string, unknown> = {
+  ...baselineState,
+  status: "active",
+  scopingResult: { closingMessage: "done", startingTier: 1 },
+};
+
+// Test-fixture slot: the latest wrapper's client, so a test can force a refetch.
+let queryClient: QueryClient | null = null;
+
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  queryClient = qc;
   return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
 }
 
@@ -165,7 +176,7 @@ describe("useScopingState", () => {
     expect(hoisted.frameworkFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1", responses: answers });
   });
 
-  it("records a failed submitBaseline as a scopingClose turn", async () => {
+  it("records a failed submitBaseline as a scopingClose turn, then a retry re-sends identical variables and clears it", async () => {
     hoisted.stateData = baselineState;
     hoisted.submitBaselineFn.mockRejectedValueOnce(new Error("429"));
     const { result } = renderHook(() => useScopingState("c1"), { wrapper });
@@ -176,14 +187,46 @@ describe("useScopingState", () => {
 
     await waitFor(() => expect(result.current.failedTurn?.kind).toBe("scopingClose"));
     expect(hoisted.submitBaselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1", answers });
+
+    // Retry succeeds (default resolve): identical variables re-sent, row cleared.
+    hoisted.submitBaselineFn.mockClear();
+    act(() => result.current.failedTurn?.retry());
+    await waitFor(() => expect(result.current.failedTurn).toBeNull());
+    expect(hoisted.submitBaselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1", answers });
   });
 
-  it("records a failed baseline auto-dispatch with the baseline kind", async () => {
+  it("records a failed baseline auto-dispatch with the baseline kind, then a retry re-sends identical variables and clears it", async () => {
     hoisted.stateData = frameworkOnlyState;
     hoisted.baselineFn.mockRejectedValue(new Error("429"));
     const { result } = renderHook(() => useScopingState("c1"), { wrapper });
 
     await waitFor(() => expect(result.current.failedTurn?.kind).toBe("baseline"));
     expect(hoisted.baselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1" });
+
+    // The guard stays set on error, so only Retry re-sends. Make it succeed.
+    hoisted.baselineFn.mockReset();
+    hoisted.baselineFn.mockResolvedValue({});
+    act(() => result.current.failedTurn?.retry());
+    await waitFor(() => expect(result.current.failedTurn).toBeNull());
+    expect(hoisted.baselineFn).toHaveBeenCalledTimes(1);
+    expect(hoisted.baselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1" });
+  });
+
+  it("drops a failed scopingClose once a refetch shows scoping closed on the server", async () => {
+    // The server committed, but the reply never reached the client.
+    hoisted.stateData = baselineState;
+    hoisted.submitBaselineFn.mockRejectedValueOnce(new Error("network"));
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+    await waitFor(() => expect(result.current.activeQuestionnaire?.kind).toBe("baseline"));
+
+    act(() => result.current.submitBaselineAnswers([{ id: "b1", kind: "mc", selected: "A" }]));
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("scopingClose"));
+
+    hoisted.stateData = closedState;
+    await act(async () => {
+      await queryClient?.invalidateQueries();
+    });
+    await waitFor(() => expect(result.current.scopingResult).not.toBeNull());
+    expect(result.current.failedTurn).toBeNull();
   });
 });
