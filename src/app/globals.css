@@ -28,6 +28,30 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* Kanagawa colours as Tailwind theme colours. Tailwind builds each colour
+     utility from these (`bg-sumi-3`, `text-crystal`), with variants
+     (`hover:`, `focus-within:`, `prose-a:`) and opacity modifiers (`/50`).
+     A plain class in `@layer utilities` gets neither, so its variants were
+     silent no-ops (issues #77, #106). Add a colour here, never as a plain
+     class. `globals.test.ts` fails on any Kanagawa class without CSS. */
+  --color-sumi-0: var(--sumi-ink-0);
+  --color-sumi-1: var(--sumi-ink-1);
+  --color-sumi-2: var(--sumi-ink-2);
+  --color-sumi-3: var(--sumi-ink-3);
+  --color-sumi-4: var(--sumi-ink-4);
+  --color-sumi-5: var(--sumi-ink-5);
+  --color-wave-blue-1: var(--wave-blue-1);
+  --color-wave-blue-2: var(--wave-blue-2);
+  --color-fuji-gray: var(--fuji-gray);
+  --color-crystal: var(--crystal-blue);
+  --color-sakura: var(--sakura-pink);
+  --color-spring-green: var(--spring-green);
+  --color-carp: var(--carp-yellow);
+  --color-aqua: var(--wave-aqua-2);
+  --color-oni: var(--oni-violet-2);
+  --color-wave-red: var(--wave-red);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -122,57 +146,6 @@
   }
   .shadow-glow {
     box-shadow: var(--shadow-glow);
-  }
-
-  .text-crystal {
-    color: var(--crystal-blue);
-  }
-  .text-sakura {
-    color: var(--sakura-pink);
-  }
-  .text-spring-green {
-    color: var(--spring-green);
-  }
-  .text-carp {
-    color: var(--carp-yellow);
-  }
-  .text-aqua {
-    color: var(--wave-aqua-2);
-  }
-  .text-oni {
-    color: var(--oni-violet-2);
-  }
-  .text-fuji-gray {
-    color: var(--fuji-gray);
-  }
-
-  .bg-sumi-0 {
-    background-color: var(--sumi-ink-0);
-  }
-  .bg-sumi-1 {
-    background-color: var(--sumi-ink-1);
-  }
-  .bg-sumi-2 {
-    background-color: var(--sumi-ink-2);
-  }
-  .bg-sumi-3 {
-    background-color: var(--sumi-ink-3);
-  }
-  .bg-sumi-4 {
-    background-color: var(--sumi-ink-4);
-  }
-  .bg-wave-blue-1 {
-    background-color: var(--wave-blue-1);
-  }
-  .bg-wave-blue-2 {
-    background-color: var(--wave-blue-2);
-  }
-
-  .border-sumi-4 {
-    border-color: var(--sumi-ink-4);
-  }
-  .border-sumi-5 {
-    border-color: var(--sumi-ink-5);
   }
 
   .bg-kanagawa-atmos {
@@ -293,22 +266,6 @@
   }
   .pulse-wrong {
     animation: pulse-wrong 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  }
-
-  .border-spring-green {
-    border-color: var(--spring-green);
-  }
-  .border-crystal {
-    border-color: var(--crystal-blue);
-  }
-  .border-wave-red {
-    border-color: var(--wave-red);
-  }
-  .text-wave-red {
-    color: var(--wave-red);
-  }
-  .bg-spring-green {
-    background-color: var(--spring-green);
   }
 
   @keyframes wave-spin {

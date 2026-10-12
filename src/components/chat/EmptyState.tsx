@@ -49,7 +49,7 @@ export function EmptyState({ onPick }: { onPick: (t: string) => void }) {
           {headlineLead}
           <br />
           <span className="text-fuji-gray">{headlineTail}</span>
-          <span className="text-sakura-pink">?</span>
+          <span className="text-sakura">?</span>
         </h1>
       </div>
 
