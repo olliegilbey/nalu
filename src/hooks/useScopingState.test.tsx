@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  focusManager,
+  onlineManager,
+} from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 // Mock tRPC context with hand-shaped queryOptions/mutationOptions. Unlike a
@@ -243,21 +248,51 @@ describe("useScopingState", () => {
 });
 
 describe("useScopingState course not found", () => {
-  it("flags a NOT_FOUND course at once, without retrying", async () => {
+  afterEach(() => {
+    // Hand focus and network state back to the browser defaults.
+    focusManager.setFocused(undefined);
+    onlineManager.setOnline(true);
+  });
+
+  /** Render the hook against a NOT_FOUND getState, on the app's QueryClient. */
+  async function renderNotFound() {
     // getState is ownership-scoped: another browser's course is NOT_FOUND too.
     hoisted.stateError = Object.assign(new Error("course not found"), {
       data: { code: "NOT_FOUND", httpStatus: 404 },
     });
     // The app's QueryClient, unlike the shared wrapper (`retry: false`). Its
-    // defaults must stop retrying a course that will not appear.
+    // defaults must stop refetching a course that will not appear.
     const qc = createQueryClient();
     const { result } = renderHook(() => useScopingState("c1"), {
       wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
     });
-
     await waitFor(() => expect(result.current.courseNotFound).toBe(true));
+    return result;
+  }
+
+  it("flags a NOT_FOUND course at once, without retrying", async () => {
+    const result = await renderNotFound();
     expect(hoisted.getStateCalls).toBe(1);
     expect(result.current.isPending).toBe(false);
+  });
+
+  it("keeps the not-found state when the tab regains focus or the network returns", async () => {
+    // A refetch of a query that never had data clears its error until the
+    // reply lands, so the not-found message would vanish for that round-trip.
+    const result = await renderNotFound();
+
+    // Async act: the QueryClient's focus handler awaits before it refetches.
+    await act(async () => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await act(async () => {
+      onlineManager.setOnline(false);
+      onlineManager.setOnline(true);
+    });
+
+    expect(result.current.courseNotFound).toBe(true);
+    expect(hoisted.getStateCalls).toBe(1);
   });
 
   it("does not flag a course that loads", async () => {
