@@ -28,6 +28,7 @@ import { getLlmModel } from "@/lib/llm/provider";
 import { toCerebrasJsonSchema } from "@/lib/llm/toCerebrasJsonSchema";
 import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "@/lib/llm/cerebrasRateLimit";
 import { LLM } from "@/lib/config/tuning";
+import { scoreToolProbe, type ProbeTrial } from "./toolProbeScore";
 
 const PROBE_SCHEMA = z.object({
   word: z.literal("OK"),
@@ -123,7 +124,9 @@ const probeQuestionnaireInput = jsonSchema<z.infer<typeof probeQuestionnaireSche
  * Runs N scripted teach+quiz trials with two tools defined (pure SDK — no
  * DB, no turn pipeline) and tallies valid vs malformed tool behavior.
  *
- * GO criteria: ≥95% valid tool-call rate AND median loop depth ≤ 3 steps.
+ * GO criteria: ≥95% of trials make a valid `presentQuestionnaire` call AND
+ * median loop depth ≤ 3 steps. A trial with no call fails. Scoring lives in
+ * `toolProbeScore.ts`; the per-call counts below are diagnostics only.
  *
  * Note on error surfacing (verified against installed ai@6.0.158, contra
  * the doc's generateText blurb — probe verdict finding 3): in MULTI-STEP
@@ -136,13 +139,13 @@ const probeQuestionnaireInput = jsonSchema<z.infer<typeof probeQuestionnaireSche
  */
 async function probeToolCalling(): Promise<void> {
   const model = getLlmModel();
+  // Per-call diagnostics for the log. The verdict comes from `trials`.
   const tally = {
     validCalls: 0,
     invalidCalls: 0,
     noCallWhenRequired: 0,
-    erroredTrials: 0,
-    steps: [] as number[],
   };
+  const trials: ProbeTrial[] = [];
 
   for (let trial = 0; trial < TOOL_PROBE_TRIALS; trial++) {
     const started = Date.now();
@@ -196,8 +199,15 @@ async function probeToolCalling(): Promise<void> {
       });
       recordCerebrasRateLimitHeaders(result.response.headers);
 
-      tally.steps.push(result.steps.length);
       const calls = result.steps.flatMap((s) => s.toolCalls);
+      trials.push({
+        kind: "completed",
+        steps: result.steps.length,
+        calls: calls.map((c) => ({
+          toolName: c.toolName,
+          invalid: "invalid" in c && c.invalid === true,
+        })),
+      });
       if (calls.length === 0) tally.noCallWhenRequired++;
       // Verified against installed ai@6.0.158: a schema-invalid call is NOT
       // thrown in the multi-step flow — it lands in step.toolCalls flagged
@@ -233,13 +243,14 @@ async function probeToolCalling(): Promise<void> {
       if (InvalidToolInputError.isInstance(err) || NoSuchToolError.isInstance(err)) {
         // Malformed call: wrong schema or hallucinated tool name.
         tally.invalidCalls++;
+        trials.push({ kind: "invalid-call-thrown" });
         console.log(`trial ${trial}: INVALID CALL (${err.name}) in ${Date.now() - started}ms`);
       } else {
         // Transport/provider failure — not a model-behavior verdict; report
         // separately so a flaky network can't masquerade as NO-GO. Surface
         // the provider's response body: "Bad Request" alone can't
         // distinguish "tools unsupported for model" from a payload bug.
-        tally.erroredTrials++;
+        trials.push({ kind: "transport-error" });
         const body =
           err instanceof Error && "responseBody" in err
             ? String((err as { responseBody?: unknown }).responseBody)
@@ -251,22 +262,23 @@ async function probeToolCalling(): Promise<void> {
     }
   }
 
-  const attempts = tally.validCalls + tally.invalidCalls;
-  const validRate = attempts === 0 ? 0 : tally.validCalls / attempts;
-  const sortedSteps = [...tally.steps].sort((a, b) => a - b);
-  const medianSteps = sortedSteps[Math.floor(sortedSteps.length / 2)] ?? 0;
+  const score = scoreToolProbe(trials);
+  const transportErrors = trials.length - score.scoredTrials;
+  const steps = trials.flatMap((t) => (t.kind === "completed" ? [t.steps] : []));
 
   console.log("\n=== tool-call reliability tally ===");
-  console.log(`trials:             ${TOOL_PROBE_TRIALS} (${tally.erroredTrials} transport errors)`);
+  console.log(`trials:             ${TOOL_PROBE_TRIALS} (${transportErrors} transport errors)`);
+  console.log(`passed trials:      ${score.passedTrials}/${score.scoredTrials}`);
   console.log(`valid calls:        ${tally.validCalls}`);
   console.log(`invalid calls:      ${tally.invalidCalls}`);
   console.log(`noCallWhenRequired: ${tally.noCallWhenRequired}`);
-  console.log(`valid-call rate:    ${(validRate * 100).toFixed(1)}%`);
-  console.log(`steps per trial:    [${tally.steps.join(", ")}] (median ${medianSteps})`);
+  console.log(`trial pass rate:    ${(score.passRate * 100).toFixed(1)}%`);
+  console.log(`steps per trial:    [${steps.join(", ")}] (median ${score.medianSteps})`);
 
-  const go = validRate >= 0.95 && medianSteps <= 3;
-  console.log(`\nVERDICT: ${go ? "GO" : "NO-GO"} (need ≥95% valid rate AND median steps ≤ 3)`);
-  process.exit(go ? 0 : 1);
+  console.log(
+    `\nVERDICT: ${score.go ? "GO" : "NO-GO"} (need ≥95% of trials with a valid presentQuestionnaire call AND median steps ≤ 3)`,
+  );
+  process.exit(score.go ? 0 : 1);
 }
 
 async function main(): Promise<void> {
