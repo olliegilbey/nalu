@@ -13,7 +13,7 @@ export interface WaveCloseResult {
   readonly tierAdvancedTo: number | null;
 }
 
-/** Client-side effects one Wave turn result implies; `useWaveState` applies them. */
+/** Client-side effects one Wave turn result implies; the caller applies them. */
 export interface TurnResultEffects {
   /**
    * XP to fold into a single badge pulse. Mid-turn: free-text signal sum.
@@ -29,7 +29,7 @@ export interface TurnResultEffects {
 /**
  * Decide the badge XP, close banner and tier-up toast for a turn result.
  *
- * Pure: the hook owns the side-effects (`addXp`, `setCloseResult`, toast).
+ * Pure: the caller owns the side-effects (badge XP, close state, toast).
  * The free-text-only signal filter is deliberate and open for review:
  * issues #18 and #21 hold a pending XP-counting decision on these branches.
  * Change it there, not as part of a refactor.

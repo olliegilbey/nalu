@@ -5,11 +5,7 @@ import type { WaveChatLogEntryForClient } from "./redactWaveChatLog";
  * Derive the Composer's active questionnaire for a Wave from its chat log.
  *
  * The active questionnaire is the latest `assistant.text_with_questionnaire`
- * whose id has no later `user.answers` entry. Mirrors `useScopingState`'s
- * derivation pattern — same `ActiveQuestionnaire` shape, same
- * questionnaireId-as-key identity for Composer state reset.
- *
- * Pure. `useWaveState` wraps it in a `useMemo` that guards on loaded state.
+ * whose id has no later `user.answers` entry. Pure.
  */
 export function deriveActiveQuestionnaire(
   chatLog: readonly WaveChatLogEntryForClient[],

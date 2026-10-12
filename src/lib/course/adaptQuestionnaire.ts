@@ -14,7 +14,7 @@ export interface ChoiceQuestion {
 }
 
 /**
- * Composer binding for the open questionnaire, shared by `useScopingState` and `useWaveState`.
+ * Composer binding for the open questionnaire, in scoping and in a Wave.
  *
  * `kind` is an informational tag; nothing switches on it exhaustively.
  */
@@ -23,7 +23,10 @@ export interface ActiveQuestionnaire {
   readonly questions: readonly ChoiceQuestion[];
   /** Stable identity for the active question set — feeds the Composer's reset key. */
   readonly questionsKey: string;
-  /** Stable per-courseId+stage key for refresh-resilient localStorage buffer. */
+  /**
+   * localStorage key for the Composer's refresh-resilient draft buffer, one per
+   * questionnaire: `nalu:scoping:{courseId}:{stage}` or `nalu:wave:{waveId}:q:{questionnaireId}`.
+   */
   readonly persistKey: string;
 }
 
