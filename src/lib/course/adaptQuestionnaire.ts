@@ -13,6 +13,20 @@ export interface ChoiceQuestion {
   readonly tier?: number;
 }
 
+/**
+ * Composer binding for the open questionnaire, shared by `useScopingState` and `useWaveState`.
+ *
+ * `kind` is an informational tag; nothing switches on it exhaustively.
+ */
+export interface ActiveQuestionnaire {
+  readonly kind: "clarify" | "baseline" | "wave";
+  readonly questions: readonly ChoiceQuestion[];
+  /** Stable identity for the active question set — feeds the Composer's reset key. */
+  readonly questionsKey: string;
+  /** Stable per-courseId+stage key for refresh-resilient localStorage buffer. */
+  readonly persistKey: string;
+}
+
 const KEY_TO_INDEX: Record<McOptionKey, number> = { A: 0, B: 1, C: 2, D: 3 };
 
 /** Three-way MC feedback: "correct" | "wrong", or null for ungraded (no correctIndex) questions. */

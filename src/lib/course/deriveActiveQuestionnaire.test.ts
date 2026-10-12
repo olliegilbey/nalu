@@ -9,11 +9,7 @@ const userText = (content: string): WaveChatLogEntryForClient => ({
 });
 const userAnswers = (
   questionnaireId: string,
-  responses: WaveChatLogEntryForClient extends infer T
-    ? T extends { kind: "answers"; responses: infer R }
-      ? R
-      : never
-    : never,
+  responses: Extract<WaveChatLogEntryForClient, { kind: "answers" }>["responses"],
 ): WaveChatLogEntryForClient => ({
   role: "user",
   kind: "answers",
@@ -28,11 +24,7 @@ const assistantText = (content: string): WaveChatLogEntryForClient => ({
 const assistantQ = (
   questionnaireId: string,
   content: string,
-  questions: WaveChatLogEntryForClient extends infer T
-    ? T extends { kind: "text_with_questionnaire"; questions: infer Q }
-      ? Q
-      : never
-    : never,
+  questions: Extract<WaveChatLogEntryForClient, { kind: "text_with_questionnaire" }>["questions"],
 ): WaveChatLogEntryForClient => ({
   role: "assistant",
   kind: "text_with_questionnaire",

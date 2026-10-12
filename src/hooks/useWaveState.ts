@@ -8,28 +8,17 @@ import { toast } from "sonner";
 import { useTRPC, devUserHeaders } from "@/lib/trpc";
 import { deriveWaveChatEntries } from "@/lib/course/deriveWaveChatEntries";
 import { deriveActiveQuestionnaire } from "@/lib/course/deriveActiveQuestionnaire";
-import { deriveTurnResultEffects } from "@/lib/course/deriveTurnResultEffects";
+import {
+  deriveTurnResultEffects,
+  type WaveCloseResult,
+} from "@/lib/course/deriveTurnResultEffects";
 import { adaptStreamedToolQuestion } from "@/lib/course/adaptQuestionnaire";
-import type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
+import type { ActiveQuestionnaire, ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import { useCourseXp } from "./useCourseXp";
-import type { ActiveQuestionnaire } from "./useScopingState";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
 import type { WaveState } from "@/lib/course/getWaveState";
 import type { WaveTurnResultData, WaveTurnUIMessage } from "@/lib/types/waveStream";
-
-/**
- * Close-turn result the page surfaces after the final wave turn lands.
- *
- * Trimmed projection of `ExecuteWaveCloseResult` — only the fields the page
- * needs to render the post-close banner + move-on CTA.
- */
-export interface WaveCloseResult {
-  readonly closingMessage: string;
-  readonly nextWaveNumber: number;
-  readonly completionXpAwarded: number;
-  readonly tierAdvancedTo: number | null;
-}
 
 /** Return shape of {@link useWaveState}; chat entries, active questionnaire, XP counters, submit handlers. */
 export interface UseWaveStateResult {
@@ -116,8 +105,8 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
   const questionnaireErrorRef = useRef<(() => void) | null>(null);
 
   // Decisions live in `deriveTurnResultEffects` (pure); the hook applies the
-  // side-effects. Order preserved from the old close branch: capture the close
-  // result, then fold XP into the badge, then fire the tier-up toast.
+  // side-effects in a fixed order: capture the close result, fold XP into the
+  // badge, then fire the tier-up toast. `addXp` runs even for a 0 gain.
   const handleTurnResult = (result: WaveTurnResultData) => {
     const effects = deriveTurnResultEffects(result);
     if (effects.closeResult) setCloseResult(effects.closeResult);
@@ -177,9 +166,8 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
 
   // Active questionnaire for the Composer: the latest
   // `assistant.text_with_questionnaire` whose id has no later
-  // `user.answers` entry in the chat log. Pure derivation extracted to
-  // `deriveActiveQuestionnaire`; this stays a thin memo that guards on
-  // `state.data` for render stability across consumer re-renders.
+  // `user.answers` entry in the chat log. `deriveActiveQuestionnaire` holds
+  // the logic; the memo keeps the result stable across consumer re-renders.
   const activeQuestionnaire = useMemo<ActiveQuestionnaire | null>(
     () => (state.data ? deriveActiveQuestionnaire(state.data.chatLog, state.data.waveId) : null),
     [state.data],
@@ -234,8 +222,8 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     // Echo back the open questionnaire's id (the server validates §7.4 mutual
     // exclusion against it). If there's no open questionnaire, the call would
     // fail server-side — the UI should be gating this path on activeQuestionnaire.
-    // `questionsKey` was set to the questionnaireId in the memo above; reuse
-    // it rather than re-scanning chat_log.
+    // `deriveActiveQuestionnaire` sets `questionsKey` to the questionnaireId;
+    // reuse it rather than re-scanning chat_log.
     const questionnaireId = activeQuestionnaire?.questionsKey;
     if (!questionnaireId) return;
     questionnaireErrorRef.current = opts?.onError ?? null;

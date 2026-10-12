@@ -1,15 +1,19 @@
 import type { WaveTurnResultData } from "@/lib/types/waveStream";
-import type { WaveCloseResult } from "@/hooks/useWaveState";
 
 /**
- * Pure decision half of `useWaveState`'s turn-result handling.
+ * Close-turn result the page surfaces after the final Wave turn lands.
  *
- * Exact port of the old submitTurn onSuccess branches (the hook applies the
- * side-effects — `addXp`, `setCloseResult`, tier-up toast — from the returned
- * effects; the decisions live here). The free-text-only signal filter and its
- * skip-`mc-index` WHY comments are carried verbatim: issues #18/#21 have a
- * pending design decision on exactly those branches — do NOT change them here.
+ * Trimmed projection of `ExecuteWaveCloseResult` — only the fields the page
+ * needs to render the post-close banner + move-on CTA.
  */
+export interface WaveCloseResult {
+  readonly closingMessage: string;
+  readonly nextWaveNumber: number;
+  readonly completionXpAwarded: number;
+  readonly tierAdvancedTo: number | null;
+}
+
+/** Client-side effects one Wave turn result implies; `useWaveState` applies them. */
 export interface TurnResultEffects {
   /**
    * XP to fold into a single badge pulse. Mid-turn: free-text signal sum.
@@ -22,7 +26,14 @@ export interface TurnResultEffects {
   readonly tierUp?: number;
 }
 
-/** Compute the effects a turn result implies. See {@link TurnResultEffects}. */
+/**
+ * Decide the badge XP, close banner and tier-up toast for a turn result.
+ *
+ * Pure: the hook owns the side-effects (`addXp`, `setCloseResult`, toast).
+ * The free-text-only signal filter is deliberate and open for review:
+ * issues #18 and #21 hold a pending XP-counting decision on these branches.
+ * Change it there, not as part of a refactor.
+ */
 export function deriveTurnResultEffects(result: WaveTurnResultData): TurnResultEffects {
   if (result.kind === "mid-turn") {
     // Free-text XP is server-graded; sum it into one badge pulse. MC XP
@@ -40,7 +51,7 @@ export function deriveTurnResultEffects(result: WaveTurnResultData): TurnResultE
     completionXpAwarded: result.completionXpAwarded,
     tierAdvancedTo: result.tierAdvancedTo,
   };
-  // Free-text answered on the wave's FINAL turn is server-graded too —
+  // Free-text answered on the Wave's FINAL turn is server-graded too —
   // mirror the mid-turn branch and fold its XP into the same pulse as
   // completion XP. Skip `mc-index` signals: MC on the close turn is
   // already counted client-side (Composer onCorrectAnswer) — summing it
@@ -51,6 +62,7 @@ export function deriveTurnResultEffects(result: WaveTurnResultData): TurnResultE
   return {
     xpGain: result.completionXpAwarded + freeTextXp,
     closeResult,
+    // Omit the key entirely when no tier advanced, so callers test presence.
     ...(result.tierAdvancedTo !== null ? { tierUp: result.tierAdvancedTo } : {}),
   };
 }

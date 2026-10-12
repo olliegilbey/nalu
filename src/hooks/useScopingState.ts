@@ -6,27 +6,9 @@ import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
 import { formatMutationError } from "@/lib/errors";
 import { deriveChatEntries } from "@/lib/course/deriveChatEntries";
-import { adaptQuestionnaire, type ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
+import { adaptQuestionnaire, type ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { CourseState } from "@/lib/course/getState";
-
-/**
- * Shared Composer-binding shape used by both `useScopingState` (scoping flow)
- * and `useWaveState` (wave teaching flow).
- *
- * `kind` discriminator widened from `"clarify" | "baseline"` (Task 14) to
- * include `"wave"` (Task 15) so the wave hook can use the same projection
- * shape. Widening is a one-line change because nothing in the scoping flow
- * exhaustively switches on this field — it's purely an informational tag.
- */
-export interface ActiveQuestionnaire {
-  readonly kind: "clarify" | "baseline" | "wave";
-  readonly questions: readonly ChoiceQuestion[];
-  /** Stable identity for the active question set — feeds the Composer's reset key. */
-  readonly questionsKey: string;
-  /** Stable per-courseId+stage key for refresh-resilient localStorage buffer. */
-  readonly persistKey: string;
-}
 
 /** Return shape of {@link useScopingState}; chat entries + active questionnaire + submit handlers. */
 export interface UseScopingStateResult {
