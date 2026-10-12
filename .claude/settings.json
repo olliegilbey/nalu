@@ -1,6 +1,7 @@
 {
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true,
-    "rot-reducer@olliegilbey-plugins": true
+    "rot-reducer@olliegilbey-plugins": true,
+    "vercel@claude-plugins-official": true
   }
 }
