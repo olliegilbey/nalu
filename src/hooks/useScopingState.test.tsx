@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-// Mock tRPC context to provide hand-shaped queryOptions/mutationOptions.
-// The hook only consumes these two shapes (queryKey/queryFn for getState; an
-// onSuccess-invoking mutationFn for the three mutations), so a thin stub
-// is enough — we're testing the adapter wiring, not the underlying transport.
-vi.mock("@/lib/trpc", () => {
-  const stateData = {
+// Mock tRPC context with hand-shaped queryOptions/mutationOptions. Unlike a
+// pass-through-only stub, the mutationOptions here forward `o` (onMutate /
+// onSuccess / onError) straight to react-query and swap in a controllable
+// `mutationFn` — so the real mutation lifecycle drives our retry wiring. The
+// `hoisted` handle lets each test flip `stateData` and make a Turn reject.
+const hoisted = vi.hoisted(() => {
+  const clarifyState = {
     courseId: "c1",
     status: "scoping",
     topic: "T",
@@ -21,38 +22,74 @@ vi.mock("@/lib/trpc", () => {
     framework: null,
     baseline: null,
     scopingResult: null,
+  } as Record<string, unknown>;
+  return {
+    clarifyState,
+    stateData: clarifyState as Record<string, unknown>,
+    // Typed via `vi.fn`'s generic so `.mock.calls[i][0]` is the passed vars
+    // (tests assert on it) while the implementation itself ignores the arg.
+    frameworkFn: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({})),
+    baselineFn: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({})),
+    submitBaselineFn: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({
+      freeTextXpAwarded: 0,
+    })),
   };
+});
+
+// Framework present + baseline pending → baseline questionnaire is active and
+// the auto-dispatch effect is inert (baseline already exists), so this state
+// isolates the submitBaseline submit path.
+const baselineState: Record<string, unknown> = {
+  courseId: "c1",
+  status: "scoping",
+  topic: "T",
+  clarification: {
+    userMessage: "intro",
+    questions: [],
+    responses: [{ questionId: "q1", freetext: "x" }],
+  },
+  framework: { tiers: [{ id: "t1", title: "Tier", concepts: [] }] },
+  baseline: {
+    userMessage: "quiz",
+    questions: [
+      {
+        id: "b1",
+        type: "multiple_choice",
+        prompt: "P?",
+        options: ["A", "B", "C", "D"],
+        correct: "A",
+      },
+    ],
+    responses: [],
+  },
+  scopingResult: null,
+};
+
+// Framework present, baseline still null → the auto-dispatch effect fires
+// generateBaseline. Exercises the baseline auto-dispatch failure path.
+const frameworkOnlyState: Record<string, unknown> = {
+  ...baselineState,
+  baseline: null,
+};
+
+vi.mock("@/lib/trpc", () => {
   const stateOpts = {
     queryKey: ["course.getState", { courseId: "c1" }] as const,
-    queryFn: async () => stateData,
+    queryFn: async () => hoisted.stateData,
   };
+  type Opts = Record<string, unknown>;
   return {
     useTRPC: () => ({
       course: {
         getState: { queryOptions: () => stateOpts },
         generateFramework: {
-          mutationOptions: (o: { onSuccess?: () => void }) => ({
-            mutationFn: async () => {
-              o.onSuccess?.();
-              return {};
-            },
-          }),
+          mutationOptions: (o: Opts) => ({ ...o, mutationFn: hoisted.frameworkFn }),
         },
         generateBaseline: {
-          mutationOptions: (o: { onSuccess?: () => void }) => ({
-            mutationFn: async () => {
-              o.onSuccess?.();
-              return {};
-            },
-          }),
+          mutationOptions: (o: Opts) => ({ ...o, mutationFn: hoisted.baselineFn }),
         },
         submitBaseline: {
-          mutationOptions: (o: { onSuccess?: () => void }) => ({
-            mutationFn: async () => {
-              o.onSuccess?.();
-              return {};
-            },
-          }),
+          mutationOptions: (o: Opts) => ({ ...o, mutationFn: hoisted.submitBaselineFn }),
         },
       },
     }),
@@ -61,12 +98,33 @@ vi.mock("@/lib/trpc", () => {
 
 import { useScopingState } from "./useScopingState";
 
+// Scoping closed: the state a refetch returns once submitBaseline committed.
+const closedState: Record<string, unknown> = {
+  ...baselineState,
+  status: "active",
+  scopingResult: { closingMessage: "done", startingTier: 1 },
+};
+
+// Test-fixture slot: the latest wrapper's client, so a test can force a refetch.
+let queryClient: QueryClient | null = null;
+
 function wrapper({ children }: { children: ReactNode }) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  queryClient = qc;
   return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
 }
 
 beforeEach(() => {
+  // Reset shared mock state so tests don't leak stage/rejection setup.
+  hoisted.stateData = hoisted.clarifyState;
+  hoisted.frameworkFn.mockReset();
+  hoisted.baselineFn.mockReset();
+  hoisted.submitBaselineFn.mockReset();
+  hoisted.frameworkFn.mockResolvedValue({});
+  hoisted.baselineFn.mockResolvedValue({});
+  hoisted.submitBaselineFn.mockResolvedValue({ freeTextXpAwarded: 0 });
   // Best-effort localStorage clear. Some Bun + jsdom combinations expose a
   // partial Storage shim without `.clear()` — guard the call.
   if (typeof window !== "undefined" && typeof window.localStorage?.clear === "function") {
@@ -92,5 +150,83 @@ describe("useScopingState", () => {
   it("exposes the course topic", async () => {
     const { result } = renderHook(() => useScopingState("c1"), { wrapper });
     await waitFor(() => expect(result.current.topic).toBe("T"));
+  });
+
+  it("starts with no failed turn", async () => {
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+    await waitFor(() => expect(result.current.activeQuestionnaire?.kind).toBe("clarify"));
+    expect(result.current.failedTurn).toBeNull();
+  });
+
+  it("records a failed framework turn, then a retry re-dispatches identical variables and clears it", async () => {
+    hoisted.frameworkFn.mockRejectedValueOnce(new Error("429"));
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+    await waitFor(() => expect(result.current.activeQuestionnaire?.kind).toBe("clarify"));
+
+    const answers = [{ questionId: "q1", freetext: "because" }];
+    act(() => result.current.submitClarify(answers));
+
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("framework"));
+    expect(hoisted.frameworkFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1", responses: answers });
+
+    // Retry succeeds (default resolve): identical variables re-sent, row cleared.
+    hoisted.frameworkFn.mockClear();
+    act(() => result.current.failedTurn?.retry());
+    await waitFor(() => expect(result.current.failedTurn).toBeNull());
+    expect(hoisted.frameworkFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1", responses: answers });
+  });
+
+  it("records a failed submitBaseline as a scopingClose turn, then a retry re-sends identical variables and clears it", async () => {
+    hoisted.stateData = baselineState;
+    hoisted.submitBaselineFn.mockRejectedValueOnce(new Error("429"));
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+    await waitFor(() => expect(result.current.activeQuestionnaire?.kind).toBe("baseline"));
+
+    const answers = [{ id: "b1", kind: "mc" as const, selected: "A" as const }];
+    act(() => result.current.submitBaselineAnswers(answers));
+
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("scopingClose"));
+    expect(hoisted.submitBaselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1", answers });
+
+    // Retry succeeds (default resolve): identical variables re-sent, row cleared.
+    hoisted.submitBaselineFn.mockClear();
+    act(() => result.current.failedTurn?.retry());
+    await waitFor(() => expect(result.current.failedTurn).toBeNull());
+    expect(hoisted.submitBaselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1", answers });
+  });
+
+  it("records a failed baseline auto-dispatch with the baseline kind, then a retry re-sends identical variables and clears it", async () => {
+    hoisted.stateData = frameworkOnlyState;
+    hoisted.baselineFn.mockRejectedValue(new Error("429"));
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("baseline"));
+    expect(hoisted.baselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1" });
+
+    // The guard stays set on error, so only Retry re-sends. Make it succeed.
+    hoisted.baselineFn.mockReset();
+    hoisted.baselineFn.mockResolvedValue({});
+    act(() => result.current.failedTurn?.retry());
+    await waitFor(() => expect(result.current.failedTurn).toBeNull());
+    expect(hoisted.baselineFn).toHaveBeenCalledTimes(1);
+    expect(hoisted.baselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1" });
+  });
+
+  it("drops a failed scopingClose once a refetch shows scoping closed on the server", async () => {
+    // The server committed, but the reply never reached the client.
+    hoisted.stateData = baselineState;
+    hoisted.submitBaselineFn.mockRejectedValueOnce(new Error("network"));
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+    await waitFor(() => expect(result.current.activeQuestionnaire?.kind).toBe("baseline"));
+
+    act(() => result.current.submitBaselineAnswers([{ id: "b1", kind: "mc", selected: "A" }]));
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("scopingClose"));
+
+    hoisted.stateData = closedState;
+    await act(async () => {
+      await queryClient?.invalidateQueries();
+    });
+    await waitFor(() => expect(result.current.scopingResult).not.toBeNull());
+    expect(result.current.failedTurn).toBeNull();
   });
 });

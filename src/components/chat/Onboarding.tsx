@@ -10,6 +10,7 @@ import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
 import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
+import { RetryRow } from "./RetryRow";
 import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
 import { t } from "@/i18n";
 
@@ -28,6 +29,7 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
     scopingResult,
     topic,
     isPending,
+    failedTurn,
     submitClarify,
     submitBaselineAnswers,
   } = useScopingState(courseId);
@@ -90,6 +92,12 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
       }
     : undefined;
 
+  // The question card the Composer shows, or null once it is submitted.
+  const cardQuestions =
+    activeQuestionnaire && activeQuestionnaire.questionsKey !== dismissedKey
+      ? [...activeQuestionnaire.questions]
+      : null;
+
   return (
     <ChatShell
       title={topic}
@@ -109,11 +117,7 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
             setComposerValue("");
           }}
           disabled={isPending}
-          questions={
-            activeQuestionnaire && activeQuestionnaire.questionsKey !== dismissedKey
-              ? [...activeQuestionnaire.questions]
-              : null
-          }
+          questions={cardQuestions}
           persistKey={activeQuestionnaire?.persistKey}
           onCorrectAnswer={courseXp.addXp}
           moveOn={moveOn}
@@ -156,6 +160,21 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
         <MessageBubble message={{ id: "pending", role: "user", content: optimistic.content }} />
       )}
       {isPending && <TypingBubble />}
+      {/* When a scoping Turn fails, the toast announces it and fades. This row
+          stays, so the learner can re-send the failed Turn. While the failed
+          Turn's question card is restored, the card's own submit is the retry,
+          so the row hides: one affordance, and edited answers are what gets
+          sent. The guard and `disabled` block a second send while one is in
+          flight, matching TopicInput. */}
+      {failedTurn && !cardQuestions && (
+        <RetryRow
+          disabled={isPending}
+          onRetry={() => {
+            if (isPending) return;
+            failedTurn.retry();
+          }}
+        />
+      )}
     </ChatShell>
   );
 }

@@ -2,7 +2,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { t } from "@/i18n";
+import { AssistantHeader } from "./AssistantHeader";
 
 /** Renderable chat row; `content` is markdown for assistant, plain text for user. */
 export type ChatMessage = {
@@ -27,15 +27,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
 
   return (
     <div className="w-full animate-message-in">
-      <div className="flex items-center gap-2 mb-1.5">
-        <span
-          className="h-1 w-1 rounded-full bg-sakura-pink"
-          style={{ background: "var(--sakura-pink)" }}
-        />
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-fuji-gray">
-          {t<string>("app.name")}
-        </span>
-      </div>
+      <AssistantHeader />
       <div
         className="prose prose-invert prose-sm max-w-none text-[15px] leading-[1.65]
         prose-p:my-2 prose-p:text-foreground/90
@@ -84,12 +76,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
 export function TypingBubble() {
   return (
     <div className="w-full animate-message-in">
-      <div className="flex items-center gap-2 mb-1.5">
-        <span className="h-1 w-1 rounded-full" style={{ background: "var(--sakura-pink)" }} />
-        <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-fuji-gray">
-          {t<string>("app.name")}
-        </span>
-      </div>
+      <AssistantHeader />
       <WaveSpinner />
     </div>
   );
