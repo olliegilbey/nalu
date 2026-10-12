@@ -69,8 +69,8 @@ const toolQuestionSchema = z.object({
 export type ToolQuestionInput = z.infer<typeof toolQuestionSchema>;
 
 /**
- * The conceptName/correct tightening that lived in `waveMidTurnSchema`'s
- * superRefine lives here, on the TOOL's inputSchema — the SDK feeds a
+ * The conceptName/correct tightening lives in a superRefine on the TOOL's
+ * inputSchema — the SDK feeds a
  * schema violation back to the model as a tool-error result it can correct
  * in the next loop step, replacing the whole-turn retry directive for this
  * case. Directive strings are verbatim from the mega-schema (they were
