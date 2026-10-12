@@ -7,7 +7,7 @@ import { Composer, type ChoiceQuestion } from "./Composer";
 
 /*
  * Regression coverage for issue #14: keystrokes typed into the topic composer
- * before React hydrates were silently discarded. These tests reproduce the real
+ * before React hydrates never reached React state. These tests reproduce the real
  * cold-load sequence faithfully — server-render the composer, seed the textarea
  * with pre-hydration text (as a fast typist would), then hydrate — and assert
  * the mount effect recovers that text into React state via onChange. The
@@ -69,10 +69,13 @@ describe("Composer pre-hydration recovery (issue #14)", () => {
     const ui = <Composer value="" onChange={onChange} onSend={noop} questions={questions} />;
 
     const root = hydrateWithPreTypedText(ui, "stray text");
+    // In questionnaire mode the textarea shows the per-question draft, and
+    // `setInputValue` writes drafts, not the parent onChange. So an onChange
+    // check cannot fail here; the textarea value can. Without the guard the
+    // stray text lands in the draft. With it, the buffer-init re-render writes
+    // the blank draft over the DOM.
+    const textarea = document.querySelector("textarea")!;
+    expect(textarea.value).toBe("");
     act(() => root.unmount());
-
-    // In questionnaire mode the textarea is backed by per-question drafts, not
-    // the parent onChange — the recovery effect must bail out entirely.
-    expect(onChange).not.toHaveBeenCalled();
   });
 });
