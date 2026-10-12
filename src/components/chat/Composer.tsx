@@ -100,6 +100,10 @@ export function Composer({
   // Initialise per-question state whenever the question set changes. Tries to
   // restore a persisted buffer (refresh-resilient); falls back to blank.
   //
+  // `persistKey` is part of the identity: Wave questionnaires reuse raw ids, so
+  // `questionsKey` alone can match two of them. A key change re-reads the
+  // right buffer, such as A's after a failed turn hid B's preview (#118).
+  //
   // This is ONE effect by design. It was formerly two — a hydrate effect and a
   // reset effect — and React ran the reset second, so its blank fill clobbered
   // the hydrate's restore. Merging removes the ordering bug: restore-or-blank
@@ -120,7 +124,7 @@ export function Composer({
     setSlideDir("none");
     setLocked(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [questionsKey]);
+  }, [questionsKey, persistKey]);
 
   // Persist the questionnaire buffer to localStorage on every change. Defined
   // AFTER the init effect so that, on mount, init reads localStorage before

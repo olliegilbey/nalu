@@ -32,7 +32,7 @@ export function deriveActiveQuestionnaire(
   return {
     kind: "wave",
     questions: lastQ.questions.map(adaptOpenQuestion),
-    // The questionnaireId doubles as the Composer reset key, and
+    // The questionnaireId doubles as WaveSession's dismiss key, and
     // `submitQuestionnaireAnswers` echoes it back to the server.
     questionsKey: lastQ.questionnaireId,
     persistKey: `nalu:wave:${waveId}:q:${lastQ.questionnaireId}`,

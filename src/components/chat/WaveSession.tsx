@@ -9,6 +9,7 @@ import { Composer } from "./Composer";
 import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
 import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
+import { selectComposerQuestionnaire } from "@/lib/course/selectComposerQuestionnaire";
 import { t } from "@/i18n";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 
@@ -67,6 +68,9 @@ export function WaveSession({
   // kinds so a future variant addition becomes a compile-time error here.
   const scroll = chatEntries.map((entry, idx) => renderChatEntry(entry, idx));
 
+  // The answer card the Composer shows, with its own buffer key.
+  const card = selectComposerQuestionnaire(activeQuestionnaire, dismissedKey, streamingQuestions);
+
   // Move-on CTA: shown whenever the wave is finished, NOT only when the
   // transient `closeResult` is present. `closeResult` is component-local state
   // seeded solely by the close-turn mutation in *this* tab — it is gone after a
@@ -109,20 +113,15 @@ export function WaveSession({
             setComposerValue("");
           }}
           disabled={isPending}
-          questions={
-            // Committed questionnaire (server-derived, interactive) wins;
-            // while a turn streams, the tool-part preview renders the SAME
-            // question ids so the Composer's internal state carries across
-            // the swap (its identity key is the joined ids). The preview is
-            // effectively read-only: isPending disables options + send until
-            // the turn result lands and getState refetches.
-            activeQuestionnaire && activeQuestionnaire.questionsKey !== dismissedKey
-              ? [...activeQuestionnaire.questions]
-              : streamingQuestions
-                ? [...streamingQuestions]
-                : null
-          }
-          persistKey={activeQuestionnaire?.persistKey}
+          // Committed questionnaire (server-derived, interactive) wins;
+          // while a turn streams, the tool-part preview shows instead. The
+          // preview is effectively read-only: isPending disables options +
+          // send until the turn result lands and getState refetches.
+          // Questions and buffer key come as one pair. A preview has no key,
+          // so it never reads or writes another questionnaire's buffer; the
+          // Composer re-inits when the committed key arrives (issue #118).
+          questions={card ? [...card.questions] : null}
+          persistKey={card?.persistKey}
           waveTier={currentTier ?? undefined}
           onCorrectAnswer={awardMcXp}
           moveOn={moveOn}

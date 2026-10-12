@@ -21,7 +21,7 @@ export interface ChoiceQuestion {
 export interface ActiveQuestionnaire {
   readonly kind: "clarify" | "baseline" | "wave";
   readonly questions: readonly ChoiceQuestion[];
-  /** Stable identity for the active question set — feeds the Composer's reset key. */
+  /** Stable identity for the active question set — the screens' dismiss key. The Composer keys on question ids + `persistKey`. */
   readonly questionsKey: string;
   /**
    * localStorage key for the Composer's refresh-resilient draft buffer, one per
