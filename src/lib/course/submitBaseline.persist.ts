@@ -39,9 +39,10 @@ export interface PersistScopingCloseResult {
  *
  * Order (top → bottom): re-fetch baseline+framework → widen baseline JSONB →
  * close the scoping pass → upsert concepts → open Wave 1 → append opening
- * message → flip status + tiers + summary → bump total_xp. Status flip is
- * last so any failure leaves the course in `scoping`, retryable by the
- * orchestrator (status-gated idempotency — NOT enforced here).
+ * message → flip status + tiers + summary → bump total_xp. Every step runs in
+ * one transaction, so any failure rolls them all back and leaves the course
+ * in `scoping`, retryable by the orchestrator (status-gated idempotency —
+ * NOT enforced here). The order within the transaction does not matter.
  *
  * Every `courses` write uses `tx.execute` so they roll back atomically.
  * Inlined raw SQL for `courses` (not via `setCourseStartingState` /
@@ -50,10 +51,11 @@ export interface PersistScopingCloseResult {
  * file, `persistWaveClose.ts`, and `persistWaveClose.helpers.ts` are the
  * places outside `src/db/queries/` that issue raw SQL.
  *
- * `upsertConcept` / `openWave` / `appendMessage` are passed `tx` so their
- * writes participate in the same transaction — a unique-violation on Wave 1
- * (e.g. concurrent submitBaseline race) rolls back the concept upsert and
- * baseline JSONB widen along with everything else. The orchestrator catches
+ * `closeScopingPass` / `upsertConcept` / `openWave` / `appendMessage` are
+ * passed `tx` so their writes participate in the same transaction — a
+ * unique-violation on Wave 1 (e.g. concurrent submitBaseline race) rolls back
+ * the pass close, concept upsert and baseline JSONB widen along with
+ * everything else. The orchestrator catches
  * the unique-violation and replays from the cached payload.
  */
 export async function persistScopingClose(
