@@ -8,7 +8,7 @@ import type { ReactNode } from "react";
 // pass-through-only stub, the mutationOptions here forward `o` (onMutate /
 // onSuccess / onError) straight to react-query and swap in a controllable
 // `mutationFn` — so the real mutation lifecycle drives our retry wiring. The
-// `hoisted` handle lets each test flip `stateData` and make a step reject.
+// `hoisted` handle lets each test flip `stateData` and make a Turn reject.
 const hoisted = vi.hoisted(() => {
   const clarifyState = {
     courseId: "c1",
@@ -141,13 +141,13 @@ describe("useScopingState", () => {
     await waitFor(() => expect(result.current.topic).toBe("T"));
   });
 
-  it("starts with no failed step", async () => {
+  it("starts with no failed turn", async () => {
     const { result } = renderHook(() => useScopingState("c1"), { wrapper });
     await waitFor(() => expect(result.current.activeQuestionnaire?.kind).toBe("clarify"));
-    expect(result.current.failedStep).toBeNull();
+    expect(result.current.failedTurn).toBeNull();
   });
 
-  it("records a failed framework step, then a retry re-dispatches identical variables and clears it", async () => {
+  it("records a failed framework turn, then a retry re-dispatches identical variables and clears it", async () => {
     hoisted.frameworkFn.mockRejectedValueOnce(new Error("429"));
     const { result } = renderHook(() => useScopingState("c1"), { wrapper });
     await waitFor(() => expect(result.current.activeQuestionnaire?.kind).toBe("clarify"));
@@ -155,17 +155,17 @@ describe("useScopingState", () => {
     const answers = [{ questionId: "q1", freetext: "because" }];
     act(() => result.current.submitClarify(answers));
 
-    await waitFor(() => expect(result.current.failedStep?.kind).toBe("framework"));
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("framework"));
     expect(hoisted.frameworkFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1", responses: answers });
 
     // Retry succeeds (default resolve): identical variables re-sent, row cleared.
     hoisted.frameworkFn.mockClear();
-    act(() => result.current.failedStep?.retry());
-    await waitFor(() => expect(result.current.failedStep).toBeNull());
+    act(() => result.current.failedTurn?.retry());
+    await waitFor(() => expect(result.current.failedTurn).toBeNull());
     expect(hoisted.frameworkFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1", responses: answers });
   });
 
-  it("records a failed submitBaseline step with the submitBaseline kind", async () => {
+  it("records a failed submitBaseline as a scopingClose turn", async () => {
     hoisted.stateData = baselineState;
     hoisted.submitBaselineFn.mockRejectedValueOnce(new Error("429"));
     const { result } = renderHook(() => useScopingState("c1"), { wrapper });
@@ -174,7 +174,7 @@ describe("useScopingState", () => {
     const answers = [{ id: "b1", kind: "mc" as const, selected: "A" as const }];
     act(() => result.current.submitBaselineAnswers(answers));
 
-    await waitFor(() => expect(result.current.failedStep?.kind).toBe("submitBaseline"));
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("scopingClose"));
     expect(hoisted.submitBaselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1", answers });
   });
 
@@ -183,7 +183,7 @@ describe("useScopingState", () => {
     hoisted.baselineFn.mockRejectedValue(new Error("429"));
     const { result } = renderHook(() => useScopingState("c1"), { wrapper });
 
-    await waitFor(() => expect(result.current.failedStep?.kind).toBe("baseline"));
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("baseline"));
     expect(hoisted.baselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1" });
   });
 });

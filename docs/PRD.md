@@ -148,6 +148,8 @@ User types a topic
   -> Transition to Wave 1
 ```
 
+**Failed scoping Turns.** If `generateFramework`, `generateBaseline` or `submitBaseline` fails, a toast announces the error. The scoping chat then shows a Retry row where Nalu's next message would appear. Retry re-sends the same Turn with the same input. A failed `course.clarify` returns the learner to the topic input to resubmit. **Unbuilt:** the Retry row lives in client state, so a reload drops it. Only `generateBaseline` re-fires on reload.
+
 **Scoping vs. teaching prompts.** Scoping is one append-only Context. `renderScopingSystem` (`src/lib/prompts/scoping.ts`) emits its only `role: system` message. Each later scoping prompt appends user/assistant messages, so the cache prefix stays byte-stable and the extra LLM round trips stay cheap. Teaching never replays the scoping Context. Wave 1 renders a _fresh_ system prompt (Section 5.1) from DB state: topic, `<topic_scope>` from clarification answers, framework, starting tier, `courses.summary`, Wave 1's blueprint, and the initial SM-2 due concepts. Scoping instructions never leak into Wave turns.
 
 ### 4.2 Learning Session Flow

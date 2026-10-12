@@ -10,6 +10,7 @@ import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
 import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
+import { RetryRow } from "./RetryRow";
 import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
 import { t } from "@/i18n";
 
@@ -28,7 +29,7 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
     scopingResult,
     topic,
     isPending,
-    failedStep,
+    failedTurn,
     submitClarify,
     submitBaselineAnswers,
   } = useScopingState(courseId);
@@ -157,32 +158,10 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
         <MessageBubble message={{ id: "pending", role: "user", content: optimistic.content }} />
       )}
       {isPending && <TypingBubble />}
-      {/* Inline Retry affordance (issue #16): when a scoping step fails, sit a
-          persistent row where the next assistant bubble would appear so the
-          learner can re-dispatch the failed step. The toast still announces the
-          error; this row is the durable recovery path. Rendered only when idle
-          (a fresh attempt sets isPending, showing the TypingBubble instead). */}
-      {failedStep && !isPending && (
-        <div className="w-full animate-message-in">
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="h-1 w-1 rounded-full" style={{ background: "var(--wave-red)" }} />
-            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-fuji-gray">
-              {t<string>("app.name")}
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-[15px] leading-relaxed text-foreground/90">
-              {t<string>("retry.message")}
-            </span>
-            <button
-              onClick={failedStep.retry}
-              className="inline-flex items-center justify-center rounded-full bg-wave-blue-2 text-foreground px-3.5 py-1.5 text-[13px] font-medium transition active:scale-[0.99] hover:brightness-110"
-            >
-              {t<string>("retry.action")}
-            </button>
-          </div>
-        </div>
-      )}
+      {/* When a scoping Turn fails, the toast announces it and fades. This row
+          stays, so the learner can re-send the failed Turn. It shows only when
+          idle: a fresh attempt sets isPending, which shows the TypingBubble. */}
+      {failedTurn && !isPending && <RetryRow onRetry={failedTurn.retry} />}
     </ChatShell>
   );
 }

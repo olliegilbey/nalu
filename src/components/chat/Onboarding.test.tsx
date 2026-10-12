@@ -24,7 +24,7 @@ vi.mock("@/hooks/useScopingState", () => ({
 
 import { Onboarding } from "./Onboarding";
 
-// Minimal happy-path hook return; individual tests override `failedStep`.
+// Minimal happy-path hook return; individual tests override `failedTurn`.
 function baseState(overrides: Partial<UseScopingStateResult>): UseScopingStateResult {
   return {
     chatEntries: [],
@@ -32,7 +32,7 @@ function baseState(overrides: Partial<UseScopingStateResult>): UseScopingStateRe
     scopingResult: null,
     topic: "T",
     isPending: false,
-    failedStep: null,
+    failedTurn: null,
     submitClarify: vi.fn(),
     submitBaselineAnswers: vi.fn(),
     ...overrides,
@@ -44,15 +44,15 @@ beforeEach(() => {
 });
 
 describe("Onboarding retry affordance", () => {
-  it("hides the retry row when no step has failed", () => {
-    scopingState.value = baseState({ failedStep: null });
+  it("hides the retry row when no turn has failed", () => {
+    scopingState.value = baseState({ failedTurn: null });
     render(<Onboarding courseId="c1" />);
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
-  it("renders the retry row and re-dispatches on click when a step failed", () => {
+  it("renders the retry row and re-sends the turn on click when a turn failed", () => {
     const retry = vi.fn();
-    scopingState.value = baseState({ failedStep: { kind: "framework", retry } });
+    scopingState.value = baseState({ failedTurn: { kind: "framework", retry } });
     render(<Onboarding courseId="c1" />);
 
     const button = screen.getByRole("button", { name: "Retry" });
@@ -63,7 +63,7 @@ describe("Onboarding retry affordance", () => {
 
   it("hides the retry row while a fresh attempt is pending", () => {
     scopingState.value = baseState({
-      failedStep: { kind: "framework", retry: vi.fn() },
+      failedTurn: { kind: "framework", retry: vi.fn() },
       isPending: true,
     });
     render(<Onboarding courseId="c1" />);

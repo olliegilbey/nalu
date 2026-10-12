@@ -11,13 +11,13 @@ import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { CourseState } from "@/lib/course/getState";
 
 /**
- * The last scoping step that failed, with a closure to re-dispatch it. Drives
- * the inline Retry affordance (issue #16): errors previously surfaced only as an
- * ephemeral toast, stranding the learner. `retry` re-runs the same mutation with
- * the same variables. Null when nothing is in a failed state.
+ * The last scoping Turn that failed, with a closure that re-sends it. Drives the
+ * inline Retry row: a toast alone fades and leaves the learner with no way on.
+ * `kind` names the scoping stage that failed; `scopingClose` is `submitBaseline`.
+ * `retry` re-runs the same mutation with the same variables.
  */
-export interface FailedScopingStep {
-  readonly kind: "framework" | "baseline" | "submitBaseline";
+export interface FailedScopingTurn {
+  readonly kind: "framework" | "baseline" | "scopingClose";
   readonly retry: () => void;
 }
 
@@ -29,8 +29,8 @@ export interface UseScopingStateResult {
   /** Course topic — drives the chat header title. Null until the query resolves. */
   readonly topic: string | null;
   readonly isPending: boolean;
-  /** Non-null while the last scoping step failed and awaits a user Retry. */
-  readonly failedStep: FailedScopingStep | null;
+  /** Non-null while the last scoping Turn failed and awaits a learner Retry. */
+  readonly failedTurn: FailedScopingTurn | null;
   readonly submitClarify: (
     answers: ReadonlyArray<{ readonly questionId: string; readonly freetext: string }>,
     opts?: { readonly onError?: () => void },
@@ -61,6 +61,7 @@ export interface UseScopingStateResult {
  * the query so derived `chatEntries` re-compute. Auto-dispatches `generateBaseline`
  * once `framework` lands and `baseline` is still null — gated on the mutation
  * not already being in flight to avoid double-fire during refetch races.
+ * A failed scoping Turn lands in `failedTurn`, with a closure that re-sends it.
  *
  * Hook is portable: no DOM, no Next imports. The mutations are dispatched via
  * `@trpc/tanstack-react-query` mutation options.
@@ -74,16 +75,16 @@ export function useScopingState(courseId: string): UseScopingStateResult {
 
   const invalidateState = () => qc.invalidateQueries({ queryKey: stateOpts.queryKey });
 
-  // Last failed scoping step + its re-dispatch closure (issue #16). Set in each
-  // step's per-call `onError` (where the mutation variables are in scope) and
-  // cleared in each mutation's `onMutate` — so any fresh attempt, including a
-  // Retry, clears the stale row before it runs.
-  const [failedStep, setFailedStep] = useState<FailedScopingStep | null>(null);
-  const clearFailedStep = () => setFailedStep(null);
+  // Last failed scoping Turn + its re-send closure. Each Turn's per-call
+  // `onError` sets it, because the mutation variables are in scope there. Each
+  // mutation's `onMutate` clears it, so any fresh attempt, including a Retry,
+  // drops the stale row before it runs.
+  const [failedTurn, setFailedTurn] = useState<FailedScopingTurn | null>(null);
+  const clearFailedTurn = () => setFailedTurn(null);
 
   const generateFramework = useMutation(
     trpc.course.generateFramework.mutationOptions({
-      onMutate: clearFailedStep,
+      onMutate: clearFailedTurn,
       onSuccess: invalidateState,
       onError: (err) => {
         toast.error("Couldn't build your course outline", {
@@ -94,13 +95,13 @@ export function useScopingState(courseId: string): UseScopingStateResult {
   );
   const generateBaseline = useMutation(
     trpc.course.generateBaseline.mutationOptions({
-      onMutate: clearFailedStep,
+      onMutate: clearFailedTurn,
       onSuccess: invalidateState,
     }),
   );
   const submitBaseline = useMutation(
     trpc.course.submitBaseline.mutationOptions({
-      onMutate: clearFailedStep,
+      onMutate: clearFailedTurn,
       onSuccess: invalidateState,
       onError: (err) => {
         toast.error("Couldn't save your answers", {
@@ -156,26 +157,24 @@ export function useScopingState(courseId: string): UseScopingStateResult {
       if (generateBaseline.isPending) return;
       const dispatchedCourseId = state.data.courseId;
       baselineDispatchedFor.current = dispatchedCourseId;
-      // `fire` re-dispatches the same baseline generation; it backs both the
-      // auto-dispatch below and the inline Retry closure (issue #16). Baseline
-      // has no user-facing submit handler — it auto-fires — so its retry lives
-      // here rather than in a submit* method.
+      // `fire` sends the baseline Turn. It backs both the auto-dispatch below
+      // and the Retry closure. The baseline Turn has no learner submit handler
+      // (it fires on its own), so its retry lives here, not in a submit* method.
       const fire = () => {
         generateBaseline.mutate(
           { courseId: dispatchedCourseId },
           {
-            // Do NOT reset the guard on error. The previous reset let the effect
-            // re-run (its deps include the mutation result, whose reference flips
-            // on the error transition) and re-fire immediately — an infinite
-            // retry loop on any persistent failure (e.g. a sustained 429). The
-            // inline Retry affordance below is now the recovery path (issue #16),
-            // and a fresh mount still re-fires via a new guard ref. `retry: fire`
-            // re-dispatches directly, bypassing the guarded effect.
+            // Keep the guard set on error. Resetting it lets the effect re-run
+            // (its deps include the mutation result, whose reference flips on
+            // the error transition) and re-fire at once: an infinite loop on any
+            // persistent failure, such as a sustained 429. The Retry row is the
+            // recovery path, and a fresh mount still re-fires via a new guard
+            // ref. `retry: fire` re-sends directly, bypassing the guarded effect.
             onError: (err) => {
               toast.error("Couldn't create your baseline quiz", {
                 description: formatMutationError(err),
               });
-              setFailedStep({ kind: "baseline", retry: fire });
+              setFailedTurn({ kind: "baseline", retry: fire });
             },
           },
         );
@@ -201,7 +200,7 @@ export function useScopingState(courseId: string): UseScopingStateResult {
         onError: () => {
           // Retry re-invokes this same handler with the same variables, so the
           // caller's optimistic-recovery wiring re-runs on any repeat failure.
-          setFailedStep({ kind: "framework", retry: () => submitClarify(answers, opts) });
+          setFailedTurn({ kind: "framework", retry: () => submitClarify(answers, opts) });
           opts?.onError?.();
         },
       },
@@ -218,8 +217,8 @@ export function useScopingState(courseId: string): UseScopingStateResult {
       {
         onError: () => {
           // Retry re-invokes with identical variables + opts (see submitClarify).
-          setFailedStep({
-            kind: "submitBaseline",
+          setFailedTurn({
+            kind: "scopingClose",
             retry: () => submitBaselineAnswers(answers, opts),
           });
           opts?.onError?.();
@@ -235,7 +234,7 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     scopingResult: state.data?.scopingResult ?? null,
     topic: state.data?.topic ?? null,
     isPending,
-    failedStep,
+    failedTurn,
     submitClarify,
     submitBaselineAnswers,
   };
