@@ -60,7 +60,9 @@ export function EmptyState({ onPick }: { onPick: (t: string) => void }) {
         {suggestions.map((s) => (
           <button
             key={s.label}
-            onClick={() => onPick(`${s.kind} ${s.label}`)}
+            // The label alone is the topic. `kind` only picks the accent colour;
+            // prefixing it put a word the learner never typed into clarify.
+            onClick={() => onPick(s.label)}
             className="group w-full flex items-center justify-between gap-3 py-3.5 border-b border-sumi-4/70 text-left hover:border-sumi-5 transition-colors"
           >
             <span className="flex items-baseline gap-2.5 min-w-0">
