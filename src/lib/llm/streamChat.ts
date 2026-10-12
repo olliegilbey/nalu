@@ -5,8 +5,8 @@ import type { z } from "zod/v4";
 import { LLM } from "@/lib/config/tuning";
 import { getLlmModel, llmProviderOptions } from "./provider";
 import { toOutputSchema } from "./toCerebrasJsonSchema";
-import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "./cerebrasRateLimit";
-import { recordUsage } from "./runUsageTally";
+import { awaitCerebrasCallSlot } from "./cerebrasRateLimit";
+import { recordStepFinished } from "./recordStepFinished";
 import { llmTelemetry } from "./telemetry";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 
@@ -71,17 +71,15 @@ export async function streamChat<T>(
   // partials. (`output` is PromiseLike on the public type — no `.catch`.)
   void result.output.then(undefined, () => undefined);
 
-  // Record rate-limit headers as soon as response metadata resolves —
-  // even when validation later fails, the HTTP call itself succeeded.
-  void result.response.then(
-    (r) => recordCerebrasRateLimitHeaders(r.headers),
+  // Record rate-limit headers and usage once the Step finishes (both
+  // promises resolve together). Even when validation later fails, the HTTP
+  // call itself succeeded and was billed, so this must not wait on
+  // `final()`. Recording here also counts the Step once, however often
+  // the caller runs `final()`.
+  void Promise.all([result.response, result.usage]).then(
+    ([response, usage]) => recordStepFinished(response.headers, usage),
     () => undefined,
   );
-
-  // Fold this Step's tokens into the per-run cost tally once usage resolves.
-  // Same reasoning as the headers: Cerebras bills the Step even when
-  // validation later fails, so this must not wait on `final()`.
-  void result.usage.then(recordUsage, () => undefined);
 
   return {
     partialOutputStream: result.partialOutputStream,

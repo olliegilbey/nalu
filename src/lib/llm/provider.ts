@@ -37,6 +37,11 @@ export function getLlmModel(): LanguageModelV3 {
     // exposes a single chat model. Enables generateObject to use the
     // JSON-schema structured-output path rather than JSON-mode fallback.
     supportsStructuredOutputs: true,
+    // Send `stream_options: { include_usage: true }` on streamed calls, so
+    // the final chunk carries token usage for the cost tally. Every
+    // mid-Wave tool-loop Step streams. The adapter omits the flag by
+    // default; Cerebras' SDK accepts it (its `StreamOptions` type).
+    includeUsage: true,
   });
   const model = provider.chatModel(env.LLM_MODEL);
   // DevTools capture is development-only: the middleware writes every

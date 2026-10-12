@@ -5,8 +5,8 @@ import { LLM } from "@/lib/config/tuning";
 import { getLlmModel, llmProviderOptions } from "./provider";
 import { toOutputSchema } from "./toCerebrasJsonSchema";
 import { llmTelemetry } from "./telemetry";
-import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "./cerebrasRateLimit";
-import { recordUsage } from "./runUsageTally";
+import { awaitCerebrasCallSlot } from "./cerebrasRateLimit";
+import { recordStepFinished } from "./recordStepFinished";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 
 /**
@@ -69,12 +69,10 @@ export interface ChatResult<T = unknown> {
  * token-budget backoff (see `cerebrasRateLimit.ts`). It runs in production
  * AND live smoke, including across `executeTurn`'s validation retries.
  * After the call returns — including the NoObjectGeneratedError path,
- * where the HTTP call itself succeeded — the `x-ratelimit-*` response
- * headers are recorded for the next call to consult. Both are a complete
- * no-op in mocked unit/integration suites.
- *
- * Cost: on both paths the Step's `usage` also goes into the per-run tally
- * (`runUsageTally.ts`), since Cerebras bills a validation-failed Step too.
+ * where the HTTP call itself succeeded — `recordStepFinished` records the
+ * `x-ratelimit-*` response headers for the next call to consult, and the
+ * Step's usage for the cost tally. Pacing and the tally's stderr line are
+ * a complete no-op in mocked unit/integration suites.
  */
 export async function generateChat<T>(
   messages: readonly LlmMessage[],
@@ -107,9 +105,7 @@ export async function generateChat<T>(
   // Plain-text path: no schema, no output wrapper.
   if (opts.responseSchema === undefined) {
     const result = await generateText(common);
-    recordCerebrasRateLimitHeaders(result.response.headers);
-    // Fold this Step's tokens into the per-run cost tally.
-    recordUsage(result.usage);
+    recordStepFinished(result.response.headers, result.usage);
     return { text: result.text, usage: result.usage };
   }
 
@@ -125,9 +121,7 @@ export async function generateChat<T>(
         name,
       }),
     });
-    recordCerebrasRateLimitHeaders(result.response.headers);
-    // Fold this Step's tokens into the per-run cost tally.
-    recordUsage(result.usage);
+    recordStepFinished(result.response.headers, result.usage);
     return { text: result.text, parsed: result.output, usage: result.usage };
   } catch (err) {
     // Validation failure still means the HTTP call succeeded — record the
@@ -135,8 +129,7 @@ export async function generateChat<T>(
     // correctly, and tally the billed tokens. Then let executeTurn
     // translate the error.
     if (NoObjectGeneratedError.isInstance(err)) {
-      recordCerebrasRateLimitHeaders(err.response?.headers);
-      if (err.usage !== undefined) recordUsage(err.usage);
+      recordStepFinished(err.response?.headers, err.usage);
     }
     throw err;
   }

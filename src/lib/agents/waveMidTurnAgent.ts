@@ -2,8 +2,7 @@ import { ToolLoopAgent, stepCountIs } from "ai";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { getLlmModel, llmProviderOptions } from "@/lib/llm/provider";
 import { cerebrasToolLoopPrepareStep } from "@/lib/llm/cerebrasToolLoopPrepareStep";
-import { recordCerebrasRateLimitHeaders } from "@/lib/llm/cerebrasRateLimit";
-import { recordUsage } from "@/lib/llm/runUsageTally";
+import { recordStepFinished } from "@/lib/llm/recordStepFinished";
 import { llmTelemetry } from "@/lib/llm/telemetry";
 import { LLM } from "@/lib/config/tuning";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
@@ -94,8 +93,7 @@ export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTu
     // so this is the only place its usage is seen. Constructor-level so no
     // dispatch site can forget it.
     onStepFinish: (step) => {
-      recordCerebrasRateLimitHeaders(step.response.headers);
-      recordUsage(step.usage);
+      recordStepFinished(step.response.headers, step.usage);
     },
   });
   return { agent, collector: toolkit.collector, instructions };

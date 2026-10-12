@@ -58,6 +58,17 @@ const EMPTY_USAGE_TOTALS: UsageTotals = {
   reasoningTokens: 0,
 };
 
+/** Field-wise sum of two {@link UsageTotals}, e.g. two smoke files' tallies. */
+export function addUsageTotals(a: UsageTotals, b: UsageTotals): UsageTotals {
+  return {
+    steps: a.steps + b.steps,
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cachedInputTokens: a.cachedInputTokens + b.cachedInputTokens,
+    reasoningTokens: a.reasoningTokens + b.reasoningTokens,
+  };
+}
+
 /**
  * Immutable reduce of many Steps' usage into one {@link UsageTotals},
  * starting from `start` (default: zero). Reads the current AI SDK detail

@@ -4,7 +4,7 @@ import {
   recordUsage,
   getRunUsageTally,
   resetRunUsageTally,
-  formatRunUsageTally,
+  formatUsageTotals,
 } from "./runUsageTally";
 
 function makeUsage(partial: Partial<LlmUsage> = {}): LlmUsage {
@@ -69,7 +69,7 @@ describe("recordUsage / getRunUsageTally", () => {
   });
 });
 
-describe("formatRunUsageTally", () => {
+describe("formatUsageTotals", () => {
   it("renders the exact acceptance line format", () => {
     recordUsage(
       makeUsage({
@@ -84,8 +84,8 @@ describe("formatRunUsageTally", () => {
       }),
     );
     // 1M in @ $0.35 + 1M out @ $0.75 = $1.10; cached shown but NOT discounted.
-    expect(formatRunUsageTally(getRunUsageTally())).toBe(
-      "run total: 1 steps, 1000000 in / 1000000 out (100000 cached, 200000 reasoning), ≈ $1.1000",
+    expect(formatUsageTotals(getRunUsageTally())).toBe(
+      "1 steps, 1000000 in / 1000000 out (100000 cached, 200000 reasoning), ≈ $1.1000",
     );
   });
 });

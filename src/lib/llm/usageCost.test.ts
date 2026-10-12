@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { CEREBRAS_PRICING } from "@/lib/config/tuning";
 import type { LlmUsage } from "@/lib/types/llm";
-import { calculateUsageCostUsd, sumUsage } from "./usageCost";
+import { addUsageTotals, calculateUsageCostUsd, sumUsage } from "./usageCost";
 
 /**
  * Build a full `LlmUsage` from a partial override. The AI SDK type carries
@@ -130,6 +130,21 @@ describe("sumUsage", () => {
       outputTokens: 0,
       cachedInputTokens: 0,
       reasoningTokens: 0,
+    });
+  });
+
+  it("adds two totals field by field (summing smoke files)", () => {
+    const a = sumUsage([makeUsage({ inputTokens: 100, outputTokens: 40, cachedInputTokens: 7 })]);
+    const b = sumUsage([
+      makeUsage({ inputTokens: 5, outputTokens: 1 }),
+      makeUsage({ inputTokens: 2, outputTokens: 3, reasoningTokens: 2 }),
+    ]);
+    expect(addUsageTotals(a, b)).toEqual({
+      steps: 3,
+      inputTokens: 107,
+      outputTokens: 44,
+      cachedInputTokens: 7,
+      reasoningTokens: 2,
     });
   });
 

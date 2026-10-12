@@ -28,6 +28,9 @@ export default defineConfig({
     fileParallelism: false,
     testTimeout: 180_000,
     hookTimeout: 180_000,
-    setupFiles: ["src/db/testing/setup.ts"],
+    // Token + cost tally: each file writes its totals; the global
+    // teardown prints one line for the whole `just smoke` run.
+    globalSetup: ["src/lib/testing/smokeUsageTotal.globalSetup.ts"],
+    setupFiles: ["src/db/testing/setup.ts", "src/lib/testing/smokeUsageTotal.setup.ts"],
   },
 });
