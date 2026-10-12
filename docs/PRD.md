@@ -144,11 +144,12 @@ User types a topic
     -> Upsert baseline concepts at default SM-2 state; award XP
     -> UPDATE courses SET current_tier, starting_tier, baseline, summary, total_xp, status = 'active'
     -> Open Wave 1 from the blueprint; seed its opening text
+    -> Close the scoping pass (stamps scoping_passes.closed_at)
     -> Return { userMessage, wave1Id, freeTextXpAwarded }
   -> Transition to Wave 1
 ```
 
-**Failed scoping Turns.** If `generateFramework`, `generateBaseline` or `submitBaseline` fails, a toast announces the error. If the failed Turn's question card comes back, its submit is the retry. Otherwise the scoping chat shows a Retry row where Nalu's next message would appear. Retry re-sends the same Turn with the same input. A failed `course.clarify` returns the learner to the topic input to resubmit. **Unbuilt:** the Retry row exists only in the session where the Turn failed. A reload loses it, and only `generateBaseline` re-fires on reload (issue #103).
+**Failed scoping Turns.** If `generateFramework`, `generateBaseline` or `submitBaseline` fails, a toast announces the error. If the failed Turn's question card comes back, its submit is the retry. Otherwise the scoping chat shows a Retry row where Nalu's next message would appear. Retry re-sends the same Turn with the same input. A failed `course.clarify` returns the learner to the topic input to resubmit. A reload keeps the way on. `generateBaseline` re-fires on mount. A `generateFramework` or `submitBaseline` Turn saved the learner's answers before its LLM call, so the reloaded chat derives its Retry row from server state, and Retry re-sends the saved answers.
 
 **Scoping vs. teaching prompts.** Scoping is one append-only Context. `renderScopingSystem` (`src/lib/prompts/scoping.ts`) emits its only `role: system` message. Each later scoping prompt appends user/assistant messages, so the cache prefix stays byte-stable and the extra LLM round trips stay cheap. Teaching never replays the scoping Context. Wave 1 renders a _fresh_ system prompt (Section 5.1) from DB state: topic, `<topic_scope>` from clarification answers, framework, starting tier, `courses.summary`, Wave 1's blueprint, and the initial SM-2 due concepts. Scoping instructions never leak into Wave turns.
 
@@ -344,7 +345,7 @@ Before any user text enters a prompt:
 
 - HTML-encode `&`, `<` and `>`
 - Wrap Wave learner text in `<user_message>` tags. Scoping input is escaped inside its stage envelope and not wrapped.
-- System prompt explicitly instructs the model to treat `<user_message>` content as data. The scoping prompt lacks this line today (issue #98).
+- The teaching and scoping system prompts explicitly instruct the model to treat user-envelope content as data.
 
 ### 8.2 Anti-Gaming
 

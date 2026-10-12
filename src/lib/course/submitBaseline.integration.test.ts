@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { eq } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
+import { scopingPasses } from "@/db/schema";
 import { submitBaseline } from "./submitBaseline";
 import { persistScopingClose } from "./submitBaseline.persist";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import { getCourseById } from "@/db/queries/courses";
 import { getOpenWaveByCourse } from "@/db/queries/waves";
+import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { USER_ID, PARSED, MERGED, ZERO_USAGE, seedScopingCourse } from "./submitBaseline.fixtures";
 
 /**
@@ -38,7 +41,7 @@ describe("submitBaseline (integration)", () => {
   // commits, course flips to active.
   // ---------------------------------------------------------------------------
   it("runs the close turn, persists everything, returns { userMessage, wave1Id }", async () => {
-    await withTestDb(async () => {
+    await withTestDb(async (db) => {
       const courseId = await seedScopingCourse();
       const spy = vi
         .spyOn(executeTurnModule, "executeTurn")
@@ -68,6 +71,15 @@ describe("submitBaseline (integration)", () => {
         summarySeed: PARSED.summary,
         startingTier: PARSED.startingTier,
       });
+
+      // The scoping pass closes in the same transaction (issue #99).
+      const passes = await db
+        .select()
+        .from(scopingPasses)
+        .where(eq(scopingPasses.courseId, courseId));
+      expect(passes).toEqual([
+        expect.objectContaining({ status: "closed", closedAt: expect.any(Date) }),
+      ]);
     });
   });
 
@@ -173,6 +185,7 @@ describe("submitBaseline (integration)", () => {
         // returned wave1 is the winner's row, not a phantom from the loser.
         await persistScopingClose({
           courseId,
+          scopingPassId: (await ensureOpenScopingPass(courseId)).id,
           parsed: {
             ...PARSED,
             nextUnitBlueprint: { ...PARSED.nextUnitBlueprint, openingText: winnerOpening },

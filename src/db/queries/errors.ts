@@ -18,3 +18,19 @@ export class NotFoundError extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }
+
+/**
+ * Thrown when a scoping-state write finds its course no longer in `scoping`.
+ * The write did not apply. Usually a concurrent scoping close got there first.
+ */
+export class CourseNotScopingError extends Error {
+  /** `courseId` is the course written to; `status` is the status it was found in. */
+  constructor(
+    public readonly courseId: string,
+    public readonly status: string,
+  ) {
+    super(`course ${courseId} is in status '${status}', not 'scoping'; scoping write skipped`);
+    // Restore prototype chain so `instanceof` checks work after transpilation.
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}

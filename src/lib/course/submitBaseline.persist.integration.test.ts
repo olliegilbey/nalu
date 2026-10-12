@@ -10,6 +10,7 @@ import {
   getWaveByCourseAndNumber,
 } from "@/db/queries/waves";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
+import { getOpenScopingPassByCourse } from "@/db/queries/scopingPasses";
 import { FRAMEWORK, PARSED, MERGED, seedScopingCourseAndRun } from "./submitBaseline.fixtures";
 
 /**
@@ -29,8 +30,13 @@ describe("persistScopingClose (integration)", () => {
   // Happy path: every effect lands as expected.
   // -------------------------------------------------------------------------
   it("widens baseline JSONB, upserts concept, opens Wave 1, persists openingText, flips status, sets tiers and XP", async () => {
-    await seedScopingCourseAndRun(async (courseId) => {
-      const result = await persistScopingClose({ courseId, parsed: PARSED, merged: MERGED });
+    await seedScopingCourseAndRun(async (courseId, scopingPassId) => {
+      const result = await persistScopingClose({
+        courseId,
+        scopingPassId,
+        parsed: PARSED,
+        merged: MERGED,
+      });
       expect(result.wave1Id).toBeTruthy();
 
       // 1. Course flipped to active with tiers and XP applied.
@@ -89,6 +95,9 @@ describe("persistScopingClose (integration)", () => {
         turnIndex: 0,
         seq: 0,
       });
+
+      // 6. The scoping pass closed with the course (issue #99).
+      expect(await getOpenScopingPassByCourse(courseId)).toBeNull();
     });
   });
 
@@ -98,8 +107,8 @@ describe("persistScopingClose (integration)", () => {
   // `context_messages` row. Mirror of the happy-path block above (steps 4–5).
   // -------------------------------------------------------------------------
   it("seeds Wave 1's chat_log with the openingText assistant entry", async () => {
-    await seedScopingCourseAndRun(async (courseId) => {
-      await persistScopingClose({ courseId, parsed: PARSED, merged: MERGED });
+    await seedScopingCourseAndRun(async (courseId, scopingPassId) => {
+      await persistScopingClose({ courseId, scopingPassId, parsed: PARSED, merged: MERGED });
       const wave1 = await getWaveByCourseAndNumber(courseId, 1);
       if (!wave1) throw new Error("Wave 1 must exist after scoping close");
       expect(wave1.chatLog).toEqual([
@@ -118,8 +127,8 @@ describe("persistScopingClose (integration)", () => {
   // rolls back EVERY write inside the tx — baseline JSONB widen, status flip,
   // tier set, XP bump, AND the concept upsert (now threaded through `tx`).
   // -------------------------------------------------------------------------
-  it("rolls back the baseline widen, status flip, and concept upsert when Wave 1 insert fails", async () => {
-    await seedScopingCourseAndRun(async (courseId) => {
+  it("rolls back the baseline widen, pass close, status flip, and concept upsert when Wave 1 insert fails", async () => {
+    await seedScopingCourseAndRun(async (courseId, scopingPassId) => {
       // Pre-create an open Wave 1 so the partial unique index rejects the
       // second insert inside persistScopingClose.
       await openWave({
@@ -144,7 +153,7 @@ describe("persistScopingClose (integration)", () => {
       // The call must throw — postgres raises a unique-violation, which
       // bubbles through `openWave` into `db.transaction` triggering rollback.
       await expect(
-        persistScopingClose({ courseId, parsed: PARSED, merged: MERGED }),
+        persistScopingClose({ courseId, scopingPassId, parsed: PARSED, merged: MERGED }),
       ).rejects.toThrow();
 
       // Course still in scoping; baseline JSONB widen was rolled back.
@@ -172,6 +181,11 @@ describe("persistScopingClose (integration)", () => {
       // Pre-fix this would have left an "ownership" row behind.
       const concepts = await getConceptsByCourse(courseId);
       expect(concepts).toHaveLength(0);
+
+      // The pass closed at step 2b, before the failing `openWave`. That close
+      // rolls back too, so scoping is still open for a retry. A close outside
+      // `tx` would survive the rollback and fail this check.
+      expect((await getOpenScopingPassByCourse(courseId))?.id).toBe(scopingPassId);
     });
   });
 });

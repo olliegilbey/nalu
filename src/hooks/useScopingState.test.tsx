@@ -119,6 +119,27 @@ const closedState: Record<string, unknown> = {
   scopingResult: { closingMessage: "done", startingTier: 1 },
 };
 
+// A reload after a failed framework Turn: the clarify answers were saved
+// before the LLM call, but no framework landed (issue #103).
+const strandedFrameworkState: Record<string, unknown> = {
+  ...hoisted.clarifyState,
+  clarification: {
+    userMessage: "intro",
+    questions: [{ id: "q1", type: "free_text", prompt: "Why?", freetextRubric: "n/a" }],
+    responses: [{ questionId: "q1", freetext: "because" }],
+  },
+};
+
+// A reload after a failed scoping-close Turn: the baseline answers were saved
+// before the LLM call, but scoping never closed (issue #103).
+const strandedCloseState: Record<string, unknown> = {
+  ...baselineState,
+  baseline: {
+    ...(baselineState.baseline as Record<string, unknown>),
+    responses: [{ questionId: "b1", choice: "A" }],
+  },
+};
+
 // Test-fixture slot: the latest wrapper's client, so a test can force a refetch.
 let queryClient: QueryClient | null = null;
 
@@ -244,6 +265,67 @@ describe("useScopingState", () => {
     });
     await waitFor(() => expect(result.current.scopingResult).not.toBeNull());
     expect(result.current.failedTurn).toBeNull();
+  });
+
+  it("offers a framework Retry on reload when clarify answers were saved but no framework landed", async () => {
+    hoisted.stateData = strandedFrameworkState;
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+
+    // No question card comes back, so the Retry row is the only way on.
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("framework"));
+    expect(result.current.activeQuestionnaire).toBeNull();
+
+    // Retry re-sends the saved answers.
+    act(() => result.current.failedTurn?.retry());
+    await waitFor(() => expect(hoisted.frameworkFn).toHaveBeenCalledTimes(1));
+    expect(hoisted.frameworkFn.mock.calls[0]?.[0]).toEqual({
+      courseId: "c1",
+      responses: [{ questionId: "q1", freetext: "because" }],
+    });
+  });
+
+  it("offers a scopingClose Retry on reload when baseline answers were saved but scoping never closed", async () => {
+    hoisted.stateData = strandedCloseState;
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("scopingClose"));
+    expect(result.current.activeQuestionnaire).toBeNull();
+
+    // Retry re-sends the saved answers in the submitBaseline wire shape.
+    act(() => result.current.failedTurn?.retry());
+    await waitFor(() => expect(hoisted.submitBaselineFn).toHaveBeenCalledTimes(1));
+    expect(hoisted.submitBaselineFn.mock.calls[0]?.[0]).toEqual({
+      courseId: "c1",
+      answers: [{ id: "b1", kind: "mc", selected: "A" }],
+    });
+  });
+
+  it("offers no reload Retry while the Turn that saved the answers is still in flight", async () => {
+    // The server saves the answers before the LLM call, so a refetch mid-call
+    // looks like a stranded Turn. The in-flight call must not show a Retry.
+    let finishFramework: (value: unknown) => void = () => undefined;
+    hoisted.frameworkFn.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishFramework = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+    await waitFor(() => expect(result.current.activeQuestionnaire?.kind).toBe("clarify"));
+
+    act(() => result.current.submitClarify([{ questionId: "q1", freetext: "because" }]));
+    hoisted.stateData = strandedFrameworkState;
+    await act(async () => {
+      await queryClient?.invalidateQueries();
+    });
+    await waitFor(() => expect(result.current.activeQuestionnaire).toBeNull());
+    expect(result.current.failedTurn).toBeNull();
+
+    // Let the in-flight call settle so the test leaves no pending mutation.
+    await act(async () => {
+      finishFramework({});
+      await Promise.resolve();
+    });
   });
 });
 

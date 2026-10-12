@@ -4,6 +4,7 @@ import { WAVE } from "@/lib/config/tuning";
 import { upsertConcept } from "@/db/queries/concepts";
 import { appendWaveChatLog, openWave } from "@/db/queries/waves";
 import { appendMessage } from "@/db/queries/contextMessages";
+import { closeScopingPass } from "@/db/queries/scopingPasses";
 import {
   baselineClosedJsonbSchema,
   baselineQuestionsJsonbSchema,
@@ -22,6 +23,8 @@ import type { MergeAndComputeXpResult } from "@/lib/scoring/baselineMerge";
  */
 export interface PersistScopingCloseParams {
   readonly courseId: string;
+  /** The course's open scoping pass. It closes in this transaction. */
+  readonly scopingPassId: string;
   readonly parsed: ScopingCloseTurn;
   readonly merged: MergeAndComputeXpResult;
 }
@@ -35,10 +38,11 @@ export interface PersistScopingCloseResult {
  * Transactional persistence body that closes scoping and seeds Wave 1.
  *
  * Order (top → bottom): re-fetch baseline+framework → widen baseline JSONB →
- * upsert concepts → open Wave 1 → append opening message → flip status +
- * tiers + summary → bump total_xp. Status flip is last so any failure leaves
- * the course in `scoping`, retryable by the orchestrator (status-gated
- * idempotency — NOT enforced here).
+ * close the scoping pass → upsert concepts → open Wave 1 → append opening
+ * message → flip status + tiers + summary → bump total_xp. Every step runs in
+ * one transaction, so any failure rolls them all back and leaves the course
+ * in `scoping`, retryable by the orchestrator (status-gated idempotency —
+ * NOT enforced here). The order within the transaction does not matter.
  *
  * Every `courses` write uses `tx.execute` so they roll back atomically.
  * Inlined raw SQL for `courses` (not via `setCourseStartingState` /
@@ -47,16 +51,17 @@ export interface PersistScopingCloseResult {
  * file, `persistWaveClose.ts`, and `persistWaveClose.helpers.ts` are the
  * places outside `src/db/queries/` that issue raw SQL.
  *
- * `upsertConcept` / `openWave` / `appendMessage` are passed `tx` so their
- * writes participate in the same transaction — a unique-violation on Wave 1
- * (e.g. concurrent submitBaseline race) rolls back the concept upsert and
- * baseline JSONB widen along with everything else. The orchestrator catches
+ * `closeScopingPass` / `upsertConcept` / `openWave` / `appendMessage` are
+ * passed `tx` so their writes participate in the same transaction — a
+ * unique-violation on Wave 1 (e.g. concurrent submitBaseline race) rolls back
+ * the pass close, concept upsert and baseline JSONB widen along with
+ * everything else. The orchestrator catches
  * the unique-violation and replays from the cached payload.
  */
 export async function persistScopingClose(
   params: PersistScopingCloseParams,
 ): Promise<PersistScopingCloseResult> {
-  const { courseId, parsed, merged } = params;
+  const { courseId, scopingPassId, parsed, merged } = params;
 
   // App-layer invariants mirroring `setCourseStartingState` — surface a clear
   // error at the boundary rather than as a Postgres CHECK violation.
@@ -116,6 +121,10 @@ export async function persistScopingClose(
           updated_at = NOW()
       WHERE id = ${courseId}
     `);
+
+    // 2b. Close the scoping pass: its Context is done; Wave 1 opens a fresh
+    //     one below. Same tx, so a rollback leaves the pass open for a retry.
+    await closeScopingPass(scopingPassId, tx);
 
     // 3. Upsert one concept per distinct `conceptName` (case-insensitive dedup
     //    matches `upsertConcept`'s ON CONFLICT (course_id, lower(name))).

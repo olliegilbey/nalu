@@ -123,7 +123,7 @@ The tree above is per-**turn**, not per-pass: one scoping pass holds every scopi
 | `baseline.responses` filled but `widened = false`, 0 waves, 0 concepts, `status = scoping`, no new turn | the close LLM call **transport-failed** — answers saved, nothing else committed |
 | a fresh turn with a `failed_assistant_response` trail                                                   | the close call **schema-failed**                                                |
 
-Recovery for a transport-failed close: it is **safe to retry** — `submitBaseline` re-reads state and is idempotent, and `persistScopingClose` is a single transaction (no partial commit). Resubmitting the baseline finishes the course once the transport blip clears. The scoping chat's Retry row does this, but only in the session where the Turn failed. A reload loses the row (issue #103).
+Recovery for a transport-failed close: it is **safe to retry** — `submitBaseline` re-reads state and is idempotent, and `persistScopingClose` is a single transaction (no partial commit). Resubmitting the baseline finishes the course once the transport blip clears. The scoping chat's Retry row does this. After a reload, the row comes back from the saved answers (`deriveStrandedScopingTurn`), and Retry re-sends them.
 
 ### Post-persist failures (wave teaching turns)
 
