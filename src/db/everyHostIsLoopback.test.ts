@@ -33,6 +33,11 @@ describe("everyHostIsLoopback", () => {
     "postgresql://u:x@db.prod.supabase.co%2Cy@localhost:5432/postgres",
     // One remote host in a list is enough to refuse.
     "postgresql://postgres:postgres@localhost:5432,db.prod.supabase.co:5432/postgres",
+    // `localhost` outside the host part must not count: userinfo, path, query.
+    // libpq honours `?host=`; postgres-js ignores it and dials the URL host.
+    "postgresql://localhost@db.prod.supabase.co:5432/postgres",
+    "postgresql://postgres:secret@db.prod.supabase.co:5432/localhost",
+    "postgresql://postgres:secret@db.prod.supabase.co:5432/postgres?host=localhost",
   ])("rejects a remote host: %s", (url) => {
     expect(everyHostIsLoopback(hostsOf(url))).toBe(false);
   });
