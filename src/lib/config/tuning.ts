@@ -189,6 +189,7 @@ export const BASELINE = {
   // room to demonstrate teach-level depth. An incorrect click maps to q=1
   // ("wrong with clear misunderstanding"): clicking is engagement, so not
   // q=0, but the XP multiplier table still floors q=1 rewards to zero.
+  // Mid-Wave MC grading (`applyAssessmentGrading`) reads these too.
   mcCorrectQuality: 4,
   mcIncorrectQuality: 1,
 } as const;

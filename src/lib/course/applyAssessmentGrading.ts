@@ -1,6 +1,7 @@
 import type { DbOrTx } from "@/db/client";
 import { calculateMcXp, calculateXP } from "@/lib/scoring/xp";
 import { updateAssessmentGrading } from "@/db/queries/assessments";
+import { BASELINE } from "@/lib/config/tuning";
 import type { QualityScore } from "@/lib/types/spaced-repetition";
 
 /**
@@ -68,10 +69,13 @@ export async function applyAssessmentGrading(
       params.assessmentId,
       {
         isCorrect: params.signal.correct,
-        // Mechanical MC: q=4 correct, q=1 incorrect (matches BASELINE convention).
-        // Stored so the SM-2 close-step sees a quality value even when no LLM
-        // judged the answer.
-        qualityScore: params.signal.correct ? 4 : 1,
+        // Mechanical MC quality from the same tunables the baseline path
+        // reads, so a tuning change moves both paths together. Stored so the
+        // SM-2 close-step sees a quality value even when no LLM judged the
+        // answer.
+        qualityScore: params.signal.correct
+          ? BASELINE.mcCorrectQuality
+          : BASELINE.mcIncorrectQuality,
         xpAwarded: xp,
         // Forward the learner's text when the caller knows it (mid-turn flow);
         // omit otherwise so the existing user_answer column is left untouched.
