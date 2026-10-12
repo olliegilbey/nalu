@@ -9,9 +9,11 @@ description: Use when a Nalu LLM-backed request — course.clarify, generateFram
 
 Nalu's LLM-backed tRPC procedures fail in a small, recognisable set of ways. The error the browser shows is almost never the root cause — it's a symptom layers above a transport failure, a rate-limit wall, or a schema-validation miss. **The production DB is the source of truth**: it records exactly how far each request got. Read it before theorising.
 
-The call stack for every scoping/teaching turn:
+The call stack for every scoping turn and Wave close turn:
 
-`tRPC procedure` (`src/server/routers/`) → `lib step` (`src/lib/course/*.ts`) → `executeTurn` (`src/lib/turn/executeTurn.ts`) → `generateChat` (`src/lib/llm/generate.ts`) → AI SDK `generateText`.
+`tRPC procedure` (`src/server/routers/`) → course flow (`src/lib/course/*.ts`) → `executeTurn` (`src/lib/turn/executeTurn.ts`) → `generateChat` (`src/lib/llm/generate.ts`) → AI SDK `generateText`.
+
+Wave turns from the client skip tRPC. They stream over `POST /api/course/<courseId>/wave/<n>/turn` (`src/app/api/course/[courseId]/wave/[waveNumber]/turn/route.ts`) → `streamWaveTurn` (`src/lib/course/streamWaveTurn.ts`). A mid-Wave turn then runs `executeToolTurnStream` (`src/lib/turn/`) with `buildWaveMidTurnAgent` (`src/lib/agents/`), an AI SDK `ToolLoopAgent` of up to `LLM.maxToolSteps` Steps. A close turn runs `executeWaveClose` → `executeTurn`. tRPC `wave.submitTurn` remains server-side as the blocking rollback path.
 
 **Use for:** a hosted request that hangs then errors; errors mentioning retries, 429, 401, or `INTERNAL_SERVER_ERROR`; a course stuck at `status = scoping`.
 **Not for:** local unit/integration test failures (those mock the LLM), or pure UI bugs with no server call.
@@ -29,25 +31,25 @@ Partial info is fine — the DB fills most gaps — but a course locator and the
 
 ## Step 1 — Decode the error string
 
-| Symptom                                           | Origin                                                      | Meaning                                                                                                                                 |
-| ------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `Failed after N attempts. Last error: X`          | AI SDK `retry-with-exponential-backoff` (`node_modules/ai`) | Transport retries exhausted. **N = `LLM.maxRetries` + 1.** Confirm origin: `rg "Failed after" node_modules/ai`                          |
-| `Too Many Requests` / HTTP 429                    | Cerebras free tier (5 RPM, 30k TPM, 1M TPD)                 | Rate-limit wall — capacity, not a code bug                                                                                              |
-| HTTP 401                                          | Auth                                                        | Either the anon-session proxy didn't mint a Supabase session, or `LLM_API_KEY`'s `op://` ref wasn't resolved → Cerebras rejects the key |
-| HTTP 500 / `INTERNAL_SERVER_ERROR`, no server log | tRPC procedure threw                                        | Nothing calls `console.error` — the failure is silent. Reconstruct from the DB, not the logs                                            |
+| Symptom                                           | Origin                                                      | Meaning                                                                                                                       |
+| ------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `Failed after N attempts. Last error: X`          | AI SDK `retry-with-exponential-backoff` (`node_modules/ai`) | Transport retries exhausted. **N = `LLM.maxRetries` + 1.** Confirm origin: `rg "Failed after" node_modules/ai`                |
+| `Too Many Requests` / HTTP 429                    | Cerebras rate limit (key is paid tier since 2026-07-16)     | Rate-limit wall — capacity, not a code bug                                                                                    |
+| HTTP 401                                          | Auth                                                        | Either the anon-session proxy didn't mint a Supabase session, or `LLM_API_KEY` is wrong or missing → Cerebras rejects the key |
+| HTTP 500 / `INTERNAL_SERVER_ERROR`, no server log | tRPC procedure threw                                        | Nothing calls `console.error` — the failure is silent. Reconstruct from the DB, not the logs                                  |
 
-The tRPC error envelope carries `data.path` (e.g. `course.clarify`) and `data.httpStatus` — that names the failing procedure.
+The tRPC error envelope carries `data.path` (e.g. `course.clarify`) and `data.httpStatus` — that names the failing procedure. A streamed Wave turn has no envelope: the route's `onError` forwards the thrown error's message, and the UI shows it in a "Couldn't submit that turn" toast.
 
 ## Step 2 — Do the retry math
 
 Two nested retry layers multiply:
 
-- **Transport** (`generateChat` → `generateText`): `LLM.maxRetries` in `src/lib/config/tuning.ts` (currently `6` → 7 attempts). Exponential backoff ≈ 2+4+8+16+32+64s ≈ **126s** — this is the "~2-minute hang".
-- **Validation** (`executeTurn`): `SCOPING.maxParseRetries` in `tuning.ts` (currently `2` → 3 logical attempts). Only retries on `ValidationGateFailure` (bad JSON / Zod miss).
+- **Transport** (every LLM call: `generateChat`, `streamChat`, and the Wave mid-turn agent): `LLM.maxRetries` in `src/lib/config/tuning.ts` (currently `6` → 7 attempts). Exponential backoff ≈ 2+4+8+16+32+64s ≈ **126s** — this is the "~2-minute hang".
+- **Validation** (`executeTurn`, `executeTurnStream`, `executeToolTurnStream`): `SCOPING.maxParseRetries` in `tuning.ts` (currently `2` → 3 logical attempts). Only retries on `ValidationGateFailure` (bad JSON / Zod miss / failed post-loop gate).
 
 A pure 429 is a _transport_ error → it propagates out of `executeTurn` untouched, burning exactly one validation attempt's worth of transport retries (7) and persisting **nothing**. A schema miss burns up to 3 logical attempts and _does_ persist a failure trail.
 
-> The comment block above `LLM.maxRetries` in `tuning.ts` mentions a "30-RPM" Cerebras tier — that figure is **stale**. The real free tier is 5 RPM (see Step 1).
+> The 5-RPM figures in the `tuning.ts` `LLM` comment describe the Cerebras free tier. The key moved to the paid tier on 2026-07-16 (1000 RPM, no daily token cap). The in-process limiter still applies a 13s slow lane (`LLM.slowLaneSpacingMs`) once a user passes `LLM.fastLaneCallsPerUser` calls in one instance. A slow turn with no error can be that pacing.
 
 ## Step 3 — Inspect the production DB
 
@@ -75,7 +77,7 @@ Color auto-disables when stdout isn't a TTY (piping to a file / jq) or when `NO_
 
 ## Step 4 — Read DB state: the diagnosis decision tree
 
-The lib step calls `createCourse` **before** the LLM call, so a `courses` row exists even on total failure. How far the row got tells you the failure class:
+`clarify` (`src/lib/course/clarify.ts`) calls `createCourse` **before** the LLM call, so a `courses` row exists even on total failure. How far the row got tells you the failure class:
 
 ```dot
 digraph diagnose {
@@ -107,7 +109,7 @@ Read the inspector's scoping-passes table (`msgs` / `failed` / `ok` columns) ont
 - **`ok > 0`, `clarification` populated** → that turn succeeded; look at the next stage.
 - **No `courses` row at all** → failed before `createCourse`: auth (`protectedProcedure` rejected) or input Zod validation.
 
-`context_messages.kind` vocabulary: `user_message`, `assistant_response`, `failed_assistant_response`, `harness_retry_directive`. The presence of `failed_*` / `harness_retry_directive` rows is the schema-vs-transport tell.
+`context_messages.kind` values written today: `user_message`, `assistant_response`, `failed_assistant_response`, `harness_retry_directive`, plus `assistant_tool_call` / `tool_result` for streamed mid-Wave turns (one pair per tool-calling Step). The CHECK constraint in `src/db/schema/contextMessages.ts` lists the full set. The presence of `failed_*` / `harness_retry_directive` rows is the schema-vs-transport tell.
 
 ### Failures past clarify (framework, baseline, submitBaseline)
 
@@ -125,9 +127,9 @@ Recovery for a transport-failed close: it is **safe to retry** — `submitBaseli
 
 ### Post-persist failures (wave teaching turns)
 
-A third class, beyond transport and schema. `executeTurn` commits its `context_messages` batch atomically and returns — but the lib step does **more** afterward, in a separate transaction: `executeWaveMid` / `executeWaveClose` grade answers, insert `assessments`, upsert concepts, and append the assistant entry to `waves.chat_log`. If that post-LLM work throws, the turn **500s even though `context_messages` shows a clean `assistant_response`** — so the decision tree's "succeeded" leaf is not the end of the story for a wave turn.
+A third class, beyond transport and schema. The turn runner (`executeTurn` or `executeToolTurnStream`) commits its `context_messages` batch atomically and returns — but the course code does **more** afterward, in a separate transaction: `persistWaveMidTurn` / `executeWaveClose` grade answers, insert `assessments`, upsert concepts, and append the assistant entry to `waves.chat_log`. If that post-LLM work throws, the turn **fails even though `context_messages` shows a clean `assistant_response`** — so the decision tree's "succeeded" leaf is not the end of the story for a wave turn.
 
-The tell: `inspect-db.ts --course` prints WAVE CONTEXT MESSAGES plus a `chatlog_entries` count per wave. A turn with a committed `assistant_response` that is **not** reflected in `chat_log` (the count is short) is a post-persist failure — the LLM replay log and the UI log have diverged. The error is a thrown `Error` surfaced verbatim in the 500's `message` (e.g. `executeWaveMid: questionnaire question id=q2 missing required conceptName`), and `data.path` is `wave.submitTurn`. Read the lib step — `executeWaveMid` plus its `.grade.ts` / `.insert.ts` — for the `throw`. The LLM call itself succeeded; the bug is in deterministic post-LLM persistence.
+The tell: `inspect-db.ts --course` prints WAVE CONTEXT MESSAGES plus a `chatlog_entries` count per wave. A turn with a committed `assistant_response` that is **not** reflected in `chat_log` (the count is short) is a post-persist failure — the LLM replay log and the UI log have diverged. The error is a thrown `Error` surfaced verbatim (e.g. `executeWaveMid: questionnaire question id=q2 missing required conceptName`): in the toast for a streamed turn, or in the 500's `message` with `data.path` = `wave.submitTurn` on the tRPC rollback path. Read `persistWaveMidTurn` plus `executeWaveMid.grade.ts` / `executeWaveMid.insert.ts` (both transports share them) for the `throw`. The LLM call itself succeeded; the bug is in deterministic post-LLM persistence.
 
 ## Step 5 — Cross-reference
 
@@ -143,12 +145,12 @@ The tell: `inspect-db.ts --course` prints WAVE CONTEXT MESSAGES plus a `chatlog_
 
 ## Quick reference
 
-| Want to know                           | Where                                                                   |
-| -------------------------------------- | ----------------------------------------------------------------------- |
-| How many transport retries             | `LLM.maxRetries` in `src/lib/config/tuning.ts`                          |
-| How many validation retries            | `SCOPING.maxParseRetries` in `tuning.ts`                                |
-| What the prompts / failed replies were | `context_messages` rows for the scoping pass (`inspect-db.ts --course`) |
-| The whole chat, human-readable         | `dump-chat.ts --course <uuid>` (give the user this line for color)      |
-| Which procedure failed                 | tRPC error envelope `data.path`                                         |
-| Did the LLM respond at all             | presence of any `context_messages` row for the pass                     |
-| Rate-limit ceiling                     | 5 RPM / 30k TPM / 1M TPD (Cerebras free tier)                           |
+| Want to know                           | Where                                                                        |
+| -------------------------------------- | ---------------------------------------------------------------------------- |
+| How many transport retries             | `LLM.maxRetries` in `src/lib/config/tuning.ts`                               |
+| How many validation retries            | `SCOPING.maxParseRetries` in `tuning.ts`                                     |
+| What the prompts / failed replies were | `context_messages` rows for the scoping pass (`inspect-db.ts --course`)      |
+| The whole chat, human-readable         | `dump-chat.ts --course <uuid>` (give the user this line for color)           |
+| Which procedure failed                 | tRPC error envelope `data.path`                                              |
+| Did the LLM respond at all             | presence of any `context_messages` row for the pass                          |
+| Rate-limit ceiling                     | Paid tier: 1000 RPM, no daily token cap. Free tier: 5 RPM / 30k TPM / 1M TPD |
