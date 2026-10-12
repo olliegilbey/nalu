@@ -40,8 +40,8 @@ export const clarifySchema = z
   );
 // Note: we deliberately do NOT refine away `conceptName`/`tier` on clarify
 // questions. The schema `.describe()` and system prompt already instruct the
-// model to omit them at this stage, and weak models (e.g. llama3.1-8b) sometimes
-// emit hallucinated values regardless. Failing the turn over a stray optional
+// model to omit them at this stage, and weak models sometimes emit hallucinated
+// values regardless (seen on the retired llama3.1-8b). Failing the turn over a stray optional
 // field would be worse than persisting a benign hallucination — the UI ignores
 // these fields and downstream stages aren't materially affected.
 

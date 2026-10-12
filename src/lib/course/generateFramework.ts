@@ -107,8 +107,8 @@ export async function generateFramework(
     .join("\n\n");
 
   const pass = await ensureOpenScopingPass(course.id);
-  // Schema string retained only for the retry directive — the wire-side
-  // `response_format` carries the schema on every normal turn.
+  // Schema string feeds only the retry directive. Every Step already carries
+  // the schema on the wire, via `response_format`.
   const schemaJson = toSchemaJsonString(frameworkSchema, { name: "framework" });
   const { parsed } = await executeTurn({
     parent: { kind: "scoping", id: pass.id },

@@ -60,9 +60,9 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
   }
 
   const pass = await ensureOpenScopingPass(course.id);
-  // Schema string retained only for the retry directive — a failed model must
-  // see the contract again inline (`buildRetryDirective`). The wire-side
-  // `response_format` carries the schema on every normal turn.
+  // Schema string feeds only the retry directive: a failed model must see the
+  // contract again inline (`buildRetryDirective`). Every Step already carries
+  // the schema on the wire, via `response_format`.
   // `sanitiseUserInput` is intentionally NOT applied here: the
   // `<user_message>` wrapper was a teaching-layer convention and the new
   // scoping system prompt doesn't reference it. `renderStageEnvelope`

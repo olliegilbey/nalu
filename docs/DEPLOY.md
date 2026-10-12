@@ -38,7 +38,7 @@ The values match your local `.env.local`. It holds plain values, with no
 | `SUPABASE_SECRET_KEY`                  | from `.env.local`     | `sb_secret_…`; secret                                                    |
 | `LLM_BASE_URL`                         | from `.env.local`     | `https://api.cerebras.ai/v1`                                             |
 | `LLM_API_KEY`                          | from `.env.local`     | Cerebras key; secret                                                     |
-| `LLM_MODEL`                            | from `.env.local`     | `gpt-oss-120b`; flags in `src/lib/llm/modelCapabilities.ts`              |
+| `LLM_MODEL`                            | from `.env.local`     | `gpt-oss-120b`; vet a replacement with `just probe-model`                |
 | `DATABASE_URL`                         | from `.env.local`     | **pooled** connection (`?pgbouncer=true`) — required for serverless      |
 | `DIRECT_URL`                           | from `.env.local`     | direct connection; used only by `drizzle-kit migrate`                    |
 | `DEV_USER_ID`                          | any valid UUID        | schema-required even in prod; unused by the prod auth path (see Gotchas) |

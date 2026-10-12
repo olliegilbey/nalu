@@ -150,8 +150,8 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
     reviewDueNames: [],
     existingConceptNames: [],
   });
-  // Schema string retained only for the retry directive — the wire-side
-  // `response_format` carries the schema on every normal turn.
+  // Schema string feeds only the retry directive. Every Step already carries
+  // the schema on the wire, via `response_format`.
   const schemaJson = toSchemaJsonString(schema, { name: "scoping_close" });
 
   // Persist the learner's answers on the baseline row before calling the LLM,

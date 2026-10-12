@@ -4,7 +4,7 @@ import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
  * Build a human-readable retry directive for a failed turn.
  *
  * Why this exists: by default `executeTurn` surfaces Zod's raw issue-list
- * JSON as the retry message. Free-tier Cerebras models (notably
+ * JSON as the retry message. Weak models (seen on the retired
  * `llama3.1-8b`) interpret that JSON conversationally — they reply with
  * "please provide a valid input" prose instead of treating it as
  * compiler-style feedback. Wrapping the issues in imperative prose and

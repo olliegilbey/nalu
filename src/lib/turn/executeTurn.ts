@@ -141,10 +141,8 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   const headerTopic = params.seed.kind === "scoping" ? params.seed.topic : params.seed.courseTopic;
   const modelName = process.env.LLM_MODEL ?? "(default)";
   // Wire-side response_format schema string — built and displayed only in live
-  // mode. Every model now receives the schema via `response_format` on the
-  // wire (the per-model strict-mode gate was removed once the last
-  // non-honouring model was deprecated), so the live banner always mirrors the
-  // real wire payload.
+  // mode. Every model receives the schema via `response_format` on the wire,
+  // so the live banner mirrors the real wire payload.
   const liveSchemaJson = live
     ? toSchemaJsonString(params.responseSchema, {
         name: params.responseSchemaName ?? params.seed.kind,

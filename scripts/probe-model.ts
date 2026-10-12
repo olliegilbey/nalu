@@ -305,9 +305,9 @@ async function main(): Promise<void> {
   // Strict-mode probe: verifies the model honours response_format json_schema
   // strict decoding. This is the deciding capability — production needs it
   // for prompt-LLM contract enforcement without inline schemas.
-  // generateChat sends response_format whenever a schema is supplied (the
-  // old per-model strict-mode gate is gone), so supplying responseSchema alone
-  // exercises the wire path against env LLM_MODEL.
+  // generateChat sends response_format whenever a schema is supplied, so
+  // supplying responseSchema alone exercises the wire path against env
+  // LLM_MODEL.
   const strictStarted = Date.now();
   try {
     const result = await generateChat(

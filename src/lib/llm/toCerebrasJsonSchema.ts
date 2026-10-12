@@ -62,20 +62,17 @@ export function toCerebrasJsonSchema<T>(
 }
 
 /**
- * Convenience: stringify just the cleaned schema body (no wrapper) for
- * inlining into the user-side prompt envelope.
+ * Convenience: stringify just the cleaned schema body (no wrapper).
  *
- * Why this exists: `response_format` on the wire is documented but
- * historically free-tier Cerebras models (notably `llama3.1-8b`) ignore
- * strict-mode constrained decoding and emit free-form JSON. Inlining the
- * same schema bytes into the user envelope gives the model an in-context
- * shape contract it can read directly, which empirically fixes the issue
- * without forcing a model upgrade.
+ * Two consumers. `buildRetryDirective` re-attaches it inline after a
+ * validation failure, so the model sees the contract again. `executeTurn`
+ * prints it in the live-smoke banner. Normal Steps carry the schema only
+ * on the wire, via `response_format`.
  *
  * The string returned here is byte-equivalent to
  * `JSON.stringify(toCerebrasJsonSchema(schema, opts).schema, null, 2)` — i.e.
- * the *post-strip* shape that Cerebras actually receives, so the prompt and
- * the wire payload agree.
+ * the *post-strip* shape that Cerebras actually receives, so the retry
+ * directive and the wire payload agree.
  */
 export function toSchemaJsonString<T>(
   schema: z.ZodType<T>,
