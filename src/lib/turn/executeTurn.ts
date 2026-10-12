@@ -13,7 +13,11 @@ import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { getModelCapabilities } from "@/lib/llm/modelCapabilities";
 import { JSON_PARSE_RETRY_DIRECTIVE } from "@/lib/prompts/turn";
 import { SCOPING } from "@/lib/config/tuning";
-import { isGradingDebugEnabled, truncateForDebug } from "@/lib/observability/gradingDebug";
+import {
+  GRADING_DEBUG_CANDIDATE_MAX,
+  isGradingDebugEnabled,
+  truncateForDebug,
+} from "@/lib/observability/gradingDebug";
 import type { LlmUsage } from "@/lib/types/llm";
 import type { SeedInputs } from "@/lib/types/context";
 import type { z } from "zod/v4";
@@ -235,7 +239,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       if (isGradingDebugEnabled()) {
         process.stderr.write(
           `[grading-debug] parse-failure label=${label} reason=${gate.reason} candidate=${JSON.stringify(
-            truncateForDebug(raw, 600),
+            truncateForDebug(raw, GRADING_DEBUG_CANDIDATE_MAX),
           )}\n`,
         );
       }

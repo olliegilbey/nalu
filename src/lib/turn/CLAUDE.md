@@ -58,3 +58,10 @@ TTY and `NO_COLOR` is unset. Callers tag their turns with `label`
 (`"clarify"`, `"framework"`, `"baseline"`, `"scoping-close"`,
 `"wave-mid"`, `"wave-close"`) and may pass a `successSummary` projection
 for the ✓ line.
+
+`LLM_DEBUG_GRADINGS=1` adds `[grading-debug]` stderr lines for issue #22:
+a parse-failure candidate dump here, the close-turn strip path in
+`src/lib/prompts/closeTurn.ts`, and per-grading lines at both close paths
+in `src/lib/course/`. Gate and formatters live in
+`src/lib/observability/gradingDebug.ts`, which refuses the flag under
+`NODE_ENV=production`. Wrap any new content log in that gate.

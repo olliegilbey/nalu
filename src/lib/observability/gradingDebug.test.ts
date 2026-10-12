@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   formatGradingDebugLine,
   GRADING_DEBUG_EXCERPT_MAX,
@@ -30,6 +30,18 @@ describe("isGradingDebugEnabled", () => {
   it("is true only when set to '1'", () => {
     process.env.LLM_DEBUG_GRADINGS = "1";
     expect(isGradingDebugEnabled()).toBe(true);
+  });
+
+  it("refuses the flag under NODE_ENV=production (Vercel Production and Preview)", () => {
+    // Guardrail: learner content must never reach production logs, even when
+    // the flag is copied into a production env by mistake.
+    process.env.LLM_DEBUG_GRADINGS = "1";
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      expect(isGradingDebugEnabled()).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 
@@ -111,7 +123,7 @@ describe("formatGradingDebugLine", () => {
     expect(line).not.toContain("z".repeat(GRADING_DEBUG_EXCERPT_MAX + 1));
   });
 
-  it("omits qualityScore=0 correctly (present, not dropped as falsy)", () => {
+  it("keeps qualityScore=0 (present, not dropped as falsy)", () => {
     const line = formatGradingDebugLine({
       context: "scoping-close",
       questionId: "q0",

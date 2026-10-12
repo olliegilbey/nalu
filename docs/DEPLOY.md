@@ -52,6 +52,10 @@ visitor-forensics script reads it.
 (`src/lib/llm/telemetry.ts`). It sits outside the `getEnv` schema. Spans
 export nowhere until an OTLP endpoint is configured (issue #67).
 
+Do not set `LLM_DEBUG_GRADINGS` in Vercel. It logs learner answers to
+stderr for local grading diagnosis (issue #22). The code refuses it under
+`NODE_ENV=production`, so it stays off in Production and Preview anyway.
+
 ### 3. Custom domain
 
 - Add `nalu.ollie.gg` in **Settings → Domains**.
