@@ -2,6 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "src/db/seed.ts",
+    "src/db/reset.ts",
     "src/lib/types/jsonb.ts",
     "src/lib/types/context.ts",
     "src/db/client.ts",
