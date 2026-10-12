@@ -158,9 +158,9 @@ export const FRAMEWORK = {
  * max(questionsPerTier, ceil(minQuestions / |scope|)), so 1 tier → 7,
  * 2 → 4 each (8), 3 → 3 each (9). A 1- or 2-tier scope is legitimate
  * (a learner placed at the first or last tier), and a flat 3 per tier
- * gave 6 there, below the floor (issue #129). Keep
- * `FRAMEWORK.maxBaselineScopeSize` × questionsPerTier ≤ maxQuestions;
- * `baseline.test.ts` checks every legal scope size.
+ * gave 6 there, below the floor (issue #129). Every scope size from 1 to
+ * `FRAMEWORK.maxBaselineScopeSize` must total within [minQuestions,
+ * maxQuestions]; `baseline.test.ts` checks each one.
  *
  * Mechanical MC quality scores (q=4 correct, q=1 incorrect) encode what
  * a correct click tells us and what a wrong click tells us — a correct

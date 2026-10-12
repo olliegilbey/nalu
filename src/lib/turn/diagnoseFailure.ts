@@ -77,9 +77,9 @@ export function diagnoseFailure(err: ValidationGateFailure, raw: string): string
     return "response is missing the required `userMessage` field — every turn must include it.";
   }
 
-  // (3) Refine failure. Zod emits `custom` issues only from refines, and runs
-  // refines only once the shape parses. An all-custom list means the body fit
-  // this turn's shape, so name the rules it broke instead of guessing a stage.
+  // (3) Refine failure. Zod emits `custom` issues only from refines, and a
+  // type error aborts refines. An all-custom list means the body fit this
+  // turn's shape, so name the rules it broke instead of guessing a stage.
   const issues = zodIssueListSchema.safeParse(tryParseJson(detail));
   if (issues.success && issues.data.every((issue) => issue.code === "custom")) {
     // `<root>` matches retryDirective.ts for a refine with no path.

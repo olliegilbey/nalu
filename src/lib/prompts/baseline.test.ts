@@ -150,6 +150,17 @@ describe("makeBaselineSchema", () => {
       scopeTiers: Array.from({ length: i + 1 }, (_, t) => t + 1),
     }));
 
+    // PRD §4.1 states these counts. Pin them so the PRD and the formula agree.
+    it("renders 7 for one tier, 4 per tier for two, 3 per tier for three", () => {
+      const perTierFor = (scopeTiers: readonly number[]) =>
+        Number(
+          /(\d+) per tier/.exec(
+            makeBaselineSchema({ scopeTiers }).shape.questions.shape.questions.description ?? "",
+          )?.[1],
+        );
+      expect([[1], [1, 2], [1, 2, 3]].map(perTierFor)).toEqual([7, 4, 3]);
+    });
+
     it.each(scopes)(
       "scope $scopeTiers renders a satisfiable count that parses",
       ({ scopeTiers }) => {
