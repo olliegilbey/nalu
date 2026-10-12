@@ -13,6 +13,23 @@ export interface ChoiceQuestion {
   readonly tier?: number;
 }
 
+/**
+ * Composer binding for the open questionnaire, in scoping and in a Wave.
+ *
+ * `kind` is an informational tag; nothing switches on it exhaustively.
+ */
+export interface ActiveQuestionnaire {
+  readonly kind: "clarify" | "baseline" | "wave";
+  readonly questions: readonly ChoiceQuestion[];
+  /** Stable identity for the active question set — feeds the Composer's reset key. */
+  readonly questionsKey: string;
+  /**
+   * localStorage key for the Composer's refresh-resilient draft buffer, one per
+   * questionnaire: `nalu:scoping:{courseId}:{stage}` or `nalu:wave:{waveId}:q:{questionnaireId}`.
+   */
+  readonly persistKey: string;
+}
+
 const KEY_TO_INDEX: Record<McOptionKey, number> = { A: 0, B: 1, C: 2, D: 3 };
 
 /** Three-way MC feedback: "correct" | "wrong", or null for ungraded (no correctIndex) questions. */

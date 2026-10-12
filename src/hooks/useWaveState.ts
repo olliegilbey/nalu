@@ -7,27 +7,18 @@ import { DefaultChatTransport } from "ai";
 import { toast } from "sonner";
 import { useTRPC, devUserHeaders } from "@/lib/trpc";
 import { deriveWaveChatEntries } from "@/lib/course/deriveWaveChatEntries";
-import { adaptOpenQuestion, adaptStreamedToolQuestion } from "@/lib/course/adaptQuestionnaire";
-import type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
+import { deriveActiveQuestionnaire } from "@/lib/course/deriveActiveQuestionnaire";
+import {
+  deriveTurnResultEffects,
+  type WaveCloseResult,
+} from "@/lib/course/deriveTurnResultEffects";
+import { adaptStreamedToolQuestion } from "@/lib/course/adaptQuestionnaire";
+import type { ActiveQuestionnaire, ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import { useCourseXp } from "./useCourseXp";
-import type { ActiveQuestionnaire } from "./useScopingState";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
 import type { WaveState } from "@/lib/course/getWaveState";
 import type { WaveTurnResultData, WaveTurnUIMessage } from "@/lib/types/waveStream";
-
-/**
- * Close-turn result the page surfaces after the final wave turn lands.
- *
- * Trimmed projection of `ExecuteWaveCloseResult` — only the fields the page
- * needs to render the post-close banner + move-on CTA.
- */
-export interface WaveCloseResult {
-  readonly closingMessage: string;
-  readonly nextWaveNumber: number;
-  readonly completionXpAwarded: number;
-  readonly tierAdvancedTo: number | null;
-}
 
 /** Return shape of {@link useWaveState}; chat entries, active questionnaire, XP counters, submit handlers. */
 export interface UseWaveStateResult {
@@ -113,36 +104,15 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
   // just before sendMessage and consumed (once) by onError / cleared on finish.
   const questionnaireErrorRef = useRef<(() => void) | null>(null);
 
-  /** Exact port of the old submitTurn onSuccess branches (invalidate moved to onFinish). */
+  // Decisions live in `deriveTurnResultEffects` (pure); the hook applies the
+  // side-effects in a fixed order: capture the close result, fold XP into the
+  // badge, then fire the tier-up toast. `addXp` runs even for a 0 gain.
   const handleTurnResult = (result: WaveTurnResultData) => {
-    if (result.kind === "mid-turn") {
-      // Free-text XP is server-graded; sum it into one badge pulse. MC XP
-      // is already counted client-side at confirm time (Composer
-      // onCorrectAnswer) — skip `mc-index` signals to avoid double-counting.
-      const freeTextXp = result.gradedSignals
-        .filter((s) => s.kind === "free-text")
-        .reduce((sum, s) => sum + s.xpAwarded, 0);
-      courseXp.addXp(freeTextXp);
-    } else {
-      // close-turn — capture the close result + completion XP.
-      setCloseResult({
-        closingMessage: result.closingMessage,
-        nextWaveNumber: result.nextWaveNumber,
-        completionXpAwarded: result.completionXpAwarded,
-        tierAdvancedTo: result.tierAdvancedTo,
-      });
-      // Free-text answered on the wave's FINAL turn is server-graded too —
-      // mirror the mid-turn branch and fold its XP into the same pulse as
-      // completion XP. Skip `mc-index` signals: MC on the close turn is
-      // already counted client-side (Composer onCorrectAnswer) — summing it
-      // here would double-count.
-      const freeTextXp = result.gradedSignals
-        .filter((s) => s.kind === "free-text")
-        .reduce((sum, s) => sum + s.xpAwarded, 0);
-      courseXp.addXp(result.completionXpAwarded + freeTextXp);
-      if (result.tierAdvancedTo !== null) {
-        toast.success(`Tier up → ${result.tierAdvancedTo}`, { duration: 3000 });
-      }
+    const effects = deriveTurnResultEffects(result);
+    if (effects.closeResult) setCloseResult(effects.closeResult);
+    courseXp.addXp(effects.xpGain);
+    if (effects.tierUp !== undefined) {
+      toast.success(`Tier up → ${effects.tierUp}`, { duration: 3000 });
     }
   };
 
@@ -196,37 +166,12 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
 
   // Active questionnaire for the Composer: the latest
   // `assistant.text_with_questionnaire` whose id has no later
-  // `user.answers` entry in the chat log. Mirrors `useScopingState`'s
-  // derivation pattern — same `ActiveQuestionnaire` shape, same
-  // questionnaireId-as-key identity for Composer state reset.
-  const activeQuestionnaire = useMemo<ActiveQuestionnaire | null>(() => {
-    if (!state.data) return null;
-    const log = state.data.chatLog;
-    // Walk from the tail to find the most recent questionnaire emission;
-    // `findLastIndex` is cleaner than reversing + indexing.
-    const lastQIdx = log.findLastIndex(
-      (e) => e.role === "assistant" && e.kind === "text_with_questionnaire",
-    );
-    if (lastQIdx === -1) return null;
-    const lastQ = log[lastQIdx];
-    // Re-narrow for TS — findLastIndex predicate guarantees this shape at runtime.
-    if (lastQ?.role !== "assistant" || lastQ.kind !== "text_with_questionnaire") return null;
-    // Any later `user.answers` entry referencing this questionnaire's id
-    // means it's been submitted → no active questionnaire.
-    const answered = log
-      .slice(lastQIdx + 1)
-      .some(
-        (e) =>
-          e.role === "user" && e.kind === "answers" && e.questionnaireId === lastQ.questionnaireId,
-      );
-    if (answered) return null;
-    return {
-      kind: "wave",
-      questions: lastQ.questions.map(adaptOpenQuestion),
-      questionsKey: lastQ.questionnaireId,
-      persistKey: `nalu:wave:${state.data.waveId}:q:${lastQ.questionnaireId}`,
-    };
-  }, [state.data]);
+  // `user.answers` entry in the chat log. `deriveActiveQuestionnaire` holds
+  // the logic; the memo keeps the result stable across consumer re-renders.
+  const activeQuestionnaire = useMemo<ActiveQuestionnaire | null>(
+    () => (state.data ? deriveActiveQuestionnaire(state.data.chatLog, state.data.waveId) : null),
+    [state.data],
+  );
 
   const isPending = state.isFetching || chat.status === "submitted" || chat.status === "streaming";
 
@@ -277,8 +222,8 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     // Echo back the open questionnaire's id (the server validates §7.4 mutual
     // exclusion against it). If there's no open questionnaire, the call would
     // fail server-side — the UI should be gating this path on activeQuestionnaire.
-    // `questionsKey` was set to the questionnaireId in the memo above; reuse
-    // it rather than re-scanning chat_log.
+    // `deriveActiveQuestionnaire` sets `questionsKey` to the questionnaireId;
+    // reuse it rather than re-scanning chat_log.
     const questionnaireId = activeQuestionnaire?.questionsKey;
     if (!questionnaireId) return;
     questionnaireErrorRef.current = opts?.onError ?? null;
