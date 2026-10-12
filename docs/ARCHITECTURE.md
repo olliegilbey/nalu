@@ -27,7 +27,7 @@ The atomicity rule is what makes replay trivial: walk rows in `(turn_index, seq)
 
 ## The system prompt is recomputed, never persisted
 
-`context_messages` stores only `user` / `assistant` / `tool` rows — the schema CHECK constraint forbids `role='system'`. The system prompt is **rebuilt fresh on every LLM call** from seed columns (`courses` / `waves` rows) by the pure renderers (`renderTeachingSystem`, `renderScopingSystem`).
+`context_messages` stores only `user` / `assistant` / `tool` rows — the schema CHECK constraint forbids `role='system'`. A second CHECK, `context_messages_kind_role_pair`, pins each row kind to its one role. The system prompt is **rebuilt fresh on every LLM call** from seed columns (`courses` / `waves` rows) by the pure renderers (`renderTeachingSystem`, `renderScopingSystem`).
 
 It is byte-stable across a session's turns not because it is stored, but because the renderer is pure: identical seed in → identical bytes out. The conversation is byte-stable by _persistence_ (the same rows replayed); the system prompt is byte-stable by _purity_.
 

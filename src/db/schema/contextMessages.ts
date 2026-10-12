@@ -33,6 +33,13 @@ import { scopingPasses } from "./scopingPasses";
  * intentionally excluded — system content is rendered from seed columns at
  * send time and never persisted (principle P3).
  *
+ * Each kind has exactly one role; `context_messages_kind_role_pair` pins it:
+ *   - user: user_message, card_answer, harness_turn_counter,
+ *     harness_review_block, harness_retry_directive.
+ *   - assistant: assistant_response, failed_assistant_response,
+ *     assistant_tool_call.
+ *   - tool: tool_result.
+ *
  * `kind` is the discriminator driving parsing/rendering; full
  * row→tag mapping is in spec §6.5:
  *   user_message, card_answer, assistant_response,
@@ -88,6 +95,20 @@ export const contextMessages = pgTable(
     ),
     // Restrict role to known LLM roles — 'system' excluded; system content is never persisted (P3).
     check("context_messages_role_check", sql`${t.role} IN ('user','assistant','tool')`),
+    // Pin each kind to its one role. renderContext replays plain rows under their
+    // stored role, so a mis-roled row would speak as the wrong party. The two checks
+    // above stay for their sharper error names; this one rejects mismatched pairs.
+    check(
+      "context_messages_kind_role_pair",
+      sql`(${t.role} = 'user' AND ${t.kind} IN (
+        'user_message','card_answer',
+        'harness_turn_counter','harness_review_block','harness_retry_directive'
+      ))
+      OR (${t.role} = 'assistant' AND ${t.kind} IN (
+        'assistant_response','failed_assistant_response','assistant_tool_call'
+      ))
+      OR (${t.role} = 'tool' AND ${t.kind} = 'tool_result')`,
+    ),
     // XOR parent: exactly one of wave_id / scoping_pass_id must be non-null per row.
     check(
       "context_messages_one_parent",

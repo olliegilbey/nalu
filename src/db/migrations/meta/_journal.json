@@ -71,6 +71,13 @@
       "when": 1783341335876,
       "tag": "0009_tool_call_rows",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791819182077,
+      "tag": "0010_kind_role_pair",
+      "breakpoints": true
     }
   ]
 }

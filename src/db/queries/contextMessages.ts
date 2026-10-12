@@ -34,8 +34,10 @@ export type ContextParent =
  * Parameters for inserting a single context message row.
  *
  * `kind` and `role` mirror the DB CHECK constraints:
- *   - kind: 5 discriminator values tracking how the message was produced.
+ *   - kind: 9 discriminator values tracking how the message was produced.
  *   - role: 'user' | 'assistant' | 'tool' (no 'system' — P3 principle).
+ *   - each kind takes exactly one role; `context_messages_kind_role_pair`
+ *     rejects a mismatch at insert (the table lives in the schema TSDoc).
  */
 export interface AppendMessageParams {
   /** Polymorphic parent — exactly one FK column will be set. */

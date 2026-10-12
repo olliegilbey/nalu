@@ -14,8 +14,9 @@ import {
 
 /**
  * Locks the runtime behavior of every non-trivial schema constraint defined
- * in B1–B9: CHECK enums, the polymorphic XOR on `context_messages`, partial
- * unique indexes (one-open-per-course, per-parent message ordering), and the
+ * in B1–B9: CHECK enums, the polymorphic XOR and kind/role pairing on
+ * `context_messages`, partial unique indexes (one-open-per-course,
+ * per-parent message ordering), and the
  * case-insensitive functional unique on `concepts`. Plain NOT NULL / FK
  * cascade behavior is covered transitively by drizzle-zod + the migration
  * smoke; this file targets the bits where the docstrings make a promise the
@@ -263,6 +264,64 @@ describe("context_messages constraints", () => {
         .from(contextMessages)
         .where(eq(contextMessages.waveId, waveId));
       expect(rows).toHaveLength(2);
+    });
+  });
+
+  // The legal kind→role table, written out independently of the schema so
+  // the test fails if the CHECK drifts. Writers: src/lib/turn/ (every turn
+  // row) and the close transactions (turn-0 assistant_response). The three
+  // unwritten kinds (card_answer, harness_turn_counter, harness_review_block)
+  // are user-role per spec §6.5: learner input or Harness injections.
+  const ROLE_BY_KIND = {
+    user_message: "user",
+    card_answer: "user",
+    harness_turn_counter: "user",
+    harness_review_block: "user",
+    harness_retry_directive: "user",
+    assistant_response: "assistant",
+    failed_assistant_response: "assistant",
+    assistant_tool_call: "assistant",
+    tool_result: "tool",
+  } as const;
+  const ROLES = ["user", "assistant", "tool"] as const;
+  // Every (kind, role) combination the role table forbids: 9 kinds × 3 roles − 9 legal = 18.
+  const MISMATCHED_PAIRS = Object.entries(ROLE_BY_KIND).flatMap(([kind, legalRole]) =>
+    ROLES.filter((role) => role !== legalRole).map((role) => ({ kind, role })),
+  );
+
+  it("accepts every legal kind/role pair", async () => {
+    await withTestDb(async (db) => {
+      const waveId = await seedWave(db);
+      // One row per kind; seq keeps them clear of the (wave, turn, seq) unique.
+      await db.insert(contextMessages).values(
+        Object.entries(ROLE_BY_KIND).map(([kind, role], seq) => ({
+          waveId,
+          turnIndex: 0,
+          seq,
+          kind,
+          role,
+          content: "x",
+        })),
+      );
+      const rows = await db
+        .select()
+        .from(contextMessages)
+        .where(eq(contextMessages.waveId, waveId));
+      expect(rows).toHaveLength(Object.keys(ROLE_BY_KIND).length);
+    });
+  });
+
+  it.each(MISMATCHED_PAIRS)("rejects kind $kind with role $role", async ({ kind, role }) => {
+    await withTestDb(async (db) => {
+      const waveId = await seedWave(db);
+      await expect(
+        db
+          .insert(contextMessages)
+          .values({ waveId, turnIndex: 0, seq: 0, kind, role, content: "x" }),
+      ).rejects.toMatchObject({
+        // Name the constraint: kind and role are each legal alone, so only the pair CHECK can fire.
+        cause: { code: "23514", constraint_name: "context_messages_kind_role_pair" },
+      });
     });
   });
 
