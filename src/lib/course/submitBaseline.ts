@@ -8,6 +8,7 @@ import { makeScopingCloseSchema, renderScopingCloseStage } from "@/lib/prompts/s
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { splitOne, type BaselineAnswer } from "./submitBaseline.internal";
 import { mergeAndComputeXp } from "@/lib/scoring/baselineMerge";
+import { logScopingCloseGradings } from "./closeGradingDebug";
 import { persistScopingClose } from "./submitBaseline.persist";
 import type { BaselineJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
@@ -158,16 +159,18 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
   // so a retry does not lose them and `deriveChatEntries` can render the user-baseline
   // bubble from `baseline.responses`. Mirrors generateFramework.ts:86-92.
   // Idempotent: overwrites the empty `responses: []` initialised by generateBaseline.
+  // The same Responses feed the issue #22 debug log after the close turn.
+  const responses = params.answers.map((a) =>
+    a.kind === "mc"
+      ? { questionId: a.id, choice: a.selected }
+      : { questionId: a.id, freetext: a.text },
+  );
   await updateCourseScopingState(course.id, {
     baseline: {
       userMessage: baseline.userMessage,
       questions: baseline.questions,
       gradings: baseline.gradings,
-      responses: params.answers.map((a) =>
-        a.kind === "mc"
-          ? { questionId: a.id, choice: a.selected }
-          : { questionId: a.id, freetext: a.text },
-      ),
+      responses,
     },
   });
 
@@ -190,6 +193,15 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
     retryDirective: (err) => buildRetryDirective(err, schemaJson),
     label: "scoping-close",
     successSummary: (p) => `gradings=${p.gradings.length} startingTier=${p.startingTier}`,
+  });
+
+  // Issue #22 diagnosis: no-op unless LLM_DEBUG_GRADINGS is on, and never
+  // throws. Same lines as `executeWaveClose`: grading kind beside Response
+  // kind, plus verdict, quality and XP for free-text gradings.
+  logScopingCloseGradings({
+    gradings: parsed.gradings,
+    responses,
+    startingTier: parsed.startingTier,
   });
 
   // Defence-in-depth: the schema already enforced tier scope + id coverage,

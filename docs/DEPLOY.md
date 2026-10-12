@@ -53,6 +53,11 @@ visitor-forensics script reads it.
 export nowhere until an OTLP endpoint is configured. The recipe is in
 [Observability](#observability-exporting-otel-traces-otlp) (issue #67).
 
+Do not set `LLM_DEBUG_GRADINGS` in Vercel. It logs learner answers to
+stderr for local grading diagnosis (issue #22). The code honours it only
+under `NODE_ENV` `development` or `test`, so it stays off in Production and
+Preview anyway.
+
 ### 3. Custom domain
 
 - Add `nalu.ollie.gg` in **Settings → Domains**.

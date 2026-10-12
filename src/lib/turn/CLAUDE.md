@@ -59,3 +59,11 @@ TTY and `NO_COLOR` is unset. Callers tag their turns with `label`
 (`"clarify"`, `"framework"`, `"baseline"`, `"scoping-close"`,
 `"wave-mid"`, `"wave-close"`) and may pass a `successSummary` projection
 for the ✓ line.
+
+`LLM_DEBUG_GRADINGS=1` adds `[grading-debug]` stderr lines for issue #22:
+a parse-failure line here (Zod issue paths + the `gradings` fragment), and
+per-grading and strip-path lines at both close paths
+(`src/lib/course/closeGradingDebug.ts`). Gate and formatters live in
+`src/lib/observability/gradingDebug.ts`. The gate fails closed: it is on
+only under `NODE_ENV` `development` or `test`. Wrap any new content log in
+that gate.

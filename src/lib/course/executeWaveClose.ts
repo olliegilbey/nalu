@@ -12,6 +12,7 @@ import type { WaveOutputContract } from "@/lib/types/context";
 import type { FrameworkJsonb } from "@/lib/types/jsonb";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { buildWaveSeed } from "./buildWaveSeed";
+import { logWaveCloseGradings } from "./closeGradingDebug";
 import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
 import { persistWaveClose, type PersistedGradedSignal } from "./persistWaveClose";
 import type { LoadedWaveContext } from "./loadWaveContext";
@@ -81,12 +82,13 @@ export async function executeWaveClose(
   // guaranteed.
   const framework = ctx.wave.frameworkSnapshot as FrameworkJsonb;
   // Open questionnaire is derived from chat_log per the new contract —
-  // `loadWaveContext` no longer carries it. Used here only to scope the
-  // schema's `questionIds` superRefine to the latest open card.
+  // `loadWaveContext` no longer carries it. Used here to scope the schema's
+  // `questionIds` superRefine to the latest open card (and by the debug log).
   const openQuestionnaire = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
+  const questionIds = openQuestionnaire?.questions.map((q) => q.id) ?? [];
   const schema = makeWaveCloseSchema({
     scopeTiers: framework.tiers.map((t) => t.number),
-    questionIds: openQuestionnaire?.questions.map((q) => q.id) ?? [],
+    questionIds,
     freshConceptNames: fresh.map((c) => c.name),
     reviewDueNames: due.map((c) => c.name),
     existingConceptNames: allConcepts.map((c) => c.name),
@@ -110,6 +112,19 @@ export async function executeWaveClose(
     label: "wave-close",
     successSummary: (p) =>
       `gradings=${p.gradings.length} updates=${p.conceptUpdates.length} planned=${p.nextUnitBlueprint.plannedConcepts.length}`,
+  });
+
+  // Issue #22 diagnosis: no-op unless LLM_DEBUG_GRADINGS is on, and never
+  // throws. Runs after Zod parse, before persistence. Each line pairs the
+  // model's grading kind with the learner's Response kind: a freetext
+  // Response graded `mc-index` is the silent 0-XP path, and `q=0`/`q=1`
+  // (`xp≈0`) is hypothesis (2). An omitted grading never gets here — the
+  // coverage refine rejects it, so it shows as a parse-failure line.
+  await logWaveCloseGradings({
+    waveId: ctx.wave.id,
+    openQuestionnaireId: openQuestionnaire?.questionnaireId,
+    questionIds,
+    gradings: parsed.gradings,
   });
 
   // Delegate to the transactional persistence body. Throws on any rollback;

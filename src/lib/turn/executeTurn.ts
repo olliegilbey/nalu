@@ -12,6 +12,10 @@ import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { JSON_PARSE_RETRY_DIRECTIVE } from "@/lib/prompts/turn";
 import { SCOPING } from "@/lib/config/tuning";
+import {
+  formatParseFailureDebugLine,
+  isGradingDebugEnabled,
+} from "@/lib/observability/gradingDebug";
 import type { LlmUsage } from "@/lib/types/llm";
 import type { SeedInputs } from "@/lib/types/context";
 import type { z } from "zod/v4";
@@ -220,6 +224,16 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       const dt = Date.now() - t0;
       const raw = err.text ?? "";
       const gate = toValidationGateFailure(raw, params.responseSchema);
+      // Issue #22 Zod-drop visibility (gated by LLM_DEBUG_GRADINGS — no-op when
+      // off). On a validation failure the raw candidate is persisted as a
+      // `failed_assistant_response` row but never reaches stderr outside
+      // live-smoke mode. Under the flag, print the Zod issue paths and the
+      // candidate's `gradings` fragment. An omitted grading (hypothesis 1)
+      // shows here: the coverage refine rejects it. Stage-agnostic by design:
+      // the formatter prints `gradings=absent` for stages without one.
+      if (isGradingDebugEnabled()) {
+        process.stderr.write(`${formatParseFailureDebugLine(label, gate.detail, raw)}\n`);
+      }
       // Failure observability: flush the prompt + response trail (verbose
       // already printed the prompt; quiet retroactively flushes both).
       if (live) {
