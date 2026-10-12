@@ -30,6 +30,7 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
     topic,
     isPending,
     failedTurn,
+    courseNotFound,
     submitClarify,
     submitBaselineAnswers,
   } = useScopingState(courseId);
@@ -84,13 +85,15 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
     }
   });
 
-  // Compute composer mode.
-  const moveOn = scopingResult
-    ? {
-        label: t<string>("moveOn.toWave").replace("{n}", "1"),
-        onAdvance: () => router.push(`/course/${courseId}/wave/1`),
-      }
-    : undefined;
+  // Compute composer mode. A missing course offers a fresh start instead.
+  const moveOn = courseNotFound
+    ? { label: t<string>("courseNotFound.action"), onAdvance: () => router.push("/") }
+    : scopingResult
+      ? {
+          label: t<string>("moveOn.toWave").replace("{n}", "1"),
+          onAdvance: () => router.push(`/course/${courseId}/wave/1`),
+        }
+      : undefined;
 
   // The question card the Composer shows, or null once it is submitted.
   const cardQuestions =
@@ -156,6 +159,17 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
       }
     >
       {scroll}
+      {/* getState found no course for this learner: a wrong URL, or a course
+          another browser started. Say so, rather than show an empty chat. */}
+      {courseNotFound && (
+        <MessageBubble
+          message={{
+            id: "not-found",
+            role: "assistant",
+            content: t<string>("courseNotFound.message"),
+          }}
+        />
+      )}
       {optimistic && chatEntries.length === optimistic.entryCountAtSubmit && (
         <MessageBubble message={{ id: "pending", role: "user", content: optimistic.content }} />
       )}

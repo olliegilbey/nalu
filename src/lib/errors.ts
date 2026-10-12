@@ -32,6 +32,15 @@ export function formatMutationError(err: unknown): string {
   return tags.length > 0 ? `${tags.join(" · ")}: ${message}` : message;
 }
 
+/**
+ * True when `err` is a tRPC error with code `NOT_FOUND`. Ownership-scoped
+ * reads, such as `course.getState`, return it for a missing row and for
+ * another user's row alike.
+ */
+export function isNotFoundError(err: unknown): boolean {
+  return readProp(readProp(err, "data"), "code") === "NOT_FOUND";
+}
+
 /** Read a property off an unknown value, or `undefined` if it is not an object. */
 function readProp(value: unknown, key: string): unknown {
   return typeof value === "object" && value !== null && key in value

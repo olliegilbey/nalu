@@ -57,5 +57,9 @@
   },
   "moveOn": { "toWave": "Move on to Wave {n}" },
   "retry": { "message": "That step failed.", "action": "Retry" },
+  "courseNotFound": {
+    "message": "I can't find this course. It may belong to another browser, or the link may be wrong.",
+    "action": "Start a new course"
+  },
   "xp": { "gained": "10 XP Gained" }
 }

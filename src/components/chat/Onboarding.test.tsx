@@ -5,14 +5,28 @@ import type { UseScopingStateResult } from "@/hooks/useScopingState";
 
 // The retry row lives in Onboarding's scroll children, rendered inside
 // ChatShell. Stub ChatShell to just render its children (the retry row sits
-// there) and Composer to nothing — the test targets the inline retry affordance,
-// not the surrounding chrome. next/navigation + useCourseXp are stubbed so the
-// component mounts without a router or localStorage.
+// there) and its composer slot, and Composer to nothing — the tests target the
+// scroll content, not the surrounding chrome. The Composer stub records its
+// props, so a test can read the move-on CTA. next/navigation + useCourseXp are
+// stubbed so the component mounts without a router or localStorage.
 vi.mock("./ChatShell", () => ({
-  ChatShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  ChatShell: ({ children, composer }: { children: React.ReactNode; composer: React.ReactNode }) => (
+    <div>
+      {children}
+      {composer}
+    </div>
+  ),
 }));
-vi.mock("./Composer", () => ({ Composer: () => null }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+type MoveOn = { readonly label: string; readonly onAdvance: () => void };
+const composerProps = vi.hoisted(() => ({ moveOn: undefined as MoveOn | undefined }));
+vi.mock("./Composer", () => ({
+  Composer: (props: { moveOn?: MoveOn }) => {
+    composerProps.moveOn = props.moveOn;
+    return null;
+  },
+}));
+const routerPush = vi.hoisted(() => vi.fn());
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: routerPush }) }));
 vi.mock("@/hooks/useCourseXp", () => ({
   useCourseXp: () => ({ xp: 0, pulseKey: 0, gainAmount: 0, addXp: vi.fn() }),
 }));
@@ -33,6 +47,7 @@ function baseState(overrides: Partial<UseScopingStateResult>): UseScopingStateRe
     topic: "T",
     isPending: false,
     failedTurn: null,
+    courseNotFound: false,
     submitClarify: vi.fn(),
     submitBaselineAnswers: vi.fn(),
     ...overrides,
@@ -41,6 +56,8 @@ function baseState(overrides: Partial<UseScopingStateResult>): UseScopingStateRe
 
 beforeEach(() => {
   cleanup();
+  composerProps.moveOn = undefined;
+  routerPush.mockReset();
 });
 
 describe("Onboarding retry affordance", () => {
@@ -89,5 +106,24 @@ describe("Onboarding retry affordance", () => {
     });
     render(<Onboarding courseId="c1" />);
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+});
+
+describe("Onboarding course not found", () => {
+  it("says the course is missing and offers a new one", () => {
+    scopingState.value = baseState({ courseNotFound: true, topic: null });
+    render(<Onboarding courseId="c1" />);
+
+    expect(screen.getByText(/can't find this course/)).toBeTruthy();
+    expect(composerProps.moveOn?.label).toBe("Start a new course");
+    composerProps.moveOn?.onAdvance();
+    expect(routerPush).toHaveBeenCalledWith("/");
+  });
+
+  it("shows no not-found message for a course that loads", () => {
+    scopingState.value = baseState({});
+    render(<Onboarding courseId="c1" />);
+    expect(screen.queryByText(/can't find this course/)).toBeNull();
+    expect(composerProps.moveOn).toBeUndefined();
   });
 });
