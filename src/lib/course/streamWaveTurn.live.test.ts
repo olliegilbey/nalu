@@ -47,8 +47,8 @@ const FRAMEWORK = {
 
 beforeAll(() => {
   if (!LIVE) return;
-  console.log("[live] provider base URL:", process.env.LLM_BASE_URL ?? "(default)");
-  console.log("[live] model:", process.env.LLM_MODEL ?? "(default)");
+  process.stderr.write(`[live] provider base URL: ${process.env.LLM_BASE_URL ?? "(default)"}\n`);
+  process.stderr.write(`[live] model: ${process.env.LLM_MODEL ?? "(default)"}\n`);
 });
 
 describe.skipIf(!LIVE)("streamWaveTurn tool loop — live Cerebras", () => {
