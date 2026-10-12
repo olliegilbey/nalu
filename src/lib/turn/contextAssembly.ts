@@ -41,8 +41,8 @@ export function synthesiseRows(
 
 /**
  * Render prior rows + the in-memory batch into the flat LLM message list
- * (system first). Shared by executeTurn and executeTurnStream so the
- * blocking and streaming paths can never drift on context assembly.
+ * (system first). Shared by executeTurn and executeToolTurnStream so the
+ * blocking and tool-loop paths can never drift on context assembly.
  */
 export function assembleLlmMessages(
   seed: SeedInputs,

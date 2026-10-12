@@ -83,7 +83,7 @@ This repo. The system that wraps the LLM with deterministic logic (XP, SM-2 sche
 
 ## LLM
 
-The stateless text model, served by Cerebras through an OpenAI-compatible API. The `LLM_MODEL` env var selects it; the `justfile` notes the current default. Stateless: it holds no memory between HTTP calls. Each turn, the Harness loads the current Context from DB and sends it as-is — no regeneration from components. Only the system prompt is re-rendered per call, byte-identical within a phase (see **Context**). LLM calls go through `src/lib/llm/`: `provider.ts` builds the model, and `generate.ts` and `streamChat.ts` make structured calls. Tool-loop turns run agents from `src/lib/agents/`.
+The stateless text model, served by Cerebras through an OpenAI-compatible API. The `LLM_MODEL` env var selects it; the `justfile` notes the current default. Stateless: it holds no memory between HTTP calls. Each turn, the Harness loads the current Context from DB and sends it as-is — no regeneration from components. Only the system prompt is re-rendered per call, byte-identical within a phase (see **Context**). LLM calls go through `src/lib/llm/`: `provider.ts` builds the model, and `generate.ts` makes structured calls. Tool-loop turns run agents from `src/lib/agents/`.
 
 ## Router
 

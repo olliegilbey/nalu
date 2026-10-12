@@ -44,8 +44,8 @@ The tRPC error envelope carries `data.path` (e.g. `course.clarify`) and `data.ht
 
 Two nested retry layers multiply:
 
-- **Transport** (every LLM call: `generateChat`, `streamChat`, and the Wave mid-turn agent): `LLM.maxRetries` in `src/lib/config/tuning.ts` (currently `6` → 7 attempts). Exponential backoff ≈ 2+4+8+16+32+64s ≈ **126s** — this is the "~2-minute hang".
-- **Validation** (`executeTurn`, `executeTurnStream`, `executeToolTurnStream`): `SCOPING.maxParseRetries` in `tuning.ts` (currently `2` → 3 logical attempts). Only retries on `ValidationGateFailure` (bad JSON / Zod miss / failed post-loop gate).
+- **Transport** (every LLM call: `generateChat` and the Wave mid-turn agent): `LLM.maxRetries` in `src/lib/config/tuning.ts` (currently `6` → 7 attempts). Exponential backoff ≈ 2+4+8+16+32+64s ≈ **126s** — this is the "~2-minute hang".
+- **Validation** (`executeTurn`, `executeToolTurnStream`): `SCOPING.maxParseRetries` in `tuning.ts` (currently `2` → 3 logical attempts). Only retries on `ValidationGateFailure` (bad JSON / Zod miss / failed post-loop gate).
 
 A pure 429 is a _transport_ error → it propagates out of `executeTurn` untouched, burning exactly one validation attempt's worth of transport retries (7) and persisting **nothing**. A schema miss burns up to 3 logical attempts and _does_ persist a failure trail.
 

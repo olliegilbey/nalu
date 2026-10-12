@@ -2,17 +2,13 @@
 
 Stage-agnostic per-turn primitives.
 
-`executeTurn` (blocking) and `executeTurnStream` (streaming; adds
-progressText/onTextDelta/onAttemptStart hooks) share one contract: load
-prior rows → assemble context (`contextAssembly.ts`) → call the LLM →
-validate via Output.object → persist one atomic batch (`user_message +
+`executeTurn` runs one structured turn, blocking: load prior rows →
+assemble context (`contextAssembly.ts`) → call the LLM → validate via
+Output.object → persist one atomic batch (`user_message +
 assistant_response`, with optional `failed_assistant_response +
-harness_retry_directive` retry exhaust between). Persisted rows, retry
-budget, and ValidationGateFailure semantics are identical across both —
-tests assert the same row sequences for each. `executeTurnStream` has no
-production caller today; only its tests use it (issue #97).
+harness_retry_directive` retry exhaust between).
 
-`executeToolTurnStream` is the third sibling for TOOL-loop turns
+`executeToolTurnStream` is its sibling for TOOL-loop turns
 (`agent.stream()` on a ToolLoopAgent from `src/lib/agents/` instead of
 `Output.object`): callers supply a `makeAttempt` factory (fresh agent +
 collector per attempt — retries must not inherit staged state) and a

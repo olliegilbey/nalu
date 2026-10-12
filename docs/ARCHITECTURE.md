@@ -21,7 +21,7 @@ A Wave close also writes `waves.summary` and `waves.blueprint_emitted`. They are
 `context_messages` is the LLM's view of history. Two rules:
 
 1. **Byte stability.** `context_messages.content` is never re-rendered from typed data. The bytes written on emission are the exact bytes read back on the next turn. Cerebras and OpenAI cache prefixes at the byte level; whitespace or key-ordering drift causes cache-miss-per-turn.
-2. **Atomic pairing.** A `user_message` row is only ever persisted in one batch with the model output it produced. `executeTurn` and its streaming siblings (`executeTurnStream`, `executeToolTurnStream`) write that batch after the LLM responds. On success the batch ends in `assistant_response`. On terminal validation failure it ends in `failed_assistant_response`. A transport failure produces **no** rows. There is never a dangling user-row without its assistant-row.
+2. **Atomic pairing.** A `user_message` row is only ever persisted in one batch with the model output it produced. `executeTurn` and its tool-loop sibling `executeToolTurnStream` write that batch after the LLM responds. On success the batch ends in `assistant_response`. On terminal validation failure it ends in `failed_assistant_response`. A transport failure produces **no** rows. There is never a dangling user-row without its assistant-row.
 
 The atomicity rule is what makes replay trivial: walk rows in `(turn_index, seq)` order, every pair was actually seen by the LLM.
 
@@ -106,7 +106,7 @@ If you need to introduce a new per-turn behaviour:
 1. Define the wire shape in `src/lib/prompts/<phase>.ts` (a Zod schema for `responseSchema`).
 2. Define the typed-JSONB shape in `src/lib/types/jsonb.ts` (reuse `v3Question`, `v3Response` where applicable).
 3. Add a `ChatEntry` variant in `src/lib/types/chatEntry.ts` if it needs a new rendered row.
-4. Wire the persistence in the turn's `src/lib/course/` function — call `executeTurn` (or a streaming sibling) for the envelope, then the typed-JSONB writer for UI/durability.
+4. Wire the persistence in the turn's `src/lib/course/` function — call `executeTurn` (or its tool-loop sibling `executeToolTurnStream`) for the envelope, then the typed-JSONB writer for UI/durability.
 5. Extend the projection (`deriveChatEntries.ts` or `deriveWaveChatEntries.ts`) to emit the new `ChatEntry` variant.
 
 Don't add LLM-needed fields to typed JSONB (the LLM doesn't see it). Don't add UI-only fields to envelopes (the LLM pays tokens for it).
