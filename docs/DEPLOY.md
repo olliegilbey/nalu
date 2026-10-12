@@ -50,7 +50,8 @@ visitor-forensics script reads it.
 
 `LLM_TELEMETRY=true` turns on OTel spans for every LLM call
 (`src/lib/llm/telemetry.ts`). It sits outside the `getEnv` schema. Spans
-export nowhere until an OTLP endpoint is configured (issue #67).
+export nowhere until an OTLP endpoint is configured. The recipe is in
+[Observability](#observability-exporting-otel-traces-otlp) (issue #67).
 
 ### 3. Custom domain
 
@@ -88,6 +89,64 @@ export nowhere until an OTLP endpoint is configured (issue #67).
   route sets none, and scoping runs there. Exhausted transport retries can
   hang ~2 minutes (see the `debugging-nalu-llm-pipeline` skill). If scoping
   calls ever 504, set `maxDuration` on `src/app/api/trpc/[trpc]/route.ts`.
+
+## Observability: exporting OTel traces (OTLP)
+
+`src/instrumentation.ts` registers the OTel SDK on every server boot. With
+`LLM_TELEMETRY=true`, every LLM call emits spans labelled by stage
+(`functionId`). Spans carry timing, tokens, model and retries.
+`src/lib/llm/telemetry.ts` pins `recordInputs` and `recordOutputs` to false,
+so no LLM input or output enters a trace.
+
+Spans export **nowhere** until an OTLP destination is set. `@vercel/otel`
+reads it from the standard
+[OTLP env vars](https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/#otlp-exporter).
+No code change is needed.
+
+Verified locally (2026-07-21) against a stub collector, and against the
+`@vercel/otel` 2.1 source:
+
+- `OTEL_EXPORTER_OTLP_ENDPOINT` alone makes the app POST protobuf spans to
+  `<endpoint>/v1/traces`. The SDK appends `/v1/traces` itself, so leave off
+  any trailing slash.
+- `OTEL_EXPORTER_OTLP_HEADERS` takes a comma-separated `Header=Value` list.
+  The space in `Bearer <token>` survives parsing.
+- The protocol defaults to `http/protobuf`, so `OTEL_EXPORTER_OTLP_PROTOCOL`
+  can stay unset. gRPC is not supported.
+
+To turn it on in production, add these to Vercel env (Production; Preview
+too if wanted), then redeploy:
+
+| Variable                      | Value                                   |
+| ----------------------------- | --------------------------------------- |
+| `LLM_TELEMETRY`               | `true` — enables the per-LLM-call spans |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | provider base URL (below)               |
+| `OTEL_EXPORTER_OTLP_HEADERS`  | provider auth headers (below)           |
+
+**Axiom** (recommended: one bearer token and a dataset header, generous free
+tier). At [axiom.co](https://axiom.co), create an Events dataset (e.g.
+`nalu`) and an API token with ingest permission. The endpoint is the base
+domain of your edge deployment; US East 1 is shown:
+
+```
+OTEL_EXPORTER_OTLP_ENDPOINT=https://us-east-1.aws.edge.axiom.co
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer <xaat-token>, X-Axiom-Dataset=nalu
+```
+
+**Grafana Cloud** (alternative). Copy the OTLP gateway URL and a base64
+`instanceID:token` pair from your stack's OpenTelemetry tile:
+
+```
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-<region>.grafana.net/otlp
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic <base64(instanceID:token)>
+```
+
+Use these env vars or a Vercel trace drain, not both. When a drain is
+configured, `@vercel/otel` skips the env-var exporter.
+
+Once live, LLM latency is measurable per stage (`functionId`: "wave-mid",
+"clarify", …), per Step, and per tool call. Issue #68
+(`reasoning_effort: high` latency) waits on this data.
 
 ## Post-deploy smoke
 
