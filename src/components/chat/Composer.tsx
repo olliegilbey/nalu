@@ -138,15 +138,15 @@ export function Composer({
   }, [persistKey, questionsKey, answers, step, drafts, hasQuestions]);
 
   // Hydration recovery (issue #14): on a cold load of "/", a learner can type
-  // into the topic composer before React hydrates. The textarea is fully
-  // controlled (value=""), so hydration reconciles the raw DOM value back to the
-  // empty parent state and the pre-hydration keystrokes are silently dropped —
-  // the first submit does nothing and only retyping works. React preserves the
-  // user's input on the DOM node across hydration, so at mount we can still read
-  // it from the ref and adopt it into React state via `setInputValue`, which
-  // forwards to the parent onChange on this path. We deliberately do NOT try
-  // to replay a pre-hydration Enter-press — preserving the text is the fix; the
-  // learner presses Enter once more.
+  // into the topic composer before React hydrates. Hydration keeps that text on
+  // the DOM node: react-dom's `initTextarea` sets only `defaultValue`. But the
+  // textarea is controlled and parent state is still "", so React never sees
+  // the text. Enter finds an empty input and does nothing, and the next
+  // re-render (`updateTextarea`) writes "" over the DOM text. At mount the text
+  // is still on the node, so we read it from the ref and adopt it into React
+  // state via `setInputValue`, which forwards to the parent onChange on this
+  // path. We deliberately do NOT try to replay a pre-hydration Enter-press —
+  // preserving the text is the fix; the learner presses Enter once more.
   //
   // Scoped to the plain chat-input path (!hasQuestions): in questionnaire mode
   // the buffer-restore effect above owns textarea state, and adopting a stale
@@ -154,8 +154,8 @@ export function Composer({
   useEffect(() => {
     if (hasQuestions) return;
     const dom = ref.current?.value ?? "";
-    // Only adopt when the DOM holds pre-hydration text that the controlled value
-    // lost. If React's controlled value already won (non-empty), leave it be.
+    // Only adopt when the DOM holds text that React state lacks. A non-empty
+    // parent value is authoritative: the next re-render writes it over the DOM.
     if (dom.length > 0 && value.length === 0) setInputValue(dom);
     // Mount-only: this reconciles a one-time hydration mismatch. Re-running on
     // value/setInputValue changes would re-adopt stale DOM text after the user
