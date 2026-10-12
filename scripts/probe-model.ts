@@ -4,8 +4,8 @@
  * Reads LLM_MODEL from the environment, issues a plain-text call followed
  * by a strict-mode call, prints results + token usage, then exits.
  *
- * Run via: `just probe-model <model-name>` (wraps with `op run` so the
- * 1Password reference in .env.local resolves).
+ * Run via: `just probe-model <model-name>`. The recipe sets LLM_MODEL; the
+ * rest of the env loads from `.env.local`, which holds plain values.
  *
  * Used when picking the floor model — Cerebras free-tier availability and
  * deprecation cliffs shift; this script verifies a candidate before we
