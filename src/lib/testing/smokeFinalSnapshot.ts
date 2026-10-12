@@ -4,7 +4,8 @@
  * Reconstructs and emits to stderr the FINAL prompt that succeeded for
  * `courseId` — the full system + cumulative user/assistant conversation
  * as the LLM saw it on the last attempt of the last turn — plus a
- * one-line retry summary by step (clarify / framework / baseline / close).
+ * one-line retry summary by step (clarify / framework / baseline / close)
+ * and the token + cost tally (`runUsageTally.ts`).
  *
  * Use case: scroll to the bottom of `just smoke` output and read exactly
  * what the model answered, without sifting through any retry diagnoses
@@ -124,8 +125,9 @@ export async function emitSmokeFinalSnapshot(args: SmokeFinalSnapshotArgs): Prom
   process.stderr.write(`${bar}\n`);
   process.stderr.write(formatPromptBlock(llmMessages));
   process.stderr.write(`${bar}\n`);
-  // Cumulative token + cost tally for the run so far (issue #25). Emitted
-  // per-topic block; the LAST block carries the whole-run grand total.
+  // Cumulative token + cost tally so far. Vitest isolates module state per
+  // test file, so the last block a file prints carries that file's total,
+  // not the whole `just smoke` run's.
   process.stderr.write(`${formatRunUsageTally(getRunUsageTally())}\n`);
   process.stderr.write(`${bar}\n\n`);
 }

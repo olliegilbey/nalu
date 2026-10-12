@@ -280,15 +280,17 @@ export const LLM = {
  * into a per-run "≈ $X" readout. Never influences scoring, XP, or the LLM
  * (it never sees cost) — it is a pure observability tunable.
  *
- * Source: Cerebras GPT-OSS-120B inference pricing — $0.35 / M input,
- * $0.75 / M output. Figures from GitHub issue #25 (May 2026) and
- * re-verified 2026-07-20 via web search across multiple pricing trackers
- * (pricepertoken.com, futureagi.com) all reporting $0.35 in / $0.75 out;
- * the official cerebras.ai/pricing table was not machine-readable at fetch
- * time, so the issue's rates stand as the cited baseline for this date.
+ * Rates are for `gpt-oss-120b`, the default `LLM_MODEL`. Change the model,
+ * change these. Nalu runs on the Cerebras paid tier (since 2026-07-16).
+ *
+ * Source: Cerebras model docs, "$0.35 / M tokens" input and
+ * "$0.75 / M tokens" output, https://inference-docs.cerebras.ai/models/openai-oss
+ * (checked 2026-10-12).
  *
  * ⚠️ Caching is NOT a discount on Cerebras: cached input tokens bill at the
- * FULL input rate. `usage.cachedInputTokens` /
+ * FULL input rate. Source: "billed at the standard input token rate",
+ * https://inference-docs.cerebras.ai/capabilities/prompt-caching
+ * (checked 2026-10-12). `usage.cachedInputTokens` /
  * `inputTokenDetails.cacheReadTokens` are surfaced for DISPLAY only and MUST
  * NOT reduce the computed cost — see the explicit cached-not-discounted test
  * in `src/lib/llm/usageCost.test.ts`.

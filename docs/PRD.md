@@ -399,7 +399,7 @@ Engineering conventions live in `AGENTS.md` and the `src/**/CLAUDE.md` guides.
 
 ## 11. Token Cost Tracking
 
-Track token usage on every LLM call, even on cheap tiers. Use the data to identify expensive prompts, validate cost projections for paid tiers, and guide prompt optimisation. Every Step returns its token usage today. **Unbuilt:** per-course and per-user usage storage.
+Track token usage on every LLM call, even on cheap tiers. Use the data to identify expensive prompts, validate cost projections for paid tiers, and guide prompt optimisation. Every Step returns its token usage today. An in-process tally sums it into an estimated cost and logs it (`src/lib/llm/runUsageTally.ts`). **Unbuilt:** per-course and per-user usage storage.
 
 ---
 

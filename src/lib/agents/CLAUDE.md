@@ -4,7 +4,8 @@ ToolLoopAgent definitions — one file per LLM-facing stage. An agent =
 model + instructions (from src/lib/prompts/) + tools + stopWhen +
 `cerebrasToolLoopPrepareStep` (per-step pacing + reasoning strip — NEVER
 omit it) + an `onStepFinish` that records rate-limit headers
-(`recordCerebrasRateLimitHeaders`), built fresh per attempt with
+(`recordCerebrasRateLimitHeaders`) and the Step's usage for the cost tally
+(`recordUsage`), built fresh per attempt with
 turn-scoped closures (collector, lookup courseId). Dispatch goes through
 `executeToolTurnStream` (src/lib/turn/), which drops the assembled
 leading system message because `instructions` carries identical bytes.

@@ -66,7 +66,7 @@ describe("calculateUsageCostUsd", () => {
 describe("sumUsage", () => {
   it("returns an all-zero total for an empty list", () => {
     expect(sumUsage([])).toEqual({
-      calls: 0,
+      steps: 0,
       inputTokens: 0,
       outputTokens: 0,
       cachedInputTokens: 0,
@@ -74,7 +74,7 @@ describe("sumUsage", () => {
     });
   });
 
-  it("counts calls and sums every token bucket immutably", () => {
+  it("counts Steps and sums every token bucket immutably", () => {
     const a = makeUsage({
       inputTokens: 100,
       outputTokens: 40,
@@ -90,7 +90,7 @@ describe("sumUsage", () => {
     const inputs = [a, b] as const;
 
     expect(sumUsage(inputs)).toEqual({
-      calls: 2,
+      steps: 2,
       inputTokens: 300,
       outputTokens: 100,
       cachedInputTokens: 15,
@@ -115,7 +115,7 @@ describe("sumUsage", () => {
       reasoningTokens: 80,
     };
     expect(sumUsage([legacy])).toEqual({
-      calls: 1,
+      steps: 1,
       inputTokens: 500,
       outputTokens: 200,
       cachedInputTokens: 120,
@@ -125,9 +125,20 @@ describe("sumUsage", () => {
 
   it("coerces undefined token counts to zero", () => {
     expect(sumUsage([makeUsage(), makeUsage()])).toEqual({
-      calls: 2,
+      steps: 2,
       inputTokens: 0,
       outputTokens: 0,
+      cachedInputTokens: 0,
+      reasoningTokens: 0,
+    });
+  });
+
+  it("continues from a start total (the run tally's incremental fold)", () => {
+    const start = sumUsage([makeUsage({ inputTokens: 100, outputTokens: 40 })]);
+    expect(sumUsage([makeUsage({ inputTokens: 5, outputTokens: 1 })], start)).toEqual({
+      steps: 2,
+      inputTokens: 105,
+      outputTokens: 41,
       cachedInputTokens: 0,
       reasoningTokens: 0,
     });

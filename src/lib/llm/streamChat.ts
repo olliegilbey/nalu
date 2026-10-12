@@ -78,12 +78,15 @@ export async function streamChat<T>(
     () => undefined,
   );
 
+  // Fold this Step's tokens into the per-run cost tally once usage resolves.
+  // Same reasoning as the headers: Cerebras bills the Step even when
+  // validation later fails, so this must not wait on `final()`.
+  void result.usage.then(recordUsage, () => undefined);
+
   return {
     partialOutputStream: result.partialOutputStream,
     final: async () => {
       const [parsed, text, usage] = await Promise.all([result.output, result.text, result.usage]);
-      // Fold this streaming call's tokens into the per-run cost tally (issue #25).
-      recordUsage(usage);
       return { parsed, text, usage };
     },
   };

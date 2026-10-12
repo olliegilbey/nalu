@@ -28,7 +28,7 @@ afterEach(() => resetRunUsageTally());
 describe("recordUsage / getRunUsageTally", () => {
   it("starts empty", () => {
     expect(getRunUsageTally()).toEqual({
-      calls: 0,
+      steps: 0,
       inputTokens: 0,
       outputTokens: 0,
       cachedInputTokens: 0,
@@ -36,7 +36,7 @@ describe("recordUsage / getRunUsageTally", () => {
     });
   });
 
-  it("accumulates across calls", () => {
+  it("accumulates across Steps", () => {
     recordUsage(
       makeUsage({
         inputTokens: 1000,
@@ -48,7 +48,7 @@ describe("recordUsage / getRunUsageTally", () => {
     recordUsage(makeUsage({ inputTokens: 500, outputTokens: 100 }));
 
     expect(getRunUsageTally()).toEqual({
-      calls: 2,
+      steps: 2,
       inputTokens: 1500,
       outputTokens: 400,
       cachedInputTokens: 200,
@@ -65,7 +65,7 @@ describe("recordUsage / getRunUsageTally", () => {
       spy.mockRestore();
     }
     // Accumulation still happened despite the silent stderr.
-    expect(getRunUsageTally().calls).toBe(1);
+    expect(getRunUsageTally().steps).toBe(1);
   });
 });
 
@@ -85,7 +85,7 @@ describe("formatRunUsageTally", () => {
     );
     // 1M in @ $0.35 + 1M out @ $0.75 = $1.10; cached shown but NOT discounted.
     expect(formatRunUsageTally(getRunUsageTally())).toBe(
-      "run total: 1 calls, 1000000 in / 1000000 out (100000 cached, 200000 reasoning), ≈ $1.1000",
+      "run total: 1 steps, 1000000 in / 1000000 out (100000 cached, 200000 reasoning), ≈ $1.1000",
     );
   });
 });

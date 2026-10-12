@@ -72,6 +72,9 @@ export interface ChatResult<T = unknown> {
  * where the HTTP call itself succeeded — the `x-ratelimit-*` response
  * headers are recorded for the next call to consult. Both are a complete
  * no-op in mocked unit/integration suites.
+ *
+ * Cost: on both paths the Step's `usage` also goes into the per-run tally
+ * (`runUsageTally.ts`), since Cerebras bills a validation-failed Step too.
  */
 export async function generateChat<T>(
   messages: readonly LlmMessage[],
@@ -105,7 +108,7 @@ export async function generateChat<T>(
   if (opts.responseSchema === undefined) {
     const result = await generateText(common);
     recordCerebrasRateLimitHeaders(result.response.headers);
-    // Fold this call's tokens into the per-run cost tally (issue #25).
+    // Fold this Step's tokens into the per-run cost tally.
     recordUsage(result.usage);
     return { text: result.text, usage: result.usage };
   }
@@ -123,15 +126,17 @@ export async function generateChat<T>(
       }),
     });
     recordCerebrasRateLimitHeaders(result.response.headers);
-    // Fold this call's tokens into the per-run cost tally (issue #25).
+    // Fold this Step's tokens into the per-run cost tally.
     recordUsage(result.usage);
     return { text: result.text, parsed: result.output, usage: result.usage };
   } catch (err) {
     // Validation failure still means the HTTP call succeeded — record the
     // rate-limit headers the error carries so the next call backs off
-    // correctly, then let executeTurn translate the error.
+    // correctly, and tally the billed tokens. Then let executeTurn
+    // translate the error.
     if (NoObjectGeneratedError.isInstance(err)) {
       recordCerebrasRateLimitHeaders(err.response?.headers);
+      if (err.usage !== undefined) recordUsage(err.usage);
     }
     throw err;
   }
