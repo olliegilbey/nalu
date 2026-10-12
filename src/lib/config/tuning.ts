@@ -337,12 +337,17 @@ export const AGENT_LOOKUP = {
  *   demand. The json contract ALWAYS gets the full list — it has no
  *   lookup tools. Default stays "full" until the live A/B in
  *   docs/status/ shows hint mode preserves review coverage.
+ * - `quizMaxQuestions`: upper bound on one mid-Wave `presentQuestionnaire`
+ *   call. A quiz is a quick concept check inside a teaching turn, not a
+ *   test; three questions keep it short. The tool's input schema enforces
+ *   it, and its descriptions render it as "1-3" (issue #63).
  */
 export const WAVE = {
   turnCount: 10,
   tierCheckInterval: 2,
   completionXp: 50,
   dueReviewInjection: "full" as WaveDueReviewInjection,
+  quizMaxQuestions: 3,
 } as const;
 
 /** Due-review injection mode for the Wave system prompt — see `WAVE` docs. */

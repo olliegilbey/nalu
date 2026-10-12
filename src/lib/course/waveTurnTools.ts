@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 import type { comprehensionSignalSchema } from "@/lib/prompts/waveTurn";
 import { MC_OPTION_KEYS, type Question, type Questionnaire } from "@/lib/prompts/questionnaire";
 import { toToolInputSchema } from "@/lib/llm/toCerebrasJsonSchema";
+import { WAVE } from "@/lib/config/tuning";
 
 /** One staged grading signal — inferred from the shared prompt-layer schema. */
 export type StagedComprehensionSignal = z.infer<typeof comprehensionSignalSchema>;
@@ -78,10 +79,16 @@ export type ToolQuestionInput = z.infer<typeof toolQuestionSchema>;
  */
 const toolQuestionnaireSchema = z
   .object({
+    // `.max` is validator-only: Cerebras strict mode rejects `maxItems`, so
+    // `toToolInputSchema` strips it from the wire bytes. The description
+    // carries the bound to the model; Zod enforces it (issue #63).
     questions: z
       .array(toolQuestionSchema)
       .min(1)
-      .describe("1-3 questions. Every question's id must be unique within this questionnaire."),
+      .max(WAVE.quizMaxQuestions)
+      .describe(
+        `1-${WAVE.quizMaxQuestions} questions. Every question's id must be unique within this questionnaire.`,
+      ),
   })
   .superRefine((val, ctx) => {
     val.questions.forEach((q, idx) => {
@@ -273,8 +280,7 @@ function buildRecordSignalsTool(collector: WaveTurnCollector) {
 
 function buildPresentQuestionnaireTool(collector: WaveTurnCollector) {
   return tool({
-    description:
-      "Present a graded concept-check quiz (1-3 questions) to the learner. Call at most once per turn, after your teaching prose. Every question carries conceptName; every multiple-choice question carries options and correct (A, B, C, or D).",
+    description: `Present a graded concept-check quiz (1-${WAVE.quizMaxQuestions} questions) to the learner. Call at most once per turn, after your teaching prose. Every question carries conceptName; every multiple-choice question carries options and correct (A, B, C, or D).`,
     inputSchema: toToolInputSchema(toolQuestionnaireSchema, {
       name: "present_questionnaire_input",
     }),

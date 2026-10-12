@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Schema } from "ai";
+import { WAVE } from "@/lib/config/tuning";
 import { buildWaveMidTurnTools } from "./waveTurnTools";
 
 /** Minimal ToolCallOptions stub — execute only reads none of it today. */
@@ -55,6 +56,19 @@ describe("buildWaveMidTurnTools", () => {
     if (!result.success) {
       expect(String(result.error)).toContain("is missing required options");
     }
+  });
+
+  // Issue #63: the description promised 1-3 questions but nothing enforced
+  // the upper bound. The SDK feeds the violation back as a tool error.
+  it("questionnaire inputSchema enforces the WAVE.quizMaxQuestions upper bound", async () => {
+    const { tools } = buildWaveMidTurnTools();
+    const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
+    const questionsOf = (n: number) =>
+      Array.from({ length: n }, (_v, i) => ({ ...FT_QUESTION, id: `q${i + 1}` }));
+    const atCap = await schema.validate!({ questions: questionsOf(WAVE.quizMaxQuestions) });
+    expect(atCap.success).toBe(true);
+    const overCap = await schema.validate!({ questions: questionsOf(WAVE.quizMaxQuestions + 1) });
+    expect(overCap.success).toBe(false);
   });
 
   it("signals inputSchema rejects a free-text signal without verdict/qualityScore", async () => {
