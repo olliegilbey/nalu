@@ -389,7 +389,7 @@ Anonymous auth needs no login or register pages.
 
 ### 9.4 Development and Testing Convenience
 
-Developers need fast paths to any course state: a seeded dev user, courses at different stages, course reset, forced reviews, and a way to skip clarification and baseline. Today `just db-seed` creates the dev user and `just db-reset` is meant to rebuild the local database (broken today: issue #96). `just --list` shows every recipe.
+Developers need fast paths to any course state: a seeded dev user, courses at different stages, course reset, forced reviews, and a way to skip clarification and baseline. Today `just db-seed` creates the dev user and `just db-reset` rebuilds a local database: wipe, migrate, seed. It refuses unless `DIRECT_URL` points at localhost. `just --list` shows every recipe.
 
 ---
 

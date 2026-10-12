@@ -91,9 +91,11 @@ db-generate name:
 db-migrate:
     bunx drizzle-kit migrate
 
-# Drop and re-create local Supabase DB, then re-migrate and re-seed
+# Wipe the local DB, then re-migrate and re-seed. src/db/reset.ts drops the
+# app schemas at DIRECT_URL, and refuses unless DIRECT_URL is localhost:
+# `.env.local` may point at the production Supabase project.
 db-reset:
-    supabase db reset
+    bun src/db/reset.ts
     just db-migrate
     just db-seed
 

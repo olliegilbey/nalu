@@ -8,7 +8,8 @@ export default defineConfig({
     name: "unit",
     globals: true,
     environment: "node",
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    // `scripts/` holds pure helpers for the CLI scripts (e.g. the probe scorer).
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "scripts/**/*.test.ts"],
     exclude: [
       // DB query tests all require a live Postgres connection — skip in unit project.
       "src/db/queries/**/*.test.ts",

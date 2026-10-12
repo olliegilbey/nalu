@@ -15,6 +15,22 @@ import prettier from "eslint-config-prettier";
 //
 // Conventions that belong to human/agent judgment (file length, naming,
 // abstraction timing, functional style) live only in AGENTS.md.
+
+// Restricted-import patterns for the architectural boundaries below. Named
+// so the LLM-SDK homes can drop the first and keep the second.
+const LLM_SDK_IMPORTS = {
+  group: ["ai", "ai/*", "@ai-sdk/*"],
+  message: "LLM SDK imports belong in src/lib/llm/ or src/lib/agents/ (see AGENTS.md).",
+  // Type-only imports don't cross the runtime boundary; the
+  // `src/lib/types/llm.ts` re-export layer relies on this.
+  allowTypeImports: true,
+};
+const DB_CLIENT_IMPORTS = {
+  group: ["drizzle-orm", "drizzle-orm/*", "postgres", "pg"],
+  message: "DB clients belong in src/db/ (see AGENTS.md).",
+  allowTypeImports: true,
+};
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -44,41 +60,30 @@ const eslintConfig = defineConfig([
     },
   },
 
+  // `const { dropped, ...rest } = obj` omits a key on purpose; the rest
+  // sibling is the point. Keeps eslint-config-next's warn severity.
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": ["warn", { ignoreRestSiblings: true }],
+    },
+  },
+
   // Architectural boundaries (warn). Codifies AGENTS.md:
-  //   - LLM SDKs only in src/lib/llm/
+  //   - LLM SDKs only in src/lib/llm/ and src/lib/agents/
   //   - Drizzle / raw DB clients only in src/db/
   // Overrides below relax these in the allowed directories.
   {
     files: ["src/**/*.ts", "src/**/*.tsx"],
     rules: {
-      "no-restricted-imports": [
-        "warn",
-        {
-          patterns: [
-            {
-              group: ["ai", "ai/*", "@ai-sdk/*"],
-              message: "LLM SDK imports belong in src/lib/llm/ (see AGENTS.md).",
-              // Type-only imports don't cross the runtime boundary; the
-              // `src/lib/types/llm.ts` re-export layer relies on this.
-              allowTypeImports: true,
-            },
-            {
-              group: ["drizzle-orm", "drizzle-orm/*", "postgres", "pg"],
-              message: "DB clients belong in src/db/ (see AGENTS.md).",
-              allowTypeImports: true,
-            },
-          ],
-        },
-      ],
+      "no-restricted-imports": ["warn", { patterns: [LLM_SDK_IMPORTS, DB_CLIENT_IMPORTS] }],
     },
   },
-  // Narrow exemption: only `provider.ts` and `generate.ts` need runtime
-  // `ai`/`@ai-sdk` imports (per AGENTS.md). Other files in `src/lib/llm/`
-  // (e.g. `toCerebrasJsonSchema.ts`) get type-only access via the
-  // `allowTypeImports: true` escape hatch — same as the rest of the repo.
+  // LLM SDK homes: `src/lib/llm/` (calls) and `src/lib/agents/` (tool-loop
+  // agents) import `ai`/`@ai-sdk` at runtime (per AGENTS.md). The DB
+  // boundary still applies here.
   {
-    files: ["src/lib/llm/provider.ts", "src/lib/llm/generate.ts"],
-    rules: { "no-restricted-imports": "off" },
+    files: ["src/lib/llm/**", "src/lib/agents/**"],
+    rules: { "no-restricted-imports": ["warn", { patterns: [DB_CLIENT_IMPORTS] }] },
   },
   {
     files: ["src/db/**/*.ts", "src/db/**/*.tsx"],
