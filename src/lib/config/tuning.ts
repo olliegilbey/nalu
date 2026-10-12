@@ -153,10 +153,14 @@ export const FRAMEWORK = {
  * the numbers in one place means prompt text, Zod schemas, and grading
  * code can't drift.
  *
- * Question counts follow PRD §4.1: 7–9 baseline questions total, with
- * ~3 per in-scope tier. `FRAMEWORK.maxBaselineScopeSize` × 3 = 9 caps
- * the upper bound; 7 floors it so single-tier-scope edge cases still
- * produce a useful signal.
+ * Question counts follow PRD §4.1: 7–9 baseline questions total. The
+ * per-tier count derives from the scope size in `baseline.ts`:
+ * max(questionsPerTier, ceil(minQuestions / |scope|)), so 1 tier → 7,
+ * 2 → 4 each (8), 3 → 3 each (9). A 1- or 2-tier scope is legitimate
+ * (a learner placed at the first or last tier), and a flat 3 per tier
+ * gave 6 there, below the floor (issue #129). Keep
+ * `FRAMEWORK.maxBaselineScopeSize` × questionsPerTier ≤ maxQuestions;
+ * `baseline.test.ts` checks every legal scope size.
  *
  * Mechanical MC quality scores (q=4 correct, q=1 incorrect) encode what
  * a correct click tells us and what a wrong click tells us — a correct
@@ -168,11 +172,12 @@ export const FRAMEWORK = {
  */
 export const BASELINE = {
   // PRD §4.1: "baseline assessment — 7-9 questions". Floor/ceiling enforced
-  // by the Zod schema; generation aims for `questionsPerTier × |scope|`.
+  // by the Zod schema. The rendered rule asks for an exact total inside them.
   minQuestions: 7,
   maxQuestions: 9,
   // Three probes per in-scope tier give enough signal to detect friction
-  // without fatiguing the learner before teaching even begins.
+  // without fatiguing the learner before teaching even begins. This is the
+  // per-tier minimum; small scopes ask more per tier to reach minQuestions.
   questionsPerTier: 3,
   // MC cards are always four options. No "Not sure"
   // button — the freetext escape is the non-engagement affordance.

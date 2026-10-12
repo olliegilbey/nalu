@@ -131,7 +131,8 @@ User types a topic
     -> Validate with Zod; store on courses.framework
     -> Unbuilt: the user cannot edit the framework before continuing
   -> tRPC: course.generateBaseline
-    -> Generate 7-9 questions spanning the baseline-scope tiers
+    -> Generate 7-9 questions spanning the baseline-scope tiers:
+       7 for one tier, 4 per tier for two, 3 per tier for three
     -> Render as assessment cards
     -> User answers each
   -> tRPC: course.submitBaseline (grading lives in src/lib)
