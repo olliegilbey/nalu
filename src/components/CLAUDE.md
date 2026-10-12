@@ -30,4 +30,6 @@ Thin rendering layer. Components get data through hooks in `src/hooks/`. Scoping
 | Accent violet            | oniViolet    |
 | Accent orange            | surimiOrange |
 
+springGreen also marks an MC option picked but not yet confirmed. Once the learner confirms an ungraded MC question (no answer key), the pick freezes in crystalBlue. Green after Confirm would read as "correct" (`Composer.tsx`).
+
 Glassmorphic, Apple liquid glass inspired. Rounded corners. Generous whitespace. Translucent panels with subtle blur.
