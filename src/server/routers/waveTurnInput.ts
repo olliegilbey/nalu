@@ -1,12 +1,11 @@
 import { z } from "zod/v4";
 
 /**
- * Input schema for one learner wave-turn submission. Shared by the tRPC
- * `wave.submitTurn` mutation and the streaming route handler
- * (`/api/course/[courseId]/wave/[waveNumber]/turn`) — one trust boundary,
- * two transports. The discriminated payload mirrors `SubmitTurnPayload`
- * from `src/lib/course/buildLearnerInput.ts`; the lib function assumes the
- * shape is already validated.
+ * Input schema for one learner wave-turn submission: the trust boundary of
+ * the streaming route handler (`/api/course/[courseId]/wave/[waveNumber]/turn`).
+ * The discriminated payload mirrors `SubmitTurnPayload` from
+ * `src/lib/course/buildLearnerInput.ts`; the lib function assumes the shape
+ * is already validated.
  */
 export const submitTurnInputSchema = z.object({
   courseId: z.uuid(),

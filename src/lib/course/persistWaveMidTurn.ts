@@ -8,15 +8,18 @@ import { type SubmitTurnPayload } from "./buildLearnerInput";
 import type { GradedSignal } from "./applyAssessmentGrading";
 import { findOpenQuestionnaire, buildMcCorrectKeyMap } from "./findOpenQuestionnaire";
 import type { LoadedWaveContext } from "./loadWaveContext";
-import { gradePriorAnswers } from "./executeWaveMid.grade";
-import { insertNewQuestionnaire, type NewQuestionnaireProjection } from "./executeWaveMid.insert";
+import { gradePriorAnswers } from "./persistWaveMidTurn.grade";
+import {
+  insertNewQuestionnaire,
+  type NewQuestionnaireProjection,
+} from "./persistWaveMidTurn.insert";
 
 /**
- * Result of one mid-Wave turn. The router projects this to the client-safe
- * shape; the discriminator `kind` lets `submitWaveTurn` return either
- * mid-turn or close-turn under one union.
+ * Result of one mid-Wave turn, streamed to the client as the
+ * `data-turn-result` part. The discriminator `kind` puts mid-turn and
+ * close-turn results under one union (`WaveTurnResultData`).
  */
-export interface ExecuteWaveMidResult {
+export interface WaveMidTurnResult {
   readonly kind: "mid-turn";
   /** Turns remaining AFTER this turn completes (echoed back to the caller). */
   readonly turnsRemaining: number;
@@ -37,15 +40,15 @@ export interface ExecuteWaveMidResult {
 /**
  * Post-LLM persistence for one mid-Wave turn: grade prior answers, insert
  * the new questionnaire, dual-write the assistant chat_log entry — one
- * transaction. Shared by the blocking (`executeWaveMid`) and streaming
- * (`streamWaveTurn`) dispatch paths so grading/XP semantics cannot drift.
+ * transaction. Runs after `streamWaveTurn`'s tool loop has committed the
+ * turn's context_messages rows.
  */
 export async function persistWaveMidTurn(params: {
   readonly ctx: LoadedWaveContext;
   readonly parsed: WaveMidTurn;
   readonly payload: SubmitTurnPayload;
   readonly turnsRemaining: number;
-}): Promise<ExecuteWaveMidResult> {
+}): Promise<WaveMidTurnResult> {
   const { ctx, parsed, payload, turnsRemaining } = params;
 
   // Resolve open questionnaire once for grading-time lookups (correctLetterMap)
@@ -66,7 +69,7 @@ export async function persistWaveMidTurn(params: {
     : new Map();
 
   const result = await db.transaction(async (tx) => {
-    // Find the assistant_response row just persisted by executeTurn. We need
+    // Find the assistant_response row the turn runner just persisted. We need
     // BOTH its row id (used as the canonical `questionnaireId` so the
     // mid-turn projection and the `loadWaveContext` reconstruction agree —
     // see `loadWaveContext.ts:117`) and its turn_index (assessments align
@@ -83,10 +86,10 @@ export async function persistWaveMidTurn(params: {
       .orderBy(desc(contextMessages.turnIndex))
       .limit(1);
     if (!assistantRow) {
-      // executeTurn always persists user+assistant on success — absence
+      // The turn runner always persists user+assistant on success — absence
       // means something silently skipped persistence. Fail loud.
       throw new Error(
-        `persistWaveMidTurn: no assistant_response row for wave ${ctx.wave.id} after executeTurn`,
+        `persistWaveMidTurn: no assistant_response row for wave ${ctx.wave.id} after the turn`,
       );
     }
 
@@ -114,7 +117,7 @@ export async function persistWaveMidTurn(params: {
       : null;
 
     // Dual-write: assistant emission lands on chat_log alongside the
-    // context_messages row executeTurn persisted. Same tx, all-or-nothing.
+    // context_messages row the turn runner persisted. Same tx, all-or-nothing.
     // `questionnaireId` reuses `assistantRow.id` so emit + reload agree.
     const chatLogEntry: WaveChatLogEntry = parsed.questionnaire
       ? {

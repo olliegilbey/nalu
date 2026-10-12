@@ -7,9 +7,16 @@ import { buildLearnerInput, type SubmitTurnPayload } from "./buildLearnerInput";
 import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
 import { learnerEntryAlreadyAppended } from "./learnerEntryAlreadyAppended";
 import { loadWaveContext, type LoadedWaveContext } from "./loadWaveContext";
-import type { SubmitWaveTurnParams } from "./submitWaveTurn";
 
-/** Everything submitWaveTurn/streamWaveTurn need to dispatch one turn. */
+/** One learner turn submission: who, which Wave, and what they sent. */
+export interface SubmitWaveTurnParams {
+  readonly userId: string;
+  readonly courseId: string;
+  readonly waveNumber: number;
+  readonly payload: SubmitTurnPayload;
+}
+
+/** Everything streamWaveTurn needs to dispatch one turn. */
 export interface PreparedWaveTurn {
   readonly dispatchCtx: LoadedWaveContext;
   readonly learnerInput: string;
@@ -20,9 +27,9 @@ export interface PreparedWaveTurn {
 
 /**
  * Guards + idempotency + pre-LLM persistence for one learner turn
- * (spec §3.3 / §7.4). Extracted verbatim from submitWaveTurn so the tRPC
- * (blocking) and route-handler (streaming) transports share one gate.
- * Keep the bug_001 resume-awareness block intact — see its comments.
+ * (spec §3.3 / §7.4). Runs before any LLM call, so nothing it writes
+ * depends on the model. Keep the bug_001 resume-awareness block intact —
+ * see its comments.
  *
  * Throws TRPCError on:
  *   - NOT_FOUND: wave doesn't exist for this (courseId, waveNumber).
@@ -52,8 +59,8 @@ export async function prepareWaveTurn(params: SubmitWaveTurnParams): Promise<Pre
     waveId: wave.id,
   });
 
-  // Closed waves do not accept further turns. The router would otherwise
-  // happily run executeTurn against an already-closed wave; fail loud at the
+  // Closed waves do not accept further turns. Dispatch would otherwise
+  // happily run the LLM against an already-closed wave; fail loud at the
   // entry boundary so the client gets a clean error code.
   if (ctx.wave.status !== "open") {
     throw new TRPCError({
@@ -136,7 +143,7 @@ export async function prepareWaveTurn(params: SubmitWaveTurnParams): Promise<Pre
 
   // (3) Compute turnsRemaining = the value the LLM will see in THIS turn's
   // envelope. Turns consumed = user-role entries in chat_log. After this
-  // turn's executeWaveMid persists its assistant entry + this fn's pre-LLM
+  // turn's dispatch persists its assistant entry + this fn's pre-LLM
   // user entry, consumed advances by exactly 1. WAVE.turnCount is the budget;
   // turnsRemaining = budget - (current + about-to-land). Clamp at 0 so a late
   // close doesn't go negative.
@@ -152,10 +159,10 @@ export async function prepareWaveTurn(params: SubmitWaveTurnParams): Promise<Pre
   // transport fails, the learner's submission survives in `waves.chat_log`
   // (the UI source of truth) even though `context_messages` (the LLM replay
   // log) only gains its `user_message` row on LLM success
-  // inside executeTurn's atomic batch. The two stores intentionally diverge
+  // inside the turn runner's atomic batch. The two stores intentionally diverge
   // on the failure path — see docs/ARCHITECTURE.md ("per-store atomicity").
-  // No enclosing tx here (the executeWaveMid / executeWaveClose tx hasn't
-  // started yet), so we write against the `db` singleton. bug_001: skip the
+  // No enclosing tx here (the persistWaveMidTurn / executeWaveClose tx
+  // hasn't started yet), so we write against the `db` singleton. bug_001: skip the
   // append on a resume — the orphan already represents this exact submission.
   if (!isResume) {
     await appendWaveChatLog(db, ctx.wave.id, learnerEntry);

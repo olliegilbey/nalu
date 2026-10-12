@@ -144,7 +144,7 @@ describe("getWaveState (integration)", () => {
       expect(state.turnsRemaining).toBe(WAVE.turnCount - 1);
       expect(state.chatLog).toHaveLength(3);
       // closeResult is always null on getWaveState — the close result is the
-      // *response* payload of submitWaveTurn, not re-readable here.
+      // turn stream's data-turn-result part, not re-readable here.
       expect(state.closeResult).toBeNull();
     });
   });

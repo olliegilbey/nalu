@@ -31,22 +31,16 @@ const SEED: WaveSeedInputs = {
 };
 
 describe("renderTeachingSystem (dueReviewInjection: hint)", () => {
-  it("tools contract renders the lookup hint INSTEAD of the concept list", () => {
-    const out = renderTeachingSystem({ ...SEED, outputContract: "tools" });
+  it("renders the lookup hint INSTEAD of the concept list", () => {
+    const out = renderTeachingSystem(SEED);
     expect(out).toContain("<due_for_review>");
     expect(out).toContain("Call getDueConcepts for the current list");
     // The point of hint mode: due names no longer ride the static prompt.
     expect(out).not.toContain("Markets (tier 1)");
   });
 
-  it("json contract STILL gets the full list — it has no lookup tools", () => {
-    const out = renderTeachingSystem({ ...SEED, outputContract: "json" });
-    expect(out).toContain("Markets (tier 1): last scored 3/5");
-    expect(out).not.toContain("Call getDueConcepts");
-  });
-
   it("renders no block when nothing is due", () => {
-    const out = renderTeachingSystem({ ...SEED, dueConcepts: [], outputContract: "tools" });
+    const out = renderTeachingSystem({ ...SEED, dueConcepts: [] });
     expect(out).not.toContain("<due_for_review>");
   });
 });

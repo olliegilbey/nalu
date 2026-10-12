@@ -6,13 +6,13 @@ import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 
 /**
- * Internal helper for `executeWaveMid` — graded comprehensionSignals batch.
+ * Internal helper for `persistWaveMidTurn` — graded comprehensionSignals batch.
  *
- * Split out of `executeWaveMid.ts` to keep both files under the ~200-line
- * ceiling. Not re-exported via the barrel; only `executeWaveMid` calls it.
+ * Split out of `persistWaveMidTurn.ts` to keep both files under the ~200-line
+ * ceiling. Not re-exported via the barrel; only `persistWaveMidTurn` calls it.
  */
 
-/** One row of the graded-signals output. Matches `ExecuteWaveMidResult.gradedSignals[]`. */
+/** One row of the graded-signals output. Matches `WaveMidTurnResult.gradedSignals[]`. */
 export interface GradedRow {
   readonly kind: GradedSignal["kind"];
   readonly questionId: string;
@@ -75,7 +75,7 @@ export async function gradePriorAnswers(
     if (!row) {
       // Model referenced a questionId we don't have. Skip + log.
       process.stderr.write(
-        `[executeWaveMid] no assessment row for wave=${params.waveId} questionId=${sig.questionId}; skipping\n`,
+        `[persistWaveMidTurn] no assessment row for wave=${params.waveId} questionId=${sig.questionId}; skipping\n`,
       );
       return acc;
     }
@@ -84,7 +84,7 @@ export async function gradePriorAnswers(
       // Signal targets a question the learner didn't answer this turn — skip
       // to avoid corrupting the row with a verdict the learner didn't give.
       process.stderr.write(
-        `[executeWaveMid] signal for questionId=${sig.questionId} but learner did not answer it; skipping\n`,
+        `[persistWaveMidTurn] signal for questionId=${sig.questionId} but learner did not answer it; skipping\n`,
       );
       return acc;
     }

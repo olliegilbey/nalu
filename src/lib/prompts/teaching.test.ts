@@ -33,17 +33,12 @@ const baseInputs: WaveSeedInputs = {
   },
 };
 
-describe("renderTeachingSystem (JSON-everywhere)", () => {
+describe("renderTeachingSystem (prompt blocks)", () => {
   it("does NOT instruct the model to emit <response>/<assessment>/<comprehension_signal> tags", () => {
     const out = renderTeachingSystem(baseInputs);
     expect(out).not.toMatch(/<response>\.\.\./);
     expect(out).not.toMatch(/<assessment>/);
     expect(out).not.toMatch(/<comprehension_signal>/);
-  });
-
-  it("declares the single-JSON output contract", () => {
-    const out = renderTeachingSystem(baseInputs);
-    expect(out).toContain("single JSON object");
   });
 
   it("renders <planned_concepts> from blueprint.plannedConcepts", () => {
@@ -74,42 +69,23 @@ describe("renderTeachingSystem (due-review injection, default full)", () => {
     dueConcepts: [{ conceptId: "c-1", name: "Markets", tier: 1, lastQuality: 3 }],
   };
 
-  it("renders the full due-concept list under BOTH contracts", () => {
-    (["json", "tools"] as const).forEach((outputContract) => {
-      const out = renderTeachingSystem({ ...dueInputs, outputContract });
-      expect(out).toContain("<due_for_review>");
-      expect(out).toContain("Markets (tier 1): last scored 3/5");
-      // The hint copy belongs to hint mode only (teaching.dueInjection.test.ts).
-      expect(out).not.toContain("Call getDueConcepts for the current list");
-    });
+  it("renders the full due-concept list", () => {
+    const out = renderTeachingSystem(dueInputs);
+    expect(out).toContain("<due_for_review>");
+    expect(out).toContain("Markets (tier 1): last scored 3/5");
+    // The hint copy belongs to hint mode only (teaching.dueInjection.test.ts).
+    expect(out).not.toContain("Call getDueConcepts for the current list");
   });
 
   it("renders no block when nothing is due", () => {
-    const out = renderTeachingSystem({ ...baseInputs, outputContract: "tools" });
+    const out = renderTeachingSystem(baseInputs);
     expect(out).not.toContain("<due_for_review>");
   });
 });
 
-describe("renderTeachingSystem (output contracts)", () => {
-  it("absent outputContract renders byte-identically to explicit 'json'", () => {
-    expect(renderTeachingSystem({ ...baseInputs, outputContract: "json" })).toBe(
-      renderTeachingSystem(baseInputs),
-    );
-  });
-
-  it("json contract declares single-JSON and never mentions the tools", () => {
-    const out = renderTeachingSystem({ ...baseInputs, outputContract: "json" });
-    expect(out).toContain("single JSON object");
-    expect(out).toContain("the questionnaire field");
-    expect(out).not.toContain("presentQuestionnaire");
-    expect(out).not.toContain("recordComprehensionSignals");
-    // Lookup tools exist only on the agent path (tools contract).
-    expect(out).not.toContain("getDueConcepts");
-    expect(out).not.toContain("getConceptHistory");
-  });
-
-  it("tools contract names all four tools, keeps single-JSON for the final turn, drops field vocab", () => {
-    const out = renderTeachingSystem({ ...baseInputs, outputContract: "tools" });
+describe("renderTeachingSystem (output contract)", () => {
+  it("names all four tools, keeps single-JSON for the final turn, drops field vocab", () => {
+    const out = renderTeachingSystem(baseInputs);
     expect(out).toContain("presentQuestionnaire");
     expect(out).toContain("recordComprehensionSignals");
     // Lookup guidance (agent-loop plan Task 4): pull review state on demand,
@@ -120,26 +96,7 @@ describe("renderTeachingSystem (output contracts)", () => {
     // Close turns still run the blocking single-JSON path under this prompt.
     expect(out).toContain("final turn no tools are available");
     expect(out).toContain("single JSON object");
-    // Mega-schema vocabulary must not leak into the tools prompt.
+    // The retired mega-schema's field vocabulary must not come back.
     expect(out).not.toContain("the questionnaire field");
-  });
-
-  it("contracts differ ONLY in the questionnaire channel + output format", () => {
-    const json = renderTeachingSystem({ ...baseInputs, outputContract: "json" });
-    const tools = renderTeachingSystem({ ...baseInputs, outputContract: "tools" });
-    // Shared pedagogy is identical: strip the two contract-dependent pieces
-    // and the remainder must match. Cheap proxy: both keep the security block
-    // and lesson-seed sections byte-identical.
-    const sharedMarkers = [
-      "<course_topic>",
-      "<lesson_seed>",
-      "Do not award, claim, or acknowledge XP amounts.",
-      "End each lesson on a teaching beat",
-    ];
-    sharedMarkers.forEach((m) => {
-      expect(json).toContain(m);
-      expect(tools).toContain(m);
-    });
-    expect(json).not.toBe(tools);
   });
 });

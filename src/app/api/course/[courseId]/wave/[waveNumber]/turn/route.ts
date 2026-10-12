@@ -12,9 +12,8 @@ import type { WaveTurnUIMessage } from "@/lib/types/waveStream";
 export const maxDuration = 300;
 
 /**
- * Streaming wave-turn transport (replaces tRPC `wave.submitTurn` on the
- * client; the mutation remains server-side as a rollback path for one
- * release). Protocol: AI SDK UI Message Stream (SSE) — text parts carry
+ * Wave-turn transport: every learner turn arrives here.
+ * Protocol: AI SDK UI Message Stream (SSE) — text parts carry
  * teaching prose, transient `data-turn-result` carries the grading/XP
  * projection, a non-transient `data-turn-reset` marker part precedes a
  * validation re-stream (the client slices the parts array on it).

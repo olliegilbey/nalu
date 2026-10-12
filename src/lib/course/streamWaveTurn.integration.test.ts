@@ -28,12 +28,11 @@ vi.mock("@/lib/llm/provider", () => ({
  * LLM boundary is mocked at `buildWaveMidTurnAgent` (mid-turns — the REAL
  * builder runs, only the agent's `.stream()` is stubbed, so
  * `executeToolTurnStream` persists production-shaped context_messages rows
- * INCLUDING the tool kinds) and at `executeTurn` (close turns, which run the
- * blocking path inside the stream). Scripted attempts invoke the REAL tool
+ * INCLUDING the tool kinds) and at `executeTurn` (close turns, which run a
+ * blocking `executeTurn` inside the stream). Scripted attempts invoke the REAL tool
  * executes (collector staging AND DB-backed lookups) so state moves exactly
  * as `streamText` would move it in production. Assertions cover the UIMessage
- * part sequence (text + tool chunks) AND the same DB row trails the blocking
- * suite asserts.
+ * part sequence (text + tool chunks) AND the DB row trails each turn leaves.
  */
 
 const USER_ID = "55555555-5555-5555-5555-555555555555";
@@ -213,7 +212,7 @@ describe("streamWaveTurn (integration)", () => {
 
   // -------------------------------------------------------------------------
   // 1. Happy mid-turn (pure teaching, no tool calls): text part lifecycle +
-  //    transient result part + the same DB rows the blocking path persists.
+  //    transient result part + the rows in both stores.
   // -------------------------------------------------------------------------
   it("happy mid-turn: streams text parts, emits data-turn-result, persists both stores", async () => {
     await withTestDb(async () => {
@@ -644,7 +643,7 @@ describe("streamWaveTurn (integration)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 4. Close turn: blocking path inside the stream — result part only, no
+  // 4. Close turn: blocking `executeTurn` inside the stream — result part only, no
   //    text parts, tool loop never touched.
   // -------------------------------------------------------------------------
   it("close turn: emits only data-turn-result (kind close-turn), no text parts", async () => {

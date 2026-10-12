@@ -7,8 +7,8 @@ import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog
  *
  * ## Why this exists
  *
- * `submitWaveTurn` writes the learner's turn to `waves.chat_log` BEFORE the
- * fallible `executeWaveMid` / `executeWaveClose` dispatch (the pre-LLM
+ * `prepareWaveTurn` writes the learner's turn to `waves.chat_log` BEFORE
+ * `streamWaveTurn`'s fallible LLM dispatch (the pre-LLM
  * durability invariant — see `docs/ARCHITECTURE.md`). The append is a raw
  * Postgres JSONB `||` concat, which is non-idempotent: when the LLM dispatch
  * throws, the learner entry is committed and orphaned (no paired assistant
@@ -31,12 +31,12 @@ import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog
  *
  *  - chat-text:    same `kind: "text"` + same `content`.
  *  - questionnaire-answers: same `kind: "answers"` + same `questionnaireId`
- *    + structurally-equal `responses` (order-sensitive — `submitWaveTurn`
+ *    + structurally-equal `responses` (order-sensitive — `prepareWaveTurn`
  *    derives `responses` deterministically from the payload's answer order,
  *    so a retry of the same submission produces the identical array).
  *
  * @param log - the wave's current `chat_log` (typed, post-`waveRowGuard`).
- * @param entry - the learner entry `submitWaveTurn` is about to append.
+ * @param entry - the learner entry `prepareWaveTurn` is about to append.
  * @returns `true` when `log`'s last entry already equals `entry`.
  */
 export function learnerEntryAlreadyAppended(log: WaveChatLog, entry: WaveChatLogEntry): boolean {

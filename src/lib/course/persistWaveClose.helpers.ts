@@ -14,13 +14,13 @@ import type { LoadedWaveContext } from "./loadWaveContext";
 
 /**
  * Internal helpers for `persistWaveClose` — split out to keep both files under
- * the ~200-line ceiling. Mirrors the `executeWaveMid.{ts,grade.ts,insert.ts}`
+ * the ~200-line ceiling. Mirrors the `persistWaveMidTurn.{ts,grade.ts,insert.ts}`
  * pattern. Not re-exported via the barrel; only `persistWaveClose` calls these.
  */
 
 /**
  * Per-question grading projection surfaced back to the orchestrator. Mirrors
- * the mid-turn shape so the upstream `submitWaveTurn` union can be uniform.
+ * the mid-turn shape so the `WaveTurnResultData` union stays uniform.
  */
 export interface PersistedGradedSignal {
   readonly kind: GradedSignal["kind"];
@@ -34,7 +34,7 @@ export interface PersistedGradedSignal {
  * the open questionnaire).
  *
  * Reads the LIVE column via the tx — not `ctx.wave.chatLog`, which
- * `loadWaveContext` snapshots before `submitWaveTurn` appends the close-turn
+ * `loadWaveContext` snapshots before `prepareWaveTurn` appends the close-turn
  * answer. The append committed before this tx opened, so it is visible here.
  */
 async function buildCloseMcChoiceMap(
@@ -70,7 +70,7 @@ async function buildCloseMcChoiceMap(
  * renders `kind="mc-index"`). We grade it MECHANICALLY: the model's grading is
  * trusted only for *which* question, never for correctness. `correct` is
  * computed server-side — learner's persisted click (live `chat_log`) vs the
- * questionnaire's persisted `correct` key — mirroring `executeWaveMid.grade.ts`.
+ * questionnaire's persisted `correct` key — mirroring `persistWaveMidTurn.grade.ts`.
  * Honours the core design principle: the LLM never controls scoring.
  *
  * The stored `question_id` column is namespaced per questionnaire

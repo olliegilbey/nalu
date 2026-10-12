@@ -85,7 +85,7 @@ Items marked **Unbuilt** are still in scope. The code does not deliver them yet.
 
 **Model-agnostic LLM layer.** Every LLM call goes through `src/lib/llm/`. The provider speaks the OpenAI-compatible API. `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_MODEL` select the provider and model. Cerebras serves it today.
 
-**tRPC for the API layer.** Provides end-to-end type safety between frontend and backend. tRPC routers are backend-only; the frontend consumes them via a typed client. A future React Native app uses the same routers, same types, same business logic. All business logic lives in `src/lib/`, so a UI rewrite reuses it unchanged. Live Wave turns stream over a Next.js route handler. tRPC carries state queries and the non-streaming fallback.
+**tRPC for the API layer.** Provides end-to-end type safety between frontend and backend. tRPC routers are backend-only; the frontend consumes them via a typed client. A future React Native app uses the same routers, same types, same business logic. All business logic lives in `src/lib/`, so a UI rewrite reuses it unchanged. Wave turns stream over a Next.js route handler. tRPC carries scoping and state queries.
 
 **Anonymous auth.** `src/proxy.ts` mints an anonymous Supabase account on a learner's first visit. Outside production, a dev-user header stands in. `docs/DEPLOY.md` covers setup.
 
@@ -202,7 +202,7 @@ SM-2 injection is **Wave-boundary**, not per-turn.
 - **Wave start**: the Harness freezes the SM-2-due concepts on the `waves` row. The system prompt renders them once in a `<due_for_review>` block. The block is omitted when nothing is due.
 - **Final turn**: the Harness appends `<concepts_for_next_wave>` to the user envelope. It holds two lists: `<fresh_at_current_tier>` (never-assessed concepts at the current tier) and `<review_due>` (SM-2-due concepts). An empty list renders `(none)`. The model plans the next Wave from these lists. Each planned concept in the blueprint is marked `fresh` or `review`; a `review` concept must be on the due list.
 
-Between those two points the Context is append-only and the review block is not re-injected. This keeps the Wave's prefix byte-stable and the prompt cache warm. On the streaming path the model can also call read-only lookup tools (`getDueConcepts`, `getConceptHistory`) mid-Wave.
+Between those two points the Context is append-only and the review block is not re-injected. This keeps the Wave's prefix byte-stable and the prompt cache warm. Mid-Wave, the model can also call read-only lookup tools (`getDueConcepts`, `getConceptHistory`).
 
 Exact block text lives in `src/lib/prompts/teaching.ts` and `src/lib/spaced-repetition/scheduler.ts`.
 
@@ -264,7 +264,7 @@ The system prompt is crystallised **once per phase** (scoping, or a single Wave)
 
 **Output contract.** The model emits JSON or tool calls, never free-form tagged blocks.
 
-- **Mid-Wave turn**: teaching prose; optional comprehension signals that grade the cards the learner just answered; an optional questionnaire of 1-N questions. Each question names one concept. Each multiple-choice question carries its correct key. The streaming path sends prose as text and the rest as tool calls (`recordComprehensionSignals`, `presentQuestionnaire`). The non-streaming fallback emits one JSON object.
+- **Mid-Wave turn**: teaching prose; optional comprehension signals that grade the cards the learner just answered; an optional questionnaire of 1-N questions. Each question names one concept. Each multiple-choice question carries its correct key. The model streams prose as text and sends the rest as tool calls (`recordComprehensionSignals`, `presentQuestionnaire`).
 - **Final turn**: one JSON object with the closing message, gradings for cards answered this turn, a Wave summary, the next Wave's blueprint (topic, outline, opening text, planned concepts), and per-concept SM-2 quality scores.
 - **Scoping close**: the same close-turn base, plus a durable learner profile and the starting tier.
 
