@@ -28,7 +28,7 @@ describe("scoreToolProbe", () => {
     expect(score.scoredTrials).toBe(20);
     expect(score.passedTrials).toBe(18);
     expect(score.passRate).toBeCloseTo(0.9);
-    expect(score.go).toBe(false);
+    expect(score.verdict).toBe("NO-GO");
   });
 
   it("fails a trial that calls only the other tool", () => {
@@ -87,32 +87,41 @@ describe("scoreToolProbe", () => {
     expect(score.passedTrials).toBe(1);
   });
 
-  it("leaves transport errors out of the denominator", () => {
-    // A flaky network is not a model verdict, so it must not cause NO-GO.
+  it("keeps transport errors out of the pass rate, but calls the run INCONCLUSIVE", () => {
+    // A flaky network is not a model verdict, so it neither passes nor fails
+    // a trial. A run with an unscored trial cannot reach GO or NO-GO.
     const score = scoreToolProbe([...times(19, passing()), { kind: "transport-error" }]);
     expect(score.scoredTrials).toBe(19);
     expect(score.passRate).toBe(1);
-    expect(score.go).toBe(true);
+    expect(score.verdict).toBe("INCONCLUSIVE");
+  });
+
+  it("is INCONCLUSIVE, not GO, when 19 of 20 trials hit transport errors", () => {
+    // One passing trial gives a 100% pass rate. Without the every-trial-scored
+    // rule, that alone would pass the gate.
+    const score = scoreToolProbe([passing(), ...times(19, { kind: "transport-error" })]);
+    expect(score.passRate).toBe(1);
+    expect(score.verdict).toBe("INCONCLUSIVE");
   });
 
   it("is GO at exactly 95% with median steps at the limit", () => {
     const score = scoreToolProbe([...times(19, passing(3)), noCall(3)]);
     expect(score.passRate).toBeCloseTo(0.95);
     expect(score.medianSteps).toBe(3);
-    expect(score.go).toBe(true);
+    expect(score.verdict).toBe("GO");
   });
 
   it("is NO-GO when the median trial needs more than 3 steps", () => {
     const score = scoreToolProbe(times(20, passing(4)));
     expect(score.passRate).toBe(1);
     expect(score.medianSteps).toBe(4);
-    expect(score.go).toBe(false);
+    expect(score.verdict).toBe("NO-GO");
   });
 
-  it("is NO-GO when no trial reached the model", () => {
+  it("is INCONCLUSIVE when no trial reached the model", () => {
     const score = scoreToolProbe(times(3, { kind: "transport-error" }));
     expect(score.scoredTrials).toBe(0);
     expect(score.passRate).toBe(0);
-    expect(score.go).toBe(false);
+    expect(score.verdict).toBe("INCONCLUSIVE");
   });
 });

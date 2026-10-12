@@ -6,13 +6,15 @@
  * requires one `presentQuestionnaire` call per trial. A trial passes when it
  * makes that call with a valid name and input. A trial that teaches without
  * calling, or calls only the other tool, fails. Transport errors are not a
- * model verdict, so they leave the denominator.
+ * model verdict, so they leave the denominator. But a run with any unscored
+ * trial is INCONCLUSIVE: one passing trial among 19 transport errors must not
+ * read as GO.
  */
 
 /** The call every trial must make; the probe's system prompt requires it. */
 const REQUIRED_PROBE_TOOL = "presentQuestionnaire";
 
-/** GO needs at least this share of scored trials to pass (2026-06-10 tool-calling plan). */
+/** GO needs at least this share of trials to pass (2026-06-10 tool-calling plan). */
 const GO_MIN_PASS_RATE = 0.95;
 
 /** GO needs the median completed trial to finish within this many loop steps. */
@@ -34,6 +36,9 @@ export type ProbeTrial =
   | { readonly kind: "invalid-call-thrown" }
   | { readonly kind: "transport-error" };
 
+/** The gate's outcome. INCONCLUSIVE: a transport error left a trial unscored, so rerun. */
+export type ToolProbeVerdict = "GO" | "NO-GO" | "INCONCLUSIVE";
+
 /** The gate's numbers for one probe run. */
 export interface ToolProbeScore {
   /** Trials with a model verdict: every trial except transport errors. */
@@ -42,7 +47,7 @@ export interface ToolProbeScore {
   /** passedTrials / scoredTrials; 0 when no trial was scored. */
   readonly passRate: number;
   readonly medianSteps: number;
-  readonly go: boolean;
+  readonly verdict: ToolProbeVerdict;
 }
 
 /**
@@ -57,7 +62,7 @@ function trialPassed(trial: ProbeTrial): boolean {
   );
 }
 
-/** Scores one probe run against the GO gate: pass rate per trial, plus median loop depth. */
+/** Scores one probe run against the GO gate: every trial scored, pass rate per trial, median loop depth. */
 export function scoreToolProbe(trials: readonly ProbeTrial[]): ToolProbeScore {
   const scored = trials.filter((t) => t.kind !== "transport-error");
   const passedTrials = scored.filter(trialPassed).length;
@@ -69,11 +74,13 @@ export function scoreToolProbe(trials: readonly ProbeTrial[]): ToolProbeScore {
     .sort((a, b) => a - b);
   const medianSteps = steps[Math.floor(steps.length / 2)] ?? 0;
 
-  return {
-    scoredTrials: scored.length,
-    passedTrials,
-    passRate,
-    medianSteps,
-    go: passRate >= GO_MIN_PASS_RATE && medianSteps <= GO_MAX_MEDIAN_STEPS,
-  };
+  // Missing trials could swing either way, so neither GO nor NO-GO holds.
+  const verdict: ToolProbeVerdict =
+    scored.length < trials.length
+      ? "INCONCLUSIVE"
+      : passRate >= GO_MIN_PASS_RATE && medianSteps <= GO_MAX_MEDIAN_STEPS
+        ? "GO"
+        : "NO-GO";
+
+  return { scoredTrials: scored.length, passedTrials, passRate, medianSteps, verdict };
 }

@@ -28,7 +28,7 @@ import { getLlmModel } from "@/lib/llm/provider";
 import { toCerebrasJsonSchema } from "@/lib/llm/toCerebrasJsonSchema";
 import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "@/lib/llm/cerebrasRateLimit";
 import { LLM } from "@/lib/config/tuning";
-import { scoreToolProbe, type ProbeTrial } from "./toolProbeScore";
+import { scoreToolProbe, type ProbeTrial, type ToolProbeVerdict } from "./toolProbeScore";
 
 const PROBE_SCHEMA = z.object({
   word: z.literal("OK"),
@@ -55,6 +55,13 @@ const DESC_PROBE_SCHEMA = z.object({
 
 /** Trial count for the tool-calling reliability gate (plan 2026-06-10-tool-calling). */
 const TOOL_PROBE_TRIALS = 20;
+
+/** Shell exit code per verdict. INCONCLUSIVE is non-zero so a script never reads it as GO. */
+const VERDICT_EXIT_CODE: Record<ToolProbeVerdict, number> = {
+  GO: 0,
+  "NO-GO": 1,
+  INCONCLUSIVE: 2,
+};
 
 /**
  * Recursively drop `null`-valued object properties. Tool-trained models
@@ -125,8 +132,10 @@ const probeQuestionnaireInput = jsonSchema<z.infer<typeof probeQuestionnaireSche
  * DB, no turn pipeline) and tallies valid vs malformed tool behavior.
  *
  * GO criteria: ≥95% of trials make a valid `presentQuestionnaire` call AND
- * median loop depth ≤ 3 steps. A trial with no call fails. Scoring lives in
- * `toolProbeScore.ts`; the per-call counts below are diagnostics only.
+ * median loop depth ≤ 3 steps. A trial with no call fails. A transport error
+ * makes the run INCONCLUSIVE. Exit codes: GO 0, NO-GO 1, INCONCLUSIVE 2.
+ * Scoring lives in `toolProbeScore.ts`; the per-call counts below are
+ * diagnostics only.
  *
  * Note on error surfacing (verified against installed ai@6.0.158, contra
  * the doc's generateText blurb — probe verdict finding 3): in MULTI-STEP
@@ -276,9 +285,9 @@ async function probeToolCalling(): Promise<void> {
   console.log(`steps per trial:    [${steps.join(", ")}] (median ${score.medianSteps})`);
 
   console.log(
-    `\nVERDICT: ${score.go ? "GO" : "NO-GO"} (need ≥95% of trials with a valid presentQuestionnaire call AND median steps ≤ 3)`,
+    `\nVERDICT: ${score.verdict} (need every trial scored, ≥95% with a valid presentQuestionnaire call, AND median steps ≤ 3)`,
   );
-  process.exit(score.go ? 0 : 1);
+  process.exit(VERDICT_EXIT_CODE[score.verdict]);
 }
 
 async function main(): Promise<void> {
