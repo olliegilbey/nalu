@@ -91,10 +91,11 @@ describe("proxy", () => {
     const getUser = vi.fn().mockResolvedValue({ data: { user: null } });
     // Simulate @supabase/ssr writing a session: `signInAnonymously` invokes the
     // `setAll` cookie adapter with a cookie *and* the cache-control headers the
-    // library always passes alongside auth cookies.
+    // library always passes alongside auth cookies. The library awaits
+    // `setAll` (its type allows a Promise), so the stub awaits it too.
     const signInAnonymously = vi.fn().mockImplementation(async () => {
       const cookies = mockedCreateServerClient.mock.calls[0]?.[2]?.cookies;
-      cookies?.setAll?.([{ name: "sb-access-token", value: "token", options: {} }], {
+      await cookies?.setAll?.([{ name: "sb-access-token", value: "token", options: {} }], {
         "Cache-Control": "private, no-cache, no-store, must-revalidate, max-age=0",
       });
     });
