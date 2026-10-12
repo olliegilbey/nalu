@@ -25,26 +25,32 @@ Next.js deploy — no `vercel.json` needed.
 
 Set every variable below in **Settings → Environment Variables**, scoped to
 **Production and Preview**. `src/lib/config.ts` (`getEnv`) validates the full
-set at boot — a missing or malformed var 500s the whole app.
+set on first access. `src/proxy.ts` calls it on every page request, so a
+missing or malformed var 500s the whole app.
 
-The values are identical to your local `.env.local` **with one exception**:
-`LLM_API_KEY` is a 1Password `op://` reference locally; Vercel needs the
-literal key (`op read "op://…"` to resolve it, or copy from 1Password).
+The values match your local `.env.local`. It holds plain values, with no
+`op://` references (see `justfile`).
 
-| Variable                               | Value                     | Notes                                                                    |
-| -------------------------------------- | ------------------------- | ------------------------------------------------------------------------ |
-| `NEXT_PUBLIC_SUPABASE_URL`             | from `.env.local`         | public — inlined into the client bundle                                  |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | from `.env.local`         | `sb_publishable_…`; public                                               |
-| `SUPABASE_SECRET_KEY`                  | from `.env.local`         | `sb_secret_…`; secret                                                    |
-| `LLM_BASE_URL`                         | from `.env.local`         | `https://api.cerebras.ai/v1`                                             |
-| `LLM_API_KEY`                          | **resolved Cerebras key** | not the `op://` reference — the literal value                            |
-| `LLM_MODEL`                            | from `.env.local`         | floor model deprecates 2026-05-27 — see `TODO.md`                        |
-| `DATABASE_URL`                         | from `.env.local`         | **pooled** connection (`?pgbouncer=true`) — required for serverless      |
-| `DIRECT_URL`                           | from `.env.local`         | direct connection; used only by `drizzle-kit migrate`                    |
-| `DEV_USER_ID`                          | any valid UUID            | schema-required even in prod; unused by the prod auth path (see Gotchas) |
-| `NEXT_PUBLIC_DEV_MODE`                 | `false`                   | optional — defaults to `false` if omitted                                |
+| Variable                               | Value                 | Notes                                                                    |
+| -------------------------------------- | --------------------- | ------------------------------------------------------------------------ |
+| `NEXT_PUBLIC_SUPABASE_URL`             | from `.env.local`     | public — inlined into the client bundle                                  |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | from `.env.local`     | `sb_publishable_…`; public                                               |
+| `SUPABASE_SECRET_KEY`                  | from `.env.local`     | `sb_secret_…`; secret                                                    |
+| `LLM_BASE_URL`                         | from `.env.local`     | `https://api.cerebras.ai/v1`                                             |
+| `LLM_API_KEY`                          | from `.env.local`     | Cerebras key; secret                                                     |
+| `LLM_MODEL`                            | from `.env.local`     | `gpt-oss-120b`; flags in `src/lib/llm/modelCapabilities.ts`              |
+| `DATABASE_URL`                         | from `.env.local`     | **pooled** connection (`?pgbouncer=true`) — required for serverless      |
+| `DIRECT_URL`                           | from `.env.local`     | direct connection; used only by `drizzle-kit migrate`                    |
+| `DEV_USER_ID`                          | any valid UUID        | schema-required even in prod; unused by the prod auth path (see Gotchas) |
+| `POSTHOG_KEY`                          | `phc_…` ingestion key | optional — absent disables analytics; read by `src/proxy.ts`             |
 
 `NEXT_PUBLIC_DEV_USER_ID` is **not** needed in production (dev-stub only).
+`POSTHOG_PERSONAL_API_KEY` is not needed either. Only the local
+visitor-forensics script reads it.
+
+`LLM_TELEMETRY=true` turns on OTel spans for every LLM call
+(`src/lib/llm/telemetry.ts`). It sits outside the `getEnv` schema. Spans
+export nowhere until an OTLP endpoint is configured (issue #67).
 
 ### 3. Custom domain
 
@@ -55,10 +61,8 @@ literal key (`op read "op://…"` to resolve it, or copy from 1Password).
 ## Deploying
 
 - Production deploys on every push to `main`.
-- `main` is not production-ready until both PR #12 and the anonymous-auth PR
-  land. Until then, push `feat/anonymous-auth` and use its **Vercel Preview
-  deployment** to validate on a real Vercel URL (Preview env vars must be set
-  — see step 2).
+- Other branches build **Vercel Preview deployments**. Preview needs the env
+  vars from step 2.
 
 ## Known behaviour & gotchas
 
@@ -77,10 +81,13 @@ literal key (`op read "op://…"` to resolve it, or copy from 1Password).
   server-side tRPC calls. Harmless today — every page fetches client-side, so
   the fallback is never reached — but revisit if SSR/RSC tRPC prefetching is
   added.
-- **Function timeouts.** LLM-calling tRPC procedures run as serverless
-  functions. Cerebras is fast and stays well under the default limit; if
-  scoping/teaching turns ever 504, raise `maxDuration` on
-  `src/app/api/trpc/[trpc]/route.ts`.
+- **Function timeouts.** LLM calls run in serverless functions. The
+  streaming wave-turn route
+  (`src/app/api/course/[courseId]/wave/[waveNumber]/turn/route.ts`) sets
+  `maxDuration = 300` to cover retries and rate-limiter pacing. The tRPC
+  route sets none, and scoping runs there. Exhausted transport retries can
+  hang ~2 minutes (see the `debugging-nalu-llm-pipeline` skill). If scoping
+  calls ever 504, set `maxDuration` on `src/app/api/trpc/[trpc]/route.ts`.
 
 ## Post-deploy smoke
 

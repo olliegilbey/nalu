@@ -6,20 +6,22 @@ Light reference for design choices that aren't obvious from the code. Read along
 
 Every LLM turn produces writes to up to three stores. They are not redundant: each one serves a different reader.
 
-| Store                                                                                   | Reader                                           | Shape                                                            |
-| --------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------- |
-| `context_messages`                                                                      | LLM (replay log)                                 | Append-only XML envelope strings, byte-stable for prefix caching |
-| Typed JSONB (`courses.{clarification, framework, baseline}`, `waves.chat_log`)          | UI projection + pre-LLM durability               | Structured wire shapes — `Question[]`, `Response[]`, etc.        |
-| Business-logic stores (`concepts`, `assessments`, `waves.{summary, blueprint_emitted}`) | Deterministic logic (SM-2, XP, tier advancement) | Domain-specific columns, queryable                               |
+| Store                                                                                 | Reader                                           | Shape                                                                                                            |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `context_messages`                                                                    | LLM (replay log)                                 | Append-only strings, byte-stable for prefix caching: XML-tagged user envelopes, raw model output, tool-call JSON |
+| Typed JSONB (`courses.{clarification, framework, baseline}`, `waves.chat_log`)        | UI projection + pre-LLM durability               | Structured wire shapes — `Question[]`, `Response[]`, etc.                                                        |
+| Business-logic stores (`concepts`, `assessments`, `courses.{total_xp, current_tier}`) | Deterministic logic (SM-2, XP, tier advancement) | Domain-specific columns, queryable                                                                               |
 
-At write time, the parsed model output drives **one** fan-out: render envelope → `context_messages.content`; project typed payload → typed JSONB; extract signals → business-logic stores. Single source of truth, three projections.
+At write time, one model response drives **one** fan-out: its raw text → `context_messages.content`, beside the user envelope that prompted it; its parsed payload → typed JSONB; its signals → business-logic stores. Single source of truth, three projections.
+
+A Wave close also writes `waves.summary` and `waves.blueprint_emitted`. They are a record of the close turn. No code reads them back; the next Wave reads its blueprint from its own `waves.seed_source`.
 
 ## The replay-log invariant
 
 `context_messages` is the LLM's view of history. Two rules:
 
-1. **Byte stability.** `context_messages.content` is never re-rendered from typed data. The XML envelope written on emission is the exact bytes read back on the next turn. Cerebras and OpenAI cache prefixes at the byte level; whitespace or key-ordering drift causes cache-miss-per-turn.
-2. **Atomic pairing.** A `user_message` row is only ever persisted alongside its paired `assistant_response`, written together by `executeTurn` after the LLM responds successfully. A transport failure produces **no** rows. There is never a dangling user-row without its assistant-row.
+1. **Byte stability.** `context_messages.content` is never re-rendered from typed data. The bytes written on emission are the exact bytes read back on the next turn. Cerebras and OpenAI cache prefixes at the byte level; whitespace or key-ordering drift causes cache-miss-per-turn.
+2. **Atomic pairing.** A `user_message` row is only ever persisted in one batch with the model output it produced. `executeTurn` and its streaming siblings (`executeTurnStream`, `executeToolTurnStream`) write that batch after the LLM responds. On success the batch ends in `assistant_response`. On terminal validation failure it ends in `failed_assistant_response`. A transport failure produces **no** rows. There is never a dangling user-row without its assistant-row.
 
 The atomicity rule is what makes replay trivial: walk rows in `(turn_index, seq)` order, every pair was actually seen by the LLM.
 
@@ -41,7 +43,7 @@ If `context_messages` is honest about what the LLM saw, two needs are still unme
 
 **UI projection.** `context_messages.content` is an envelope string. The UI wants `Question[]` + `Response[]` to render cards. Re-parsing envelopes is fragile and burns tokens; storing the typed shape once at write time is cleaner.
 
-**Pre-LLM durability.** When the learner submits answers, `context_messages` cannot capture them until the LLM responds (because of the atomicity rule). If the LLM transport fails, the learner's input would be lost. The solution: write the typed payload to the typed-JSONB store **before** calling the LLM. On retry, the responses survive; the LLM call re-renders the envelope from them.
+**Pre-LLM durability.** When the learner submits answers, `context_messages` cannot capture them until the LLM responds (because of the atomicity rule). If the LLM transport fails, the learner's input would be lost. The solution: write the typed payload to the typed-JSONB store **before** calling the LLM. On retry, the responses survive in typed JSONB, and the retried call renders a fresh envelope from the resubmitted input.
 
 The pattern, in any phase:
 
@@ -71,7 +73,7 @@ Scoping and wave share the **primitives** but pick different **column shapes** b
 ```text
 courses.clarification = { userMessage, questions, responses }
 courses.framework     = { userMessage, tiers, estimatedStartingTier, baselineScopeTiers }
-courses.baseline      = { userMessage, questions, responses[, gradings, startingTier, ...] }
+courses.baseline      = { userMessage, questions, responses, gradings[, immutableSummary, summarySeed, startingTier] }
 ```
 
 **Wave** — variable-cardinality turns (up to `WAVE.turnCount` per wave). One JSONB array column on `waves`:
@@ -83,18 +85,18 @@ waves.chat_log = WaveChatLogEntry[]
 
 **Shared primitives** (no duplication across phases):
 
-- `Question`, `Response` Zod schemas — `src/lib/types/jsonb.ts`
-- `Turn` union (the rendered chat-row type) — `src/lib/types/turn.ts`
-- `formatAnswers(questions, responses)` formatter — `src/lib/course/formatAnswers.ts`
+- `v3Question`, `v3Response` Zod schemas — `src/lib/types/jsonb.ts`
+- `ChatEntry` union (the rendered chat-row type) — `src/lib/types/chatEntry.ts`
+- `formatAnswers(questions, responses)` formatter — `src/lib/course/deriveChatEntries.ts`
 - `executeTurn` + envelope renderers — `src/lib/turn/`, `src/lib/prompts/`
 
 The future option of unifying scoping into the same array shape (e.g. moving its UI state into `context_messages.payload` for both phases) is **deliberately deferred**. The current split serves all current consumers and keeps per-stage queryability for scoping.
 
 ## Boundary rules
 
-- **LLM never sees XP, SM-2 internals, or tier-advancement decisions.** It emits content and assesses learner answers; deterministic code owns scoring and progression. See `CLAUDE.md` for the boundary statement.
-- **No code outside `src/lib/turn/` writes to `context_messages`.** That's the only place where the atomicity invariant can be enforced.
-- **No code outside `src/db/queries/` issues raw SQL.** Typed query functions are the trust boundary for DB I/O.
+- **LLM never sees XP, SM-2 internals, or tier-advancement decisions.** It emits content and assesses learner answers; deterministic code owns scoring and progression. See `AGENTS.md` ("The harness owns the score") for the boundary statement.
+- **No code outside `src/lib/turn/` writes to `context_messages`.** That's the only place where the atomicity invariant can be enforced. One exception: the close transactions (`persistScopingClose`, `persistWaveClose`) seed the next Wave's turn-0 `assistant_response` with the blueprint's `openingText`.
+- **No code outside `src/db/queries/` issues raw SQL.** Typed query functions are the trust boundary for DB I/O. The transactional persist files in `src/lib/course/` still break this rule; issue #46 tracks the fix.
 - **No code rebuilds the envelope from typed JSONB.** Prefix-cache stability depends on canonical envelope bytes; rerendering would silently invalidate the cache.
 
 ## Where to add a new turn-shape
@@ -103,8 +105,8 @@ If you need to introduce a new per-turn behaviour:
 
 1. Define the wire shape in `src/lib/prompts/<phase>.ts` (a Zod schema for `responseSchema`).
 2. Define the typed-JSONB shape in `src/lib/types/jsonb.ts` (reuse `v3Question`, `v3Response` where applicable).
-3. Add a `Turn` variant in `src/lib/types/turn.ts` if it needs a new rendered row.
-4. Wire the persistence in the step file (`src/lib/course/<step>.ts`) — call `executeTurn` for the envelope, then the typed-JSONB writer for UI/durability.
-5. Extend the projection (`deriveTurns.ts` or `deriveWaveTurns.ts`) to emit the new `Turn` variant.
+3. Add a `ChatEntry` variant in `src/lib/types/chatEntry.ts` if it needs a new rendered row.
+4. Wire the persistence in the turn's `src/lib/course/` function — call `executeTurn` (or a streaming sibling) for the envelope, then the typed-JSONB writer for UI/durability.
+5. Extend the projection (`deriveChatEntries.ts` or `deriveWaveChatEntries.ts`) to emit the new `ChatEntry` variant.
 
 Don't add LLM-needed fields to typed JSONB (the LLM doesn't see it). Don't add UI-only fields to envelopes (the LLM pays tokens for it).
