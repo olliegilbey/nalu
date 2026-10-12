@@ -28,13 +28,23 @@ const capital: ChoiceQuestion = {
 };
 const capitalXp = calculateMcXp(2, true);
 
-/** One-question card whose submit the test can fail. */
+const italy: ChoiceQuestion = {
+  id: "q2",
+  prompt: "Capital of Italy?",
+  options: ["Milan", "Rome", "Turin", "Naples"],
+  correctIndex: 1,
+  tier: 1,
+};
+
+/** A question card whose submit the test can fail. One question by default. */
 function Harness({
   persistKey,
   onCorrectAnswer,
+  questions = [capital],
 }: {
   readonly persistKey: string;
   readonly onCorrectAnswer: (amount: number) => void;
+  readonly questions?: ChoiceQuestion[];
 }) {
   // Same dismiss model as WaveSession: hide the submitted card by key.
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
@@ -44,7 +54,7 @@ function Harness({
         value=""
         onChange={noop}
         onSend={noop}
-        questions={persistKey === dismissedKey ? null : [capital]}
+        questions={persistKey === dismissedKey ? null : questions}
         persistKey={persistKey}
         onCorrectAnswer={onCorrectAnswer}
         onComplete={() => setDismissedKey(persistKey)}
@@ -105,6 +115,23 @@ describe("Composer MC XP award", () => {
     confirmOption("Paris");
 
     expect(award).toHaveBeenCalledTimes(2);
+  });
+
+  it("awards each correct question on a two-question card", () => {
+    const award = vi.fn();
+    render(
+      <Harness
+        persistKey="nalu:wave:w1:q:a"
+        onCorrectAnswer={award}
+        questions={[capital, italy]}
+      />,
+    );
+
+    // The key carries the question id, so q2 is not mistaken for q1.
+    confirmOption("Paris");
+    confirmOption("Rome");
+
+    expect(award.mock.calls).toEqual([[capitalXp], [calculateMcXp(1, true)]]);
   });
 
   it("awards a correct MC answered by typing its option text (#18)", () => {
