@@ -12,22 +12,22 @@ Thin rendering layer. Components get data through hooks in `src/hooks/`. Scoping
 
 `src/app/globals.css` `:root` is the source of truth for tokens and semantic roles.
 
-| Role                     | Token        | Hex     |
-| ------------------------ | ------------ | ------- |
-| Background               | sumiInk1     | #181820 |
-| Card/popover/muted bg    | sumiInk3     | #1F1F28 |
-| Secondary, border, input | sumiInk4     | #2A2A37 |
-| User message bubble      | waveBlue2    | #2D4F67 |
-| Primary, focus ring      | crystalBlue  | #7E9CD8 |
-| Foreground               | fujiWhite    | #DCD7BA |
-| Muted text               | fujiGray     | #727169 |
-| Accent                   | sakuraPink   | #D27E99 |
-| Accent gold              | carpYellow   | #E6C384 |
-| Success/correct          | springGreen  | #98BB6C |
-| Error/incorrect          | waveRed      | #E46876 |
-| Destructive              | samuraiRed   | #E82424 |
-| Warning/review           | autumnYellow | #DCA561 |
-| Accent violet            | oniViolet    | #957FB8 |
-| Accent orange            | surimiOrange | #FFA066 |
+| Role                     | Token        |
+| ------------------------ | ------------ |
+| Background               | sumiInk1     |
+| Card/popover/muted bg    | sumiInk3     |
+| Secondary, border, input | sumiInk4     |
+| User message bubble      | waveBlue2    |
+| Primary, focus ring      | crystalBlue  |
+| Foreground               | fujiWhite    |
+| Muted text               | fujiGray     |
+| Accent                   | sakuraPink   |
+| Accent gold              | carpYellow   |
+| Success/correct          | springGreen  |
+| Error/incorrect          | waveRed      |
+| Destructive              | samuraiRed   |
+| Warning/review           | autumnYellow |
+| Accent violet            | oniViolet    |
+| Accent orange            | surimiOrange |
 
 Glassmorphic, Apple liquid glass inspired. Rounded corners. Generous whitespace. Translucent panels with subtle blur.

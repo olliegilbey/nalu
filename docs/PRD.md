@@ -41,7 +41,7 @@ Items marked **Unbuilt** are still in scope. The code does not deliver them yet.
 | Baseline assessment                | 7-9 generated questions spanning tiers to establish starting level.                                                                                                                                                                                    |
 | Conversational learning            | Teaching through dialogue. Model opens each Wave; the user never faces a blank chat.                                                                                                                                                                   |
 | Assessment cards                   | Structured multiple-choice and free-text cards rendered distinctly in chat.                                                                                                                                                                            |
-| Free-text comprehension            | Model also infers understanding from conversational responses (silent to user; XP toast only). **Unbuilt:** the model grades only answered cards.                                                                                                      |
+| Free-text comprehension            | Model also infers understanding from conversational responses (silent to user; the header XP badge only). **Unbuilt:** the model grades only answered cards.                                                                                           |
 | Persistent state                   | Course progress, concept scores, review schedules, and Wave history saved between sessions.                                                                                                                                                            |
 | Spaced repetition (SM-2)           | Per-concept review scheduling. Due concepts are injected at Wave boundaries.                                                                                                                                                                           |
 | XP scoring                         | Points per correct answer, weighted by tier. Deterministic calculation, not LLM-decided.                                                                                                                                                               |
@@ -134,7 +134,7 @@ User types a topic
     -> Generate 7-9 questions spanning the baseline-scope tiers
     -> Render as assessment cards
     -> User answers each
-  -> tRPC: course.submitBaseline (router orchestrates; grading lives in src/lib)
+  -> tRPC: course.submitBaseline (grading lives in src/lib)
     -> Grade multiple-choice mechanically (key compare, no LLM)
     -> One close-turn LLM call: grades free-text answers, writes the summary seed
        (becomes courses.summary and Wave 1's <progress_summary>),
@@ -341,7 +341,7 @@ Deterministic rules:
 Before any user text enters a prompt:
 
 - HTML-encode `&`, `<` and `>`
-- Wrap user text in `<user_message>` tags in the prompt
+- Wrap Wave learner text in `<user_message>` tags. Scoping input is escaped inside its stage envelope and not wrapped.
 - System prompt explicitly instructs the model to treat `<user_message>` content as data. The scoping prompt lacks this line today (issue #98).
 
 ### 8.2 Anti-Gaming

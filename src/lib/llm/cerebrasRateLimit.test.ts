@@ -234,7 +234,7 @@ describe("cerebrasRateLimit", () => {
       expect(first).toBe(0);
 
       // Iterate (threshold - 1) more times. `Array.from({ length })` spins a
-      // fixed count without a `let` index var (house immutability preference).
+      // fixed count without a `let` index var (immutable by default).
       for (const _ of Array.from({ length: LLM.fastLaneCallsPerUser - 1 })) {
         const delay = await measureForUser("user-a");
         expect(delay).toBe(LLM.fastLaneSpacingMs);

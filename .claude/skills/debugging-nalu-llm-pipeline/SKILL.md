@@ -113,7 +113,7 @@ Read the inspector's scoping-passes table (`msgs` / `failed` / `ok` columns) ont
 
 ### Failures past clarify (framework, baseline, submitBaseline)
 
-The tree above is per-**turn**, not per-pass: one scoping pass holds every scoping turn, so it can carry 20+ rows from earlier successful turns while the _failing_ turn persisted nothing. First identify the failing **stage** from the `courses` row — `has_clarification` / `has_framework` / `has_baseline` show how far scoping got, and `status = 'scoping'` with `has_baseline = true` means the failing stage is **submitBaseline** (the scoping-_close_ step) — then apply the tree to that stage's turn.
+The tree above is per-**turn**, not per-pass: one scoping pass holds every scoping turn, so it can carry 20+ rows from earlier successful turns while the _failing_ turn persisted nothing. First identify the failing **stage** from the `courses` row — `has_clarification` / `has_framework` / `has_baseline` show how far scoping got, and `status = 'scoping'` with `has_baseline = true` means the failing stage is **submitBaseline** (the scoping-_close_ turn) — then apply the tree to that stage's turn.
 
 `submitBaseline` is special: it writes the learner's answers into the `baseline` JSONB **before** its LLM call, so `updated_at` bumps and `baseline.responses` fills even on failure. Run `inspect-db.ts --course <id>` and read its lifecycle tables:
 

@@ -474,7 +474,7 @@ describe("executeWaveClose (integration)", () => {
       await seedOpenFreeTextQuestionnaire(courseId, waveId);
       // Seed 5 passed concepts at tier 1 — bumps lastQualityScore to 4 in one
       // statement so the count meets PROGRESSION.minimumConceptsPerTier.
-      // Array+await reduce, not for/let (house immutability preference).
+      // Array+await reduce, not for/let (immutable by default).
       await [0, 1, 2, 3, 4].reduce<Promise<void>>(async (accP, i) => {
         await accP;
         await upsertConcept({ courseId, name: `passed-${i}`, tier: 1 });

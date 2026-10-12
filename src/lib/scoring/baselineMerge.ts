@@ -69,7 +69,7 @@ export function mergeAndComputeXp(params: MergeAndComputeXpParams): MergeAndComp
   }
 
   // Mechanical MC gradings are authoritative — the LLM never grades MC
-  // answers (P-AC-04, LLM-XP boundary). The wire schema still requires the
+  // answers (the harness owns the score). The wire schema still requires the
   // model to emit a grading per question id, but for MC question ids we
   // discard the model's entry and keep the mechanical one. Ordering the
   // `Map` so mechanical entries land LAST makes them win the last-write

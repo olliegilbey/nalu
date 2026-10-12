@@ -27,11 +27,11 @@ export const courses = pgTable(
       .notNull()
       .references(() => userProfiles.id, { onDelete: "cascade" }),
     topic: text("topic").notNull(),
-    // { questions: [...], answers: [...] } — populated after clarification step
+    // { questions: [...], answers: [...] } — populated after the clarify turn
     clarification: jsonb("clarification"),
-    // { topic, scope_summary, tiers: [...] } — populated after framework step
+    // { topic, scope_summary, tiers: [...] } — populated after the framework turn
     framework: jsonb("framework"),
-    // { questions: [...], answers: [...], gradings: [...] } — populated after baseline step
+    // { questions: [...], answers: [...], gradings: [...] } — populated after the baseline turn
     baseline: jsonb("baseline"),
     startingTier: integer("starting_tier"),
     currentTier: integer("current_tier").notNull().default(1),

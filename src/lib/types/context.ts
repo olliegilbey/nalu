@@ -38,7 +38,7 @@ export interface WaveSeedInputs {
 /**
  * Structured inputs to `renderContext` for a scoping pass (spec §9.1).
  *
- * Scoping is one Context across clarify → framework → baseline steps;
+ * Scoping is one Context across clarify → framework → baseline turns;
  * the system prompt frames the multi-turn discipline. Specific per-turn
  * envelopes are built by `renderStageEnvelope` in `src/lib/prompts/scoping.ts`
  * and arrive as user-role `context_messages` rows.

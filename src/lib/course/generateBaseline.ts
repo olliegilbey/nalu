@@ -21,7 +21,7 @@ export interface GenerateBaselineResult {
   readonly nextStage: "answering";
 }
 
-/** Scoping baseline step: LLM emits scoped questions, persists JSONB, returns the wire payload. */
+/** Scoping baseline turn: LLM emits scoped questions, persists JSONB, returns the wire payload. */
 export async function generateBaseline(
   params: GenerateBaselineParams,
 ): Promise<GenerateBaselineResult> {

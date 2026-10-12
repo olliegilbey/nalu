@@ -5,7 +5,7 @@ import { z } from "zod/v4";
  * `wave.submitTurn` mutation and the streaming route handler
  * (`/api/course/[courseId]/wave/[waveNumber]/turn`) — one trust boundary,
  * two transports. The discriminated payload mirrors `SubmitTurnPayload`
- * from `src/lib/course/buildLearnerInput.ts`; the lib step assumes the
+ * from `src/lib/course/buildLearnerInput.ts`; the lib function assumes the
  * shape is already validated.
  */
 export const submitTurnInputSchema = z.object({

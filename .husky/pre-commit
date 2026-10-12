@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 #
 # Pre-commit Hook for Nalu
 # Fail-fast ordering: Secrets → Lint → Typecheck → Tests → Dead code
@@ -39,9 +39,9 @@ printf "${BLUE}→ Phase 1/5: Secret scanning${NC}\n"
 # 1.1 Gitleaks (uses .gitleaks.toml if present)
 if command -v gitleaks > /dev/null 2>&1; then
   GITLEAKS_OUTPUT=$(gitleaks detect --no-banner --verbose --no-git 2>&1)
-  if ! echo "$GITLEAKS_OUTPUT" | grep -q "no leaks found"; then
+  if ! printf "%s\n" "$GITLEAKS_OUTPUT" | grep -q "no leaks found"; then
     printf "${RED}❌ Gitleaks found secrets!${NC}\n"
-    echo "$GITLEAKS_OUTPUT"
+    printf "%s\n" "$GITLEAKS_OUTPUT"
     printf "${YELLOW}Fix: remove the secret, add to .gitleaks.toml allowlist if false positive.${NC}\n"
     exit 1
   fi
@@ -65,10 +65,10 @@ fi
 if command -v trufflehog > /dev/null 2>&1; then
   STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
   if [ -n "$STAGED_FILES" ]; then
-    TRUFFLEHOG_OUTPUT=$(echo "$STAGED_FILES" | xargs trufflehog filesystem --no-update --only-verified --json 2>&1 || true)
-    if echo "$TRUFFLEHOG_OUTPUT" | grep -q '"DetectorType"'; then
+    TRUFFLEHOG_OUTPUT=$(printf "%s\n" "$STAGED_FILES" | xargs trufflehog filesystem --no-update --only-verified --json 2>&1 || true)
+    if printf "%s\n" "$TRUFFLEHOG_OUTPUT" | grep -q '"DetectorType"'; then
       printf "${RED}❌ Trufflehog found verified secrets!${NC}\n"
-      echo "$TRUFFLEHOG_OUTPUT" | grep '"DetectorType"'
+      printf "%s\n" "$TRUFFLEHOG_OUTPUT" | grep '"DetectorType"'
       exit 1
     fi
     printf "${GREEN}  ✓${NC} Trufflehog: clean\n"

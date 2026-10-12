@@ -174,7 +174,7 @@ export async function updateCourseScopingState(
     baselineJsonbSchema.parse(patch.baseline);
   }
 
-  // Build the SET fragment list functionally (no push; house immutability preference).
+  // Build the SET fragment list functionally (no push; immutable by default).
   // Spread concat to accumulate only the columns present in the patch.
   // `updated_at = NOW()` is always appended.
   const setClauses: readonly ReturnType<typeof sql>[] = [

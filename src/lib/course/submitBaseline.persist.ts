@@ -120,7 +120,7 @@ export async function persistScopingClose(
     // 3. Upsert one concept per distinct `conceptName` (case-insensitive dedup
     //    matches `upsertConcept`'s ON CONFLICT (course_id, lower(name))).
     //    Functional dedup via Map keyed on lower(name) — avoids `for`/`Set.add`
-    //    mutation (house immutability preference).
+    //    mutation (immutable by default).
     //    Map preserves first-seen order; that's deterministic for the same
     //    `merged.gradings` input.
     const uniqueConcepts = [
