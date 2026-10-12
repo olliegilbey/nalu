@@ -9,7 +9,7 @@ import { learnerEntryAlreadyAppended } from "./learnerEntryAlreadyAppended";
 import { loadWaveContext, type LoadedWaveContext } from "./loadWaveContext";
 
 /** One learner turn submission: who, which Wave, and what they sent. */
-export interface SubmitWaveTurnParams {
+export interface PrepareWaveTurnParams {
   readonly userId: string;
   readonly courseId: string;
   readonly waveNumber: number;
@@ -41,7 +41,7 @@ export interface PreparedWaveTurn {
  * Ownership is enforced via `loadWaveContext` → `getCourseById`, which surfaces
  * cross-user reads as NOT_FOUND (info-leak-safe).
  */
-export async function prepareWaveTurn(params: SubmitWaveTurnParams): Promise<PreparedWaveTurn> {
+export async function prepareWaveTurn(params: PrepareWaveTurnParams): Promise<PreparedWaveTurn> {
   // (1) Resolve waveNumber → wave row id. The natural URL addressing scheme
   // is (courseId, waveNumber); this resolver maps it once, here.
   const wave = await getWaveByCourseAndNumber(params.courseId, params.waveNumber);

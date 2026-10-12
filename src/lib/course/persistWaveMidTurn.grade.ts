@@ -12,7 +12,7 @@ import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
  * ceiling. Not re-exported via the barrel; only `persistWaveMidTurn` calls it.
  */
 
-/** One row of the graded-signals output. Matches `WaveMidTurnResult.gradedSignals[]`. */
+/** One row of the graded-signals output. Matches `PersistWaveMidTurnResult.gradedSignals[]`. */
 export interface GradedRow {
   readonly kind: GradedSignal["kind"];
   readonly questionId: string;

@@ -1,5 +1,5 @@
 import type { InferUITools, UIMessage } from "ai";
-import type { WaveMidTurnResult } from "@/lib/course/persistWaveMidTurn";
+import type { PersistWaveMidTurnResult } from "@/lib/course/persistWaveMidTurn";
 import type { ExecuteWaveCloseResult } from "@/lib/course/executeWaveClose";
 import type { WaveMidTurnAgentTools } from "@/lib/agents/waveMidTurnAgent";
 
@@ -8,7 +8,7 @@ import type { WaveMidTurnAgentTools } from "@/lib/agents/waveMidTurnAgent";
  * `data-turn-result` part at the end of the stream. `kind` tells a mid-turn
  * result from a close-turn result.
  */
-export type WaveTurnResultData = WaveMidTurnResult | ExecuteWaveCloseResult;
+export type WaveTurnResultData = PersistWaveMidTurnResult | ExecuteWaveCloseResult;
 
 /**
  * Non-transient marker part written before a validation retry re-streams.

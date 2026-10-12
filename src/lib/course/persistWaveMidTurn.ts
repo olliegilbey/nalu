@@ -19,7 +19,7 @@ import {
  * `data-turn-result` part. The discriminator `kind` puts mid-turn and
  * close-turn results under one union (`WaveTurnResultData`).
  */
-export interface WaveMidTurnResult {
+export interface PersistWaveMidTurnResult {
   readonly kind: "mid-turn";
   /** Turns remaining AFTER this turn completes (echoed back to the caller). */
   readonly turnsRemaining: number;
@@ -48,7 +48,7 @@ export async function persistWaveMidTurn(params: {
   readonly parsed: WaveMidTurn;
   readonly payload: SubmitTurnPayload;
   readonly turnsRemaining: number;
-}): Promise<WaveMidTurnResult> {
+}): Promise<PersistWaveMidTurnResult> {
   const { ctx, parsed, payload, turnsRemaining } = params;
 
   // Resolve open questionnaire once for grading-time lookups (correctLetterMap)

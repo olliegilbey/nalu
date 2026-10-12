@@ -8,7 +8,7 @@ import { buildWaveSeed } from "./buildWaveSeed";
 import {
   prepareWaveTurn,
   type PreparedWaveTurn,
-  type SubmitWaveTurnParams,
+  type PrepareWaveTurnParams,
 } from "./prepareWaveTurn";
 import { persistWaveMidTurn } from "./persistWaveMidTurn";
 import { executeWaveClose } from "./executeWaveClose";
@@ -37,7 +37,7 @@ import { findJsonProseLeakIndex, validateWaveMidToolTurn } from "./waveMidTurnGa
  * The streaming route ignores the return value.
  */
 export async function streamWaveTurn(
-  params: SubmitWaveTurnParams,
+  params: PrepareWaveTurnParams,
   writer: UIMessageStreamWriter<WaveTurnUIMessage>,
 ): Promise<LlmUsage | null> {
   const prep: PreparedWaveTurn = await prepareWaveTurn(params);

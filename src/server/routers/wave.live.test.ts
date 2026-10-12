@@ -44,7 +44,7 @@ import type { BaselineAnswer } from "@/lib/course/submitBaseline";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 import { WAVE } from "@/lib/config/tuning";
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
-import type { SubmitWaveTurnParams } from "@/lib/course/prepareWaveTurn";
+import type { PrepareWaveTurnParams } from "@/lib/course/prepareWaveTurn";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import type { WaveTurnResultData, WaveTurnUIMessage } from "@/lib/types/waveStream";
 
@@ -66,7 +66,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * `data-turn-result` payload. The writer records parts; this smoke reads
  * only the final result. The ALS wrap mirrors the route (rate-limiter lane).
  */
-async function runWaveTurn(params: SubmitWaveTurnParams): Promise<WaveTurnResultData> {
+async function runWaveTurn(params: PrepareWaveTurnParams): Promise<WaveTurnResultData> {
   const parts: { type: string; data?: unknown }[] = [];
   const writer = {
     write: (part: { type: string; data?: unknown }) => {
