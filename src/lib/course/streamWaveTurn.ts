@@ -30,7 +30,7 @@ import type { SubmitWaveTurnParams } from "./submitWaveTurn";
  *
  * Close turns (turnsRemaining === 0) run BLOCKING inside the stream —
  * only the final data part is emitted. Streaming close prose is a noted
- * follow-up (TODO.md).
+ * follow-up (issue #48).
  *
  * Returns the mid-turn loop's summed token usage (null on close turns) so
  * the live smoke can log token cost per turn — the Task-5 injection A/B

@@ -3,7 +3,7 @@ name: review-pr
 description: Fetch PR review comments from CodeRabbit/Codex, triage, fix valid issues, reply to threads, and resolve. Use when addressing automated PR review feedback.
 user-invocable: true
 argument-hint: [pr-number]
-allowed-tools: Bash(gh *) Bash(git *) Bash(npx *) Read Edit Grep Glob TaskCreate TaskUpdate
+allowed-tools: Bash(gh *) Bash(git *) Bash(just *) Read Edit Grep Glob TaskCreate TaskUpdate
 ---
 
 # Address PR Review Comments
@@ -51,7 +51,7 @@ For each comment classified as "Fix":
 
 1. Read the file at the referenced path/line
 2. Make the minimal change to address the feedback
-3. Run tests (`npx vitest run`) to verify nothing breaks
+3. Run unit tests (`just test`) to verify nothing breaks
 4. Mark the task as completed
 
 Group related fixes into a single commit when possible.
@@ -60,11 +60,10 @@ Group related fixes into a single commit when possible.
 
 Fixes must be pushed **before** replying to or resolving any comments. This ensures the code backs up your replies.
 
-1. Run the full test suite: `npx vitest run`
-2. Run typecheck: `npx tsc --noEmit`
-3. Stage only the files you changed
-4. Commit with message format: `fix: address PR review feedback from [reviewer names]`
-5. Push to the current branch
+1. Run `just check`. It mirrors CI: format, lint, typecheck, unit, integration (needs Docker), dead code.
+2. Stage only the files you changed
+3. Commit with message format: `fix(<scope>): address PR review feedback from [reviewer names]`
+4. Push to the current branch
 
 ## Step 5: Reply to each comment thread
 

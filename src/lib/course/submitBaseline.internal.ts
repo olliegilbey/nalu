@@ -19,8 +19,8 @@ export type GradingEntry = z.infer<typeof baselineGradingSchema>;
 /**
  * Wire shape for a single answered-question item handed to the batch grader.
  * Free-text and freetext-escape-on-MC answers share this shape; `viaEscape`
- * distinguishes them so the grader prompt can flag the contextual prefix
- * (P-AC-03). Lives here rather than `prompts/` because it's the lib-side
+ * distinguishes them so the grader prompt can flag the contextual prefix.
+ * Lives here rather than `prompts/` because it's the lib-side
  * grader-input contract, not a prompt-text concern.
  */
 export interface BaselineEvaluationItem {
@@ -71,7 +71,7 @@ export type QuestionSplit =
   | { readonly kind: "llm"; readonly qid: string; readonly item: BaselineEvaluationItem };
 
 /**
- * Deterministic MC grading (P-AC-04). A correct click maps to
+ * Deterministic MC grading. A correct click maps to
  * `BASELINE.mcCorrectQuality`; an incorrect click to
  * `BASELINE.mcIncorrectQuality`. `verdict` follows from
  * `quality >= PROGRESSION.passingQualityScore`, consistent with

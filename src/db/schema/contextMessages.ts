@@ -26,7 +26,8 @@ import { scopingPasses } from "./scopingPasses";
  * reuse the same `turn_index` (spec §9.2).
  *
  * `seq` orders rows within a turn (e.g. user_message@0,
- * harness_turn_counter@1, harness_review_block@2 on a Wave's final turn).
+ * failed_assistant_response@1, harness_retry_directive@2, assistant_response@3
+ * on a turn that retried once).
  *
  * `role` is restricted to 'user' | 'assistant' | 'tool'. 'system' is
  * intentionally excluded — system content is rendered from seed columns at

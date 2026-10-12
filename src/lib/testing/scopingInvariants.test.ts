@@ -5,8 +5,8 @@
  * the live test gives no signal. These fixture-based tests confirm each
  * invariant actually fires.
  *
- * Strategy: build a broken fixture via spread (never mutate — immutable-data
- * rule), assert the helper throws.
+ * Strategy: build a broken fixture via spread (never mutate), assert the
+ * helper throws.
  */
 
 import { describe, it, expect } from "vitest";

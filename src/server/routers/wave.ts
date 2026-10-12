@@ -10,7 +10,7 @@ import { submitTurnInputSchema } from "./waveTurnInput";
  * `getState` for restoration, `submitTurn` for per-turn input. Trust boundary —
  * `src/lib/course/submitWaveTurn` enforces §7.4 mutual-exclusion (chat-text vs
  * questionnaire-answers must match the wave's open-questionnaire state). The
- * router is a pure interceptor: Zod-validate input → delegate to the lib step →
+ * router is a pure interceptor: Zod-validate input → delegate to the `src/lib/course/` function →
  * return the typed payload. No business logic, no LLM calls, no persistence.
  */
 export const waveRouter = router({

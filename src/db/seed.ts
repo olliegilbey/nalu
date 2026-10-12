@@ -7,9 +7,10 @@ import { getEnv } from "@/lib/config";
 /**
  * Idempotent dev-user seed.
  *
- * Inserts a `user_profiles` row at `DEV_USER_ID`. When auth wires up the
- * row also needs an `auth.users` entry — that's handled by `supabase db
- * reset` via SQL fixtures, out of scope for this milestone.
+ * Inserts a `user_profiles` row at `DEV_USER_ID`. Outside production the
+ * client claims this user via the `x-dev-user-id` header
+ * (`src/server/requestUser.ts`). Production users are anonymous Supabase
+ * users minted in `src/proxy.ts`; `ensureUserProfile` creates their rows.
  *
  * Re-running is safe: `ON CONFLICT DO NOTHING` on the primary key means a
  * second invocation is a no-op (the existing row's `display_name` is NOT

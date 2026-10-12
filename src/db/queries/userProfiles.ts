@@ -48,9 +48,7 @@ export async function ensureDevUser(id: string, displayName = "Dev User"): Promi
  * Using a SQL expression (`total_xp + amount`) rather than a read-modify-write
  * avoids lost-update races when multiple assessments complete concurrently.
  *
- * Raw SQL workaround: `db.update().set()` crashes `eslint-plugin-functional/
- * immutable-data` (requires typed-linting parserOptions, not configured).
- * `db.execute(sql\`...\`)` produces identical SQL and avoids the plugin issue.
+ * Raw `db.execute(sql\`...\`)` UPDATE, per house style.
  *
  * @throws {NotFoundError} if `id` does not match any row.
  */

@@ -127,9 +127,8 @@ describe("waves constraints", () => {
       const courseId = await seedCourse(db);
       const [first] = await db.insert(waves).values(waveBase(courseId, 1)).returning();
       if (!first) throw new Error("missing wave row");
-      // Raw SQL avoids drizzle's update().set() — `.set()` trips eslint-plugin-functional's
-      // immutable-data rule, which lacks parserOptions for typed linting in this repo.
-      // The actual DB write is identical.
+      // Raw SQL UPDATE rather than drizzle's update().set() — house style for
+      // updates (see src/db/queries/CLAUDE.md). The actual DB write is identical.
       // Must set closed_at alongside status='closed' to satisfy waves_closed_at_consistency.
       await db.execute(
         sql`UPDATE waves SET status = 'closed', closed_at = now() WHERE id = ${first.id}`,

@@ -331,7 +331,7 @@ describe("course.clarify", () => {
         "failed_assistant_response",
       ]);
 
-      // courses.clarification must still be null — lib step never persisted.
+      // courses.clarification must still be null — lib function never persisted.
       const courseRows = await db.select().from(courses);
       expect(courseRows).toHaveLength(1);
       expect(courseRows[0]?.clarification).toBeNull();

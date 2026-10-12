@@ -1,106 +1,72 @@
-# This is NOT the Next.js you know
+# AGENTS.md
 
-Next.js 16.2 has breaking changes vs your training data — APIs, conventions, and file structure may differ. Read `node_modules/next/dist/docs/` before writing Next.js code. Heed deprecation notices.
+Nalu is an AI-powered learning platform: "Duolingo for anything." A learner picks any topic. Nalu scopes it, then teaches it in Waves, with spaced repetition and XP.
+You work here with Ollie as a pair. Ollie is the product manager, learning modern LLM and agent engineering through this build. You are the engineer and the teacher. You agree each build path with Ollie first. You explain the reasoning as you go. You bring software fundamentals, SDLC, and your knowledge from having read _AI Engineering_ - Huyen, _Make It Stick_ - Brown, Roediger and McDaniel, and _Domain-Driven Design_ - Evans. Apply these principles freely. Nalu is the new project you have joined: understand its conventions and build accordingly, before the hooks catch you.
+Next.js 16.2 breaks from your training data. Read `node_modules/next/dist/docs/` before writing Next.js code. Heed its deprecation notices. Where the work leans on another library or LLM technique, WebSearch its current documentation and industry examples before relying on its behaviour. Brief a subagent when the research runs long.
 
-# Nalu
+## What done looks like
 
-AI-powered learning platform. "Duolingo for anything." Spec: `docs/PRD.md`. Glossary: `docs/UBIQUITOUS_LANGUAGE.md`.
+Nalu feels like a patient, knowledgeable tutor. It follows the learner's curiosity, probes before it answers, and checks understanding along the way. Structure and gamification wrap that conversational core. The code is beautiful the way simple things are - obvious in its logic.
 
-## Some thoughts from the author (Ollie)
+## Principles
 
-The following is a letter from me to you, the agent. We are building this together.
-This is also a learning project for me throughout, to understand modern agentic and LLM implementations.
-To this end, think of me as the product manager who is learning about the project as we go, and you as the engineer - you are my colleague for planning and implementing, and also my teacher for my own understanding of the application and the principles.
+Ordered by weight. When two collide, the earlier one wins.
 
-Quick glossary of relevant parties in this document:
+- **The harness owns the score.** The LLM generates content and evaluates answers. Deterministic code owns XP, progression, SM-2 scheduling, and tier advancement. The LLM never sees XP, so no learner can talk their way to a higher score.
+- **KISS.** Build the smallest correct thing. Prefer boring, readable code. Abstract at the third concrete use case. Handle only the states that can occur. Add options only when asked.
+- **The Context is append-only.** The LLM is stateless. The Harness loads the Context from the DB and sends it as-is, so the prefix stays byte-stable and the prompt cache stays warm. Read `docs/ARCHITECTURE.md` before touching persistence or a prompt renderer.
+- **Each concern has one home.** Business logic lives in `src/lib/`; pure algorithms sit in `scoring/` and `spaced-repetition/`. Routers (`src/server/routers/`) are tRPC transport. Components and routers call into `src/lib/` and hold no logic. Prompts live in `src/lib/prompts/`. LLM calls go through `src/lib/llm/`; tool-loop turns run agents built in `src/lib/agents/`. DB access goes through `src/db/queries/`. Tunables live in `src/lib/config/tuning.ts`. The env schema lives in `src/lib/config.ts`. Types live in `src/lib/types/`.
+- **Assert what we do not control.** Zod parses every trust boundary: LLM responses, API inputs, and DB reads.
+- **Docs land with the feature.** Most `src/` areas carry a `CLAUDE.md`. Read it before editing there. Update it in the same commit as the change. A doc that names a retired symbol misleads every agent after you.
 
-- _you_ - the agent reading this document and working on Nalu directly.
-- _me_/_we_/_us_ - the humans contributing to Nalu - although this is likely just me (Ollie) for now.
-- _users_ - the people who will be learning using Nalu to help them have an exciting learning experience.
+## How we work
 
-## Nomenclature
+- **Agree the path first.** Explain intent before code. State your assumptions. When a request reads two ways, present both and ask. When a simpler path exists, say so and push back.
+- **Surgical changes.** Every changed line traces to the request. Match the surrounding style. Remove the orphans your change creates. Report unrelated dead code to Ollie and leave it in place.
+- **Done is verified.** Turn each task into a check before you start: a bug fix opens with a red test, and a refactor keeps the suite green before and after. For multi-step work, state a short plan with a verify step for each step. Loop until every check is green.
+- **Follow-ups go to GitHub Issues.** Open one with `gh issue create`: name the files, the concern, and the trigger that promotes it to work. Label it `tech-debt`, `deferred`, or `needs-decision`. A PR that lands the work says `Fixes #N`.
 
-- **LLM** is stateless. Harness loads the current **Context** (append-only message list) from DB and sends as-is — never rebuilt from components per turn.
-- **Router** (`src/server/routers/`) = tRPC transport. **Step** (`src/lib/course/*.ts`) = per-turn heuristic. Pure algorithms live in `src/lib/{scoring,spaced-repetition,progression}/`.
-- **Wave** = fixed-length teaching unit (`WAVE.turnCount` turns, default 10). Harness-enforced, not model-decided. Called a "lesson" in LLM-facing prompts.
-- **Turn** = one full learner↔model exchange (NOT one message — that's a ChatEntry; one LLM API call is a Step). See the disambiguation block in `docs/UBIQUITOUS_LANGUAGE.md`.
+## Guardrails
 
-## Turn principle
+- Commit through the hooks. A red hook means fix the root cause. CI re-runs every check anyway. `--no-verify`, `HUSKY=0`, and weakening a hook are off-limits.
+- Ollie merges to `main`. Agents work on a branch and stop at a green PR.
+- Tests run in three tiers. `*.test.ts` is unit-only, with no DB: `just test`. `*.integration.test.ts` boots a Postgres testcontainer: `just test-int`. `*.live.test.ts` calls real Cerebras and costs real tokens: `just smoke`, opt-in only.
+- Learner content and answer keys stay server-side. Telemetry records no LLM inputs or outputs. The client receives no plaintext answer key before the learner submits. Wave turns hold this line; scoping does not yet (issue #58). `src/lib/llm/CLAUDE.md` and `src/lib/course/CLAUDE.md` name the mechanisms.
 
-User → Router → LLM → Router → User. Scoping = one Context. Teaching = one Context per Wave. Each turn the Harness appends `<turns_remaining>N</turns_remaining>`; on a Wave's final turn it also appends `<due_for_review>…</due_for_review>` and requests the next Wave's blueprint in the same structured response.
+## Great code here
 
-## Stack
+The stack: Next.js 16.2 (App Router, Turbopack), TypeScript strict, tRPC v11, Zod v4, Tailwind v4, Drizzle on Supabase Postgres, Vercel AI SDK v6 over an OpenAI-compatible API (Cerebras), Vitest. `bun` is the package manager. Write code that passes the gates by construction:
 
-Next.js 16.2 (App Router, Turbopack), TypeScript strict, tRPC v11, Zod, Tailwind, Supabase (Postgres + Auth), Vitest, Playwright. LLM via OpenAI-compatible API (Cerebras free tier). Uses **bun**, not npm.
+- Typed end to end. Where a type is open, take `unknown` and narrow it.
+- Failures are explicit. Throw a typed error or return one; nothing is swallowed.
+- Immutable by default: `readonly`, `const`, spread. Reach for `let` or mutation when the immutable form would be contorted, such as singleton caches, rate-limiter clocks, and test-fixture slots. Make the need obvious from context.
+- Small files, one concern each, near 200 lines. Split when one grows uncomfortable. Tests sit beside their code and are exempt from the limit.
+- TDD the pure algorithms: SM-2, XP, and tier advancement. The red test comes first. Write tests that fail when the logic flips.
+- Names are explicit and boring: `calculateXPForAssessment`.
+- TSDoc on every export: one terse line for the next agent, saying what the symbol is in context. Self-evident shapes skip `@param` and `@returns`. `src/lib/types/jsonb.ts` shows the style for Zod-inferred types.
+- Comment more than usual. Comments explain why; during MVP they also explain what, so Ollie can review fast.
+- Pre-commit blocks on secrets, format, lint errors, types, unit tests, and dead code. Lint warnings are recall triggers for what agents forget: missing TSDoc, magic numbers in scoring and SR code, floating promises (`void` or `await` them), `any`, and `ai` or `drizzle-orm` imports outside their homes. Fix a warning when it fires. A legitimate exception keeps its warning, so review sees it.
+- Knip blocks dead code. Delete it or wire it up. A knip ignore is narrow, per file, and names the runtime use the analyzer cannot see.
+- `just check` mirrors CI exactly. Green before any push. `just --list` shows every recipe.
 
-## Commands
+## Style
 
-- `just dev` — dev server
-- `just test` / `just test-watch` — vitest
-- `just lint` — ESLint
-- `just typecheck` — tsc --noEmit
-- `just check` — all of the above
-- `just build` — production build
+- Short sentences. Active voice. One instruction per sentence. Glossary terms. This register is the codebase's memory surface; use it in code comments, docs, and PRs. When messaging Ollie, lead with the bottom line. Keep it speed-readable. Teach the reasoning behind each decision. Plan mode runs longer where precision needs it.
+- Commits: Conventional Commits with a scope, `type(scope): message`, in lowercase. commitlint holds the allowed types.
+- Branches: `type/short-kebab-name` (`feat/visitor-forensics`, `fix/composer-ungraded-mc`).
 
-## Architecture Boundaries
+## Words
 
-Each subdirectory has its own `CLAUDE.md` with detail. Top-level rules:
+`docs/UBIQUITOUS_LANGUAGE.md` owns the vocabulary. Read it before naming or renaming a concept. The terms agents confuse most:
 
-- Business logic → `src/lib/` only. Components and routers contain zero logic.
-- Prompts → `src/lib/prompts/` only.
-- LLM calls → `src/lib/llm/` only (`provider.ts` + `generate.ts`). No direct `ai` SDK imports elsewhere.
-- DB access → `src/db/queries/` only. No raw SQL elsewhere.
-- Tunables → `src/lib/config/tuning.ts`. No magic numbers in scoring/SR/progression code.
-- Types → `src/lib/types/`. Runtime constants → `src/lib/config/`.
+- **Turn**: one full learner↔model exchange. One rendered message is a ChatEntry. One LLM API call is a Step; a Turn spans one or more.
+- **Wave**: a teaching unit of `WAVE.turnCount` turns, enforced by the Harness. LLM-facing prompts call it a "lesson".
+- **Context**: the message list for one phase. Scoping has one Context. Each Wave opens a fresh one, seeded from the prior Wave's final-turn blueprint; scoping seeds Wave 1.
+- **Harness**: this repo's deterministic layer around the LLM. Each turn it appends `<turns_remaining>N</turns_remaining>`. On a Wave's final turn it appends `<concepts_for_next_wave>` and requires the next Wave's blueprint. It injects SM-2 due concepts only at Wave boundaries: `<due_for_review>` in the Wave's system prompt, and the final-turn block. Mid-Wave, the model can fetch them itself with the read-only lookup tools.
 
-## Core Design Principle
+## Docs
 
-LLM generates content and evaluates answers. **Deterministic code** controls XP, progression, SM-2 scheduling, and tier advancement. The LLM never sees XP and cannot influence scoring.
-
-## Conventions
-
-You are expected to follow the conventions below. Optimise for what these are protecting against.
-
-Automated gates split into two tiers:
-
-**Errors** (block commit / merge) — silent, expensive, or compounding if missed: secrets, broken types, broken tests, stray `console.log`, committed `.only`, format drift, and dead code (knip).
-
-**Warnings** (visible, non-blocking) — backstop recall triggers for things agents reliably forget. Currently: missing TSDoc on exports, magic numbers in `src/lib/scoring/` & `src/lib/spaced-repetition/`, floating promises (use `void` or `await`), `any` usage, `ai` SDK or `drizzle-orm` imports outside their architectural homes. Warnings are cheap to fix when they fire — when you see one, address it. If a violation is a legitimate exception, leave the warning rather than disabling the rule; future review will catch it.
-
-Everything else below is convention — agents are expected to follow it, but it's not gate-kept by tooling. Don't optimize for lint compliance; optimize for what these are protecting against.
-
-If knip flags an export as dead, fix it (delete or wire up) — don't blanket-ignore in `knip.json`. Narrow per-file justifications are fine when an export is genuinely used at runtime in a way the static analyzer can't see.
-
-- TypeScript strict. No `any`. Prefer `readonly`, `const`, spread over mutation. `let` is fine when there's no clean alternative (singleton caches, rate-limiter clocks, test-fixture slots) — make the necessity obvious from context, not via lint-disables.
-- Functional style by default: prefer immutable patterns. Reach for `let`/mutation when the alternative would be contorted, not as a default.
-- Zod at all trust boundaries (LLM responses, API inputs, DB reads).
-- TSDoc on every export. One line, terse, agent-targeted. Skim `src/lib/llm/tagVocabulary.ts` for the Zod-inferred-type style. No filler, no `@param`/`@returns` on self-evident shapes. The docs exist so the next agent knows what a symbol is _in context_ without reading the body.
-- Aim for ~200 lines/file. Split when it gets uncomfortable. Tests exempt.
-- Colocated tests (`foo.test.ts` next to `foo.ts`).
-- TDD for pure algorithms (SM-2, XP, tier advancement). Pre-commit runs the full unit suite; CI re-runs unit + integration. A red test blocks the commit, intentionally.
-- Naming explicit and boring (`calculateXPForAssessment`, not `calcXP`).
-- Comments explain WHY; during MVP also explain WHAT for reviewer speed.
-- No premature abstraction until 3 concrete use cases.
-
-## Key Flows
-
-Full detail in `docs/PRD.md`.
-
-1. **Scoping**: topic → clarify → framework → baseline → grade + `startingContext` + starting tier.
-2. **Teaching**: sequence of Waves; each seeded from the prior Wave's final-turn blueprint (Wave 1 from scoping). Within a Wave: teach → assess → SM-2 update → XP award.
-3. **Spaced repetition**: SM-2 due concepts injected at Wave boundaries only — Wave start (static prompt) and final turn (for next Wave's blueprint). Append-only within a Wave.
-
-## Workflow
-
-1. Pull latest docs of frameworks/packages before writing code. The things we are building are often not in your training data, so you need to defer to the docs.
-2. Explain intent before code (brief comment or message).
-3. Run tests before committing.
-4. **Never bypass git hooks** (no `--no-verify`, no `HUSKY=0`, no hook deletion). Fix the root cause; CI re-runs every check anyway.
-5. Be concise in messages; plan mode can be verbose for unambiguity.
-
-- Note any TODOs in TODO.md when they arise for future agents to work on.
-- Use TDD frequently when appropriate
-- Comment code extensively - more than usual.
-- As an AI model, your training data likely doesn't contain extensive AI platform development - use web search extensively to discover best practices where appropriate, and where understanding the status quo and modern techniques is helpful.
-- RTFM
-- Read the docs for anything that could contain helpful information or examples.
+- `docs/PRD.md` - the product spec. Read its section before changing a flow, a scoring rule, or a prompt contract.
+- `docs/DEPLOY.md` - production on Vercel and Supabase. Read it before changing env vars, auth, or production migrations.
+- `docs/superpowers/specs/` and `plans/` - dated design records. Read the one for an area before redesigning it; the code wins where they disagree.
+- `docs/status/` - dated session handoffs. Read the latest to resume work.

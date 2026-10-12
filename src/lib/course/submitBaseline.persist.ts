@@ -43,8 +43,9 @@ export interface PersistScopingCloseResult {
  * Every `courses` write uses `tx.execute` so they roll back atomically.
  * Inlined raw SQL for `courses` (not via `setCourseStartingState` /
  * `incrementCourseXp`) is required because those helpers use the `db`
- * singleton and would deadlock against the transaction's row lock — this
- * file is the one place outside `src/db/queries/` permitted to issue raw SQL.
+ * singleton and would deadlock against the transaction's row lock. This
+ * file, `persistWaveClose.ts`, and `persistWaveClose.helpers.ts` are the
+ * places outside `src/db/queries/` that issue raw SQL.
  *
  * `upsertConcept` / `openWave` / `appendMessage` are passed `tx` so their
  * writes participate in the same transaction — a unique-violation on Wave 1
@@ -119,7 +120,7 @@ export async function persistScopingClose(
     // 3. Upsert one concept per distinct `conceptName` (case-insensitive dedup
     //    matches `upsertConcept`'s ON CONFLICT (course_id, lower(name))).
     //    Functional dedup via Map keyed on lower(name) — avoids `for`/`Set.add`
-    //    mutation that `eslint-plugin-functional/immutable-data` rejects.
+    //    mutation (immutable by default).
     //    Map preserves first-seen order; that's deterministic for the same
     //    `merged.gradings` input.
     const uniqueConcepts = [

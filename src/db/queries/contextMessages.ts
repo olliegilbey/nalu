@@ -187,7 +187,7 @@ export async function getMessagesForScopingPass(
  * ever gains parallel write paths, this function must move to a SERIALIZABLE
  * transaction or be replaced by a Postgres sequence per parent.
  *
- * See docs/TODO.md → "getNextTurnIndex race".
+ * Hardening is deferred (issue #53).
  */
 export async function getNextTurnIndex(parent: ContextParent): Promise<number> {
   // Build the WHERE clause from the discriminated union.

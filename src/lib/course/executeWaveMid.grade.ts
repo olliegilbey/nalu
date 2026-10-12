@@ -62,8 +62,7 @@ export async function gradePriorAnswers(
   const questionnaireId = params.openQuestionnaireId;
   // Sequential async-reduce — writes hit the same tx handle; concurrency
   // complicates error attribution without buying anything. Reduce (rather
-  // than for-of with a push-builder) keeps `eslint-plugin-functional` happy
-  // without an escape-hatch comment.
+  // than for-of with a push-builder) keeps the accumulator immutable.
   const accumulated: readonly GradedRow[] = await params.signals.reduce<
     Promise<readonly GradedRow[]>
   >(async (accP, sig) => {

@@ -24,13 +24,13 @@ import { appRouter } from "./index";
  *   2. Lib-layer return values surface to the caller.
  *   3. Lib-layer `TRPCError` codes (NOT_FOUND, PRECONDITION_FAILED) propagate.
  *
- * Heavy branch coverage of the lib steps already lives in
+ * Heavy branch coverage of the lib functions already lives in
  * `submitWaveTurn.integration.test.ts`, `executeWaveMid.integration.test.ts`,
  * `executeWaveClose.integration.test.ts`, and `getWaveState.integration.test.ts`.
  * The tests below avoid duplicating that — we exercise the router seams only.
  *
  * Mock surface: `executeTurn` is mocked per-test via `vi.spyOn` so we don't
- * call the real LLM. Everything else (Postgres testcontainer, lib steps, DB
+ * call the real LLM. Everything else (Postgres testcontainer, lib functions, DB
  * queries) is real. The mock persists user + assistant rows so downstream
  * grading + turn-counting code observes production-shaped context_messages.
  */
@@ -476,7 +476,7 @@ describe("wave.submitTurn", () => {
       // (the UI/turn-budget source) — post-T11 `submitWaveTurn` derives
       // `consumed` from chat_log, so close-turn dispatch requires the
       // chat_log user entries to be present.
-      // Array.reduce instead of for/let to satisfy `functional/no-let`.
+      // Array.reduce instead of for/let (immutable by default).
       await Array.from({ length: WAVE.turnCount - 1 }).reduce<Promise<void>>(
         async (accP, _v, i) => {
           await accP;

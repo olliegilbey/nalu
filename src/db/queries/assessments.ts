@@ -108,7 +108,7 @@ export async function recordAssessment(params: RecordAssessmentParams): Promise<
   // invariant; same shape as `getNextTurnIndex` in `contextMessages.ts`). If
   // parallel write paths are ever added (sub-agent harness, multi-device
   // replay), wrap this read+insert in a SERIALIZABLE transaction or take an
-  // advisory lock keyed by `waveId`. Tracked in `docs/TODO.md`.
+  // advisory lock keyed by `waveId` (issue #53).
   const [maxRow] = await db
     .select({ maxTurn: max(assessments.turnIndex) })
     .from(assessments)
@@ -198,9 +198,8 @@ export interface UpdateAssessmentGradingParams {
 /**
  * Persist grading results onto an existing assessment row.
  *
- * Uses raw SQL UPDATE to avoid `eslint-plugin-functional/immutable-data` crash
- * on `db.update().set()`. Re-fetches via a typed Drizzle select so the
- * returned row goes through Drizzle's camelCase mapping (mirrors the
+ * Uses raw SQL UPDATE (house style). Re-fetches via a typed Drizzle select
+ * so the returned row goes through Drizzle's camelCase mapping (mirrors the
  * `updateConceptSm2` pattern).
  *
  * Optional `tx` opts the UPDATE and re-fetch into a caller's transaction.

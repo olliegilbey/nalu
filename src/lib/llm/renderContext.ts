@@ -124,7 +124,7 @@ export function renderContext(
 
   // Second-pass: for each turn_index, slice out its rows and apply the
   // per-group filter. Using filter() keeps the fold pure and avoids
-  // mutating a Map (which would trip functional/immutable-data).
+  // mutating a Map.
   const filtered: readonly ContextMessage[] = turnIndexesInOrder.flatMap((turnIndex) => {
     const group = messages.filter((r) => r.turnIndex === turnIndex);
     const hasSuccess = group.some((r) => r.kind === "assistant_response");

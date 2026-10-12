@@ -19,10 +19,11 @@ Think Duolingo, but for anything.
 - **Framework**: Next.js 16.2 (App Router, Turbopack)
 - **Language**: TypeScript (strict mode)
 - **API**: tRPC v11
-- **Database**: Supabase (PostgreSQL)
-- **LLM**: OpenAI-compatible API (provider-swappable)
-- **Styling**: Tailwind CSS
-- **Testing**: Vitest + Playwright
+- **Database**: Supabase (PostgreSQL) via Drizzle ORM
+- **Auth**: Supabase anonymous auth (production)
+- **LLM**: Vercel AI SDK v6 over an OpenAI-compatible API (provider-swappable). Default: Cerebras `gpt-oss-120b`.
+- **Styling**: Tailwind CSS v4
+- **Testing**: Vitest (unit, integration against a Postgres testcontainer, opt-in live smoke)
 - **Task runner**: [just](https://github.com/casey/just)
 - **Package manager**: [Bun](https://bun.sh)
 
@@ -30,10 +31,11 @@ Think Duolingo, but for anything.
 
 ### Prerequisites
 
-- [Bun](https://bun.sh) >= 1.0
+- [Bun](https://bun.sh) 1.3.11 (pinned in `.bun-version`)
 - [just](https://github.com/casey/just) (`brew install just`)
 - Supabase account (free tier)
 - Cerebras API key (free tier) or any OpenAI-compatible provider
+- Docker, for integration tests (they boot a Postgres testcontainer)
 
 ### Setup
 
@@ -45,6 +47,9 @@ bun install
 # Environment
 cp .env.local.example .env.local
 # Fill in your Supabase and LLM provider credentials
+
+# Database schema
+just db-migrate   # applies src/db/migrations/ via DIRECT_URL
 ```
 
 ### Run
@@ -53,7 +58,7 @@ cp .env.local.example .env.local
 just dev        # Start dev server (localhost:3000)
 ```
 
-Dev mode (`NEXT_PUBLIC_DEV_MODE=true` in `.env.local`) enables auto-login and skips auth for rapid testing.
+`just dev` runs with `NODE_ENV=development`, which stubs auth. The client sends an `x-dev-user-id` header (`NEXT_PUBLIC_DEV_USER_ID`), and the server trusts it (`src/server/requestUser.ts`). Production signs each visitor in as a Supabase anonymous user instead (`src/proxy.ts`). See `docs/DEPLOY.md`.
 
 ## Development
 
@@ -61,11 +66,14 @@ Dev mode (`NEXT_PUBLIC_DEV_MODE=true` in `.env.local`) enables auto-login and sk
 just dev        # Start dev server
 just test       # Run unit tests
 just test-watch # Run tests in watch mode
+just test-int   # Run integration tests (needs Docker)
 just lint       # Lint
 just typecheck  # Type check
-just check      # Run all checks (lint + typecheck + test)
+just check      # Run all checks; mirrors CI (format + lint + typecheck + unit + integration + dead code)
 just build      # Production build
 ```
+
+`just --list` shows every recipe.
 
 ## Project Structure
 
@@ -78,22 +86,25 @@ src/
     prompts/        # All prompt templates (single source of truth)
     spaced-repetition/  # SM-2 algorithm and review scheduling
     scoring/        # XP calculation and tier advancement
-    course/         # Course state management
+    course/         # Scoping and Wave flows, one LLM-backed operation per file
+    turn/           # Per-turn runner: load Context, call LLM, validate, persist
+    agents/         # Tool-loop agent for streamed mid-Wave turns
+    config/         # Tunables (tuning.ts)
     types/          # Shared TypeScript types
   components/       # React UI (thin rendering layer)
+  db/schema/        # Drizzle schema, one file per table
   db/queries/       # Typed database access
-tests/
-  e2e/              # Playwright end-to-end tests
-  fixtures/         # Mock LLM responses
 docs/
   PRD.md            # Full product requirements document
 ```
 
-Architecture rule: all business logic lives in `src/lib/`. Components render. Routers orchestrate. See `CLAUDE.md` for the full set of conventions.
+Tests sit beside their source (`foo.test.ts`, `foo.integration.test.ts`).
+
+Architecture rule: all business logic lives in `src/lib/`. Components render. Routers are tRPC transport. See `AGENTS.md` for the full set of conventions.
 
 ## Design
 
-Visual identity inspired by Hokusai's Great Wave off Kanagawa. Glassmorphic UI with a clean, modern feel. Learning blocks are called "waves." The XP progress bar is wave-shaped.
+Visual identity inspired by Hokusai's Great Wave off Kanagawa. Glassmorphic UI with a clean, modern feel. Learning blocks are called "waves." XP shows as a badge in the chat header; a wave-shaped XP bar is planned (`docs/PRD.md`).
 
 ## Licence
 

@@ -45,8 +45,9 @@ One row per pageview: `when`, `where` (geo), `ip`, `org` (ASN + owner), `from`
 (referrer), `device`, plus `topic` / `got` from the joined course. It prints a
 ready-to-paste `dump-chat.ts` line for any visitor who started one.
 
-`--ip` / `--distinct` ignore the time window and drop the `app=nalu` filter, so a
-visitor who also hit the other app in the shared PostHog project still shows up.
+`--ip` / `--distinct` ignore the time window and drop the `app=nalu` and
+`source=production` filters, so a visitor who also hit the other app in the shared
+PostHog project still shows up.
 
 ## Step 2 — Read the result
 
@@ -72,9 +73,10 @@ visitor who also hit the other app in the shared PostHog project still shows up.
 - **Reading a residential IP as an employer.** An ISP-owned IP is someone's home
   broadband. It identifies the ISP and nothing else. Organisation attribution only
   works when the IP belongs to the organisation itself.
-- **Trusting a bot list.** `device` tests for the _absence_ of `Mozilla/` rather than
-  a list of known bot names — a `last25-scanner` deploy probe sailed through a
-  `bot|crawl|spider` list and read as human. Never "improve" this into a name list.
+- **Trusting a bot list.** `device` keys on the _absence_ of `Mozilla/`; a list of
+  known bot names only backs it up — a `last25-scanner` deploy probe sailed through
+  a `bot|crawl|spider` list and read as human. Never replace the `Mozilla/` test
+  with a name list.
 - **Expecting anything before 2026-07-08.** Server-side capture landed then. Earlier
   visits have no event and are unrecoverable (Vercel runtime logs are ~1h retention).
 - **Using the project id in the API path.** The key's scope is `query:read` with no

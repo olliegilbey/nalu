@@ -15,9 +15,7 @@ import { NotFoundError } from "./errors";
  * Zod on every read so consumers receive typed, safe payloads instead of
  * raw `unknown`.
  *
- * All UPDATE statements use raw `db.execute(sql\`...\`)` because
- * `db.update().set()` crashes `eslint-plugin-functional/immutable-data` —
- * a known lint-config gap confirmed in D3. The generated SQL is identical.
+ * All UPDATE statements use raw `db.execute(sql\`...\`)` (house style).
  */
 
 /** Re-exported domain error for missing query targets — single import site for callers. */
@@ -141,7 +139,7 @@ export async function listCoursesByUser(userId: string): Promise<readonly Course
 }
 
 // ---------------------------------------------------------------------------
-// Writes — all via raw SQL to avoid immutable-data lint crash
+// Writes — all via raw SQL (house style)
 // ---------------------------------------------------------------------------
 
 /**
@@ -176,7 +174,7 @@ export async function updateCourseScopingState(
     baselineJsonbSchema.parse(patch.baseline);
   }
 
-  // Build the SET fragment list functionally (no push — immutable-data rule).
+  // Build the SET fragment list functionally (no push; immutable by default).
   // Spread concat to accumulate only the columns present in the patch.
   // `updated_at = NOW()` is always appended.
   const setClauses: readonly ReturnType<typeof sql>[] = [
@@ -269,7 +267,7 @@ export async function setCourseStartingState(
 /**
  * Overwrite the cumulative course summary.
  *
- * Called after every Wave close when the LLM emits `<course_summary_update>`.
+ * No production caller today: Wave close writes `waves.summary`, not this.
  * `summary_updated_at` is stamped so callers can detect staleness.
  * Throws `NotFoundError` explicitly at the UPDATE site (rather than only via
  * the re-fetch) so the failure is visible at the mutation rather than the read.

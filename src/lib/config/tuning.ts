@@ -124,7 +124,7 @@ export const SCOPING = {
  * tiers and exhaust the context window on the next turn.
  */
 export const FRAMEWORK = {
-  // PRD §3: "3-8 tiers generated per topic (flexible by breadth)".
+  // PRD §2.1: "3-8 tiers generated per topic (flexible by breadth)".
   minTiers: 3,
   maxTiers: 8,
   // PRD §4.1: each tier carries example concepts; baseline generation
@@ -174,8 +174,8 @@ export const BASELINE = {
   // Three probes per in-scope tier give enough signal to detect friction
   // without fatiguing the learner before teaching even begins.
   questionsPerTier: 3,
-  // PRD §4.1 UX simulation: MC cards are always four options. No "Not sure"
-  // button — the freetext escape is the non-engagement affordance (P-AC-02).
+  // MC cards are always four options. No "Not sure"
+  // button — the freetext escape is the non-engagement affordance.
   mcOptionCount: 4,
   // Defence-in-depth character caps. Mirrors FRAMEWORK's rationale: prompt
   // asks for concise fields, schema refuses pathological output.
@@ -184,7 +184,7 @@ export const BASELINE = {
   optionMaxChars: 200,
   rubricMaxChars: 400,
   rationaleMaxChars: 400,
-  // Mechanical MC scoring (P-AC-04). A correct click maps to q=4 ("correct
+  // Mechanical MC scoring. A correct click maps to q=4 ("correct
   // and clear") — reserve q=5 for free-text answers where the learner has
   // room to demonstrate teach-level depth. An incorrect click maps to q=1
   // ("wrong with clear misunderstanding"): clicking is engagement, so not

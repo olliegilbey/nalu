@@ -151,7 +151,7 @@ export async function prepareWaveTurn(params: SubmitWaveTurnParams): Promise<Pre
   // (`generateFramework.ts`, `submitBaseline.persist.ts`) — if the LLM
   // transport fails, the learner's submission survives in `waves.chat_log`
   // (the UI source of truth) even though `context_messages` (the LLM replay
-  // log) only gains its `user_message` / `card_answer` rows on LLM success
+  // log) only gains its `user_message` row on LLM success
   // inside executeTurn's atomic batch. The two stores intentionally diverge
   // on the failure path — see docs/ARCHITECTURE.md ("per-store atomicity").
   // No enclosing tx here (the executeWaveMid / executeWaveClose tx hasn't

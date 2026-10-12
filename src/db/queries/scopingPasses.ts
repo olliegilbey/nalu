@@ -6,9 +6,7 @@ import { NotFoundError } from "./errors";
 /**
  * `scopingPasses` query surface (spec §3.3).
  *
- * All UPDATE statements use raw `db.execute(sql\`...\`)` to avoid the
- * `eslint-plugin-functional/immutable-data` crash on `db.update().set()` —
- * confirmed pattern from D3/D4.
+ * All UPDATE statements use raw `db.execute(sql\`...\`)` (house style).
  */
 
 /** Re-exported domain error for missing query targets — single import site for callers. */

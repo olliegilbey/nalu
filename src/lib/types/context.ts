@@ -26,7 +26,7 @@ export interface WaveSeedInputs {
   /** = waves.tier — the tier this Wave is teaching at. */
   readonly currentTier: number;
   readonly customInstructions: string | null;
-  /** courses.summary at Wave-open time; null for first Wave. */
+  /** Live `courses.summary`, read each turn. Set at scoping close, so non-null in practice. */
   readonly courseSummary: string | null;
   /** Used to render the static <due_for_review> block at Wave start. */
   readonly dueConcepts: DueConceptsSnapshot;
@@ -38,7 +38,7 @@ export interface WaveSeedInputs {
 /**
  * Structured inputs to `renderContext` for a scoping pass (spec §9.1).
  *
- * Scoping is one Context across clarify → framework → baseline steps;
+ * Scoping is one Context across clarify → framework → baseline turns;
  * the system prompt frames the multi-turn discipline. Specific per-turn
  * envelopes are built by `renderStageEnvelope` in `src/lib/prompts/scoping.ts`
  * and arrive as user-role `context_messages` rows.

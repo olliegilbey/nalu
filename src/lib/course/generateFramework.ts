@@ -24,7 +24,7 @@ export interface GenerateFrameworkResult {
   readonly nextStage: "baseline";
 }
 
-/** Scoping framework step: validates clarify answers, emits tier ladder, persists JSONB. */
+/** Scoping framework turn: validates clarify answers, emits tier ladder, persists JSONB. */
 export async function generateFramework(
   params: GenerateFrameworkParams,
 ): Promise<GenerateFrameworkResult> {

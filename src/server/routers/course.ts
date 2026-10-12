@@ -31,7 +31,7 @@ export const courseRouter = router({
       z.object({
         courseId: z.string().uuid(),
         // `responses` replaces the old flat `answers` array — each entry carries
-        // the questionId so the step can reconstruct Q/A pairs for the LLM.
+        // the questionId so the lib function can reconstruct Q/A pairs for the LLM.
         responses: z
           .array(
             z.object({
@@ -64,7 +64,7 @@ export const courseRouter = router({
       z.object({
         courseId: z.string().uuid(),
         // Discriminated union mirrors the `BaselineAnswer` type exported by
-        // the lib step. The router is the trust boundary; the lib step
+        // the lib function. The router is the trust boundary; the lib function
         // assumes the shape is already validated.
         answers: z
           .array(

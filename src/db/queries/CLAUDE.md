@@ -1,7 +1,17 @@
 # src/db/queries
 
-Only place SQL leaves `src/db/`. Callers (tRPC procedures, scripts) import
-from `@/db/queries` (the barrel) — never reach into individual files.
+Intended home for all SQL. Callers import either the barrel `@/db/queries`
+(`src/server/trpc.ts`, the wave-turn route) or a single module such as
+`@/db/queries/courses` (all of `src/lib/`).
+
+Exceptions: the transactional persist files in `src/lib/course/` open
+`db.transaction` themselves. `submitBaseline.persist.ts`,
+`persistWaveClose.ts`, and `persistWaveClose.helpers.ts` write `courses`
+with raw ``tx.execute(sql`UPDATE courses ...`)``, because the `courses`
+helpers here take no `tx` and run on the `db` singleton.
+`persistWaveMidTurn.ts` runs a Drizzle select on `context_messages`
+inside its transaction. Issue #46 tracks moving these into tx-aware query
+helpers.
 
 Modules (one per domain): `userProfiles.ts`, `courses.ts`, `scopingPasses.ts`,
 `waves.ts`, `contextMessages.ts`, `concepts.ts`, `assessments.ts`. Shared
@@ -10,7 +20,8 @@ Modules (one per domain): `userProfiles.ts`, `courses.ts`, `scopingPasses.ts`,
 Conventions:
 
 - Typed param objects in; `readonly` Drizzle row types out.
-- Single-row reads that can miss throw `NotFoundError(entity, id)`.
+- Single-row reads by id throw `NotFoundError(entity, id)`. Lookups that
+  can legitimately find nothing (e.g. `getOpenWaveByCourse`) return `null`.
 - JSONB columns are re-validated on read via Zod row-guards
   (e.g. `waveRowGuard`, `courseRowGuard`) — never trust the DB shape.
 - Parameterised SQL only — interpolate values via `${value}` inside
@@ -18,15 +29,16 @@ Conventions:
 
 Drizzle gotchas (codified after hitting them):
 
-- `db.update().set()` is BANNED — `eslint-plugin-functional/immutable-data`
-  crashes the build on it. Use raw ``db.execute(sql`UPDATE ...`)`` with
-  parameterised values, then re-fetch via a typed `.select()` so Drizzle's
-  camelCase mapping applies. Do not use `RETURNING *` — it returns
+- Updates use raw ``db.execute(sql`UPDATE ...`)`` with parameterised
+  values, then re-fetch via a typed `.select()` so Drizzle's camelCase
+  mapping applies. This is house style. Its original reason (an
+  `eslint-plugin-functional` crash on `db.update().set()`) is gone; that
+  plugin was removed. Do not use `RETURNING *` on raw SQL — it returns
   snake_case keys that don't match the inferred row type.
 - `db.insert().onConflictDoUpdate` rejects a SQL-expression `target` in
   this Drizzle version (`escapeName` only accepts column references). For
   functional-index targets (e.g. `lower(name)`), use raw
-  `INSERT ... ON CONFLICT (...) DO UPDATE` plus a Drizzle re-fetch on the
-  natural key.
+  `INSERT ... ON CONFLICT (...) DO NOTHING` plus a Drizzle re-fetch on the
+  natural key (`upsertConcept`).
 - `Date` values in raw SQL: pass `.toISOString()`.
 - Atomic counter bumps: raw `SET col = col + 1` (avoids read-modify-write).

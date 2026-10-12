@@ -75,7 +75,7 @@ export async function proxy(request: NextRequest, event?: NextFetchEvent): Promi
       // see "no user" and mint their own account; the losing cookie is
       // discarded, leaving a stray session-less `auth.users` row. Harmless
       // (the surviving cookie wins, `ensureUserProfile` is idempotent). See
-      // TODO.md for the periodic-cleanup follow-up.
+      // issue #55 for the periodic-cleanup follow-up.
       const signIn = await supabase.auth.signInAnonymously();
       userId = signIn?.data?.user?.id ?? undefined;
     }

@@ -14,13 +14,9 @@ const envSchema = z.object({
   LLM_BASE_URL: z.url(),
   LLM_API_KEY: z.string().min(1),
   LLM_MODEL: z.string().min(1),
-  NEXT_PUBLIC_DEV_MODE: z
-    .enum(["true", "false"])
-    .default("false")
-    .transform((v) => v === "true"),
   DATABASE_URL: z.url(), // pooled, used by app at runtime
   DIRECT_URL: z.url(), // direct, used by drizzle-kit migrate
-  DEV_USER_ID: z.uuid(), // seed user id; refs auth.users when auth lands
+  DEV_USER_ID: z.uuid(), // seed user id; the dev-stub user outside production
   // PostHog EU project public key (phc_…). Server-side only — proxy.ts captures
   // a $pageview per visit. Optional: absent = analytics disabled.
   POSTHOG_KEY: z.string().optional(),
