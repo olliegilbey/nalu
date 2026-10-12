@@ -26,6 +26,7 @@ describe("capturePageview", () => {
       "x-forwarded-for": "203.0.113.7, 70.41.3.18",
       referer: "https://www.linkedin.com/",
       "user-agent": "Mozilla/5.0",
+      "accept-language": "da-DK,da;q=0.9,en;q=0.8",
     });
 
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -43,6 +44,7 @@ describe("capturePageview", () => {
     expect(body.properties.$ip).toBe("203.0.113.7");
     expect(body.properties.$referrer).toBe("https://www.linkedin.com/");
     expect(body.properties.$raw_user_agent).toBe("Mozilla/5.0");
+    expect(body.properties.accept_language).toBe("da-DK,da;q=0.9,en;q=0.8");
     expect(body.properties.utm_source).toBe("cv");
     // The waitUntil task must be time-bounded — a hung request would keep the
     // invocation alive with no benefit.

@@ -3,7 +3,7 @@
  * A `.claude/` tool, never imported by the app; SELECT-only DB reads + read-only HTTP.
  *
  * Joins the three sources the app already produces:
- *   - PostHog `$pageview` events — geo, `client_ip`, referrer, user agent
+ *   - PostHog `$pageview` events — geo, `client_ip`, referrer, user agent, `accept_language`
  *   - `whois` (Team Cymru) — the IP's ASN and owning org
  *   - the production DB — `courses`, joined on `distinct_id` = `courses.user_id`
  *
@@ -86,7 +86,7 @@ const where = ipArg
 
 const hogql = `SELECT timestamp, distinct_id, properties.app, properties.$pathname,
     properties.client_ip, properties.$geoip_city_name, properties.$geoip_country_name,
-    properties.$referrer, properties.$raw_user_agent
+    properties.$referrer, properties.$raw_user_agent, properties.accept_language
   FROM events WHERE ${where} ORDER BY timestamp DESC LIMIT 200`;
 
 // `@current` resolves the project from the key itself — required, because the key's
@@ -114,6 +114,7 @@ type Event = {
   country: string | null;
   referrer: string | null;
   userAgent: string | null;
+  acceptLanguage: string | null;
 };
 const payload = (await response.json()) as { results?: unknown[][] };
 const events: Event[] = (payload.results ?? []).map((r) => ({
@@ -126,6 +127,7 @@ const events: Event[] = (payload.results ?? []).map((r) => ({
   country: (r[6] as string) ?? null,
   referrer: (r[7] as string) ?? null,
   userAgent: (r[8] as string) ?? null,
+  acceptLanguage: (r[9] as string) ?? null,
 }));
 
 // --- enrichment ------------------------------------------------------------
@@ -247,6 +249,7 @@ if (events.length === 0) {
       org: e.ip ? preview(lookupAsn(e.ip), 44) : "-",
       from: refDomain(e.referrer),
       device: device(e.userAgent),
+      lang: e.acceptLanguage ? preview(e.acceptLanguage, 20) : "-",
       topic: courseByUser.get(e.distinctId)?.topic ?? "-",
       got: courseByUser.get(e.distinctId)?.status ?? "-",
     })),

@@ -20,6 +20,7 @@ export interface PageviewInput {
   readonly url: string;
   readonly referrer: string | null;
   readonly userAgent: string | null;
+  readonly acceptLanguage: string | null;
   readonly ip: string | null;
   readonly timestamp: string;
   /** `env`/`source`/`is_server` — `source` separates preview from production. */
@@ -46,7 +47,17 @@ function hostnameOf(url: string): string | null {
 
 /** Build a PostHog `$pageview` event from pre-extracted request values. */
 export function buildPageviewEvent(input: PageviewInput): PageviewEvent {
-  const { apiKey, distinctId, url, referrer, userAgent, ip, timestamp, environment } = input;
+  const {
+    apiKey,
+    distinctId,
+    url,
+    referrer,
+    userAgent,
+    acceptLanguage,
+    ip,
+    timestamp,
+    environment,
+  } = input;
   const parsed = (() => {
     try {
       return new URL(url);
@@ -82,6 +93,9 @@ export function buildPageviewEvent(input: PageviewInput): PageviewEvent {
     properties.client_ip = ip;
   }
   if (userAgent) properties.$raw_user_agent = userAgent;
+  // Browser locale (e.g. `da-DK`). It survives a VPN or datacenter IP, where
+  // the GeoIP city is the exit node's, so it cross-checks geo.
+  if (acceptLanguage) properties.accept_language = acceptLanguage;
   if (referrer) {
     properties.$referrer = referrer;
     const domain = hostnameOf(referrer);

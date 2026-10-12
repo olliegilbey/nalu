@@ -1,6 +1,6 @@
 ---
 name: nalu-visitor-forensics
-description: Use when asked who visited Nalu in production and where they came from — "someone hit the site", "who was that visitor", "where is this traffic from", "was that a real person or a bot", "what did that visitor actually do". Recovers a production visitor's IP, geo, owning organisation (ASN), referrer and device from PostHog, and joins them to the course they started in the DB. Also use to check whether recent prod traffic is human or automated.
+description: Use when asked who visited Nalu in production and where they came from — "someone hit the site", "who was that visitor", "where is this traffic from", "was that a real person or a bot", "what did that visitor actually do". Recovers a production visitor's IP, geo, owning organisation (ASN), referrer, device and browser language from PostHog, and joins them to the course they started in the DB. Also use to check whether recent prod traffic is human or automated.
 ---
 
 # Nalu Visitor Forensics
@@ -42,8 +42,9 @@ bun .claude/skills/nalu-visitor-forensics/inspect-visitor.ts --distinct <uuid>  
 ```
 
 One row per pageview: `when`, `where` (geo), `ip`, `org` (ASN + owner), `from`
-(referrer), `device`, plus `topic` / `got` from the joined course. It prints a
-ready-to-paste `dump-chat.ts` line for any visitor who started one.
+(referrer), `device`, `lang` (Accept-Language), plus `topic` / `got` from the joined
+course. It prints a ready-to-paste `dump-chat.ts` line for any visitor who started
+one.
 
 `--ip` / `--distinct` ignore the time window and drop the `app=nalu` and
 `source=production` filters, so a visitor who also hit the other app in the shared
@@ -58,6 +59,7 @@ PostHog project still shows up.
 | `topic`  | `-` means they never started a course — landed and left.                                                                                                 |
 | `got`    | `scoping` = started but never finished. `active` = got through baseline.                                                                                 |
 | `from`   | The referring domain. `direct` = typed/pasted, no referrer.                                                                                              |
+| `lang`   | The browser's Accept-Language, e.g. `da-DK,da;q=0.9`. It survives a VPN, so check it against a datacenter `org`'s geo. `-` = header absent.              |
 
 **A course row is proof of a human.** `course.clarify` only fires from a real React
 `onClick` → tRPC mutation, so a link-unfurl bot or crawler can never create one.

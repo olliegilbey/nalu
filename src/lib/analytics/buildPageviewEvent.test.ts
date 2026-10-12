@@ -7,6 +7,7 @@ const base = {
   url: "https://nalu.ollie.gg/course/abc",
   referrer: null,
   userAgent: null,
+  acceptLanguage: null,
   ip: null,
   timestamp: "2026-07-03T00:00:00.000Z",
   environment: { env: "production", source: "preview", is_server: true } as const,
@@ -57,6 +58,15 @@ describe("buildPageviewEvent", () => {
   it("passes the raw user agent for PostHog to derive browser/OS/device", () => {
     const e = buildPageviewEvent({ ...base, userAgent: "Mozilla/5.0 (X11)" });
     expect(e.properties.$raw_user_agent).toBe("Mozilla/5.0 (X11)");
+  });
+
+  it("passes the raw Accept-Language header for locale signal", () => {
+    const e = buildPageviewEvent({ ...base, acceptLanguage: "da-DK,da;q=0.9,en;q=0.8" });
+    expect(e.properties.accept_language).toBe("da-DK,da;q=0.9,en;q=0.8");
+  });
+
+  it("omits accept_language when the header is absent", () => {
+    expect(buildPageviewEvent(base).properties.accept_language).toBeUndefined();
   });
 
   it("extracts only utm_* params from the URL query, ignoring others", () => {

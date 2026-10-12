@@ -39,6 +39,7 @@ export async function capturePageview(input: {
       url: input.url,
       referrer: input.headers.get("referer"),
       userAgent: input.headers.get("user-agent"),
+      acceptLanguage: input.headers.get("accept-language"),
       ip: clientIp(input.headers),
       timestamp: input.timestamp,
       environment: getServerEnvironmentContext(),
