@@ -144,6 +144,7 @@ User types a topic
     -> Upsert baseline concepts at default SM-2 state; award XP
     -> UPDATE courses SET current_tier, starting_tier, baseline, summary, total_xp, status = 'active'
     -> Open Wave 1 from the blueprint; seed its opening text
+    -> Close the scoping pass (stamps scoping_passes.closed_at)
     -> Return { userMessage, wave1Id, freeTextXpAwarded }
   -> Transition to Wave 1
 ```

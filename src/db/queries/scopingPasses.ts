@@ -1,5 +1,5 @@
 import { eq, and, sql } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { scopingPasses, type ScopingPass } from "@/db/schema";
 import { NotFoundError } from "./errors";
 
@@ -97,13 +97,17 @@ function isUniqueViolation(err: unknown): boolean {
  * 0-row UPDATE is ambiguous (id unknown vs already closed), so we re-fetch
  * unconditionally to distinguish. If the row exists in any status, return it.
  *
+ * Optional `tx` opts the UPDATE and re-fetch into a caller's transaction, so
+ * the scoping close (`persistScopingClose`) rolls the close back with it.
+ *
  * @throws {NotFoundError} if `id` does not match any row at all.
  */
-export async function closeScopingPass(id: string): Promise<ScopingPass> {
+export async function closeScopingPass(id: string, tx?: DbOrTx): Promise<ScopingPass> {
+  const exec = tx ?? db;
   // COALESCE makes closed_at sticky — calling closeScopingPass twice returns
   // the same closed_at both times. Status-scope prevents accidentally
   // re-stamping a row that some other path closed.
-  await db.execute(
+  await exec.execute(
     sql`UPDATE scoping_passes
         SET status = 'closed',
             closed_at = COALESCE(closed_at, NOW())
@@ -112,7 +116,7 @@ export async function closeScopingPass(id: string): Promise<ScopingPass> {
   );
   // 0-row UPDATE is ambiguous: id unknown OR already closed. Re-fetch to
   // distinguish. If the row exists at all, return it (idempotent close).
-  const [row] = await db.select().from(scopingPasses).where(eq(scopingPasses.id, id));
+  const [row] = await exec.select().from(scopingPasses).where(eq(scopingPasses.id, id));
   if (!row) throw new NotFoundError("scoping_pass", id);
   return row;
 }

@@ -4,6 +4,7 @@ import { WAVE } from "@/lib/config/tuning";
 import { upsertConcept } from "@/db/queries/concepts";
 import { appendWaveChatLog, openWave } from "@/db/queries/waves";
 import { appendMessage } from "@/db/queries/contextMessages";
+import { closeScopingPass } from "@/db/queries/scopingPasses";
 import {
   baselineClosedJsonbSchema,
   baselineQuestionsJsonbSchema,
@@ -22,6 +23,8 @@ import type { MergeAndComputeXpResult } from "@/lib/scoring/baselineMerge";
  */
 export interface PersistScopingCloseParams {
   readonly courseId: string;
+  /** The course's open scoping pass. It closes in this transaction. */
+  readonly scopingPassId: string;
   readonly parsed: ScopingCloseTurn;
   readonly merged: MergeAndComputeXpResult;
 }
@@ -36,9 +39,9 @@ export interface PersistScopingCloseResult {
  *
  * Order (top → bottom): re-fetch baseline+framework → widen baseline JSONB →
  * upsert concepts → open Wave 1 → append opening message → flip status +
- * tiers + summary → bump total_xp. Status flip is last so any failure leaves
- * the course in `scoping`, retryable by the orchestrator (status-gated
- * idempotency — NOT enforced here).
+ * tiers + summary → close the scoping pass → bump total_xp. Status flip is
+ * last so any failure leaves the course in `scoping`, retryable by the
+ * orchestrator (status-gated idempotency — NOT enforced here).
  *
  * Every `courses` write uses `tx.execute` so they roll back atomically.
  * Inlined raw SQL for `courses` (not via `setCourseStartingState` /
@@ -56,7 +59,7 @@ export interface PersistScopingCloseResult {
 export async function persistScopingClose(
   params: PersistScopingCloseParams,
 ): Promise<PersistScopingCloseResult> {
-  const { courseId, parsed, merged } = params;
+  const { courseId, scopingPassId, parsed, merged } = params;
 
   // App-layer invariants mirroring `setCourseStartingState` — surface a clear
   // error at the boundary rather than as a Postgres CHECK violation.
@@ -200,6 +203,10 @@ export async function persistScopingClose(
       WHERE id = ${courseId}
         AND status = 'scoping'
     `);
+
+    // 6b. Close the scoping pass: its Context is done, and Wave 1 opened a
+    //     fresh one. Same tx, so a rollback leaves the pass open for a retry.
+    await closeScopingPass(scopingPassId, tx);
 
     // 7. Bump total_xp atomically. Skip the call when totalXp is 0 — saves a
     //    round-trip on no-XP runs (e.g. all q=0 gradings).

@@ -95,7 +95,7 @@ The first set of turns when a User starts a new course: clarify â†’ framework â†
 
 ## Scoping pass
 
-One row in `scoping_passes`, opened by the first scoping call (`ensureOpenScopingPass`). Parents all scoping `context_messages` rows (clarification turns, framework turns, baseline turns). The structured outputs live on `courses.{clarification, framework, baseline}`, not on the pass. Teaching reads only those outputs; the scoping message history never reaches a Wave prompt (P-ON-05). The rows are kept, not deleted. Nothing closes the pass today: `closeScopingPass` has no caller (issue #99).
+One row in `scoping_passes`, opened by the first scoping call (`ensureOpenScopingPass`). Parents all scoping `context_messages` rows (clarification turns, framework turns, baseline turns). The structured outputs live on `courses.{clarification, framework, baseline}`, not on the pass. Teaching reads only those outputs; the scoping message history never reaches a Wave prompt (P-ON-05). The rows are kept, not deleted. The scoping-close transaction (`persistScopingClose`) closes the pass and stamps `closed_at`.
 
 ## Seed source
 

@@ -239,6 +239,7 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
   try {
     const { wave1Id } = await persistScopingClose({
       courseId: course.id,
+      scopingPassId: pass.id,
       parsed,
       merged,
     });

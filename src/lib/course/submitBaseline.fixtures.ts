@@ -100,10 +100,11 @@ export const MERGED: MergeAndComputeXpResult = {
 
 /**
  * Seed user, create a course in scoping with framework + baseline already
- * populated, then run the test body against the same `withTestDb` instance.
+ * populated and its scoping pass open, then run the test body against the
+ * same `withTestDb` instance.
  */
 export async function seedScopingCourseAndRun(
-  fn: (courseId: string) => Promise<void>,
+  fn: (courseId: string, scopingPassId: string) => Promise<void>,
 ): Promise<void> {
   return withTestDb(async (db) => {
     await db.insert(userProfiles).values({ id: USER_ID, displayName: "U" });
@@ -112,7 +113,8 @@ export async function seedScopingCourseAndRun(
       framework: FRAMEWORK,
       baseline: BASELINE_PRECLOSE,
     });
-    await fn(course.id);
+    const pass = await ensureOpenScopingPass(course.id);
+    await fn(course.id, pass.id);
   });
 }
 
