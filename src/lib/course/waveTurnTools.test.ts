@@ -109,6 +109,66 @@ describe("buildWaveMidTurnTools", () => {
     expect(collector.signals[1]?.kind).toBe("free-text");
   });
 
+  // Issue #61: a second signal for a staged questionId would grade the same
+  // assessment row twice and double the client's XP floater. The first
+  // grading stands; the duplicate is refused in a model-readable result.
+  it("refuses a duplicate questionId within one call; the first signal stands", async () => {
+    const { tools, collector } = buildWaveMidTurnTools();
+    const result = await tools.recordComprehensionSignals.execute!(
+      {
+        signals: [
+          {
+            kind: "free-text",
+            questionId: "q1",
+            verdict: "correct",
+            qualityScore: 5,
+            rationale: "Nailed it. Extend next.",
+          },
+          {
+            kind: "free-text",
+            questionId: "q1",
+            verdict: "incorrect",
+            qualityScore: 0,
+            rationale: "Second take. Should be refused.",
+          },
+        ],
+      },
+      callOpts("c1"),
+    );
+    expect(collector.signals).toHaveLength(1);
+    expect(collector.signals[0]).toMatchObject({ questionId: "q1", verdict: "correct" });
+    expect(result).toMatchObject({ recorded: 1, rejected: ["q1"] });
+  });
+
+  it("refuses a questionId already staged by an earlier call", async () => {
+    const { tools, collector } = buildWaveMidTurnTools();
+    await tools.recordComprehensionSignals.execute!(
+      { signals: [{ kind: "mc-index", questionId: "q1", rationale: "Grasp. Extend." }] },
+      callOpts("c1"),
+    );
+    const second = await tools.recordComprehensionSignals.execute!(
+      {
+        signals: [
+          { kind: "mc-index", questionId: "q1", rationale: "Again. Refused." },
+          { kind: "mc-index", questionId: "q2", rationale: "New. Staged." },
+        ],
+      },
+      callOpts("c2"),
+    );
+    expect(collector.signals.map((s) => s.questionId)).toEqual(["q1", "q2"]);
+    expect(collector.signals[0]?.rationale).toBe("Grasp. Extend.");
+    expect(second).toMatchObject({ recorded: 1, rejected: ["q1"] });
+  });
+
+  it("keeps the plain result bytes when nothing is refused", async () => {
+    const { tools } = buildWaveMidTurnTools();
+    const result = await tools.recordComprehensionSignals.execute!(
+      { signals: [{ kind: "mc-index", questionId: "q1", rationale: "Grasp. Extend." }] },
+      callOpts("c1"),
+    );
+    expect(result).toEqual({ recorded: 1 });
+  });
+
   it("each build returns a fresh, independent collector", async () => {
     const first = buildWaveMidTurnTools();
     const second = buildWaveMidTurnTools();

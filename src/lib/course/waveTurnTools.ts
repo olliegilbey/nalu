@@ -246,8 +246,27 @@ function buildRecordSignalsTool(collector: WaveTurnCollector) {
     // Staging ONLY — no DB access, no XP, no SM-2 (Core Design Principle:
     // deterministic code consumes the collector after the loop ends).
     execute: async ({ signals }) => {
-      collector.signals.push(...signals.map(toCanonicalSignal));
-      return { recorded: signals.length };
+      // One signal per questionId per turn (issue #61). A second one would
+      // grade the same assessment row twice and double the XP floater. The
+      // first signal stands; later ones, in this call or an earlier one, are
+      // refused. REJECT, not silent dedup: the model learns its re-grade did
+      // not land, the same pattern as presentQuestionnaire's refusal.
+      const staged = new Set(collector.signals.map((s) => s.questionId));
+      const isFirst = (s: (typeof signals)[number], idx: number) =>
+        !staged.has(s.questionId) &&
+        signals.findIndex((o) => o.questionId === s.questionId) === idx;
+      const accepted = signals.filter(isFirst);
+      const rejected = signals.filter((s, idx) => !isFirst(s, idx)).map((s) => s.questionId);
+      collector.signals.push(...accepted.map(toCanonicalSignal));
+      // The common case keeps its old result bytes; the refusal fields
+      // appear only when something was refused.
+      return rejected.length === 0
+        ? { recorded: accepted.length }
+        : {
+            recorded: accepted.length,
+            rejected,
+            reason: "a grading signal for these questions was already recorded this turn",
+          };
     },
   });
 }
