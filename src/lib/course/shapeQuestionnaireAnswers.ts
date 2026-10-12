@@ -30,7 +30,9 @@ const LETTERS = ["A", "B", "C", "D"] as const;
  * MC vs free-text is disambiguated by matching the answer string against the
  * question's options array — the Composer returns the option text verbatim
  * for taps, or the user's typed reply for escape-hatch free-text. Questions
- * with `options.length === 0` are always free-text.
+ * with `options.length === 0` are always free-text. The Composer's MC XP
+ * award (`Composer.tsx` `handleSend`) applies the same verbatim match to
+ * typed answers; change both together, or the XP badge drifts (issue #18).
  *
  * Lives in `src/lib/` so the component layer stays a thin rendering shell.
  */

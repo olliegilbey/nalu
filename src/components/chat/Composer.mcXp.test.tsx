@@ -64,6 +64,13 @@ function confirmOption(label: string) {
   });
 }
 
+/** Type an answer into the textarea and press Enter. */
+function typeAnswer(text: string) {
+  const box = screen.getByRole("textbox");
+  fireEvent.change(box, { target: { value: text } });
+  fireEvent.keyDown(box, { key: "Enter" });
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   // A working, empty Storage per test: the buffer restore needs one.
@@ -98,5 +105,38 @@ describe("Composer MC XP award", () => {
     confirmOption("Paris");
 
     expect(award).toHaveBeenCalledTimes(2);
+  });
+
+  it("awards a correct MC answered by typing its option text (#18)", () => {
+    const award = vi.fn();
+    render(<Harness persistKey="nalu:wave:w1:q:a" onCorrectAnswer={award} />);
+
+    // Verbatim option text ships as an MC answer; the server grades it as one.
+    typeAnswer("Paris");
+
+    expect(award).toHaveBeenCalledTimes(1);
+    expect(award).toHaveBeenCalledWith(capitalXp);
+  });
+
+  // "Lyon" ships as a wrong MC answer. "paris" is not verbatim, so it ships as
+  // free text, and the turn result counts its XP instead.
+  it.each(["Lyon", "paris"])("awards nothing for the typed answer %s", (text) => {
+    const award = vi.fn();
+    render(<Harness persistKey="nalu:wave:w1:q:a" onCorrectAnswer={award} />);
+
+    typeAnswer(text);
+
+    expect(award).not.toHaveBeenCalled();
+  });
+
+  it("awards a typed final MC once across a failed submit and retry", () => {
+    const award = vi.fn();
+    render(<Harness persistKey="nalu:wave:w1:q:a" onCorrectAnswer={award} />);
+
+    typeAnswer("Paris");
+    fireEvent.click(screen.getByText("Fail submit"));
+    typeAnswer("Paris");
+
+    expect(award).toHaveBeenCalledTimes(1);
   });
 });

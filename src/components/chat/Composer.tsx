@@ -55,7 +55,7 @@ export function Composer({
   persistKey?: string;
   /** When set, replaces the input row with a single advance button. */
   moveOn?: { readonly label: string; readonly onAdvance: () => void };
-  /** Called with exact XP when the learner confirms a correct MC answer; once per question. */
+  /** Called with exact XP for a correct MC answer, confirmed or typed verbatim; once per question. */
   onCorrectAnswer?: (amount: number) => void;
   /** Wave tier — fallback for MC XP when a question carries no per-question tier. */
   waveTier?: number;
@@ -331,6 +331,12 @@ export function Composer({
       const answer = inputValue.trim();
       // Keep the draft — a free-text answer stays editable on revisit.
       clearPending();
+      // Typed text that names an option verbatim ships as an MC answer
+      // (`shapeQuestionnaireAnswers`), and the server grades it as one. The
+      // turn result skips MC XP, so award it here, as Confirm would (#18).
+      if (current && current.options.indexOf(answer) === current.correctIndex) {
+        awardMcXpOnce(current);
+      }
       advanceAfterAnswer(answer);
     } else {
       onSend();
