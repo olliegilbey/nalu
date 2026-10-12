@@ -5,7 +5,6 @@ describe("isLocalDatabaseUrl", () => {
   it.each([
     "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
     "postgres://test:test@localhost:32768/test",
-    "postgresql://postgres:postgres@[::1]:5432/postgres",
   ])("accepts a loopback host: %s", (url) => {
     expect(isLocalDatabaseUrl(url)).toBe(true);
   });
@@ -16,6 +15,8 @@ describe("isLocalDatabaseUrl", () => {
     "postgresql://postgres.abcd:secret@aws-0-eu-west-1.pooler.supabase.com:6543/postgres",
     // A loopback name buried in a remote host must not pass.
     "postgresql://postgres:postgres@localhost.example.com:5432/postgres",
+    // IPv6 loopback: postgres-js cannot parse a bracketed host.
+    "postgresql://postgres:postgres@[::1]:5432/postgres",
   ])("rejects a remote host: %s", (url) => {
     expect(isLocalDatabaseUrl(url)).toBe(false);
   });
