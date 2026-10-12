@@ -13,6 +13,7 @@ import { t } from "@/i18n";
 import { playWrong } from "@/lib/sound";
 import { calculateMcXp } from "@/lib/scoring/xp";
 import { parseQuestionnaireBuffer } from "@/lib/course/parseQuestionnaireBuffer";
+import { matchOptionIndex } from "@/lib/course/shapeQuestionnaireAnswers";
 
 export type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
@@ -332,9 +333,10 @@ export function Composer({
       // Keep the draft — a free-text answer stays editable on revisit.
       clearPending();
       // Typed text that names an option verbatim ships as an MC answer
-      // (`shapeQuestionnaireAnswers`), and the server grades it as one. The
-      // turn result skips MC XP, so award it here, as Confirm would (#18).
-      if (current && current.options.indexOf(answer) === current.correctIndex) {
+      // (`matchOptionIndex`, shared with the shaper), and the server grades
+      // it as one. The turn result skips MC XP, so award it here, as Confirm
+      // would (#18).
+      if (current && matchOptionIndex(current, answer) === current.correctIndex) {
         awardMcXpOnce(current);
       }
       advanceAfterAnswer(answer);

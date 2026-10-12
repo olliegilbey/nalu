@@ -23,16 +23,28 @@ export interface RawComposerAnswer {
 const LETTERS = ["A", "B", "C", "D"] as const;
 
 /**
+ * Index of the option an answer names verbatim, or null when it ships as free
+ * text. The one MC-vs-free-text rule: the shaper below and the Composer's MC
+ * XP award (issue #18) both call it, so the XP badge cannot drift from what
+ * ships as MC.
+ */
+export function matchOptionIndex(question: ChoiceQuestion, answer: string): number | null {
+  const idx = question.options.indexOf(answer);
+  // Guard idx against LETTERS.length explicitly — adaptQuestionnaire currently
+  // emits exactly 4 options for MC questions, but ChoiceQuestion.options is
+  // typed as readonly string[], so a future schema change could overflow.
+  return idx >= 0 && idx < LETTERS.length ? idx : null;
+}
+
+/**
  * Shape Composer-emitted `{ question, answer }` pairs into the discriminated
  * union that questionnaire-consuming procedures expect (`submitBaseline` and
  * `wave.submitTurn`'s `questionnaire-answers` branch share this wire shape).
  *
- * MC vs free-text is disambiguated by matching the answer string against the
- * question's options array — the Composer returns the option text verbatim
- * for taps, or the user's typed reply for escape-hatch free-text. Questions
- * with `options.length === 0` are always free-text. The Composer's MC XP
- * award (`Composer.tsx` `handleSend`) applies the same verbatim match to
- * typed answers; change both together, or the XP badge drifts (issue #18).
+ * MC vs free-text is disambiguated by `matchOptionIndex` — the Composer
+ * returns the option text verbatim for taps, or the user's typed reply for
+ * escape-hatch free-text. Questions with `options.length === 0` are always
+ * free-text.
  *
  * Lives in `src/lib/` so the component layer stays a thin rendering shell.
  */
@@ -40,11 +52,8 @@ export function shapeQuestionnaireAnswers(
   answers: readonly RawComposerAnswer[],
 ): readonly ShapedQuestionnaireAnswer[] {
   return answers.map(({ question, answer }) => {
-    const idx = question.options.indexOf(answer);
-    // Guard idx against LETTERS.length explicitly — adaptQuestionnaire currently
-    // emits exactly 4 options for MC questions, but ChoiceQuestion.options is
-    // typed as readonly string[], so a future schema change could overflow.
-    const letter = idx >= 0 && idx < LETTERS.length ? LETTERS[idx] : undefined;
+    const idx = matchOptionIndex(question, answer);
+    const letter = idx === null ? undefined : LETTERS[idx];
     if (letter !== undefined) {
       return { id: question.id, kind: "mc", selected: letter };
     }
