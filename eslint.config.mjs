@@ -60,6 +60,14 @@ const eslintConfig = defineConfig([
     },
   },
 
+  // `const { dropped, ...rest } = obj` omits a key on purpose; the rest
+  // sibling is the point. Keeps eslint-config-next's warn severity.
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": ["warn", { ignoreRestSiblings: true }],
+    },
+  },
+
   // Architectural boundaries (warn). Codifies AGENTS.md:
   //   - LLM SDKs only in src/lib/llm/ and src/lib/agents/
   //   - Drizzle / raw DB clients only in src/db/

@@ -120,7 +120,6 @@ describe("frameworkSchema", () => {
 
   // userMessage is a required chat-bubble field added in Task 7.
   it("rejects framework without userMessage", () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to drop userMessage
     const { userMessage: _omitted, ...noMsg } = buildValidFramework(FRAMEWORK.minTiers);
     const result = frameworkSchema.safeParse(noMsg);
     expect(result.success).toBe(false);

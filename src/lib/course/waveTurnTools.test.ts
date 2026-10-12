@@ -48,7 +48,6 @@ describe("buildWaveMidTurnTools", () => {
   it("questionnaire inputSchema rejects an MC question without options, teacher-style directive", async () => {
     const { tools } = buildWaveMidTurnTools();
     const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to drop options
     const { options, ...noOptions } = MC_QUESTION;
     const result = await schema.validate!({ questions: [noOptions] });
     expect(result.success).toBe(false);
@@ -120,7 +119,6 @@ describe("buildWaveMidTurnTools", () => {
   it("questionnaire inputSchema rejects a missing conceptName with the mega-schema's verbatim directive", async () => {
     const { tools } = buildWaveMidTurnTools();
     const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to drop conceptName
     const { conceptName, ...noConcept } = FT_QUESTION;
     const result = await schema.validate!({ questions: [noConcept] });
     expect(result.success).toBe(false);
@@ -136,7 +134,6 @@ describe("buildWaveMidTurnTools", () => {
   it("questionnaire inputSchema rejects an MC question without correct, verbatim directive", async () => {
     const { tools } = buildWaveMidTurnTools();
     const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to drop correct
     const { correct, ...noCorrect } = MC_QUESTION;
     const result = await schema.validate!({ questions: [noCorrect] });
     expect(result.success).toBe(false);
