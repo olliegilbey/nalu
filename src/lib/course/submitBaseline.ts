@@ -165,8 +165,19 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
       ? { questionId: a.id, choice: a.selected }
       : { questionId: a.id, freetext: a.text },
   );
-  // The write is status-guarded. It throws if a concurrent close won since
-  // our read: the original Turn, still running when a reloaded tab re-sent it.
+  // Concurrent-close recovery: two calls can both pass the precondition gate
+  // above. Two tabs can race, or a reloaded tab's Retry can re-send while the
+  // original Turn still runs. Whichever call commits its close first wins.
+  // The loser fails at whichever step meets the winner's commit:
+  //   - the answer write below (status-guarded: it skips a closed course),
+  //   - `ensureOpenScopingPass` (the pass is closed, and a course has only one),
+  //   - `executeTurn` (both reserved the same turn_index),
+  //   - `persistScopingClose` (Wave 1 already open, or the baseline widened).
+  // Rather than enumerate failure modes, we observe the post-failure state:
+  // if status flipped to 'active', the winner finished; replay its cached
+  // payload. Otherwise the failure is unrelated — re-throw. Token waste on the
+  // loser is acknowledged; the alternative — row-locking across the LLM call
+  // — would tie up a pooled connection for seconds at a time.
   try {
     await updateCourseScopingState(course.id, {
       baseline: {
@@ -176,73 +187,58 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
         responses,
       },
     });
-  } catch (err) {
-    return replayIfClosed(err, course.id, params.userId);
-  }
 
-  // Idempotent under single-writer invariant; handles concurrent-writer race
-  // via re-read on unique-violation.
-  const pass = await ensureOpenScopingPass(course.id);
+    // Idempotent under single-writer invariant; handles concurrent-writer race
+    // via re-read on unique-violation.
+    const pass = await ensureOpenScopingPass(course.id);
 
-  // Learner-input payload carries raw answers + mechanical MC gradings so the
-  // model doesn't waste tokens re-evaluating MC clicks.
-  const learnerInput = JSON.stringify({ answers: params.answers, mechanicalGradings });
+    // Learner-input payload carries raw answers + mechanical MC gradings so the
+    // model doesn't waste tokens re-evaluating MC clicks.
+    const learnerInput = JSON.stringify({ answers: params.answers, mechanicalGradings });
 
-  const { parsed } = await executeTurn({
-    parent: { kind: "scoping", id: pass.id },
-    seed: { kind: "scoping", topic: course.topic },
-    userMessageContent: renderScopingCloseStage({
-      learnerInput,
-    }),
-    responseSchema: schema,
-    responseSchemaName: "scoping_close",
-    retryDirective: (err) => buildRetryDirective(err, schemaJson),
-    label: "scoping-close",
-    successSummary: (p) => `gradings=${p.gradings.length} startingTier=${p.startingTier}`,
-  });
+    const { parsed } = await executeTurn({
+      parent: { kind: "scoping", id: pass.id },
+      seed: { kind: "scoping", topic: course.topic },
+      userMessageContent: renderScopingCloseStage({
+        learnerInput,
+      }),
+      responseSchema: schema,
+      responseSchemaName: "scoping_close",
+      retryDirective: (err) => buildRetryDirective(err, schemaJson),
+      label: "scoping-close",
+      successSummary: (p) => `gradings=${p.gradings.length} startingTier=${p.startingTier}`,
+    });
 
-  // Issue #22 diagnosis: no-op unless LLM_DEBUG_GRADINGS is on, and never
-  // throws. Same lines as `executeWaveClose`: grading kind beside Response
-  // kind, plus verdict, quality and XP for free-text gradings.
-  logScopingCloseGradings({
-    gradings: parsed.gradings,
-    responses,
-    startingTier: parsed.startingTier,
-  });
+    // Issue #22 diagnosis: no-op unless LLM_DEBUG_GRADINGS is on, and never
+    // throws. Same lines as `executeWaveClose`: grading kind beside Response
+    // kind, plus verdict, quality and XP for free-text gradings.
+    logScopingCloseGradings({
+      gradings: parsed.gradings,
+      responses,
+      startingTier: parsed.startingTier,
+    });
 
-  // Defence-in-depth: the schema already enforced tier scope + id coverage,
-  // but mergeAndComputeXp re-checks at the orchestration layer so a future
-  // schema regression surfaces as a thrown Error rather than corrupt XP.
-  //
-  // Filter to free-text gradings only: mc-index gradings lack the full
-  // StoredGrading shape (no conceptName/conceptTier/verdict/qualityScore).
-  // Scoping baseline questions are all free-text anyway, but the type
-  // must be narrowed here to satisfy the StoredGrading type at the
-  // mergeAndComputeXp boundary.
-  const freeTextGradings = parsed.gradings.filter((g) => g.kind === "free-text");
-  const merged = mergeAndComputeXp({
-    parsed: { gradings: freeTextGradings, startingTier: parsed.startingTier },
-    mechanicalGradings,
-    baselineQuestionIds: questionIds,
-    scopeTiers,
-  });
+    // Defence-in-depth: the schema already enforced tier scope + id coverage,
+    // but mergeAndComputeXp re-checks at the orchestration layer so a future
+    // schema regression surfaces as a thrown Error rather than corrupt XP.
+    //
+    // Filter to free-text gradings only: mc-index gradings lack the full
+    // StoredGrading shape (no conceptName/conceptTier/verdict/qualityScore).
+    // Scoping baseline questions are all free-text anyway, but the type
+    // must be narrowed here to satisfy the StoredGrading type at the
+    // mergeAndComputeXp boundary.
+    const freeTextGradings = parsed.gradings.filter((g) => g.kind === "free-text");
+    const merged = mergeAndComputeXp({
+      parsed: { gradings: freeTextGradings, startingTier: parsed.startingTier },
+      mechanicalGradings,
+      baselineQuestionIds: questionIds,
+      scopeTiers,
+    });
 
-  // persistScopingClose: widens baseline JSONB (overwriting userMessage with
-  // the closing framing), upserts concepts, opens Wave 1, inserts the opening
-  // assistant message, flips status, bumps XP — all in one transaction.
-  //
-  // Concurrent-submit recovery: two tabs racing both pass the precondition
-  // gate above and both call the LLM. The loser's persist will fail in one of
-  // two places depending on timing — `openWave` unique-violation on
-  // `waves_one_open_per_course` (loser races BEHIND winner's Wave insert), OR
-  // a Zod parse failure when re-fetching the now-widened baseline (winner
-  // committed before loser's SELECT). Rather than enumerate failure modes,
-  // we observe the post-failure state: if status flipped to 'active', the
-  // winner finished; replay from cached payload. Otherwise the failure is
-  // unrelated — re-throw. Token waste on the loser is acknowledged
-  // (acceptable per TODO; the alternative — row-locking across the LLM call
-  // — would tie up a pooled connection for seconds at a time).
-  try {
+    // persistScopingClose: widens baseline JSONB (overwriting userMessage with
+    // the closing framing), upserts concepts, opens Wave 1, inserts the opening
+    // assistant message, flips status, closes the scoping pass, bumps XP — all
+    // in one transaction.
     const { wave1Id } = await persistScopingClose({
       courseId: course.id,
       scopingPassId: pass.id,

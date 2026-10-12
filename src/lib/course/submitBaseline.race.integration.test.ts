@@ -6,7 +6,7 @@ import { getState } from "./getState";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import * as coursesModule from "@/db/queries/courses";
 import { getOpenWaveByCourse } from "@/db/queries/waves";
-import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
+import * as scopingPassesModule from "@/db/queries/scopingPasses";
 import { USER_ID, PARSED, MERGED, seedScopingCourse } from "./submitBaseline.fixtures";
 
 /**
@@ -27,7 +27,7 @@ describe("submitBaseline racing the original close (integration)", () => {
   it("replays the winner's close when it commits between the re-send's read and its answer write", async () => {
     await withTestDb(async () => {
       const courseId = await seedScopingCourse();
-      const scopingPassId = (await ensureOpenScopingPass(courseId)).id;
+      const scopingPassId = (await scopingPassesModule.ensureOpenScopingPass(courseId)).id;
       const readCourse = coursesModule.getCourseById;
       // The re-send reads 'scoping'. The original then commits the close.
       vi.spyOn(coursesModule, "getCourseById").mockImplementationOnce(async (...args) => {
@@ -56,6 +56,51 @@ describe("submitBaseline racing the original close (integration)", () => {
         closingMessage: PARSED.userMessage,
         startingTier: PARSED.startingTier,
       });
+    });
+  });
+
+  it("replays the winner's close when it commits before the re-send looks up the scoping pass", async () => {
+    await withTestDb(async () => {
+      const courseId = await seedScopingCourse();
+      const ensurePass = scopingPassesModule.ensureOpenScopingPass;
+      const scopingPassId = (await ensurePass(courseId)).id;
+      // The original commits, closing the pass. The re-send then finds no
+      // open pass and cannot open a second one (unique per course).
+      vi.spyOn(scopingPassesModule, "ensureOpenScopingPass").mockImplementationOnce(async (id) => {
+        await persistScopingClose({ courseId, scopingPassId, parsed: PARSED, merged: MERGED });
+        return ensurePass(id);
+      });
+      const llm = vi.spyOn(executeTurnModule, "executeTurn");
+
+      const result = await submitBaseline({
+        courseId,
+        userId: USER_ID,
+        answers: [{ id: "b1", kind: "freetext", text: "my answer", fromEscape: false }],
+      });
+
+      expect(llm).not.toHaveBeenCalled();
+      expect(result.wave1Id).toBe((await getOpenWaveByCourse(courseId))?.id);
+    });
+  });
+
+  it("replays the winner's close when the re-send's LLM step fails after the winner commits", async () => {
+    await withTestDb(async () => {
+      const courseId = await seedScopingCourse();
+      const scopingPassId = (await scopingPassesModule.ensureOpenScopingPass(courseId)).id;
+      // Both calls reserved the same turn_index. The original commits first,
+      // so the re-send's batch hits the unique index.
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(async () => {
+        await persistScopingClose({ courseId, scopingPassId, parsed: PARSED, merged: MERGED });
+        throw new Error("duplicate key value violates unique constraint on context_messages");
+      });
+
+      const result = await submitBaseline({
+        courseId,
+        userId: USER_ID,
+        answers: [{ id: "b1", kind: "freetext", text: "my answer", fromEscape: false }],
+      });
+
+      expect(result.wave1Id).toBe((await getOpenWaveByCourse(courseId))?.id);
     });
   });
 });
