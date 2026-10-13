@@ -7,10 +7,12 @@ export interface ComposerControlsInput {
   readonly questionIndex: number;
   /** Recorded answers, indexed by question; `null` while unanswered. */
   readonly answers: readonly (string | null)[];
+  /** Free-text drafts, indexed by question. */
+  readonly drafts: readonly string[];
   /** The option picked but not yet confirmed, indexed by question. */
   readonly pending: readonly (number | null)[];
-  /** The textarea's current text. */
-  readonly inputValue: string;
+  /** The parent-owned chat-input text. */
+  readonly chatValue: string;
   readonly disabled: boolean | undefined;
   /** The card's buffer key. A card without one is a streaming preview. */
   readonly persistKey: string | undefined;
@@ -23,6 +25,8 @@ export interface ComposerControls {
   /** The question on screen; `null` without a card. */
   readonly current: ChoiceQuestion | null;
   readonly total: number;
+  /** The textarea's text: the current question's draft, or the chat input. */
+  readonly inputValue: string;
   /** The current question's unconfirmed option pick, if any. */
   readonly currentPending: number | null;
   /** The current question has a recorded answer, so its pick can no longer change. */
@@ -45,10 +49,13 @@ export interface ComposerControls {
  * card, so the plain chat input must ignore what the last card left behind.
  */
 export function deriveComposerControls(input: ComposerControlsInput): ComposerControls {
-  const { questions, questionIndex, inputValue } = input;
+  const { questions, questionIndex } = input;
   const hasQuestions = !!questions && questions.length > 0;
   const current = hasQuestions ? (questions[questionIndex] ?? null) : null;
   const total = hasQuestions ? questions.length : 0;
+  // One textarea serves both modes. A card keeps a draft per question, so
+  // free text survives navigation; otherwise the parent owns the text.
+  const inputValue = hasQuestions ? (input.drafts[questionIndex] ?? "") : input.chatValue;
   const hasText = inputValue.trim().length > 0;
 
   const currentPending = hasQuestions ? (input.pending[questionIndex] ?? null) : null;
@@ -61,6 +68,7 @@ export function deriveComposerControls(input: ComposerControlsInput): ComposerCo
     hasQuestions,
     current,
     total,
+    inputValue,
     currentPending,
     answerLocked,
     // An option is picked, nothing is typed, and the question is still open.

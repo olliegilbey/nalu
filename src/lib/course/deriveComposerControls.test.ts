@@ -15,8 +15,9 @@ const card = (overrides: Partial<ComposerControlsInput> = {}): ComposerControlsI
   questions: [mcQuestion, freeQuestion],
   questionIndex: 0,
   answers: [null, null],
+  drafts: ["", ""],
   pending: [null, null],
-  inputValue: "",
+  chatValue: "",
   disabled: false,
   persistKey: "nalu:test:card",
   ...overrides,
@@ -24,14 +25,15 @@ const card = (overrides: Partial<ComposerControlsInput> = {}): ComposerControlsI
 
 /** The plain chat input: no questions. */
 const chat = (overrides: Partial<ComposerControlsInput> = {}): ComposerControlsInput =>
-  card({ questions: null, answers: [], pending: [], ...overrides });
+  card({ questions: null, answers: [], drafts: [], pending: [], ...overrides });
 
 describe("deriveComposerControls", () => {
   it("chat mode: no card, nothing locked, send follows the input", () => {
-    expect(deriveComposerControls(chat({ inputValue: "hello" }))).toEqual({
+    expect(deriveComposerControls(chat({ chatValue: "hello" }))).toEqual({
       hasQuestions: false,
       current: null,
       total: 0,
+      inputValue: "hello",
       currentPending: null,
       answerLocked: false,
       confirmMode: false,
@@ -47,16 +49,26 @@ describe("deriveComposerControls", () => {
     expect(deriveComposerControls(chat({ questions: [] })).hasQuestions).toBe(false);
   });
 
-  it("chat mode: ignores answers and picks left over from the last card", () => {
-    const controls = deriveComposerControls(chat({ answers: ["Paris"], pending: [0] }));
+  it("chat mode: ignores answers, drafts and picks left over from the last card", () => {
+    const controls = deriveComposerControls(
+      chat({ answers: ["Paris"], drafts: ["stale"], pending: [0] }),
+    );
+    expect(controls.inputValue).toBe("");
     expect(controls.answerLocked).toBe(false);
     expect(controls.currentPending).toBeNull();
     expect(controls.confirmMode).toBe(false);
   });
 
+  it("card mode: the textarea shows the current question's draft, not the chat input", () => {
+    const controls = deriveComposerControls(
+      card({ questionIndex: 1, drafts: ["first", "second"], chatValue: "chat text" }),
+    );
+    expect(controls.inputValue).toBe("second");
+  });
+
   it.each([
-    ["blank input", { inputValue: "   " }],
-    ["disabled", { inputValue: "hello", disabled: true }],
+    ["blank input", { chatValue: "   " }],
+    ["disabled", { chatValue: "hello", disabled: true }],
   ])("cannot send with %s", (_label, overrides) => {
     expect(deriveComposerControls(chat(overrides)).canSend).toBe(false);
   });
@@ -76,7 +88,7 @@ describe("deriveComposerControls", () => {
 
   it("leaves confirm mode once the learner types", () => {
     expect(
-      deriveComposerControls(card({ pending: [2, null], inputValue: "Nice" })).confirmMode,
+      deriveComposerControls(card({ pending: [2, null], drafts: ["Nice", ""] })).confirmMode,
     ).toBe(false);
   });
 
@@ -89,7 +101,7 @@ describe("deriveComposerControls", () => {
 
   it("keeps a recorded free-text answer editable", () => {
     const controls = deriveComposerControls(
-      card({ questionIndex: 1, answers: [null, "Because"], inputValue: "Because" }),
+      card({ questionIndex: 1, answers: [null, "Because"], drafts: ["", "Because"] }),
     );
     expect(controls.answerLocked).toBe(true);
     expect(controls.textareaLocked).toBe(false);
