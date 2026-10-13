@@ -146,9 +146,11 @@ describe.skipIf(!LIVE)("streamWaveTurn tool loop — live Cerebras", () => {
 
       // Wire safety 1 — text channel: the forwarded prose must never contain
       // an unfenced JSON dump, line-start or mid-line (the leak guard's
-      // invariant).
+      // invariant). Final attempt only: a failed attempt may end in a stray
+      // `{` that would read as a leak when joined to the retry's text.
+      const finalTextId = parts.filter((p) => p.type === "text-start").at(-1)?.["id"];
       const forwardedText = parts
-        .filter((p) => p.type === "text-delta")
+        .filter((p) => p.type === "text-delta" && p["id"] === finalTextId)
         .map((p) => p["delta"] as string)
         .join("");
       expect(

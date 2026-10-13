@@ -12,18 +12,23 @@
  * A `{` with no quote after it passes too: set notation `{a, b}`, a Rust
  * block brace. A line-start `{` counts with or without a quote.
  *
+ * Known gaps, where a dump streams live: a fenced or backticked dump (exempt
+ * by design), and spans this per-backtick toggle misreads, such as
+ * double-backtick spans and spans that cross a line. The post-loop gate
+ * (`waveMidTurnGate.ts`) is fence-blind and is their backstop: it fails the
+ * attempt, so the answer key never persists. #159 tracks the live glimpse.
+ *
  * Accepted false positive: inline JSON written without backticks, such as
  * `you write { "key": "value" }` in a Wave that teaches JSON. The cut costs
  * little in either caller (below).
  *
  * Two callers cut prose here:
  * - `streamWaveTurn` stops forwarding text deltas to the client from this
- *   index for the rest of the attempt. Unlike the post-loop gate
- *   (`waveMidTurnGate.ts`), it runs per delta and needs no parse-to-end
- *   certainty: a false positive only truncates the TRANSIENT stream. The
- *   gate passes such prose, `persistWaveMidTurn` writes it whole to
- *   chat_log, and `useWaveState` swaps the streamed bubble for chat_log on
- *   finish.
+ *   index for the rest of the attempt. Unlike the post-loop gate, it runs
+ *   per delta and needs no parse: a false positive only truncates the
+ *   TRANSIENT stream. The gate passes such prose (no envelope or answer
+ *   key), `persistWaveMidTurn` writes it whole to chat_log, and
+ *   `useWaveState` swaps the streamed bubble for chat_log on finish.
  * - `executeToolTurnStream` persists a failed attempt as its prose cut
  *   here, so a retry replays what the learner saw, never the JSON (#140).
  *   A false positive there only shortens a replay the retry discards.
@@ -54,7 +59,9 @@ export function findJsonProseLeakIndex(prose: string): number | null {
 /**
  * Prose index of the first leaking `{` on one unfenced line, or null. The
  * line starts at `offset` in `prose`; `indent` counts its leading
- * whitespace. Backticks toggle an inline code span, like ``` toggles a fence.
+ * whitespace. Each backtick toggles an inline code span, like ``` toggles a
+ * fence. That is simpler than CommonMark, so it misreads double-backtick
+ * spans (see Known gaps above).
  */
 function findLeakInLine(
   prose: string,
@@ -79,8 +86,9 @@ function findLeakInLine(
  * ending in `{` above a pretty-printed body still counts.
  */
 function opensJsonKey(prose: string, braceAt: number): boolean {
-  return prose
-    .slice(braceAt + 1)
-    .trimStart()
-    .startsWith('"');
+  // Sticky: match exactly at lastIndex, so no per-brace copy of the prose.
+  // The literal builds a fresh RegExp per call, so lastIndex is never shared.
+  const keyAhead = /\s*"/y;
+  keyAhead.lastIndex = braceAt + 1;
+  return keyAhead.test(prose);
 }
