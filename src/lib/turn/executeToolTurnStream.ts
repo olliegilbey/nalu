@@ -1,6 +1,6 @@
 import type { StepResult, TextStreamPart, ToolSet } from "ai";
+import { appendMessages } from "@/db/queries/contextMessages.writes";
 import {
-  appendMessages,
   getMessagesForScopingPass,
   getMessagesForWave,
   getNextTurnIndex,

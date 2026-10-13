@@ -3,7 +3,7 @@ import { db } from "@/db/client";
 import { WAVE } from "@/lib/config/tuning";
 import { appendWaveChatLog, closeWave, openWave } from "@/db/queries/waves.writes";
 import { getConceptsByCourse, getDueConceptsByCourse } from "@/db/queries/concepts";
-import { appendMessage } from "@/db/queries/contextMessages";
+import { appendMessage } from "@/db/queries/contextMessages.writes";
 import { dueConceptsSnapshotSchema, type FrameworkJsonb } from "@/lib/types/jsonb";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { LoadedWaveContext } from "./loadWaveContext";

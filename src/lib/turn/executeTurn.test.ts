@@ -7,8 +7,10 @@ import { executeTurn } from "./executeTurn";
 vi.mock("@/lib/llm/generate", () => ({
   generateChat: vi.fn(),
 }));
-vi.mock("@/db/queries/contextMessages", () => ({
+vi.mock("@/db/queries/contextMessages.writes", () => ({
   appendMessages: vi.fn(),
+}));
+vi.mock("@/db/queries/contextMessages", () => ({
   getMessagesForWave: vi.fn(),
   getMessagesForScopingPass: vi.fn(),
   getNextTurnIndex: vi.fn(),
@@ -26,8 +28,8 @@ vi.mock("@/lib/llm/toCerebrasJsonSchema", async (importOriginal) => {
 
 import { generateChat } from "@/lib/llm/generate";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
+import { appendMessages } from "@/db/queries/contextMessages.writes";
 import {
-  appendMessages,
   getMessagesForScopingPass,
   getMessagesForWave,
   getNextTurnIndex,

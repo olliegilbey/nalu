@@ -24,6 +24,8 @@ siblings, one concern each:
   `chat_log` append.
 - `concepts.ts`: reads. `concepts.writes.ts`: upsert, SM-2 results, and
   counters.
+- `contextMessages.ts`: shared types and reads. `contextMessages.writes.ts`:
+  single and batch append.
 
 Each sibling has its own `*.integration.test.ts`. The barrel `index.ts`
 re-exports every module. Add each new sibling there: knip sees test-only

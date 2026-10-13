@@ -1,0 +1,267 @@
+import { describe, it, expect } from "vitest";
+import { sql } from "drizzle-orm";
+import { WAVE as WAVE_CONFIG } from "@/lib/config/tuning";
+import { withTestDb } from "@/db/testing/withTestDb";
+import { userProfiles, courses, scopingPasses, waves } from "@/db/schema";
+import { appendMessage, appendMessages } from "./contextMessages.writes";
+import { getMessagesForWave, getMessagesForScopingPass } from "./contextMessages";
+
+/** Fixed UUIDs per plan §D7. */
+const USER = "55555555-5555-5555-5555-555555555555";
+const COURSE = "00000000-0000-0000-0000-000000000501";
+const WAVE = "00000000-0000-0000-0000-000000000502";
+const SCOPING = "00000000-0000-0000-0000-000000000503";
+
+/**
+ * Minimal valid `frameworkSnapshot` for the waves FK seed row.
+ * Must satisfy `frameworkJsonbSchema` (topic, scope_summary, etc.).
+ */
+const FRAMEWORK_SNAPSHOT = {
+  topic: "x",
+  scope_summary: "y",
+  estimated_starting_tier: 1,
+  baseline_scope_tiers: [1],
+  tiers: [{ number: 1, name: "n", description: "d", example_concepts: ["e"] }],
+} as const;
+
+/**
+ * Seed the standard test fixtures into the current `withTestDb` transaction.
+ * Must be called inside a `withTestDb` callback because `withTestDb` truncates
+ * before each invocation — seeding outside would be wiped.
+ */
+async function seedFixtures(db: Parameters<Parameters<typeof withTestDb>[0]>[0]): Promise<void> {
+  await db.insert(userProfiles).values({ id: USER, displayName: "U" });
+  await db.insert(courses).values({ id: COURSE, userId: USER, topic: "x" });
+  await db.insert(scopingPasses).values({ id: SCOPING, courseId: COURSE });
+  await db.insert(waves).values({
+    id: WAVE,
+    courseId: COURSE,
+    waveNumber: 1,
+    tier: 1,
+    frameworkSnapshot: FRAMEWORK_SNAPSHOT,
+    customInstructionsSnapshot: null,
+    dueConceptsSnapshot: [],
+    seedSource: { kind: "scoping_handoff" },
+    turnBudget: WAVE_CONFIG.turnCount,
+  });
+}
+
+describe("contextMessages writes", () => {
+  // -------------------------------------------------------------------------
+  // Test 1: appendMessage + getMessagesForWave — (turn_index, seq) ordering
+  // -------------------------------------------------------------------------
+  it("appendMessage + getMessagesForWave preserves (turn_index, seq) order", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      // Append two messages on the same turn with different seq values.
+      await appendMessage({
+        parent: { kind: "wave", id: WAVE },
+        turnIndex: 0,
+        seq: 0,
+        kind: "user_message",
+        role: "user",
+        content: "<user_message>hi</user_message>",
+      });
+      await appendMessage({
+        parent: { kind: "wave", id: WAVE },
+        turnIndex: 0,
+        seq: 1,
+        kind: "harness_turn_counter",
+        role: "user",
+        content: "<turns_remaining>9 left</turns_remaining>",
+      });
+
+      const rows = await getMessagesForWave(WAVE);
+      expect(rows).toHaveLength(2);
+      // Order must be (turnIndex ASC, seq ASC) — user_message before counter.
+      expect(rows[0]?.kind).toBe("user_message");
+      expect(rows[1]?.seq).toBe(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 4: CHECK constraint rejects a row with neither parent set
+  // -------------------------------------------------------------------------
+  it("CHECK constraint rejects a row with both wave_id and scoping_pass_id NULL", async () => {
+    // No seed needed — the bad insert does not reference any parent FK.
+    await withTestDb(async (db) => {
+      // Raw SQL bypasses the typed builder; the XOR CHECK fires at the DB level.
+      // Both parent columns are NULL → violates `context_messages_one_parent`.
+      await expect(
+        db.execute(
+          sql`INSERT INTO context_messages (turn_index, seq, kind, role, content)
+              VALUES (0, 0, 'user_message', 'user', 'x')`,
+        ),
+      ).rejects.toThrow();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 8: appendMessages — atomic batch insert preserving order
+  // -------------------------------------------------------------------------
+  // A single multi-VALUES INSERT writes all rows atomically; ordering on read
+  // is by (turn_index ASC, seq ASC), so the seq values drive the result order.
+  it("appendMessages inserts a batch atomically, preserving order", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+      await appendMessages([
+        {
+          parent: { kind: "scoping", id: SCOPING },
+          turnIndex: 0,
+          seq: 0,
+          kind: "user_message",
+          role: "user",
+          content: "<user_message>Rust</user_message>",
+        },
+        {
+          parent: { kind: "scoping", id: SCOPING },
+          turnIndex: 0,
+          seq: 1,
+          kind: "failed_assistant_response",
+          role: "assistant",
+          content: "bad",
+        },
+        {
+          parent: { kind: "scoping", id: SCOPING },
+          turnIndex: 0,
+          seq: 2,
+          kind: "harness_retry_directive",
+          role: "user",
+          content: "fix this",
+        },
+        {
+          parent: { kind: "scoping", id: SCOPING },
+          turnIndex: 0,
+          seq: 3,
+          kind: "assistant_response",
+          role: "assistant",
+          content: '<response>ok</response><questions>["a","b"]</questions>',
+        },
+      ]);
+      const rows = await getMessagesForScopingPass(SCOPING);
+      expect(rows).toHaveLength(4);
+      expect(rows.map((r) => r.kind)).toEqual([
+        "user_message",
+        "failed_assistant_response",
+        "harness_retry_directive",
+        "assistant_response",
+      ]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 9: appendMessages — whole-batch rollback on constraint violation
+  // -------------------------------------------------------------------------
+  // Postgres's single-statement INSERT atomicity: if any row violates a
+  // constraint (here, the partial unique index on (parent, turn_index, seq)
+  // collides with the pre-existing seed row), the entire statement rolls back
+  // and no rows from the batch are persisted.
+  it("appendMessages rolls back the whole batch if any row violates a constraint", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+      // Seed a single row that the second item of the batch below will collide
+      // with on (scoping_pass_id, turn_index=0, seq=0).
+      await appendMessage({
+        parent: { kind: "scoping", id: SCOPING },
+        turnIndex: 0,
+        seq: 0,
+        kind: "user_message",
+        role: "user",
+        content: "x",
+      });
+      await expect(
+        appendMessages([
+          {
+            parent: { kind: "scoping", id: SCOPING },
+            turnIndex: 0,
+            seq: 1,
+            kind: "assistant_response",
+            role: "assistant",
+            content: "y",
+          },
+          {
+            parent: { kind: "scoping", id: SCOPING },
+            turnIndex: 0,
+            seq: 0,
+            kind: "user_message",
+            role: "user",
+            content: "z",
+          },
+        ]),
+      ).rejects.toThrow();
+      // Only the pre-existing seed row remains; the batch (including the
+      // non-conflicting row at seq=1) was rolled back as a whole.
+      const rows = await getMessagesForScopingPass(SCOPING);
+      expect(rows).toHaveLength(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 10: tool-loop row kinds — insert + read round-trip
+  // -------------------------------------------------------------------------
+  // The tool-calling migration (2026-06-10 plan) adds two kinds whose content
+  // is JSON serialized once at write time. The round-trip must return the
+  // stored bytes verbatim (renderContext parses, never re-serializes).
+  it("round-trips assistant_tool_call and tool_result rows verbatim", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+      const toolCallContent = JSON.stringify({
+        text: "Let me check that.",
+        toolCalls: [
+          { toolCallId: "c1", toolName: "presentQuestionnaire", input: { questions: [] } },
+        ],
+      });
+      const toolResultContent = JSON.stringify({
+        results: [
+          { toolCallId: "c1", toolName: "presentQuestionnaire", output: { accepted: true } },
+        ],
+      });
+      await appendMessages([
+        {
+          parent: { kind: "wave", id: WAVE },
+          turnIndex: 0,
+          seq: 0,
+          kind: "user_message",
+          role: "user",
+          content: "hi",
+        },
+        {
+          parent: { kind: "wave", id: WAVE },
+          turnIndex: 0,
+          seq: 1,
+          kind: "assistant_tool_call",
+          role: "assistant",
+          content: toolCallContent,
+        },
+        {
+          parent: { kind: "wave", id: WAVE },
+          turnIndex: 0,
+          seq: 2,
+          kind: "tool_result",
+          role: "tool",
+          content: toolResultContent,
+        },
+        {
+          parent: { kind: "wave", id: WAVE },
+          turnIndex: 0,
+          seq: 3,
+          kind: "assistant_response",
+          role: "assistant",
+          content: "Here's your quiz.",
+        },
+      ]);
+      const rows = await getMessagesForWave(WAVE);
+      expect(rows.map((r) => r.kind)).toEqual([
+        "user_message",
+        "assistant_tool_call",
+        "tool_result",
+        "assistant_response",
+      ]);
+      expect(rows.map((r) => r.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+      // Byte-verbatim: the JSON content comes back exactly as stored.
+      expect(rows[1]?.content).toBe(toolCallContent);
+      expect(rows[2]?.content).toBe(toolResultContent);
+    });
+  });
+});

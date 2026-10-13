@@ -22,8 +22,8 @@ import { executeWaveClose } from "./executeWaveClose";
 // LLM boundary: every Step fails structured output (set per test).
 vi.mock("@/lib/llm/generate", () => ({ generateChat: vi.fn() }));
 // Context rows: start empty, capture the persisted batch.
+vi.mock("@/db/queries/contextMessages.writes", () => ({ appendMessages: vi.fn() }));
 vi.mock("@/db/queries/contextMessages", () => ({
-  appendMessages: vi.fn(),
   getMessagesForWave: vi.fn(),
   getMessagesForScopingPass: vi.fn(),
   getNextTurnIndex: vi.fn(),
@@ -44,8 +44,8 @@ vi.mock("@/db/queries/concepts", () => ({
 }));
 
 import { generateChat } from "@/lib/llm/generate";
+import { appendMessages } from "@/db/queries/contextMessages.writes";
 import {
-  appendMessages,
   getMessagesForScopingPass,
   getMessagesForWave,
   getNextTurnIndex,

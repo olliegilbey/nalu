@@ -3,7 +3,7 @@ import { db } from "@/db/client";
 import { WAVE } from "@/lib/config/tuning";
 import { upsertConcept } from "@/db/queries/concepts.writes";
 import { appendWaveChatLog, openWave } from "@/db/queries/waves.writes";
-import { appendMessage } from "@/db/queries/contextMessages";
+import { appendMessage } from "@/db/queries/contextMessages.writes";
 import { closeScopingPass } from "@/db/queries/scopingPasses";
 import {
   baselineClosedJsonbSchema,

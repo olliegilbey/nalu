@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { executeToolTurnStream, type ToolTurnAgent } from "./executeToolTurnStream";
 
-vi.mock("@/db/queries/contextMessages", () => ({
+vi.mock("@/db/queries/contextMessages.writes", () => ({
   appendMessages: vi.fn(),
+}));
+vi.mock("@/db/queries/contextMessages", () => ({
   getMessagesForWave: vi.fn(),
   getMessagesForScopingPass: vi.fn(),
   getNextTurnIndex: vi.fn(),
@@ -14,8 +16,8 @@ vi.mock("@/lib/llm/renderContext", () => ({
   renderContext: vi.fn(() => ({ system: "SYS", messages: [] })),
 }));
 
+import { appendMessages } from "@/db/queries/contextMessages.writes";
 import {
-  appendMessages,
   getMessagesForScopingPass,
   getMessagesForWave,
   getNextTurnIndex,
