@@ -116,7 +116,7 @@ export async function streamWaveTurn(
       if (attempt > 0) {
         // NOT transient: the part must land INSIDE the assistant message's
         // parts array as a positional marker — the client renders only parts
-        // AFTER the last reset (useWaveState). Mid-stream setMessages surgery
+        // AFTER the last reset (`deriveStreamingTurn`). Mid-stream setMessages surgery
         // does not work: the SDK re-emits its internally accumulated message
         // (stale parts included) on the next chunk.
         writer.write({ type: "data-turn-reset", data: { attempt } });
@@ -174,7 +174,7 @@ export async function streamWaveTurn(
 /**
  * Tools whose chunks cross the wire to the client (issue #59). Only
  * `presentQuestionnaire` has a consumer: the streamed quiz preview in
- * `useWaveState`. Lookup results (SR state) and grading signals (verdicts)
+ * `deriveStreamingTurn`. Lookup results (SR state) and grading signals (verdicts)
  * have none, so they stay server-side. Typed by the client's tool-part
  * contract, so the set can never name a tool the client does not type.
  */

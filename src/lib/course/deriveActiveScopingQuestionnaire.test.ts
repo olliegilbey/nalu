@@ -86,6 +86,7 @@ describe("deriveActiveScopingQuestionnaire", () => {
     expect(deriveActiveScopingQuestionnaire(s)).toEqual({
       kind: "baseline",
       questions: [
+        // The client gets the baseline answer key pre-submission: issue #58. Fixing #58 changes this.
         { id: "b1", prompt: "Pick one", options: ["a", "b", "c", "d"], correctIndex: 1, tier: 1 },
         { id: "b2", prompt: "Explain", options: [], tier: 1 },
       ],
