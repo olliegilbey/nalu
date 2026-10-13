@@ -1,6 +1,11 @@
 import { z } from "zod/v4";
 import { BASELINE } from "@/lib/config/tuning";
-import { isPlaceholderRubric, placeholderRubricDirective, questionSchema } from "./questionnaire";
+import {
+  GRADED_RUBRIC_RULE,
+  isPlaceholderRubric,
+  placeholderRubricDirective,
+  questionSchema,
+} from "./questionnaire";
 
 /**
  * Parameters for {@link makeBaselineSchema}. Scope tiers are extracted from
@@ -59,7 +64,7 @@ export function makeBaselineSchema(params: MakeBaselineSchemaParams) {
                 "Every question is STANDALONE — never reference another question. " +
                 "Mix multiple_choice and free_text. MC: 4 keyed options A/B/C/D, no 'Not sure' option. " +
                 "Every question carries `conceptName`, `tier`, and `freetextRubric`. Every MC carries `correct`. " +
-                "Every question is graded: each free_text `freetextRubric` states what a correct answer must contain. " +
+                `Every question is graded: each free_text \`freetextRubric\` states ${GRADED_RUBRIC_RULE}. ` +
                 "Use ids b1, b2, b3, … in order.",
             ),
         })

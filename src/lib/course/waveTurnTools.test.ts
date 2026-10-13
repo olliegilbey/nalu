@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Schema } from "ai";
-import { WAVE } from "@/lib/config/tuning";
+import { QUESTIONNAIRE, WAVE } from "@/lib/config/tuning";
 import { UNGRADED_RUBRIC, placeholderRubricDirective } from "@/lib/prompts/questionnaire";
 import { buildWaveMidTurnTools } from "./waveTurnTools";
 
@@ -72,6 +72,16 @@ describe("buildWaveMidTurnTools", () => {
         expect(String(result.error)).toContain(placeholderRubricDirective(FT_QUESTION.id));
       }
     }
+  });
+
+  // The model reads the rubric rule and its floor before it writes, so a
+  // short key does not cost a tool-error round trip.
+  it("questionnaire tool wire states the rubric rule and its floor", async () => {
+    const { tools } = buildWaveMidTurnTools();
+    const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
+    const wire = JSON.stringify(await schema.jsonSchema);
+    expect(wire).toContain("what a correct answer must contain");
+    expect(wire).toContain(`at least ${QUESTIONNAIRE.rubricMinChars} characters`);
   });
 
   // Issue #63: the description promised 1-3 questions but nothing enforced

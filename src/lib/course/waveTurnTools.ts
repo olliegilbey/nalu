@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod/v4";
 import type { comprehensionSignalSchema } from "@/lib/prompts/waveTurn";
 import {
+  GRADED_RUBRIC_RULE,
   MC_OPTION_KEYS,
   isPlaceholderRubric,
   placeholderRubricDirective,
@@ -54,7 +55,7 @@ const toolQuestionSchema = z.object({
   freetextRubric: z
     .string()
     .describe(
-      "How to grade the answer if the learner replies in free text: what a correct answer must contain, naming the key idea you will check for. Never shown to the learner.",
+      `How to grade the answer if the learner replies in free text: ${GRADED_RUBRIC_RULE}. Never shown to the learner.`,
     ),
   options: z
     .object({ A: z.string(), B: z.string(), C: z.string(), D: z.string() })

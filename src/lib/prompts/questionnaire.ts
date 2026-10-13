@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { BASELINE } from "@/lib/config/tuning";
+import { QUESTIONNAIRE } from "@/lib/config/tuning";
 
 /**
  * Canonical four-option key tuple for multiple-choice questions. Used by
@@ -32,15 +32,12 @@ export const questionSchema = z.discriminatedUnion("type", [
       .describe("[server] Stable identifier so responses can be matched back to questions."),
     type: z.literal("free_text").describe("[server] Question kind discriminator."),
     prompt: z.string().describe("[UI] The question shown to the learner."),
-    // Graded stages (baseline, Wave quizzes) send this description on the
-    // wire. Clarify's ungraded placeholder lives on clarify's own schema:
-    // here the model copied it onto graded questions (issue #22).
+    // Neutral on purpose: clarify and baseline both send it. Clarify's
+    // placeholder once sat here, and graded stages copied it (issue #22).
+    // Each stage's own description says what its rubric must be.
     freetextRubric: z
       .string()
-      .describe(
-        "[server] Grading rubric: what a correct answer must contain, naming the key idea " +
-          "a grader checks the learner's text for. Never shown to the learner.",
-      ),
+      .describe("[server] How to grade a free-text response. Never shown to the learner."),
     conceptName: z
       .string()
       .optional()
@@ -94,23 +91,36 @@ export type Question = z.infer<typeof questionSchema>;
 export const UNGRADED_RUBRIC = "no grading — informational";
 
 /**
+ * What a graded free-text rubric must be. Baseline's and the Wave quiz
+ * tool's wire descriptions render it, so the model meets the floor first time.
+ */
+export const GRADED_RUBRIC_RULE =
+  "what a correct answer must contain, naming the key idea the grader checks the learner's text for, " +
+  `in at least ${QUESTIONNAIRE.rubricMinChars} characters`;
+
+/**
+ * The placeholder's shape: a rubric that OPENS with "no grading". Anchored,
+ * because real rubrics say "piano grading" or "with no grading applied".
+ * `\W*` skips a leading quote; `[\s-]*` catches "No-grading, informational".
+ */
+const PLACEHOLDER_LEAD = /^\W*no[\s-]*grading\b/i;
+
+/**
  * True when a graded free-text rubric gives the grader nothing to grade by:
- * shorter than `BASELINE.rubricMinChars` once trimmed, or a copy of the
- * clarify placeholder (issue #22). Baseline and the Wave quiz tool reject it.
+ * shorter than `QUESTIONNAIRE.rubricMinChars` once trimmed, or opening the
+ * way clarify's placeholder does (issue #22). Baseline and the Wave quiz
+ * tool reject it.
  */
 export function isPlaceholderRubric(rubric: string): boolean {
-  const text = rubric.trim().toLowerCase();
-  // Match the placeholder's lead phrase, not its exact bytes: a copy with a
-  // hyphen for the em dash, or a capital letter, is the same stub.
-  return text.length < BASELINE.rubricMinChars || text.includes("no grading");
+  const text = rubric.trim();
+  return text.length < QUESTIONNAIRE.rubricMinChars || PLACEHOLDER_LEAD.test(text);
 }
 
 /** Retry directive for a graded free-text question whose rubric fails `isPlaceholderRubric`. */
 export function placeholderRubricDirective(questionId: string): string {
   return (
-    `free-text question ${questionId} has a placeholder freetextRubric. This question is graded, ` +
-    `so its rubric must state what a correct answer contains: name the key idea the grader ` +
-    `checks the learner's text for, in at least ${BASELINE.rubricMinChars} characters.`
+    `free-text question ${questionId} has a placeholder freetextRubric. ` +
+    `This question is graded, so its rubric must state ${GRADED_RUBRIC_RULE}.`
   );
 }
 

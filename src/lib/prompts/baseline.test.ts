@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { BASELINE, FRAMEWORK } from "@/lib/config/tuning";
+import { BASELINE, FRAMEWORK, QUESTIONNAIRE } from "@/lib/config/tuning";
 import { toCerebrasJsonSchema } from "@/lib/llm/toCerebrasJsonSchema";
 import { makeBaselineSchema } from "./baseline";
 import { UNGRADED_RUBRIC, placeholderRubricDirective } from "./questionnaire";
@@ -156,7 +156,7 @@ describe("makeBaselineSchema", () => {
       expect(issue?.message).toBe(placeholderRubricDirective("b2"));
     });
 
-    it("rejects a stub rubric shorter than BASELINE.rubricMinChars", () => {
+    it("rejects a stub rubric shorter than QUESTIONNAIRE.rubricMinChars", () => {
       expect(() => schema.parse(wrap(withFtRubric("n/a")))).toThrow(/placeholder freetextRubric/);
     });
 
@@ -173,6 +173,14 @@ describe("makeBaselineSchema", () => {
     it("keeps the clarify placeholder off the baseline wire", () => {
       const wire = JSON.stringify(toCerebrasJsonSchema(schema, { name: "baseline" }).schema);
       expect(wire).not.toContain(UNGRADED_RUBRIC);
+    });
+
+    // A short key like "Names Paris." should not cost an attempt: the
+    // model reads the floor before it writes, not only in the retry.
+    it("tells the model the rubric rule and its floor up front", () => {
+      const wire = JSON.stringify(toCerebrasJsonSchema(schema, { name: "baseline" }).schema);
+      expect(wire).toContain("what a correct answer must contain");
+      expect(wire).toContain(`at least ${QUESTIONNAIRE.rubricMinChars} characters`);
     });
   });
 
