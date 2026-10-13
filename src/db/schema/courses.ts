@@ -8,8 +8,10 @@ import { userProfiles } from "./userProfiles";
  * `courses` — one row per learner-topic pairing (spec §3.2).
  *
  * Scoping outputs (`clarification`, `framework`, `baseline`, `starting_tier`)
- * are immutable once scoping closes. `current_tier` is mutable post-scoping
- * via `progression.ts` (promotion or demotion).
+ * are immutable once scoping closes. After that, `current_tier` changes only
+ * when Wave close advances it one tier. `checkTierAdvancement`
+ * (`src/lib/scoring/progression.ts`) decides. Advancement is one-way today;
+ * issue #85 tracks demotion.
  *
  * `summary` is the course summary. Scoping close sets it from the close
  * turn's `summary` field (`submitBaseline.persist.ts`). Nothing rewrites it

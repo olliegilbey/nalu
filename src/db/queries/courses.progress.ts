@@ -35,10 +35,12 @@ export async function updateCourseSummary(id: string, summary: string): Promise<
 }
 
 /**
- * Update `current_tier` after a tier promotion or demotion.
+ * Set `current_tier` to the tier the progression code chose.
  *
- * Deterministic progression code in `src/lib/progression/` decides the new
- * tier; this function just persists the decision.
+ * `checkTierAdvancement` (`src/lib/scoring/progression.ts`) decides; this
+ * function just persists the decision. Advancement is one-way today; issue
+ * #85 tracks demotion. Wave close runs in a transaction, so it calls the
+ * twin `updateCourseTierInTx` instead.
  * Throws `NotFoundError` explicitly at the UPDATE site for clarity.
  * Re-fetches after update to get Drizzle's camelCase-mapped row.
  */
