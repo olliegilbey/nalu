@@ -10,24 +10,9 @@ export { NotFoundError } from "./errors";
  *
  * In-Wave probes only — baseline gradings live in `courses.baseline` JSONB.
  *
- * Writes live in siblings: `assessments.record.ts` (one graded probe),
- * `assessments.open.ts` (a questionnaire's placeholder rows), and
- * `assessments.grade.ts` (grading an existing row).
+ * Writes live in siblings: `assessments.open.ts` (a questionnaire's
+ * placeholder rows) and `assessments.grade.ts` (grading an existing row).
  */
-
-/**
- * Return all assessments for a Wave, ordered by `assessedAt` ASC.
- *
- * Ordered ascending so callers can reconstruct the probe sequence within
- * the Wave (first probe first).
- */
-export async function getAssessmentsByWave(waveId: string): Promise<readonly Assessment[]> {
-  return db
-    .select()
-    .from(assessments)
-    .where(eq(assessments.waveId, waveId))
-    .orderBy(asc(assessments.assessedAt));
-}
 
 /**
  * Return assessments for a concept across all Waves, ordered by
@@ -51,24 +36,6 @@ export async function getAssessmentsByConcept(
     // `limit` keeps. Same tiebreaker as `getDueConceptsByCourse`.
     .orderBy(desc(assessments.assessedAt), asc(assessments.id));
   return limit === undefined ? query : query.limit(limit);
-}
-
-/**
- * Return assessments for a specific Wave + Concept pair, ordered by
- * `assessedAt` ASC for determinism.
- *
- * Useful when the harness needs the per-concept probe history within a
- * single Wave (e.g. to decide whether to re-probe the same concept).
- */
-export async function getAssessmentsByWaveAndConcept(
-  waveId: string,
-  conceptId: string,
-): Promise<readonly Assessment[]> {
-  return db
-    .select()
-    .from(assessments)
-    .where(and(eq(assessments.waveId, waveId), eq(assessments.conceptId, conceptId)))
-    .orderBy(asc(assessments.assessedAt));
 }
 
 /**

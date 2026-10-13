@@ -1,6 +1,6 @@
 /**
- * Shared fixtures for the `assessments` integration tests (reads, record,
- * open). Seeds the FK chain each suite needs.
+ * Shared fixtures for the `assessments` integration tests (reads, open).
+ * Seeds the FK chain each suite needs.
  *
  * Test-only module: never imported by production code.
  */
@@ -59,7 +59,7 @@ export async function seedFixtures(
 
   if (withCourseB) {
     // Second course owned by the same user; CONCEPT_B belongs to COURSE_B (not COURSE).
-    // Used to verify that recording an assessment for WAVE (course A) with
+    // Used to verify that inserting an assessment for WAVE (course A) with
     // CONCEPT_B (course B) throws a cross-course error.
     await db.insert(courses).values({ id: COURSE_B, userId: USER, topic: "y" });
     await db.insert(concepts).values({ id: CONCEPT_B, courseId: COURSE_B, name: "y", tier: 1 });

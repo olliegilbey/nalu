@@ -39,8 +39,7 @@ export interface ApplyAssessmentGradingParams {
   /**
    * Optional learner answer text. When set, replaces the placeholder
    * `userAnswer = ""` written by `insertOpenAssessments` at probe time.
-   * Omit when the row was inserted with the real answer already present
-   * (e.g. `inferred` rows or one-shot `recordAssessment` callers).
+   * Omit when the row already holds the real answer.
    */
   readonly userAnswer?: string;
 }

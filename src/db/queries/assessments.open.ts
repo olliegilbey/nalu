@@ -40,9 +40,10 @@ export interface InsertOpenAssessmentParams {
  * `updateAssessmentGrading` fills in the real verdict + quality + XP +
  * userAnswer.
  *
- * Mirrors the cross-course and monotonic-turn-index guards from
- * `recordAssessment` but runs each check ONCE per batch (single wave_id +
- * single turn_index). The batch INSERT uses Drizzle's `.values([...])` +
+ * Guards the batch before it inserts: every concept must belong to the
+ * wave's course, and `turnIndex` must not fall below the wave's current max.
+ * Each check runs ONCE per batch (single wave_id + single turn_index).
+ * The batch INSERT uses Drizzle's `.values([...])` +
  * `.returning()` which IS safe — `RETURNING` is only banned in our codebase
  * for UPDATE statements (snake_case row-map mismatch); for inserts Drizzle's
  * camelCase mapping applies cleanly.
@@ -98,8 +99,14 @@ export async function insertOpenAssessments(
 
   // --- Monotonic turn_index guard -----------------------------------------
   // All rows share the same turnIndex, so a single MAX-check suffices.
-  // Equal turn_index is allowed (siblings on the same turn). Same single-writer
-  // concurrency caveat as `recordAssessment`.
+  // Equal turn_index is allowed (siblings on the same turn).
+  //
+  // CONCURRENCY: SELECT MAX + INSERT is not atomic — two parallel writers can
+  // both observe the same `currentMax` and both insert. Safe today because one
+  // learner submits serially to one Wave (same shape as `getNextTurnIndex` in
+  // `contextMessages.ts`). If parallel writers appear, wrap the read and insert
+  // in a SERIALIZABLE transaction or take an advisory lock keyed by `waveId`
+  // (issue #53).
   const [maxRow] = await exec
     .select({ maxTurn: max(assessments.turnIndex) })
     .from(assessments)

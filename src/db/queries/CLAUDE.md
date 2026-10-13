@@ -29,10 +29,10 @@ siblings, one concern each:
 - `concepts.ts`: reads. `concepts.writes.ts`: upsert and SM-2 results.
 - `contextMessages.ts`: shared types and reads. `contextMessages.writes.ts`:
   single and batch append.
-- `assessments.ts`: reads. `assessments.record.ts`: one probe, graded at
-  insert. `assessments.open.ts`: a questionnaire's placeholder rows.
-  `assessments.grade.ts`: grades an existing row. `assessments.fixtures.ts`
-  seeds the three integration suites; tests import it, production never does.
+- `assessments.ts`: reads. `assessments.open.ts`: a questionnaire's
+  placeholder rows. `assessments.grade.ts`: grades an existing row.
+  `assessments.fixtures.ts` seeds the two integration suites; tests import
+  it, production never does.
 
 Integration tests split the same way and sit beside their module
 (`courses.scoping.integration.test.ts`). The barrel `index.ts` re-exports

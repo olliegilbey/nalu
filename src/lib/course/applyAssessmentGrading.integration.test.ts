@@ -5,7 +5,7 @@ import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
 import { upsertConcept } from "@/db/queries/concepts.writes";
 import { openWave } from "@/db/queries/waves.writes";
-import { recordAssessment } from "@/db/queries/assessments.record";
+import { insertOpenAssessments } from "@/db/queries/assessments.open";
 import { WAVE } from "@/lib/config/tuning";
 import { calculateMcXp, calculateXP } from "@/lib/scoring/xp";
 import { applyAssessmentGrading } from "./applyAssessmentGrading";
@@ -71,22 +71,21 @@ async function seedAssessment(opts: {
     },
     turnBudget: WAVE.turnCount,
   });
-  // Seed in pre-grading state: isCorrect=false, quality=0, xp=0 are placeholders
-  // that will be flipped by applyAssessmentGrading.
-  const row = await recordAssessment({
+  // Seed in pre-grading state, as a questionnaire does: isCorrect=false,
+  // quality=0, xp=0 are placeholders that applyAssessmentGrading flips.
+  const [row] = await insertOpenAssessments({
     waveId: wave.id,
-    conceptId: concept.id,
     turnIndex: 0,
-    question: opts.assessmentKind === "card_mc" ? "Pick one" : "Explain it",
-    // Card kinds require a question_id (CHECK
-    // `assessments_question_id_required_for_card_kinds`).
-    questionId: "q1",
-    userAnswer: "the answer",
-    isCorrect: false,
-    qualityScore: 0,
-    assessmentKind: opts.assessmentKind,
-    xpAwarded: 0,
+    rows: [
+      {
+        conceptId: concept.id,
+        questionId: "q1",
+        question: opts.assessmentKind === "card_mc" ? "Pick one" : "Explain it",
+        assessmentKind: opts.assessmentKind,
+      },
+    ],
   });
+  if (!row) throw new Error("seedAssessment: insert returned no row");
   return { assessmentId: row.id, conceptId: concept.id };
 }
 
