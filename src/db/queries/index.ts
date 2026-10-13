@@ -10,6 +10,8 @@
 export { NotFoundError } from "./errors";
 export * from "./userProfiles";
 export * from "./courses";
+export * from "./courses.scoping";
+export * from "./courses.progress";
 export * from "./scopingPasses";
 export * from "./waves";
 export * from "./contextMessages";

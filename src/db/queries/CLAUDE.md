@@ -13,9 +13,18 @@ helpers here take no `tx` and run on the `db` singleton.
 inside its transaction. Issue #46 tracks moving these into tx-aware query
 helpers.
 
-Modules (one per domain): `userProfiles.ts`, `courses.ts`, `scopingPasses.ts`,
-`waves.ts`, `contextMessages.ts`, `concepts.ts`, `assessments.ts`. Shared
-`NotFoundError` lives in `errors.ts`.
+Modules: one base file per table (`userProfiles.ts`, `courses.ts`,
+`scopingPasses.ts`, `waves.ts`, `contextMessages.ts`, `concepts.ts`,
+`assessments.ts`). A base file past ~200 lines splits into dot-suffixed
+siblings, one concern each:
+
+- `courses.ts`: row guard, create, reads. `courses.scoping.ts`: scoping-phase
+  writes. `courses.progress.ts`: summary, tier, XP, and archive writes.
+
+Each sibling has its own `*.integration.test.ts`. The barrel `index.ts`
+re-exports every module. Add each new sibling there: knip sees test-only
+exports as used only through the barrel. Shared `NotFoundError` lives in
+`errors.ts`.
 
 Conventions:
 

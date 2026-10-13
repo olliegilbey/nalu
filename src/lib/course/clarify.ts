@@ -1,5 +1,6 @@
 import { executeTurn } from "@/lib/turn/executeTurn";
-import { createCourse, updateCourseScopingState } from "@/db/queries/courses";
+import { createCourse } from "@/db/queries/courses";
+import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { clarifySchema, type ClarifyTurn } from "@/lib/prompts/clarify";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";

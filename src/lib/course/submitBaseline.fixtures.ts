@@ -11,7 +11,8 @@
 
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles } from "@/db/schema";
-import { createCourse, updateCourseScopingState } from "@/db/queries/courses";
+import { createCourse } from "@/db/queries/courses";
+import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import type { ScopingCloseTurn } from "@/lib/prompts/scopingClose";
 import type { MergeAndComputeXpResult } from "@/lib/scoring/baselineMerge";

@@ -33,10 +33,8 @@ vi.mock("@/lib/llm/renderContext", () => ({
   renderContext: vi.fn(() => ({ system: "SYS", messages: [] })),
 }));
 // clarify's DB + operator ping.
-vi.mock("@/db/queries/courses", () => ({
-  createCourse: vi.fn(),
-  updateCourseScopingState: vi.fn(),
-}));
+vi.mock("@/db/queries/courses", () => ({ createCourse: vi.fn() }));
+vi.mock("@/db/queries/courses.scoping", () => ({ updateCourseScopingState: vi.fn() }));
 vi.mock("@/db/queries/scopingPasses", () => ({ ensureOpenScopingPass: vi.fn() }));
 vi.mock("@/lib/notify/ntfy", () => ({ notifyEvent: vi.fn() }));
 // executeWaveClose's concept reads (the scheduler calls these too).

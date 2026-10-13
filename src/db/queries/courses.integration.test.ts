@@ -1,18 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles } from "@/db/schema";
-import { CourseNotScopingError, NotFoundError } from "./errors";
-import {
-  createCourse,
-  getCourseById,
-  listCoursesByUser,
-  updateCourseScopingState,
-  setCourseStartingState,
-  updateCourseSummary,
-  updateCourseTier,
-  incrementCourseXp,
-  archiveCourse,
-} from "./courses";
+import { NotFoundError } from "./errors";
+import { createCourse, getCourseById, listCoursesByUser } from "./courses";
 
 /** Fixed UUID for the test user — avoids generating UUIDs at runtime. */
 const USER = "22222222-2222-2222-2222-222222222222";
@@ -70,94 +60,6 @@ describe("courses queries", () => {
   });
 
   // -----------------------------------------------------------------------
-  // Test 3: updateCourseScopingState writes JSONB and validates on read
-  // -----------------------------------------------------------------------
-  it("updateCourseScopingState persists JSONB framework and validates on read", async () => {
-    await seedUserAndRun(async () => {
-      const course = await createCourse({ userId: USER, topic: "TypeScript generics" });
-
-      // Write a minimal valid framework payload (camelCase — spec §4.8).
-      const frameworkPayload = {
-        userMessage: "Here's the framework.",
-        estimatedStartingTier: 2,
-        baselineScopeTiers: [1, 2],
-        tiers: [
-          {
-            number: 1,
-            name: "Basics",
-            description: "Intro",
-            exampleConcepts: ["T", "U"],
-          },
-          {
-            number: 2,
-            name: "Advanced",
-            description: "Constraints",
-            exampleConcepts: ["extends"],
-          },
-        ],
-      };
-
-      await updateCourseScopingState(course.id, { framework: frameworkPayload });
-
-      // Re-fetch and confirm JSONB was validated and round-tripped.
-      const fetched = await getCourseById(course.id);
-      expect(fetched.framework).toMatchObject({ estimatedStartingTier: 2 });
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // Test 4: setCourseStartingState transitions status to active
-  // -----------------------------------------------------------------------
-  it("setCourseStartingState sets status='active' and correct tiers", async () => {
-    await seedUserAndRun(async () => {
-      const course = await createCourse({ userId: USER, topic: "SQL indexes" });
-
-      const updated = await setCourseStartingState(course.id, {
-        initialSummary: "Covers B-tree and hash indexes",
-        startingTier: 2,
-        currentTier: 2,
-      });
-
-      expect(updated.status).toBe("active");
-      expect(updated.startingTier).toBe(2);
-      expect(updated.currentTier).toBe(2);
-      expect(updated.summary).toBe("Covers B-tree and hash indexes");
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // Test 5: updateCourseSummary, updateCourseTier, incrementCourseXp,
-  //         archiveCourse all persist correctly
-  // -----------------------------------------------------------------------
-  it("updateCourseSummary, updateCourseTier, incrementCourseXp, archiveCourse all persist", async () => {
-    await seedUserAndRun(async () => {
-      const course = await createCourse({ userId: USER, topic: "React hooks" });
-
-      // updateCourseSummary
-      await updateCourseSummary(course.id, "Hooks intro updated");
-      const afterSummary = await getCourseById(course.id);
-      expect(afterSummary.summary).toBe("Hooks intro updated");
-      expect(afterSummary.summaryUpdatedAt).not.toBeNull();
-
-      // updateCourseTier
-      await updateCourseTier(course.id, 3);
-      const afterTier = await getCourseById(course.id);
-      expect(afterTier.currentTier).toBe(3);
-
-      // incrementCourseXp — two calls → total should be 15
-      await incrementCourseXp(course.id, 10);
-      await incrementCourseXp(course.id, 5);
-      const afterXp = await getCourseById(course.id);
-      expect(afterXp.totalXp).toBe(15);
-
-      // archiveCourse — no return value; verify by reading
-      await archiveCourse(course.id);
-      const afterArchive = await getCourseById(course.id);
-      expect(afterArchive.status).toBe("archived");
-    });
-  });
-
-  // -----------------------------------------------------------------------
   // getCourseById throws NotFoundError for missing id
   // -----------------------------------------------------------------------
   it("getCourseById throws NotFoundError for unknown id", async () => {
@@ -165,68 +67,6 @@ describe("courses queries", () => {
       await expect(getCourseById("00000000-0000-0000-0000-000000000000")).rejects.toBeInstanceOf(
         NotFoundError,
       );
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // archiveCourse throws NotFoundError on unknown id
-  // -----------------------------------------------------------------------
-  it("archiveCourse throws NotFoundError on unknown id", async () => {
-    await withTestDb(async () => {
-      await expect(archiveCourse("00000000-0000-0000-0000-000000000000")).rejects.toBeInstanceOf(
-        NotFoundError,
-      );
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // incrementCourseXp throws NotFoundError on unknown id
-  // -----------------------------------------------------------------------
-  it("incrementCourseXp throws NotFoundError on unknown id", async () => {
-    await withTestDb(async () => {
-      await expect(
-        incrementCourseXp("00000000-0000-0000-0000-000000000000", 10),
-      ).rejects.toBeInstanceOf(NotFoundError);
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // updateCourseTier throws NotFoundError on unknown id
-  // -----------------------------------------------------------------------
-  it("updateCourseTier throws NotFoundError on unknown id", async () => {
-    await withTestDb(async () => {
-      await expect(
-        updateCourseTier("00000000-0000-0000-0000-000000000000", 2),
-      ).rejects.toBeInstanceOf(NotFoundError);
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // updateCourseSummary throws NotFoundError on unknown id
-  // -----------------------------------------------------------------------
-  it("updateCourseSummary throws NotFoundError on unknown id", async () => {
-    await withTestDb(async () => {
-      await expect(
-        updateCourseSummary("00000000-0000-0000-0000-000000000000", "ghost"),
-      ).rejects.toBeInstanceOf(NotFoundError);
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // setCourseStartingState rejects courses not in 'scoping' status
-  // -----------------------------------------------------------------------
-  it("setCourseStartingState rejects courses not in 'scoping' status", async () => {
-    await seedUserAndRun(async () => {
-      const course = await createCourse({ userId: USER, topic: "Archived topic" });
-      // Archive the course so its status is 'archived', not 'scoping'.
-      await archiveCourse(course.id);
-      await expect(
-        setCourseStartingState(course.id, {
-          initialSummary: "x",
-          startingTier: 1,
-          currentTier: 1,
-        }),
-      ).rejects.toThrow(/expected 'scoping'/);
     });
   });
 
@@ -248,51 +88,6 @@ describe("courses queries", () => {
       // Backward-compat: no userId → unscoped read still works.
       const legacy = await getCourseById(course.id);
       expect(legacy.id).toBe(course.id);
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // updateCourseScopingState rejects malformed JSONB (parse-before-persist)
-  // -----------------------------------------------------------------------
-  it("updateCourseScopingState throws ZodError for malformed framework payload", async () => {
-    await seedUserAndRun(async () => {
-      const course = await createCourse({ userId: USER, topic: "Invalid framework test" });
-
-      // A framework payload missing the required `tiers` array must throw a
-      // ZodError BEFORE the DB is touched (parse-before-persist boundary).
-      await expect(
-        updateCourseScopingState(course.id, {
-          framework: {
-            estimatedStartingTier: 1,
-            baselineScopeTiers: [1],
-            // `tiers` is required by frameworkJsonbSchema — omitting it must throw.
-          },
-        }),
-      ).rejects.toThrow();
-
-      // Confirm the framework column was NOT written (parse threw before UPDATE).
-      const fetched = await getCourseById(course.id);
-      expect(fetched.framework).toBeNull();
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // updateCourseScopingState writes only while the course is in scoping
-  // -----------------------------------------------------------------------
-  it("updateCourseScopingState refuses a course that has left scoping and writes nothing", async () => {
-    await seedUserAndRun(async () => {
-      const course = await createCourse({ userId: USER, topic: "Closed course" });
-      await setCourseStartingState(course.id, {
-        initialSummary: "s",
-        startingTier: 1,
-        currentTier: 1,
-      });
-
-      const clarification = { userMessage: "late", questions: [], responses: [] };
-      await expect(updateCourseScopingState(course.id, { clarification })).rejects.toBeInstanceOf(
-        CourseNotScopingError,
-      );
-      expect((await getCourseById(course.id)).clarification).toBeNull();
     });
   });
 });

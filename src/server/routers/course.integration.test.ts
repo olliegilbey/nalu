@@ -16,7 +16,8 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { appRouter } from "./index";
 import { userProfiles, contextMessages, courses } from "@/db/schema";
 import { asc } from "drizzle-orm";
-import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
+import { getCourseById } from "@/db/queries/courses";
+import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { createCourse } from "@/db/queries/courses";
 import {
   clarificationJsonbSchema,

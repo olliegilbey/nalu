@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { executeTurn } from "@/lib/turn/executeTurn";
-import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
+import { getCourseById } from "@/db/queries/courses";
+import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { makeBaselineSchema, type BaselineTurn } from "@/lib/prompts/baseline";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
