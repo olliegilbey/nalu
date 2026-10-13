@@ -15,8 +15,7 @@ import { userProfiles } from "./userProfiles";
  *
  * `summary` is the course summary. Scoping close sets it from the close
  * turn's `summary` field (`submitBaseline.persist.ts`). Nothing rewrites it
- * after that: the Wave-close `summary` goes to `waves.summary`, and
- * `updateCourseSummary` has no production caller.
+ * after that: the Wave-close `summary` goes to `waves.summary` (issue #93).
  *
  * `total_xp` is a cached aggregate (see §3 decisions) — reconciled from
  * `assessments.xp_awarded`.

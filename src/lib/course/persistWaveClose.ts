@@ -64,9 +64,8 @@ export interface PersistWaveCloseResult {
  *   7. Bump `courses.total_xp` by `WAVE.completionXp` (flat reward).
  *
  * Like `persistScopingClose`, every `courses` write goes through the tx
- * helpers in `@/db/queries/courses.tx`. The singleton helpers
- * `incrementCourseXp` / `updateCourseTier` would deadlock against this tx's
- * row lock.
+ * helpers in `@/db/queries/courses.tx`. A write on the `db` singleton would
+ * deadlock against this tx's row lock.
  */
 export async function persistWaveClose(
   params: PersistWaveCloseParams,
@@ -185,8 +184,7 @@ export async function persistWaveClose(
       content: parsed.nextUnitBlueprint.openingText,
     });
 
-    // 8. Bump total_xp by completionXp. The tx helper, not the
-    //    singleton-bound `incrementCourseXp`.
+    // 8. Bump total_xp by completionXp, inside the tx.
     await incrementCourseXpInTx(ctx.course.id, WAVE.completionXp, tx);
 
     return {

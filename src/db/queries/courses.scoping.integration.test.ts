@@ -3,8 +3,8 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles } from "@/db/schema";
 import { CourseNotScopingError } from "./errors";
 import { createCourse, getCourseById } from "./courses";
-import { updateCourseScopingState, setCourseStartingState } from "./courses.scoping";
-import { archiveCourse } from "./courses.progress";
+import { updateCourseScopingState } from "./courses.scoping";
+import { setCourseStartingStateInTx } from "./courses.tx";
 
 /** Fixed UUID for the test user — avoids generating UUIDs at runtime. */
 const USER = "22222222-2222-2222-2222-222222222222";
@@ -61,44 +61,6 @@ describe("courses scoping writes", () => {
   });
 
   // -----------------------------------------------------------------------
-  // Test 4: setCourseStartingState transitions status to active
-  // -----------------------------------------------------------------------
-  it("setCourseStartingState sets status='active' and correct tiers", async () => {
-    await seedUserAndRun(async () => {
-      const course = await createCourse({ userId: USER, topic: "SQL indexes" });
-
-      const updated = await setCourseStartingState(course.id, {
-        initialSummary: "Covers B-tree and hash indexes",
-        startingTier: 2,
-        currentTier: 2,
-      });
-
-      expect(updated.status).toBe("active");
-      expect(updated.startingTier).toBe(2);
-      expect(updated.currentTier).toBe(2);
-      expect(updated.summary).toBe("Covers B-tree and hash indexes");
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // setCourseStartingState rejects courses not in 'scoping' status
-  // -----------------------------------------------------------------------
-  it("setCourseStartingState rejects courses not in 'scoping' status", async () => {
-    await seedUserAndRun(async () => {
-      const course = await createCourse({ userId: USER, topic: "Archived topic" });
-      // Archive the course so its status is 'archived', not 'scoping'.
-      await archiveCourse(course.id);
-      await expect(
-        setCourseStartingState(course.id, {
-          initialSummary: "x",
-          startingTier: 1,
-          currentTier: 1,
-        }),
-      ).rejects.toThrow(/expected 'scoping'/);
-    });
-  });
-
-  // -----------------------------------------------------------------------
   // updateCourseScopingState rejects malformed JSONB (parse-before-persist)
   // -----------------------------------------------------------------------
   it("updateCourseScopingState throws ZodError for malformed framework payload", async () => {
@@ -127,13 +89,9 @@ describe("courses scoping writes", () => {
   // updateCourseScopingState writes only while the course is in scoping
   // -----------------------------------------------------------------------
   it("updateCourseScopingState refuses a course that has left scoping and writes nothing", async () => {
-    await seedUserAndRun(async () => {
+    await seedUserAndRun(async (db) => {
       const course = await createCourse({ userId: USER, topic: "Closed course" });
-      await setCourseStartingState(course.id, {
-        initialSummary: "s",
-        startingTier: 1,
-        currentTier: 1,
-      });
+      await setCourseStartingStateInTx(course.id, { summary: "s", startingTier: 1 }, db);
 
       const clarification = { userMessage: "late", questions: [], responses: [] };
       await expect(updateCourseScopingState(course.id, { clarification })).rejects.toBeInstanceOf(

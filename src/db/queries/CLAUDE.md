@@ -11,10 +11,10 @@ Transactions: the persist files in `src/lib/course/` open `db.transaction`
 and pass `tx` to every helper they call, so the writes commit or roll back
 together. Most helpers take an optional trailing `tx`. A helper whose
 name ends in `InTx` requires it. `courses.tx.ts` holds the `courses` reads
-and writes the close transactions run; each re-fetches nothing. Their
-singleton twins (`setCourseStartingState`, `updateCourseTier`,
-`incrementCourseXp`) run on `db`: inside a transaction, their UPDATE would
-deadlock on the transaction's row lock.
+and writes the close transactions run; each re-fetches nothing. A
+`courses` UPDATE on the `db` singleton inside a close transaction would
+deadlock on the transaction's row lock. A test that needs one of these
+writes passes `db` as the handle; do not add a `db`-bound twin.
 
 Modules: one base file per table (`userProfiles.ts`, `courses.ts`,
 `scopingPasses.ts`, `waves.ts`, `contextMessages.ts`, `concepts.ts`,
@@ -22,8 +22,8 @@ Modules: one base file per table (`userProfiles.ts`, `courses.ts`,
 siblings, one concern each:
 
 - `courses.ts`: row guard, create, reads. `courses.scoping.ts`: scoping-phase
-  writes. `courses.progress.ts`: summary, tier, XP, and archive writes.
-  `courses.tx.ts`: the close transactions' reads and writes.
+  writes. `courses.tx.ts`: the close transactions' reads and writes:
+  activation, tier, and XP.
 - `waves.ts`: row guard and reads. `waves.writes.ts`: open, close, and the
   `chat_log` append.
 - `concepts.ts`: reads. `concepts.writes.ts`: upsert, SM-2 results, and

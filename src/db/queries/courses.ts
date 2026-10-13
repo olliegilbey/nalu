@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { courses, type Course } from "@/db/schema";
 import {
@@ -16,7 +16,7 @@ import { NotFoundError } from "./errors";
  * raw `unknown`.
  *
  * Writes live in siblings: `courses.scoping.ts` (scoping phase) and
- * `courses.progress.ts` (after scoping).
+ * `courses.tx.ts` (the close transactions).
  */
 
 /** Re-exported domain error for missing query targets — single import site for callers. */
@@ -95,19 +95,4 @@ export async function getCourseById(id: string, userId?: string): Promise<Course
     throw new NotFoundError("course", id);
   }
   return courseRowGuard(row);
-}
-
-/**
- * List all courses for a user, newest first.
- *
- * Ordered by `created_at DESC` so the most recently started course appears
- * at index 0 — the natural ordering for a learner's dashboard.
- */
-export async function listCoursesByUser(userId: string): Promise<readonly Course[]> {
-  const rows = await db
-    .select()
-    .from(courses)
-    .where(eq(courses.userId, userId))
-    .orderBy(desc(courses.createdAt));
-  return rows.map(courseRowGuard);
 }

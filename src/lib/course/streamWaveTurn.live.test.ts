@@ -20,7 +20,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
-import { setCourseStartingState } from "@/db/queries/courses.scoping";
+import { setCourseStartingStateInTx } from "@/db/queries/courses.tx";
 import { openWave } from "@/db/queries/waves.writes";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
 import { updateConceptSm2, upsertConcept } from "@/db/queries/concepts.writes";
@@ -59,11 +59,14 @@ describe.skipIf(!LIVE)("streamWaveTurn tool loop — live Cerebras", () => {
         .insert(userProfiles)
         .values({ id: LIVE_TEST_USER, displayName: "Live Test User (tool-loop)" });
       const course = await createCourse({ userId: LIVE_TEST_USER, topic: "Rust ownership" });
-      await setCourseStartingState(course.id, {
-        initialSummary: "Learner knows basic syntax; start at ownership fundamentals.",
-        startingTier: 1,
-        currentTier: 1,
-      });
+      await setCourseStartingStateInTx(
+        course.id,
+        {
+          summary: "Learner knows basic syntax; start at ownership fundamentals.",
+          startingTier: 1,
+        },
+        db,
+      );
       // Seed a genuinely DUE concept (SM-2 review date in the past) so the
       // `<due_for_review>` block renders and getDueConcepts has real rows —
       // the Task-5 injection A/B compares lookup usage + review coverage.
