@@ -10,7 +10,7 @@ import { getWaveById } from "@/db/queries/waves";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts.writes";
-import { insertOpenAssessments } from "@/db/queries/assessments";
+import { insertOpenAssessments } from "@/db/queries/assessments.open";
 import { WAVE } from "@/lib/config/tuning";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";

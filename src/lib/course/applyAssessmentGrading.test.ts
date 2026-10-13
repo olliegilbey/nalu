@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // The DB write is mocked: these tests pin the patch the grading computes,
 // not the SQL underneath (the integration suite covers the write).
-vi.mock("@/db/queries/assessments", () => ({
+vi.mock("@/db/queries/assessments.grade", () => ({
   updateAssessmentGrading: vi.fn(),
 }));
 
@@ -16,7 +16,7 @@ vi.mock("@/lib/config/tuning", async (importOriginal) => {
   };
 });
 
-import { updateAssessmentGrading } from "@/db/queries/assessments";
+import { updateAssessmentGrading } from "@/db/queries/assessments.grade";
 import type { DbOrTx } from "@/db/client";
 import { applyAssessmentGrading } from "./applyAssessmentGrading";
 

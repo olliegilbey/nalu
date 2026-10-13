@@ -26,9 +26,14 @@ siblings, one concern each:
   counters.
 - `contextMessages.ts`: shared types and reads. `contextMessages.writes.ts`:
   single and batch append.
+- `assessments.ts`: reads. `assessments.record.ts`: one probe, graded at
+  insert. `assessments.open.ts`: a questionnaire's placeholder rows.
+  `assessments.grade.ts`: grades an existing row. `assessments.fixtures.ts`
+  seeds the three integration suites; tests import it, production never does.
 
-Each sibling has its own `*.integration.test.ts`. The barrel `index.ts`
-re-exports every module. Add each new sibling there: knip sees test-only
+Integration tests split the same way and sit beside their module
+(`courses.scoping.integration.test.ts`). The barrel `index.ts` re-exports
+every module. Add each new sibling there: knip sees test-only
 exports as used only through the barrel. Shared `NotFoundError` lives in
 `errors.ts`.
 

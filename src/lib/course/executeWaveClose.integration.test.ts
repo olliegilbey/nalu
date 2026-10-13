@@ -10,7 +10,7 @@ import { getWaveByCourseAndNumber } from "@/db/queries/waves";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
 import { getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts.writes";
-import { insertOpenAssessments } from "@/db/queries/assessments";
+import { insertOpenAssessments } from "@/db/queries/assessments.open";
 import { WAVE } from "@/lib/config/tuning";
 import { calculateXP } from "@/lib/scoring/xp";
 import * as executeTurnModule from "@/lib/turn/executeTurn";

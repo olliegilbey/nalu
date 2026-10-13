@@ -1,6 +1,6 @@
 import type { DbOrTx } from "@/db/client";
 import { calculateMcXp, calculateXP } from "@/lib/scoring/xp";
-import { updateAssessmentGrading } from "@/db/queries/assessments";
+import { updateAssessmentGrading } from "@/db/queries/assessments.grade";
 import { BASELINE } from "@/lib/config/tuning";
 import type { QualityScore } from "@/lib/types/spaced-repetition";
 
