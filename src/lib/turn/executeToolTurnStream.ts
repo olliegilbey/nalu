@@ -9,6 +9,7 @@ import {
 } from "@/db/queries/contextMessages";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { SCOPING } from "@/lib/config/tuning";
+import { UnpairedToolCallError } from "./unpairedToolCallError";
 import type { SeedInputs } from "@/lib/types/context";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 import { assembleLlmMessages } from "./contextAssembly";
@@ -120,7 +121,9 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
  *   corrected call) are NOT harness retries; they stay inside one attempt's
  *   step trail and persist with it.
  * - An abnormal loop end is a transport failure, not a gate failure: an
- *   `error` stream part rethrows its error, and no rows persist.
+ *   `error` stream part rethrows its error, and no rows persist. A tool call
+ *   with neither a result nor a tool-error throws `UnpairedToolCallError`
+ *   rather than persist an orphan that Cerebras would reject on replay.
  */
 export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
   params: ExecuteToolTurnStreamParams<TOOLS>,
@@ -142,7 +145,10 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
   const totalAttempts = SCOPING.maxParseRetries + 1;
   const directiveFn = params.retryDirective ?? ((err) => err.detail);
 
-  /** Map one loop step to its persisted row pair (empty for pure-text steps). */
+  /**
+   * Map one loop step to its persisted row pair (empty for pure-text steps).
+   * Throws {@link UnpairedToolCallError} when a call has no answer.
+   */
   function stepRows(step: StepResult<TOOLS>, seqStart: number): readonly AppendMessageParams[] {
     if (step.toolCalls.length === 0) return [];
     const callRow: AppendMessageParams = {
@@ -176,7 +182,12 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
         output: { toolError: String(e.error) },
       })),
     ];
-    if (results.length === 0) return [callRow];
+    // Every call needs its answer: Cerebras rejects an unanswered tool call
+    // on replay, which would break every later Turn of the Wave. Refuse to
+    // write the orphan; end the attempt abnormally instead.
+    const answered = new Set(results.map((r) => r.toolCallId));
+    const unpaired = step.toolCalls.map((c) => c.toolCallId).filter((id) => !answered.has(id));
+    if (unpaired.length > 0) throw new UnpairedToolCallError(unpaired);
     const resultRow: AppendMessageParams = {
       parent: params.parent,
       turnIndex,

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { executeToolTurnStream, type ToolTurnAgent } from "./executeToolTurnStream";
+import { UnpairedToolCallError } from "./unpairedToolCallError";
 
 vi.mock("@/db/queries/contextMessages.writes", () => ({
   appendMessages: vi.fn(),
@@ -268,6 +269,31 @@ describe("executeToolTurnStream", () => {
         ...noopHooks,
       }),
     ).rejects.toBe(transport);
+    expect(appendMessages).not.toHaveBeenCalled();
+  });
+
+  it("refuses to persist a tool call with no result or error (Cerebras rejects it on replay)", async () => {
+    // Two calls in one Step; only c1 got a result. Persisting c2 would 400
+    // every later Turn of the Wave, so the attempt must end abnormally.
+    const orphanStep = {
+      text: "",
+      toolCalls: [
+        { toolCallId: "c1", toolName: "presentQuestionnaire", input: { questions: [] } },
+        { toolCallId: "c2", toolName: "getDueConcepts", input: {} },
+      ],
+      toolResults: [{ toolCallId: "c1", toolName: "presentQuestionnaire", output: {} }],
+      content: [],
+    };
+    const { agent } = agentOf([], [orphanStep, textStep("Done.")]);
+    const run = executeToolTurnStream({
+      parent: { kind: "wave", id: WAVE_ID },
+      seed: WAVE_SEED,
+      userMessageContent: "u",
+      makeAttempt: () => ({ agent, validateTurn: () => null }),
+      ...noopHooks,
+    });
+    await expect(run).rejects.toBeInstanceOf(UnpairedToolCallError);
+    await expect(run).rejects.toMatchObject({ toolCallIds: ["c2"] });
     expect(appendMessages).not.toHaveBeenCalled();
   });
 

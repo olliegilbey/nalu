@@ -44,7 +44,9 @@ deltas accumulated at the call site, NOT `finalText` (last step only).
   persisted on transport failure. In the tool loop, a failed Step does not
   throw: the SDK emits an `error` stream part and still resolves `steps`
   with the earlier Steps. `executeToolTurnStream` rethrows that part's
-  error, so a partial loop never reaches the gate or the DB.
+  error, so a partial loop never reaches the gate or the DB. A tool call
+  with no result and no tool-error throws `UnpairedToolCallError` instead
+  of persisting: Cerebras rejects an unanswered call on replay.
 
 Do not put per-stage logic here. If a turn-shape needs stage-specific
 behaviour, that belongs in the caller in `src/lib/course/`, not behind a flag here.
