@@ -31,8 +31,7 @@ describe("adaptQuestionnaire", () => {
         tier: 1,
       },
     ];
-    const result = adaptQuestionnaire(qs);
-    expect(result.questions).toEqual([
+    expect(adaptQuestionnaire(qs)).toEqual([
       {
         id: "b1",
         prompt: "What is 2+2?",
@@ -65,8 +64,8 @@ describe("adaptQuestionnaire", () => {
       },
     ];
     const r = adaptQuestionnaire(qs);
-    expect(r.questions[0]!.tier).toBe(3);
-    expect(r.questions[1]!.tier).toBe(4);
+    expect(r[0]!.tier).toBe(3);
+    expect(r[1]!.tier).toBe(4);
   });
 
   it("leaves correctIndex undefined when `correct` is absent (clarify-style MC)", () => {
@@ -81,7 +80,7 @@ describe("adaptQuestionnaire", () => {
     ];
     const r = adaptQuestionnaire(qs);
 
-    expect(r.questions[0]!.correctIndex).toBeUndefined();
+    expect(r[0]!.correctIndex).toBeUndefined();
   });
 
   it("adapts free-text questions to ChoiceQuestion with empty options array", () => {
@@ -93,8 +92,9 @@ describe("adaptQuestionnaire", () => {
         freetextRubric: "n/a",
       },
     ];
-    const r = adaptQuestionnaire(qs);
-    expect(r.questions).toEqual([{ id: "f1", prompt: "Why are you learning?", options: [] }]);
+    expect(adaptQuestionnaire(qs)).toEqual([
+      { id: "f1", prompt: "Why are you learning?", options: [] },
+    ]);
   });
 
   it("adaptOpenQuestion carries the optional tier through", () => {

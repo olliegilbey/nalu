@@ -12,7 +12,7 @@ export function deriveActiveScopingQuestionnaire(s: CourseState): ActiveQuestion
   // Clarify is active while there's a clarification with no responses AND
   // no framework yet.
   if (s.clarification && s.clarification.responses.length === 0 && !s.framework) {
-    const { questions } = adaptQuestionnaire(s.clarification.questions);
+    const questions = adaptQuestionnaire(s.clarification.questions);
     return {
       kind: "clarify",
       questions,
@@ -24,7 +24,7 @@ export function deriveActiveScopingQuestionnaire(s: CourseState): ActiveQuestion
   // Baseline is active while there's a baseline with no responses AND status
   // still 'scoping' (so the close hasn't landed).
   if (s.baseline && s.baseline.responses.length === 0 && s.status === "scoping") {
-    const { questions } = adaptQuestionnaire(s.baseline.questions);
+    const questions = adaptQuestionnaire(s.baseline.questions);
     return {
       kind: "baseline",
       questions,

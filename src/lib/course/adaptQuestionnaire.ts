@@ -41,11 +41,6 @@ export function deriveMcFeedback(
   return selectedIndex === correctIndex ? "correct" : "wrong";
 }
 
-/** Output of {@link adaptQuestionnaire}. */
-export interface AdaptedQuestionnaire {
-  readonly questions: readonly ChoiceQuestion[];
-}
-
 /**
  * Adapt a Nalu `Question[]` to the Composer's `ChoiceQuestion[]`.
  *
@@ -54,8 +49,8 @@ export interface AdaptedQuestionnaire {
  * - `free_text` → `options: []`. The Composer's pure-free-text branch
  *   renders the textarea instead of the option grid for these.
  */
-export function adaptQuestionnaire(qs: readonly Question[]): AdaptedQuestionnaire {
-  const questions = qs.map((q): ChoiceQuestion => {
+export function adaptQuestionnaire(qs: readonly Question[]): readonly ChoiceQuestion[] {
+  return qs.map((q): ChoiceQuestion => {
     if (q.type === "multiple_choice") {
       return {
         id: q.id,
@@ -69,8 +64,6 @@ export function adaptQuestionnaire(qs: readonly Question[]): AdaptedQuestionnair
     }
     return { id: q.id, prompt: q.prompt, options: [], tier: q.tier };
   });
-
-  return { questions };
 }
 
 /**
