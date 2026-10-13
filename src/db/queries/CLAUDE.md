@@ -26,8 +26,7 @@ siblings, one concern each:
   activation, tier, and XP.
 - `waves.ts`: row guard and reads. `waves.writes.ts`: open, close, and the
   `chat_log` append.
-- `concepts.ts`: reads. `concepts.writes.ts`: upsert, SM-2 results, and
-  counters.
+- `concepts.ts`: reads. `concepts.writes.ts`: upsert and SM-2 results.
 - `contextMessages.ts`: shared types and reads. `contextMessages.writes.ts`:
   single and batch append.
 - `assessments.ts`: reads. `assessments.record.ts`: one probe, graded at

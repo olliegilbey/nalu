@@ -2,8 +2,7 @@ import { describe, it, expect } from "vitest";
 import { sql } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles, courses, concepts as conceptsTable } from "@/db/schema";
-import { upsertConcept, incrementCorrect, incrementIncorrect } from "./concepts.writes";
-import { getConceptById } from "./concepts";
+import { upsertConcept } from "./concepts.writes";
 
 /** Fixed UUIDs per plan §D8. */
 const USER = "66666666-6666-6666-6666-666666666666";
@@ -50,27 +49,6 @@ describe("concepts writes", () => {
 
       expect(b.id).toBe(a.id);
       expect(b.tier).toBe(1);
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Test 4: incrementCorrect / incrementIncorrect bump counters
-  // ---------------------------------------------------------------------------
-  it("incrementCorrect / incrementIncorrect bump counters", async () => {
-    await withTestDb(async (db) => {
-      await seedFixtures(db);
-
-      const c = await upsertConcept({ courseId: COURSE, name: "y", tier: 1 });
-
-      // Two correct, one incorrect.
-      await incrementCorrect(c.id);
-      await incrementIncorrect(c.id);
-      await incrementCorrect(c.id);
-
-      // Re-fetch via getConceptById to verify persisted counts.
-      const row = await getConceptById(c.id);
-      expect(row.timesCorrect).toBe(2);
-      expect(row.timesIncorrect).toBe(1);
     });
   });
 
