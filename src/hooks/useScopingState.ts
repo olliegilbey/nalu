@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
 import { formatMutationError, isNotFoundError } from "@/lib/errors";
 import { deriveChatEntries } from "@/lib/course/deriveChatEntries";
-import { adaptQuestionnaire, type ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
+import type { ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
+import { deriveActiveScopingQuestionnaire } from "@/lib/course/deriveActiveScopingQuestionnaire";
 import { deriveStrandedScopingTurn } from "@/lib/course/deriveStrandedScopingTurn";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { CourseState } from "@/lib/course/getState";
@@ -129,36 +130,12 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     [state.data],
   );
 
-  const activeQuestionnaire = useMemo<ActiveQuestionnaire | null>(() => {
-    if (!state.data) return null;
-    const s = state.data;
-
-    // Clarify is active while there's a clarification with no responses AND
-    // no framework yet.
-    if (s.clarification && s.clarification.responses.length === 0 && !s.framework) {
-      const { questions } = adaptQuestionnaire(s.clarification.questions);
-      return {
-        kind: "clarify",
-        questions,
-        questionsKey: questions.map((q) => q.id).join("|"),
-        persistKey: `nalu:scoping:${s.courseId}:clarify`,
-      };
-    }
-
-    // Baseline is active while there's a baseline with no responses AND status
-    // still 'scoping' (so the close hasn't landed).
-    if (s.baseline && s.baseline.responses.length === 0 && s.status === "scoping") {
-      const { questions } = adaptQuestionnaire(s.baseline.questions);
-      return {
-        kind: "baseline",
-        questions,
-        questionsKey: questions.map((q) => q.id).join("|"),
-        persistKey: `nalu:scoping:${s.courseId}:baseline`,
-      };
-    }
-
-    return null;
-  }, [state.data]);
+  // Open clarify or baseline card. `deriveActiveScopingQuestionnaire` holds
+  // the logic; the memo keeps the result stable across consumer re-renders.
+  const activeQuestionnaire = useMemo<ActiveQuestionnaire | null>(
+    () => (state.data ? deriveActiveScopingQuestionnaire(state.data) : null),
+    [state.data],
+  );
 
   // Auto-dispatch generateBaseline when framework is present and baseline is not.
   // Use a ref guard so we don't re-fire during refetch settling.
