@@ -12,10 +12,23 @@ export interface MakeBaselineSchemaParams {
 }
 
 /**
+ * Questions per in-scope tier. Starts at `BASELINE.questionsPerTier` and rises
+ * until the total reaches `BASELINE.minQuestions`: 1 tier → 7, 2 → 4 each (8),
+ * 3 → 3 each (9). A flat 3 per tier gave 6 on a 2-tier scope, below the
+ * floor, so the model padded with out-of-scope tiers (issue #129).
+ */
+function baselineQuestionsPerTier(scopeSize: number): number {
+  return Math.max(BASELINE.questionsPerTier, Math.ceil(BASELINE.minQuestions / scopeSize));
+}
+
+/**
  * Build a per-call baseline schema whose `.superRefine` knows the scope tiers
  * the framework prescribed. Scope cannot live on the shared `questionSchema`
  * because clarify uses the same Question shape with no scope concept; only the
  * baseline-stage wrapper enforces it.
+ *
+ * The wire description renders the count rule for this scope: an exact total,
+ * the per-tier count, and the tier list. The model sees numbers it can meet.
  *
  * Output shape: `{ userMessage: string, questions: { questions: Question[] } }`.
  * The nested `questions` object is intentional — it matches the `questionnaireSchema`
@@ -24,6 +37,11 @@ export interface MakeBaselineSchemaParams {
 export function makeBaselineSchema(params: MakeBaselineSchemaParams) {
   // Convert to Set once; used in the superRefine closure below.
   const scope = new Set(params.scopeTiers);
+  // Count rule for this scope. The total always lands in
+  // [minQuestions, maxQuestions] for every legal scope size; baseline.test.ts
+  // checks each one. The `.refine` below still enforces only the total.
+  const perTier = baselineQuestionsPerTier(params.scopeTiers.length);
+  const total = perTier * params.scopeTiers.length;
 
   return z
     .object({
@@ -37,8 +55,8 @@ export function makeBaselineSchema(params: MakeBaselineSchemaParams) {
           questions: z
             .array(questionSchema)
             .describe(
-              `[UI] Between ${BASELINE.minQuestions} and ${BASELINE.maxQuestions} questions total, ` +
-                `${BASELINE.questionsPerTier} per tier in scope. Every question is STANDALONE — never reference another question. ` +
+              `[UI] Exactly ${total} questions: ${perTier} per tier, for tiers [${params.scopeTiers.join(", ")}] only. ` +
+                "Every question is STANDALONE — never reference another question. " +
                 "Mix multiple_choice and free_text. MC: 4 keyed options A/B/C/D, no 'Not sure' option. " +
                 "Every question carries `conceptName`, `tier`, and `freetextRubric`. Every MC carries `correct`. " +
                 "Use ids b1, b2, b3, … in order.",
