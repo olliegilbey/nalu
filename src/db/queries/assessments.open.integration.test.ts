@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { assessments } from "@/db/schema";
 import { namespaceQuestionId } from "@/lib/course/namespaceQuestionId";
+import { NotFoundError } from "./errors";
 import { getAssessmentByWaveAndQuestionId } from "./assessments";
 import { insertOpenAssessments } from "./assessments.open";
 import { WAVE, CONCEPT, CONCEPT_B, seedFixtures } from "./assessments.fixtures";
@@ -84,6 +85,57 @@ describe("assessments open", () => {
           ],
         }),
       ).rejects.toThrow(/turnIndex 3 < current max 5/);
+    });
+  });
+
+  it("insertOpenAssessments accepts an equal and a strictly greater turnIndex", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      // Turn 3, then 5, then 5 again — all valid. Equal is allowed: a second
+      // batch on the same turn. Each row needs a distinct question_id because
+      // the partial unique index `assessments_wave_question_unique` forbids
+      // dupes within a wave.
+      for (const [turnIndex, questionId] of [
+        [3, "q-asc-1"],
+        [5, "q-asc-2"],
+        [5, "q-asc-3"],
+      ] as const) {
+        await insertOpenAssessments({
+          waveId: WAVE,
+          turnIndex,
+          rows: [{ conceptId: CONCEPT, questionId, question: "q?", assessmentKind: "card_mc" }],
+        });
+      }
+
+      const rows = await db.select().from(assessments).where(eq(assessments.waveId, WAVE));
+      expect(rows).toHaveLength(3);
+    });
+  });
+
+  it("insertOpenAssessments throws NotFoundError for an unknown wave or concept", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+      const unknownId = "00000000-0000-0000-0000-000000000000";
+      const row = { questionId: "q-missing", question: "q?", assessmentKind: "card_mc" } as const;
+
+      // Unknown wave: the wave lookup misses before any concept is checked.
+      await expect(
+        insertOpenAssessments({
+          waveId: unknownId,
+          turnIndex: 0,
+          rows: [{ ...row, conceptId: CONCEPT }],
+        }),
+      ).rejects.toBeInstanceOf(NotFoundError);
+
+      // Known wave, unknown concept.
+      await expect(
+        insertOpenAssessments({
+          waveId: WAVE,
+          turnIndex: 0,
+          rows: [{ ...row, conceptId: unknownId }],
+        }),
+      ).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 

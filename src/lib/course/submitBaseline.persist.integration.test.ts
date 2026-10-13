@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { waves } from "@/db/schema";
 import { WAVE } from "@/lib/config/tuning";
 import { persistScopingClose } from "./submitBaseline.persist";
 import { getCourseById } from "@/db/queries/courses";
@@ -171,7 +174,8 @@ describe("persistScopingClose (integration)", () => {
       });
       // The pre-existing Wave 1 is the only Wave row for this course — no
       // partial second-Wave row leaked in either.
-      expect(await getWaveByCourseAndNumber(courseId, 2)).toBeNull();
+      const waveRows = await db.select().from(waves).where(eq(waves.courseId, courseId));
+      expect(waveRows).toHaveLength(1);
 
       // Concept upsert is now inside the transaction — must roll back too.
       // Pre-fix this would have left an "ownership" row behind.
