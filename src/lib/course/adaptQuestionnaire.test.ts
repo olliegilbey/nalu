@@ -32,7 +32,6 @@ describe("adaptQuestionnaire", () => {
       },
     ];
     const result = adaptQuestionnaire(qs);
-    expect(result.mode).toBe("mc");
     expect(result.questions).toEqual([
       {
         id: "b1",
@@ -95,7 +94,6 @@ describe("adaptQuestionnaire", () => {
       },
     ];
     const r = adaptQuestionnaire(qs);
-    expect(r.mode).toBe("free-text");
     expect(r.questions).toEqual([{ id: "f1", prompt: "Why are you learning?", options: [] }]);
   });
 
@@ -109,25 +107,5 @@ describe("adaptQuestionnaire", () => {
       tier: 2,
     });
     expect(adapted.tier).toBe(2);
-  });
-
-  it("classifies mode as 'mc' only when every question has options", () => {
-    const qs: readonly Question[] = [
-      {
-        id: "m1",
-        type: "multiple_choice",
-        prompt: "p",
-        options: { A: "1", B: "2", C: "3", D: "4" },
-        freetextRubric: "n/a",
-      },
-      {
-        id: "m2",
-        type: "free_text",
-        prompt: "p2",
-        freetextRubric: "n/a",
-      },
-    ];
-    const r = adaptQuestionnaire(qs);
-    expect(r.mode).toBe("mixed");
   });
 });

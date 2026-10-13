@@ -41,9 +41,8 @@ export function deriveMcFeedback(
   return selectedIndex === correctIndex ? "correct" : "wrong";
 }
 
-/** Output of {@link adaptQuestionnaire}; `mode` is informational for headers. */
+/** Output of {@link adaptQuestionnaire}. */
 export interface AdaptedQuestionnaire {
-  readonly mode: "mc" | "free-text" | "mixed";
   readonly questions: readonly ChoiceQuestion[];
 }
 
@@ -54,10 +53,6 @@ export interface AdaptedQuestionnaire {
  *   A,B,C,D order; `correct` letter (if present) becomes `correctIndex`.
  * - `free_text` → `options: []`. The Composer's pure-free-text branch
  *   renders the textarea instead of the option grid for these.
- *
- * Mode is informational for the caller; the Composer doesn't strictly need it
- * (it inspects `options.length === 0` per question) but `useScopingState`
- * uses it to decide whether to render the MC `chooseLabel` header.
  */
 export function adaptQuestionnaire(qs: readonly Question[]): AdaptedQuestionnaire {
   const questions = qs.map((q): ChoiceQuestion => {
@@ -75,12 +70,7 @@ export function adaptQuestionnaire(qs: readonly Question[]): AdaptedQuestionnair
     return { id: q.id, prompt: q.prompt, options: [], tier: q.tier };
   });
 
-  const hasMc = qs.some((q) => q.type === "multiple_choice");
-  const hasFree = qs.some((q) => q.type === "free_text");
-  const mode: AdaptedQuestionnaire["mode"] =
-    hasMc && hasFree ? "mixed" : hasMc ? "mc" : "free-text";
-
-  return { mode, questions };
+  return { questions };
 }
 
 /**
