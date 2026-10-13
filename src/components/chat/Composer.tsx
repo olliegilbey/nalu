@@ -12,7 +12,7 @@ import { ArrowUp, Check, ChevronLeft, ChevronRight, Mic, Plus } from "lucide-rea
 import { t } from "@/i18n";
 import { playWrong } from "@/lib/sound";
 import { calculateMcXp } from "@/lib/scoring/xp";
-import { parseQuestionnaireBuffer } from "@/lib/course/parseQuestionnaireBuffer";
+import { parseQuestionnaireBuffer } from "@/lib/course/questionnaireBuffer";
 import { matchOptionIndex } from "@/lib/course/shapeQuestionnaireAnswers";
 
 export type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
@@ -124,7 +124,7 @@ export function Composer({
     );
     setAnswers(restored ? [...restored.answers] : Array(len).fill(null));
     setDrafts(restored ? [...restored.drafts] : Array(len).fill(""));
-    setStep(restored ? restored.step : 0);
+    setStep(restored ? restored.questionIndex : 0);
     setPending(Array(len).fill(null));
     setFeedback(Array(len).fill(null));
     setSlideDir("none");
