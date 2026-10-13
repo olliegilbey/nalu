@@ -6,7 +6,7 @@ import { replaceAt } from "@/lib/utils";
 import { deriveMcFeedback, type ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import { deriveComposerControls, type ComposerControls } from "@/lib/course/deriveComposerControls";
 import { deriveQuestionnaireAdvance } from "@/lib/course/deriveQuestionnaireAdvance";
-import { isTypedCorrectMcAnswer } from "@/lib/course/deriveMcXpAward";
+import { deriveSendAction } from "@/lib/course/deriveSendAction";
 import {
   restoreQuestionnaireBuffer,
   serializeQuestionnaireBuffer,
@@ -68,10 +68,11 @@ export interface UseQuestionnaireResult extends ComposerControls {
  * The Composer's answer-card state machine: answers, drafts, the question on
  * screen, the unconfirmed pick, confirm feedback, and the pulse lock.
  *
- * Holds React state and side effects only: localStorage, the pulse timer,
- * sound, and the parent callbacks. The decisions live in pure helpers in
- * `src/lib/course/`. Without a card it routes the textarea to the parent's
- * chat input.
+ * Holds React state and side effects: localStorage, the pulse timer, sound,
+ * and the parent callbacks. Pure helpers in `src/lib/course/` make the
+ * decisions: which controls are live, what Send does, and where the card goes
+ * next. The hook dispatches their results and checks their flags against the
+ * pulse lock. Without a card it routes the textarea to the parent's chat input.
  */
 export function useQuestionnaire({
   questions,
@@ -112,7 +113,7 @@ export function useQuestionnaire({
     disabled,
     persistKey,
   });
-  const { hasQuestions, current, currentPending, answerLocked, inputValue } = controls;
+  const { hasQuestions, current, currentPending, answerLocked } = controls;
 
   // Initialise per-question state whenever the card changes: restore its
   // buffer if one matches, otherwise start blank. ONE effect by design: as two
@@ -211,21 +212,15 @@ export function useQuestionnaire({
   };
 
   const send = () => {
-    if (disabled) return;
-    if (controls.confirmMode) {
-      confirmSelection();
-      return;
+    const action = deriveSendAction(controls, disabled);
+    if (action.kind === "confirm") confirmSelection();
+    else if (action.kind === "chat") onSend();
+    else if (action.kind === "answer") {
+      // Keep the draft — a free-text answer stays editable on revisit.
+      clearPending();
+      if (action.earnsMcXpFor) awardMcXpOnce(action.earnsMcXpFor);
+      advanceAfterAnswer(action.answer);
     }
-    if (!controls.canSend) return;
-    if (!hasQuestions) {
-      onSend();
-      return;
-    }
-    const answer = inputValue.trim();
-    // Keep the draft — a free-text answer stays editable on revisit.
-    clearPending();
-    if (current && isTypedCorrectMcAnswer(current, answer)) awardMcXpOnce(current);
-    advanceAfterAnswer(answer);
   };
 
   return {
