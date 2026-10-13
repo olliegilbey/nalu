@@ -2,7 +2,7 @@ import type { Question, McOptionKey } from "@/lib/prompts/questionnaire";
 import type { OpenQuestionForClient } from "./redactQuestionnaire";
 import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
 
-/** Whispers Composer's question shape. Kept in sync with the upstream type. */
+/** The Composer's question shape: one card question, MC or free text. */
 export interface ChoiceQuestion {
   readonly id: string;
   readonly prompt: string;
@@ -48,7 +48,7 @@ export interface AdaptedQuestionnaire {
 }
 
 /**
- * Adapt a Nalu `Question[]` to the whispers Composer's `ChoiceQuestion[]`.
+ * Adapt a Nalu `Question[]` to the Composer's `ChoiceQuestion[]`.
  *
  * - `multiple_choice` → options materialised as a 4-element string array in
  *   A,B,C,D order; `correct` letter (if present) becomes `correctIndex`.

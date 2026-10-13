@@ -52,7 +52,7 @@ export function useCourseXp(courseId: string): UseCourseXpResult {
   // Hydrate from localStorage after mount. `useState(0)` keeps SSR and the
   // first client render identical (no hydration mismatch); the effect then
   // swaps in the stored value. Mirrors the localStorage-hydration pattern in
-  // `EmptyState.tsx` / `Composer.tsx`.
+  // `EmptyState.tsx` / `useQuestionnaire.ts`.
   useEffect(() => {
     setXp(readStored(courseId));
   }, [courseId]);
