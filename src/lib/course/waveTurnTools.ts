@@ -262,15 +262,18 @@ export interface WaveMidTurnToolScope {
   readonly answeredQuestionIds: readonly string[];
 }
 
-/** Refusal text for a repeat signal. Bytes predate issue #144; keep them. */
-const REPEAT_SIGNAL_REASON =
-  "a grading signal for these questions was already recorded this turn. The first grading stands. Do not resend it; continue teaching.";
+/**
+ * Refusal text for a repeat signal. With nothing left ungraded it keeps its
+ * pre-#144 bytes. With answers still ungraded it drops "continue teaching",
+ * which would contradict the nudge to call again.
+ */
+const repeatSignalReason = (answersStillUngraded: boolean): string =>
+  `a grading signal for these questions was already recorded this turn. The first grading stands. Do not resend it${answersStillUngraded ? "." : "; continue teaching."}`;
 
 /**
  * In-loop coverage nudge (issue #144). It names the answered questions that
  * still lack a signal, so the model completes a partial call inside the
- * loop rather than failing the post-loop gate. "before you continue
- * teaching" outranks the refusal's "continue teaching" when both appear.
+ * loop rather than failing the post-loop gate.
  */
 const ungradedNextStep = (ids: readonly string[]): string =>
   `Questions ${ids.join(", ")} were answered but have no grading signal yet. Call recordComprehensionSignals again with one signal for each, before you continue teaching.`;
@@ -280,7 +283,7 @@ const ungradedNextStep = (ids: readonly string[]): string =>
 function buildRecordSignalsTool(collector: WaveTurnCollector, scope: WaveMidTurnToolScope) {
   return tool({
     description:
-      "Record your grading of answers the learner just submitted. Call once, before teaching, when the learner answered questions last turn. Omit for pure teaching turns.",
+      "Record your grading of answers the learner just submitted. Call before teaching, when the learner answered questions last turn. Omit for pure teaching turns.",
     // Wire/validator split — union-free wire bytes, null-absorbing Zod
     // validation (docs/status/2026-07-06-tool-call-probe-verdict.md).
     inputSchema: toToolInputSchema(toolSignalsInputSchema, {
@@ -319,7 +322,9 @@ function buildRecordSignalsTool(collector: WaveTurnCollector, scope: WaveMidTurn
       // questions are still ungraded, so a chat turn never carries them.
       return {
         recorded: accepted.length,
-        ...(rejected.length > 0 ? { rejected, reason: REPEAT_SIGNAL_REASON } : {}),
+        ...(rejected.length > 0
+          ? { rejected, reason: repeatSignalReason(ungraded.length > 0) }
+          : {}),
         ...(ungraded.length > 0
           ? { stillUngraded: ungraded, nextStep: ungradedNextStep(ungraded) }
           : {}),

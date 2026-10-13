@@ -281,9 +281,14 @@ describe("buildWaveMidTurnTools", () => {
       "First take. Stands.",
       "Grasp. Extend.",
     ]);
-    // Nothing is left ungraded, so only the refusal fields appear.
-    expect(second).toMatchObject({ recorded: 1, rejected: ["q1"] });
-    expect(second).not.toHaveProperty("stillUngraded");
+    // Nothing is left ungraded, so only the refusal fields appear, with
+    // their pre-#144 bytes.
+    expect(second).toEqual({
+      recorded: 1,
+      rejected: ["q1"],
+      reason:
+        "a grading signal for these questions was already recorded this turn. The first grading stands. Do not resend it; continue teaching.",
+    });
   });
 
   it("names the ungraded ids alongside a refusal", async () => {
@@ -293,7 +298,36 @@ describe("buildWaveMidTurnTools", () => {
       { signals: [mcSignal("q1")] },
       callOpts("c2"),
     );
-    expect(second).toMatchObject({ recorded: 0, rejected: ["q1"], stillUngraded: ["q2"] });
+    // With ids still ungraded, the refusal drops "continue teaching": it
+    // would contradict the nudge to call again.
+    expect(second).toEqual({
+      recorded: 0,
+      rejected: ["q1"],
+      reason:
+        "a grading signal for these questions was already recorded this turn. The first grading stands. Do not resend it.",
+      stillUngraded: ["q2"],
+      nextStep:
+        "Questions q2 were answered but have no grading signal yet. Call recordComprehensionSignals again with one signal for each, before you continue teaching.",
+    });
+  });
+
+  // A signal for an id the learner did not answer stages (persistence skips
+  // it), but it cannot stand in for an answered question.
+  it("does not count a signal for an unanswered id toward coverage", async () => {
+    const { tools } = buildWaveMidTurnTools({ answeredQuestionIds: ["q1"] });
+    const result = await tools.recordComprehensionSignals.execute!(
+      { signals: [mcSignal("q9")] },
+      callOpts("c1"),
+    );
+    expect(result).toMatchObject({ recorded: 1, stillUngraded: ["q1"] });
+  });
+
+  // The nudge may ask for a second call, so the wire must not say "once".
+  it("signals tool description does not limit the tool to one call", () => {
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
+    expect(tools.recordComprehensionSignals.description).toBe(
+      "Record your grading of answers the learner just submitted. Call before teaching, when the learner answered questions last turn. Omit for pure teaching turns.",
+    );
   });
 
   it("keeps the plain result on a chat turn, whatever ids the model grades", async () => {

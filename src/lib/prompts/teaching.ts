@@ -120,7 +120,7 @@ Security:
  */
 const DUE_LOOKUP_LINE: Readonly<Record<WaveDueReviewInjection, string>> = {
   hint: "- getDueConcepts: lists the concepts currently due for spaced-repetition review. Call it before choosing review material to weave in or quiz on.",
-  full: "- getDueConcepts: lists the concepts currently due for spaced-repetition review. The due_for_review block above already lists them (no block means none are due), so you need not call it before choosing review material.",
+  full: "- getDueConcepts: lists the concepts currently due for spaced-repetition review. The due_for_review block above already lists them (no block means none are due); use that list when choosing review material to weave in or quiz on.",
 };
 
 /**
@@ -130,7 +130,7 @@ const DUE_LOOKUP_LINE: Readonly<Record<WaveDueReviewInjection, string>> = {
  * `response_format`), so the prompt must cover both turn shapes.
  */
 const OUTPUT_FORMAT_BLOCK = `On teaching turns, your text output IS your message to the learner: write it as natural conversational prose. Do not emit JSON or XML framing. Structured actions are tool calls, never prose:
-- recordComprehensionSignals: call it once, before anything else, whenever the learner answered graded questions last turn — one signal per answered question. Skip it on pure teaching turns.
+- recordComprehensionSignals: call it before anything else, whenever the learner answered graded questions last turn — one signal per answered question. Skip it on pure teaching turns.
 - presentQuestionnaire: call it at most once per turn, after your teaching prose, to drop a graded concept-check quiz.
 You also have read-only lookups into this learner's progress records:
 ${DUE_LOOKUP_LINE[WAVE.dueReviewInjection]}
