@@ -81,6 +81,16 @@ describe("renderTeachingSystem (due-review injection, default full)", () => {
     const out = renderTeachingSystem(baseInputs);
     expect(out).not.toContain("<due_for_review>");
   });
+
+  // Issue #144: the list is already in the prompt. Asking for the lookup
+  // anyway cost one Step and ~2k input tokens (2026-07-11 A/B).
+  it("says the due list is provided, and drops the lookup call instruction", () => {
+    const out = renderTeachingSystem(dueInputs);
+    expect(out).toContain(
+      "The due_for_review block above already lists them (no block means none are due), so you need not call it before choosing review material.",
+    );
+    expect(out).not.toContain("Call it before choosing review material");
+  });
 });
 
 describe("renderTeachingSystem (output contract)", () => {

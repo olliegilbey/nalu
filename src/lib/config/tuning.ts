@@ -349,8 +349,9 @@ export const AGENT_LOOKUP = {
  *   visible without dwarfing in-Wave grading.
  * - `dueReviewInjection` (agent-loop plan Task 5): how the Wave system
  *   prompt surfaces due concepts. `"full"` injects the whole
- *   `<due_for_review>` list. `"hint"` replaces it with a one-line nudge to
- *   call getDueConcepts, which shrinks the static prompt. Default stays
+ *   `<due_for_review>` list and says the lookup is not needed for it.
+ *   `"hint"` replaces it with a one-line nudge to call getDueConcepts,
+ *   which shrinks the static prompt. Default stays
  *   "full": the 2026-07-11 live A/B (docs/status/) showed the model does
  *   not call the lookup unprompted.
  * - `quizMaxQuestions`: upper bound on one mid-Wave `presentQuestionnaire`
