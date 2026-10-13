@@ -3,7 +3,8 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
-import { upsertConcept, getConceptByNameForCourse } from "@/db/queries/concepts";
+import { upsertConcept } from "@/db/queries/concepts.writes";
+import { getConceptByNameForCourse } from "@/db/queries/concepts";
 import { calculateSM2 } from "@/lib/spaced-repetition/sm2";
 import { applySm2Update } from "./applySm2Update";
 

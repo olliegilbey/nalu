@@ -8,7 +8,7 @@ import { setCourseStartingState } from "@/db/queries/courses.scoping";
 import { openWave, appendWaveChatLog } from "@/db/queries/waves.writes";
 import { getWaveByCourseAndNumber } from "@/db/queries/waves";
 import { appendMessage, getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
-import { upsertConcept } from "@/db/queries/concepts";
+import { upsertConcept } from "@/db/queries/concepts.writes";
 import { insertOpenAssessments } from "@/db/queries/assessments";
 import { WAVE } from "@/lib/config/tuning";
 import { calculateXP } from "@/lib/scoring/xp";

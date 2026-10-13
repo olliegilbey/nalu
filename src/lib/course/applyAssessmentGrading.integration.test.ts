@@ -3,7 +3,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
-import { upsertConcept } from "@/db/queries/concepts";
+import { upsertConcept } from "@/db/queries/concepts.writes";
 import { openWave } from "@/db/queries/waves.writes";
 import { recordAssessment } from "@/db/queries/assessments";
 import { WAVE } from "@/lib/config/tuning";

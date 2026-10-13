@@ -23,7 +23,7 @@ import { createCourse } from "@/db/queries/courses";
 import { setCourseStartingState } from "@/db/queries/courses.scoping";
 import { openWave } from "@/db/queries/waves.writes";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
-import { updateConceptSm2, upsertConcept } from "@/db/queries/concepts";
+import { updateConceptSm2, upsertConcept } from "@/db/queries/concepts.writes";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import { WAVE } from "@/lib/config/tuning";
 import type { WaveTurnUIMessage } from "@/lib/types/waveStream";

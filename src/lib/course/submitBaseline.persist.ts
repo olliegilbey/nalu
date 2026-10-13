@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { WAVE } from "@/lib/config/tuning";
-import { upsertConcept } from "@/db/queries/concepts";
+import { upsertConcept } from "@/db/queries/concepts.writes";
 import { appendWaveChatLog, openWave } from "@/db/queries/waves.writes";
 import { appendMessage } from "@/db/queries/contextMessages";
 import { closeScopingPass } from "@/db/queries/scopingPasses";

@@ -1,6 +1,7 @@
 import type { DbOrTx } from "@/db/client";
 import { calculateSM2 } from "@/lib/spaced-repetition/sm2";
-import { getConceptByNameForCourse, updateConceptSm2 } from "@/db/queries/concepts";
+import { getConceptByNameForCourse } from "@/db/queries/concepts";
+import { updateConceptSm2 } from "@/db/queries/concepts.writes";
 
 /** Inputs to `applySm2Update`. */
 export interface ApplySm2UpdateParams {
