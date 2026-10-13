@@ -11,6 +11,7 @@ import {
   restoreQuestionnaireBuffer,
   serializeQuestionnaireBuffer,
 } from "@/lib/course/questionnaireBuffer";
+import { questionnaireKey } from "@/lib/course/questionnaireKey";
 import type { RawComposerAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
 import { useMcXpAward } from "./useMcXpAward";
 
@@ -87,10 +88,7 @@ export function useQuestionnaire({
 }: UseQuestionnaireOptions): UseQuestionnaireResult {
   // Identity of the question set. Not unique on its own: a Wave's
   // questionnaires reuse raw ids, so `persistKey` joins it below.
-  const questionsKey = useMemo(
-    () => (questions ? questions.map((q) => q.id).join("|") : ""),
-    [questions],
-  );
+  const questionsKey = useMemo(() => questionnaireKey(questions ?? []), [questions]);
   // Per-question state, indexed alongside `questions`. Free-text drafts live
   // here, not in the parent `value`: they stay editable on revisit, while MC
   // answers lock on confirm.

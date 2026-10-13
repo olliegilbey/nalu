@@ -1,5 +1,6 @@
 import { adaptQuestionnaire, type ActiveQuestionnaire } from "./adaptQuestionnaire";
 import type { CourseState } from "./getState";
+import { questionnaireKey } from "./questionnaireKey";
 
 /**
  * Derive the Composer's active questionnaire for scoping from server state. Pure.
@@ -15,7 +16,7 @@ export function deriveActiveScopingQuestionnaire(s: CourseState): ActiveQuestion
     return {
       kind: "clarify",
       questions,
-      questionsKey: questions.map((q) => q.id).join("|"),
+      questionsKey: questionnaireKey(questions),
       persistKey: `nalu:scoping:${s.courseId}:clarify`,
     };
   }
@@ -27,7 +28,7 @@ export function deriveActiveScopingQuestionnaire(s: CourseState): ActiveQuestion
     return {
       kind: "baseline",
       questions,
-      questionsKey: questions.map((q) => q.id).join("|"),
+      questionsKey: questionnaireKey(questions),
       persistKey: `nalu:scoping:${s.courseId}:baseline`,
     };
   }
