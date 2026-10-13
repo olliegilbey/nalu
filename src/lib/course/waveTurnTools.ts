@@ -1,7 +1,14 @@
 import { tool } from "ai";
 import { z } from "zod/v4";
 import type { comprehensionSignalSchema } from "@/lib/prompts/waveTurn";
-import { MC_OPTION_KEYS, type Question, type Questionnaire } from "@/lib/prompts/questionnaire";
+import {
+  GRADED_RUBRIC_RULE,
+  MC_OPTION_KEYS,
+  isPlaceholderRubric,
+  placeholderRubricDirective,
+  type Question,
+  type Questionnaire,
+} from "@/lib/prompts/questionnaire";
 import { toToolInputSchema } from "@/lib/llm/toCerebrasJsonSchema";
 import { WAVE } from "@/lib/config/tuning";
 
@@ -48,7 +55,7 @@ const toolQuestionSchema = z.object({
   freetextRubric: z
     .string()
     .describe(
-      "How to grade the answer if the learner replies in free text. Never shown to the learner.",
+      `How to grade the answer if the learner replies in free text: ${GRADED_RUBRIC_RULE}. Never shown to the learner.`,
     ),
   options: z
     .object({ A: z.string(), B: z.string(), C: z.string(), D: z.string() })
@@ -75,7 +82,8 @@ export type ToolQuestionInput = z.infer<typeof toolQuestionSchema>;
  * in the next loop step, replacing the whole-turn retry directive for this
  * case. Directive strings are verbatim from the mega-schema (they were
  * prompt-engineered). The options/duplicate-id checks cover what the
- * canonical union/refines enforced structurally.
+ * canonical union/refines enforced structurally. The free-text rubric check
+ * shares baseline's rule and directive (`isPlaceholderRubric`).
  */
 const toolQuestionnaireSchema = z
   .object({
@@ -115,6 +123,15 @@ const toolQuestionnaireSchema = z
           code: "custom",
           path: ["questions", idx, "options"],
           message: `MC question ${q.id} is missing required options. Every multiple-choice question must carry an options object with keys A, B, C and D.`,
+        });
+      }
+      // The next turn grades free text against this rubric. A placeholder
+      // leaves the grader no key (issue #22). Same rule as baseline.
+      if (q.type === "free_text" && isPlaceholderRubric(q.freetextRubric)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["questions", idx, "freetextRubric"],
+          message: placeholderRubricDirective(q.id),
         });
       }
     });

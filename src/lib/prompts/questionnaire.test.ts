@@ -5,8 +5,57 @@ import {
   responseSchema,
   responsesSchema,
   MC_OPTION_KEYS,
+  UNGRADED_RUBRIC,
+  isPlaceholderRubric,
 } from "./questionnaire";
 import { toCerebrasJsonSchema } from "@/lib/llm/toCerebrasJsonSchema";
+import { QUESTIONNAIRE } from "@/lib/config/tuning";
+
+// Issue #22: the shared rubric description once offered clarify's
+// "no grading — informational" as an example. The model copied it onto
+// graded baseline questions, so the grader had no answer key.
+describe("isPlaceholderRubric", () => {
+  it("flags the clarify placeholder and its near-copies", () => {
+    expect(isPlaceholderRubric(UNGRADED_RUBRIC)).toBe(true);
+    expect(isPlaceholderRubric("No grading - informational.")).toBe(true);
+    expect(isPlaceholderRubric("No-grading, informational")).toBe(true);
+  });
+
+  it("flags a rubric shorter than QUESTIONNAIRE.rubricMinChars", () => {
+    expect(isPlaceholderRubric("n/a")).toBe(true);
+    expect(isPlaceholderRubric("x".repeat(QUESTIONNAIRE.rubricMinChars - 1))).toBe(true);
+    // Padding does not count: the floor is on the trimmed text.
+    expect(isPlaceholderRubric(`  ${"x".repeat(QUESTIONNAIRE.rubricMinChars - 1)}  `)).toBe(true);
+  });
+
+  it("accepts a rubric that states what a correct answer contains", () => {
+    expect(isPlaceholderRubric("x".repeat(QUESTIONNAIRE.rubricMinChars))).toBe(false);
+    expect(
+      isPlaceholderRubric("Says a move transfers ownership and invalidates the source binding."),
+    ).toBe(false);
+  });
+
+  // Only a rubric that OPENS with "no grading" is the placeholder. Real
+  // rubrics on piano exams or colour grading use the words mid-sentence.
+  it("accepts real rubrics that say 'grading' or 'no grading' mid-sentence", () => {
+    expect(isPlaceholderRubric("Explains that ABRSM piano grading runs from Grade 1 to 8.")).toBe(
+      false,
+    );
+    expect(isPlaceholderRubric("Says that with no grading applied, log footage looks flat.")).toBe(
+      false,
+    );
+  });
+});
+
+describe("free-text rubric description", () => {
+  it("is neutral, and carries no clarify placeholder", () => {
+    // Clarify and baseline both send this description. Each stage's own
+    // description says what its rubric must be.
+    const wire = JSON.stringify(toCerebrasJsonSchema(questionSchema, { name: "question" }).schema);
+    expect(wire).not.toContain(UNGRADED_RUBRIC);
+    expect(wire).toContain("How to grade a free-text response. Never shown to the learner.");
+  });
+});
 
 describe("questionSchema", () => {
   it("accepts a minimal free_text question", () => {

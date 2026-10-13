@@ -1,13 +1,14 @@
 import { z } from "zod/v4";
 import { SCOPING } from "@/lib/config/tuning";
-import { questionnaireSchema } from "./questionnaire";
+import { questionnaireSchema, UNGRADED_RUBRIC } from "./questionnaire";
 
 /**
  * Clarify-stage response schema.
  *
  * - `userMessage` is the warm chat-bubble framing the learner reads.
  * - `questions` is a Questionnaire (2–4 entries; conceptName/tier/correct
- *   absent — clarify is elicitation, not assessment).
+ *   absent and every rubric `UNGRADED_RUBRIC` — clarify is elicitation,
+ *   not assessment).
  *
  * The count bounds come from `tuning.SCOPING` so the prompt contract and
  * runtime validator stay in lock-step. Cerebras strict mode cannot express
@@ -23,9 +24,12 @@ export const clarifySchema = z
           "Frame what you're about to ask and why — do NOT enumerate the questions here; " +
           "the UI renders the question cards from the `questions` field.",
       ),
+    // The placeholder rubric is named here, never on the shared question
+    // schema: graded stages copied it from there (issue #22).
     questions: questionnaireSchema.describe(
       `[UI] Between ${SCOPING.minClarifyAnswers} and ${SCOPING.maxClarifyAnswers} clarifying questions. ` +
         "Questions are elicitation — no `conceptName`, no `tier`, no `correct`. " +
+        `Nothing here is graded: set every \`freetextRubric\` to '${UNGRADED_RUBRIC}'. ` +
         "Focus on scope, baseline knowledge, and end goal.",
     ),
   })

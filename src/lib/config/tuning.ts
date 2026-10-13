@@ -200,6 +200,19 @@ export const BASELINE = {
 } as const;
 
 /**
+ * Rules shared by every graded questionnaire: the baseline and Wave quizzes.
+ *
+ * - `rubricMinChars`: floor for a graded free-text rubric (issue #22). A
+ *   rubric states what a correct answer contains; under ~four words it
+ *   cannot, so "n/a"-style stubs fail. `isPlaceholderRubric`
+ *   (`src/lib/prompts/questionnaire.ts`) applies it, and both stages'
+ *   wire descriptions render it so the model meets it first time.
+ */
+export const QUESTIONNAIRE = {
+  rubricMinChars: 20,
+} as const;
+
+/**
  * LLM transport defaults. Applied in `src/lib/llm/generate.ts` to every
  * structured and chat call unless an explicit override is passed.
  * `defaultTemperature` favours consistency over creativity; raise per-flow

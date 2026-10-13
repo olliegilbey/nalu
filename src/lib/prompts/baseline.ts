@@ -1,6 +1,11 @@
 import { z } from "zod/v4";
 import { BASELINE } from "@/lib/config/tuning";
-import { questionSchema } from "./questionnaire";
+import {
+  GRADED_RUBRIC_RULE,
+  isPlaceholderRubric,
+  placeholderRubricDirective,
+  questionSchema,
+} from "./questionnaire";
 
 /**
  * Parameters for {@link makeBaselineSchema}. Scope tiers are extracted from
@@ -59,6 +64,7 @@ export function makeBaselineSchema(params: MakeBaselineSchemaParams) {
                 "Every question is STANDALONE — never reference another question. " +
                 "Mix multiple_choice and free_text. MC: 4 keyed options A/B/C/D, no 'Not sure' option. " +
                 "Every question carries `conceptName`, `tier`, and `freetextRubric`. Every MC carries `correct`. " +
+                `Every question is graded: each free_text \`freetextRubric\` states ${GRADED_RUBRIC_RULE}. ` +
                 "Use ids b1, b2, b3, … in order.",
             ),
         })
@@ -98,6 +104,15 @@ export function makeBaselineSchema(params: MakeBaselineSchemaParams) {
             code: "custom",
             path: ["questions", "questions", idx, "correct"],
             message: `MC question ${q.id} is missing required correct key`,
+          });
+        }
+        // The close turn grades free text against this rubric. A placeholder
+        // (clarify's, copied from the Context) leaves it no key (issue #22).
+        if (q.type === "free_text" && isPlaceholderRubric(q.freetextRubric)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["questions", "questions", idx, "freetextRubric"],
+            message: placeholderRubricDirective(q.id),
           });
         }
       });
