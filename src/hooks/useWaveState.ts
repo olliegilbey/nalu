@@ -12,16 +12,19 @@ import {
   deriveTurnResultEffects,
   type WaveCloseResult,
 } from "@/lib/course/deriveTurnResultEffects";
-import { adaptStreamedToolQuestion } from "@/lib/course/adaptQuestionnaire";
-import type { ActiveQuestionnaire, ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
+import { deriveStreamingTurn, type StreamingTurn } from "@/lib/course/deriveStreamingTurn";
+import type { ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
 import { useCourseXp } from "./useCourseXp";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
 import type { WaveState } from "@/lib/course/getWaveState";
 import type { WaveTurnResultData, WaveTurnUIMessage } from "@/lib/types/waveStream";
 
-/** Return shape of {@link useWaveState}; chat entries, active questionnaire, XP counters, submit handlers. */
-export interface UseWaveStateResult {
+/**
+ * Return shape of {@link useWaveState}; chat entries, active questionnaire, XP
+ * counters, submit handlers, and the in-flight {@link StreamingTurn}.
+ */
+export interface UseWaveStateResult extends StreamingTurn {
   readonly chatEntries: readonly ChatEntry[];
   readonly activeQuestionnaire: ActiveQuestionnaire | null;
   /** Set once a close-turn lands; null otherwise. Cleared on next mount. */
@@ -47,21 +50,6 @@ export interface UseWaveStateResult {
   /** Records exact MC XP from a correct answer. Wired to the Composer. */
   readonly awardMcXp: (amount: number) => void;
   readonly isPending: boolean;
-  /**
-   * In-flight assistant prose, growing token-by-token while the turn streams.
-   * Empty string when idle. The committed turn (from `wave.getState` after
-   * invalidation) replaces it on finish — see `onFinish` below.
-   */
-  readonly streamingText: string;
-  /**
-   * Questionnaire questions streamed in as a `tool-presentQuestionnaire` part
-   * on the in-flight turn (generative UI) — non-null from the part's
-   * `input-available` state until the committed `activeQuestionnaire` takes
-   * over after the turn-result refetch. The Composer renders these as a
-   * preview; interactivity comes only with `activeQuestionnaire` (isPending
-   * disables the option grid until the server-derived state lands).
-   */
-  readonly streamingQuestions: readonly ChoiceQuestion[] | null;
   readonly submitChatText: (text: string) => void;
   readonly submitQuestionnaireAnswers: (
     answers: readonly ShapedQuestionnaireAnswer[],
@@ -175,41 +163,10 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
 
   const isPending = state.isFetching || chat.status === "submitted" || chat.status === "streaming";
 
-  // In-flight assistant parts, discarding failed attempts: a validation retry
-  // re-streams the whole turn, and the server marks the boundary with a
-  // NON-transient `data-turn-reset` part. Everything before the last reset is
-  // a failed attempt's output (stale text/tool parts — TextUIPart carries no
-  // id, so slicing on the marker's POSITION is the only reliable seam;
-  // setMessages surgery mid-stream is undone by the SDK's next chunk).
-  const lastAssistant = chat.messages.findLast((m) => m.role === "assistant");
-  const allParts = lastAssistant?.parts ?? [];
-  const lastResetIdx = allParts.findLastIndex((p) => p.type === "data-turn-reset");
-  const liveParts = lastResetIdx === -1 ? allParts : allParts.slice(lastResetIdx + 1);
-
-  // In-flight assistant prose: concatenated text parts of the live attempt
-  // (empty when idle or between turns).
-  const streamingText = liveParts
-    .filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
-    .map((p) => p.text)
-    .join("");
-
-  // In-flight questionnaire: the typed `tool-presentQuestionnaire` part on the
-  // same message. Rendered only from `input-available` onward — the server
-  // forwards no input-streaming deltas, and the input it does forward is the
-  // redacted projection (grading keys stripped — see `streamWaveTurn`), a
-  // structural subset of the typed input, hence the StreamedToolQuestion
-  // adapter. It is the only tool part the server forwards: grading signals
-  // and lookups stay server-side (issue #59).
-  const questionnairePart = liveParts.find(
-    (p): p is Extract<typeof p, { type: "tool-presentQuestionnaire" }> =>
-      p.type === "tool-presentQuestionnaire",
-  );
-  const streamingQuestions =
-    questionnairePart &&
-    (questionnairePart.state === "input-available" ||
-      questionnairePart.state === "output-available")
-      ? questionnairePart.input.questions.map(adaptStreamedToolQuestion)
-      : null;
+  // In-flight prose + questionnaire preview from the live attempt only.
+  // `deriveStreamingTurn` holds the slicing (failed attempts end at the last
+  // `data-turn-reset` marker). Recomputed each render, like the stream itself.
+  const { streamingText, streamingQuestions } = deriveStreamingTurn(chat.messages);
 
   const submitChatText: UseWaveStateResult["submitChatText"] = (text) => {
     void chat.sendMessage({ text }, { body: { payload: { kind: "chat-text", text } } });
