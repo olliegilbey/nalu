@@ -99,6 +99,40 @@ describe("concepts queries", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Test 3b: `limit` caps in SQL and keeps most-overdue-first order (issue #62)
+  // ---------------------------------------------------------------------------
+  it("getDueConceptsByCourse applies limit after the most-overdue-first order", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+      // Three due concepts, inserted least overdue first so insertion order
+      // cannot pass for the ORDER BY.
+      const seeded = [
+        { name: "one-day", dueAt: daysAgo(1) },
+        { name: "three-days", dueAt: daysAgo(3) },
+        { name: "two-days", dueAt: daysAgo(2) },
+      ];
+      for (const { name, dueAt } of seeded) {
+        const c = await upsertConcept({ courseId: COURSE, name, tier: 1 });
+        await updateConceptSm2(c.id, {
+          easinessFactor: 2.5,
+          intervalDays: 1,
+          repetitionCount: 1,
+          lastQualityScore: 3,
+          lastReviewedAt: dueAt,
+          nextReviewAt: dueAt,
+        });
+      }
+
+      const capped = await getDueConceptsByCourse(COURSE, new Date(), 2);
+      expect(capped.map((c) => c.name)).toEqual(["three-days", "two-days"]);
+      // No limit: the full due list.
+      expect(await getDueConceptsByCourse(COURSE, new Date())).toHaveLength(3);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Test 4: incrementCorrect / incrementIncorrect bump counters
   // ---------------------------------------------------------------------------
   it("incrementCorrect / incrementIncorrect bump counters", async () => {

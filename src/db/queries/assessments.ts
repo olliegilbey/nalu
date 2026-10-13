@@ -141,15 +141,27 @@ export async function getAssessmentsByWave(waveId: string): Promise<readonly Ass
 }
 
 /**
- * Return all assessments for a concept across all Waves, ordered by
+ * Return assessments for a concept across all Waves, ordered by
  * `assessedAt` DESC (most recent first — typical for spaced-repetition reads).
+ * Optional `limit` caps the result in SQL (`LIMIT`), after the ORDER BY, so
+ * it keeps the most recent rows; omit it for the full history. Optional
+ * trailing `tx` runs the read inside a caller's transaction (file convention).
  */
-export async function getAssessmentsByConcept(conceptId: string): Promise<readonly Assessment[]> {
-  return db
+export async function getAssessmentsByConcept(
+  conceptId: string,
+  limit?: number,
+  tx?: DbOrTx,
+): Promise<readonly Assessment[]> {
+  const exec = tx ?? db;
+  const query = exec
     .select()
     .from(assessments)
     .where(eq(assessments.conceptId, conceptId))
-    .orderBy(desc(assessments.assessedAt));
+    // id ASC breaks ties: one quiz's rows share the transaction's `now()`,
+    // and a tie with no tiebreaker lets the planner pick which rows a
+    // `limit` keeps. Same tiebreaker as `getDueConceptsByCourse`.
+    .orderBy(desc(assessments.assessedAt), asc(assessments.id));
+  return limit === undefined ? query : query.limit(limit);
 }
 
 /**

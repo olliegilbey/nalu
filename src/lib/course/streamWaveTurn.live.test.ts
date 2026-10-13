@@ -182,30 +182,28 @@ describe.skipIf(!LIVE)("streamWaveTurn tool loop — live Cerebras", () => {
         expect(kinds, "tool result persisted").toContain("tool_result");
       }
 
-      // A/B forensics (agent-loop Task 5): which lookups the model called
-      // (wire) and whether the questionnaire covered the seeded due concept
-      // (persisted tool-call rows carry the UNREDACTED conceptName).
-      const lookupCalls = parts
-        .filter(
-          (p) =>
-            p.type === "tool-input-available" &&
-            (p["toolName"] === "getDueConcepts" || p["toolName"] === "getConceptHistory"),
-        )
-        .map((p) => p["toolName"]);
-      const questionnaireConcepts = ctxRows
+      // A/B forensics (agent-loop Task 5): which lookups the model called and
+      // whether the questionnaire covered the seeded due concept. Both read
+      // the persisted tool-call rows: lookup chunks never cross the wire
+      // (issue #59), and the rows carry the UNREDACTED conceptName.
+      const persistedToolCalls = ctxRows
         .filter((r) => r.kind === "assistant_tool_call")
         .flatMap((r) => {
           const parsed = JSON.parse(r.content) as {
             toolCalls: readonly { toolName: string; input: unknown }[];
           };
-          return parsed.toolCalls
-            .filter((c) => c.toolName === "presentQuestionnaire")
-            .flatMap((c) =>
-              ((c.input as { questions?: readonly { conceptName?: string }[] }).questions ?? [])
-                .map((q) => q.conceptName)
-                .filter((n): n is string => typeof n === "string"),
-            );
+          return parsed.toolCalls;
         });
+      const lookupCalls = persistedToolCalls
+        .filter((c) => c.toolName === "getDueConcepts" || c.toolName === "getConceptHistory")
+        .map((c) => c.toolName);
+      const questionnaireConcepts = persistedToolCalls
+        .filter((c) => c.toolName === "presentQuestionnaire")
+        .flatMap((c) =>
+          ((c.input as { questions?: readonly { conceptName?: string }[] }).questions ?? [])
+            .map((q) => q.conceptName)
+            .filter((n): n is string => typeof n === "string"),
+        );
 
       // Forensic summary (mirrors wave.live.test.ts style). Token usage feeds
       // the Task-5 injection A/B (cost-gate doc caveat): summed across ALL

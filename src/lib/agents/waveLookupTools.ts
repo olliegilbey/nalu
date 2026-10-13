@@ -13,8 +13,9 @@ export interface WaveLookupScope {
 /**
  * Read-only learner-state lookup tools for the mid-Wave teaching agent
  * (agent-loop plan Task 3). Contract: compact capped projections, keyed by
- * concept NAME (never row ids), zero XP/SM-2 internals on the wire (Core
- * Design Principle), and `courseId` bound by closure from the server-resolved
+ * concept NAME (never row ids), zero XP and no SM-2 schedule state on the
+ * wire (Core Design Principle; `lastQuality` is the one deliberate exception,
+ * see below), and `courseId` bound by closure from the server-resolved
  * user context — a tool that took courseId from model input would be a
  * cross-user read primitive.
  *
@@ -31,11 +32,19 @@ export function buildWaveLookupTools(scope: WaveLookupScope) {
         `what to weave into teaching or quiz next.`,
       inputSchema: toToolInputSchema(z.object({}), { name: "get_due_concepts_input" }),
       execute: async () => {
-        const due = await getDueConceptsByCourse(scope.courseId, new Date());
+        // The cap is SQL LIMIT: an overdue backlog is never fetched whole.
+        const due = await getDueConceptsByCourse(
+          scope.courseId,
+          new Date(),
+          AGENT_LOOKUP.dueConceptsLimit,
+        );
         return {
-          dueConcepts: due.slice(0, AGENT_LOOKUP.dueConceptsLimit).map((c) => ({
+          dueConcepts: due.map((c) => ({
             name: c.name,
             tier: c.tier,
+            // Kept on purpose (Ollie, issue #62): the last 0-5 quality score
+            // is a teaching signal, not XP, and the model cannot change it.
+            // It lets the tutor target the concepts the learner found weak.
             lastQuality: c.lastQualityScore,
           })),
         };
@@ -60,10 +69,10 @@ export function buildWaveLookupTools(scope: WaveLookupScope) {
         if (concept === null) {
           return { conceptName, attempts: [], notFound: true };
         }
-        const rows = await getAssessmentsByConcept(concept.id);
+        const rows = await getAssessmentsByConcept(concept.id, AGENT_LOOKUP.historyAttemptsLimit);
         return {
           conceptName,
-          attempts: rows.slice(0, AGENT_LOOKUP.historyAttemptsLimit).map((r) => ({
+          attempts: rows.map((r) => ({
             isCorrect: r.isCorrect,
             qualityScore: r.qualityScore,
           })),

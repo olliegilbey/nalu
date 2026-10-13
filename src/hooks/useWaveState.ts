@@ -198,8 +198,8 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
   // forwards no input-streaming deltas, and the input it does forward is the
   // redacted projection (grading keys stripped — see `streamWaveTurn`), a
   // structural subset of the typed input, hence the StreamedToolQuestion
-  // adapter. (`recordComprehensionSignals` parts also stream but are
-  // invisible to the learner by design — grading signals never render.)
+  // adapter. It is the only tool part the server forwards: grading signals
+  // and lookups stay server-side (issue #59).
   const questionnairePart = liveParts.find(
     (p): p is Extract<typeof p, { type: "tool-presentQuestionnaire" }> =>
       p.type === "tool-presentQuestionnaire",

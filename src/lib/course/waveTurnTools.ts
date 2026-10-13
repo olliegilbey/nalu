@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 import type { comprehensionSignalSchema } from "@/lib/prompts/waveTurn";
 import { MC_OPTION_KEYS, type Question, type Questionnaire } from "@/lib/prompts/questionnaire";
 import { toToolInputSchema } from "@/lib/llm/toCerebrasJsonSchema";
+import { WAVE } from "@/lib/config/tuning";
 
 /** One staged grading signal — inferred from the shared prompt-layer schema. */
 export type StagedComprehensionSignal = z.infer<typeof comprehensionSignalSchema>;
@@ -78,10 +79,16 @@ export type ToolQuestionInput = z.infer<typeof toolQuestionSchema>;
  */
 const toolQuestionnaireSchema = z
   .object({
+    // `.max` is validator-only: Cerebras strict mode rejects `maxItems`, so
+    // `toToolInputSchema` strips it from the wire bytes. The description
+    // carries the bound to the model; Zod enforces it (issue #63).
     questions: z
       .array(toolQuestionSchema)
       .min(1)
-      .describe("1-3 questions. Every question's id must be unique within this questionnaire."),
+      .max(WAVE.quizMaxQuestions)
+      .describe(
+        `1-${WAVE.quizMaxQuestions} questions. Every question's id must be unique within this questionnaire.`,
+      ),
   })
   .superRefine((val, ctx) => {
     val.questions.forEach((q, idx) => {
@@ -246,16 +253,39 @@ function buildRecordSignalsTool(collector: WaveTurnCollector) {
     // Staging ONLY — no DB access, no XP, no SM-2 (Core Design Principle:
     // deterministic code consumes the collector after the loop ends).
     execute: async ({ signals }) => {
-      collector.signals.push(...signals.map(toCanonicalSignal));
-      return { recorded: signals.length };
+      // One signal per questionId per turn (issue #61). A second one would
+      // grade the same assessment row twice and double the XP floater. The
+      // first signal stands; later ones, in this call or an earlier one, are
+      // refused. REJECT, not silent dedup: the model learns its re-grade did
+      // not land, the same pattern as presentQuestionnaire's refusal.
+      const staged = new Set(collector.signals.map((s) => s.questionId));
+      const isFirst = (s: (typeof signals)[number], idx: number) =>
+        !staged.has(s.questionId) &&
+        signals.findIndex((o) => o.questionId === s.questionId) === idx;
+      const accepted = signals.filter(isFirst);
+      // Each refused id once: three q1 signals refuse "q1", not "q1","q1".
+      const rejected = [
+        ...new Set(signals.filter((s, idx) => !isFirst(s, idx)).map((s) => s.questionId)),
+      ];
+      collector.signals.push(...accepted.map(toCanonicalSignal));
+      // The common case keeps its old result bytes; the refusal fields
+      // appear only when something was refused. The reason names the next
+      // step, so the model does not resend the ids and burn loop Steps.
+      return rejected.length === 0
+        ? { recorded: accepted.length }
+        : {
+            recorded: accepted.length,
+            rejected,
+            reason:
+              "a grading signal for these questions was already recorded this turn. The first grading stands. Do not resend it; continue teaching.",
+          };
     },
   });
 }
 
 function buildPresentQuestionnaireTool(collector: WaveTurnCollector) {
   return tool({
-    description:
-      "Present a graded concept-check quiz (1-3 questions) to the learner. Call at most once per turn, after your teaching prose. Every question carries conceptName; every multiple-choice question carries options and correct (A, B, C, or D).",
+    description: `Present a graded concept-check quiz (1-${WAVE.quizMaxQuestions} questions) to the learner. Call at most once per turn, after your teaching prose. Every question carries conceptName; every multiple-choice question carries options and correct (A, B, C, or D).`,
     inputSchema: toToolInputSchema(toolQuestionnaireSchema, {
       name: "present_questionnaire_input",
     }),

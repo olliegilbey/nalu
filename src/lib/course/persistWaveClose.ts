@@ -130,7 +130,8 @@ export async function persistWaveClose(
     //    writes are reflected. Parse-before-persist routes the raw
     //    `lastQualityScore: number | null` through the schema so any stored
     //    value outside [0,5] surfaces here, not as a downstream Zod failure.
-    const dueConcepts = await getDueConceptsByCourse(ctx.course.id, now, tx);
+    //    No limit: the snapshot carries every due concept.
+    const dueConcepts = await getDueConceptsByCourse(ctx.course.id, now, undefined, tx);
     const dueConceptsSnapshot = dueConceptsSnapshotSchema.parse(
       dueConcepts.map((c) => ({
         conceptId: c.id,
