@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { BASELINE } from "@/lib/config/tuning";
 
 /**
  * Canonical four-option key tuple for multiple-choice questions. Used by
@@ -19,9 +20,10 @@ export type McOptionKey = (typeof MC_OPTION_KEYS)[number];
  * tokenises descriptions into the decoder's context so these annotations
  * *are* the model's guide.
  *
- * Cross-field invariants (every MC has `correct` when graded; baseline
- * adds `conceptName`/`tier`) are enforced by per-stage `.superRefine` on
- * the wrapping stage schema, not here — clarify needs the looser shape.
+ * Cross-field invariants (every MC has `correct` when graded; no graded
+ * free-text rubric is a placeholder, per `isPlaceholderRubric`; baseline adds
+ * `conceptName`/`tier`) are enforced by per-stage `.superRefine` on the
+ * wrapping stage schema, not here — clarify needs the looser shape.
  */
 export const questionSchema = z.discriminatedUnion("type", [
   z.object({
@@ -30,11 +32,14 @@ export const questionSchema = z.discriminatedUnion("type", [
       .describe("[server] Stable identifier so responses can be matched back to questions."),
     type: z.literal("free_text").describe("[server] Question kind discriminator."),
     prompt: z.string().describe("[UI] The question shown to the learner."),
+    // Graded stages (baseline, Wave quizzes) send this description on the
+    // wire. Clarify's ungraded placeholder lives on clarify's own schema:
+    // here the model copied it onto graded questions (issue #22).
     freetextRubric: z
       .string()
       .describe(
-        "[server] How to grade a free-text response. For elicitation (clarify) " +
-          "this can be a one-liner like 'no grading — informational'. Never shown to the learner.",
+        "[server] Grading rubric: what a correct answer must contain, naming the key idea " +
+          "a grader checks the learner's text for. Never shown to the learner.",
       ),
     conceptName: z
       .string()
@@ -81,6 +86,33 @@ export const questionSchema = z.discriminatedUnion("type", [
 
 /** Inferred Question union — re-exported for stage schemas + UI typing. */
 export type Question = z.infer<typeof questionSchema>;
+
+/**
+ * Rubric clarify writes on its elicitation questions, which nothing grades.
+ * Only clarify's schema description names it; graded stages reject it.
+ */
+export const UNGRADED_RUBRIC = "no grading — informational";
+
+/**
+ * True when a graded free-text rubric gives the grader nothing to grade by:
+ * shorter than `BASELINE.rubricMinChars` once trimmed, or a copy of the
+ * clarify placeholder (issue #22). Baseline and the Wave quiz tool reject it.
+ */
+export function isPlaceholderRubric(rubric: string): boolean {
+  const text = rubric.trim().toLowerCase();
+  // Match the placeholder's lead phrase, not its exact bytes: a copy with a
+  // hyphen for the em dash, or a capital letter, is the same stub.
+  return text.length < BASELINE.rubricMinChars || text.includes("no grading");
+}
+
+/** Retry directive for a graded free-text question whose rubric fails `isPlaceholderRubric`. */
+export function placeholderRubricDirective(questionId: string): string {
+  return (
+    `free-text question ${questionId} has a placeholder freetextRubric. This question is graded, ` +
+    `so its rubric must state what a correct answer contains: name the key idea the grader ` +
+    `checks the learner's text for, in at least ${BASELINE.rubricMinChars} characters.`
+  );
+}
 
 /**
  * Questionnaire wrapper. Per-stage `.refine` on the wrapping schema tightens

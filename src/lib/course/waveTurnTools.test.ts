@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { Schema } from "ai";
 import { WAVE } from "@/lib/config/tuning";
+import { UNGRADED_RUBRIC, placeholderRubricDirective } from "@/lib/prompts/questionnaire";
 import { buildWaveMidTurnTools } from "./waveTurnTools";
 
 /** Minimal ToolCallOptions stub — execute only reads none of it today. */
@@ -54,6 +55,22 @@ describe("buildWaveMidTurnTools", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(String(result.error)).toContain("is missing required options");
+    }
+  });
+
+  // Issue #22: a quiz question is graded, so a free-text rubric must say
+  // what a correct answer contains. A placeholder leaves the grader no key.
+  it("questionnaire inputSchema rejects a free-text placeholder rubric, teacher-style directive", async () => {
+    const { tools } = buildWaveMidTurnTools();
+    const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
+    for (const rubric of [UNGRADED_RUBRIC, "n/a"]) {
+      const result = await schema.validate!({
+        questions: [{ ...FT_QUESTION, freetextRubric: rubric }],
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(String(result.error)).toContain(placeholderRubricDirective(FT_QUESTION.id));
+      }
     }
   });
 

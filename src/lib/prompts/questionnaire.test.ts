@@ -5,8 +5,44 @@ import {
   responseSchema,
   responsesSchema,
   MC_OPTION_KEYS,
+  UNGRADED_RUBRIC,
+  isPlaceholderRubric,
 } from "./questionnaire";
 import { toCerebrasJsonSchema } from "@/lib/llm/toCerebrasJsonSchema";
+import { BASELINE } from "@/lib/config/tuning";
+
+// Issue #22: the shared rubric description once offered clarify's
+// "no grading — informational" as an example. The model copied it onto
+// graded baseline questions, so the grader had no answer key.
+describe("isPlaceholderRubric", () => {
+  it("flags the clarify placeholder and its near-copies", () => {
+    expect(isPlaceholderRubric(UNGRADED_RUBRIC)).toBe(true);
+    expect(isPlaceholderRubric("No grading - informational.")).toBe(true);
+  });
+
+  it("flags a rubric shorter than BASELINE.rubricMinChars", () => {
+    expect(isPlaceholderRubric("n/a")).toBe(true);
+    expect(isPlaceholderRubric("x".repeat(BASELINE.rubricMinChars - 1))).toBe(true);
+    // Padding does not count: the floor is on the trimmed text.
+    expect(isPlaceholderRubric(`  ${"x".repeat(BASELINE.rubricMinChars - 1)}  `)).toBe(true);
+  });
+
+  it("accepts a rubric that states what a correct answer contains", () => {
+    expect(isPlaceholderRubric("x".repeat(BASELINE.rubricMinChars))).toBe(false);
+    expect(
+      isPlaceholderRubric("Says a move transfers ownership and invalidates the source binding."),
+    ).toBe(false);
+  });
+});
+
+describe("free-text rubric description", () => {
+  it("says what a correct answer contains, and carries no clarify placeholder", () => {
+    // Every graded stage reuses this description on the wire.
+    const wire = JSON.stringify(toCerebrasJsonSchema(questionSchema, { name: "question" }).schema);
+    expect(wire).not.toContain(UNGRADED_RUBRIC);
+    expect(wire).toContain("what a correct answer must contain");
+  });
+});
 
 describe("questionSchema", () => {
   it("accepts a minimal free_text question", () => {

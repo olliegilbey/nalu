@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { BASELINE, FRAMEWORK } from "@/lib/config/tuning";
+import { toCerebrasJsonSchema } from "@/lib/llm/toCerebrasJsonSchema";
 import { makeBaselineSchema } from "./baseline";
+import { UNGRADED_RUBRIC, placeholderRubricDirective } from "./questionnaire";
 
 describe("makeBaselineSchema", () => {
   // Scope tiers used throughout this block.
@@ -23,13 +25,16 @@ describe("makeBaselineSchema", () => {
     };
   }
 
+  /** A graded free-text rubric: it names what a correct answer contains. */
+  const REAL_RUBRIC = "Says a move transfers ownership and invalidates the source.";
+
   /** Builds a complete free-text question payload matching `questionSchema`. */
   function fullFt(id: string, tier: number) {
     return {
       id,
       type: "free_text" as const,
       prompt: "Explain this concept.",
-      freetextRubric: "rubric text",
+      freetextRubric: REAL_RUBRIC,
       conceptName: "some concept",
       tier,
     };
@@ -81,7 +86,7 @@ describe("makeBaselineSchema", () => {
       id: "b1",
       type: "free_text" as const,
       prompt: "Explain this.",
-      freetextRubric: "rubric",
+      freetextRubric: REAL_RUBRIC,
       // conceptName intentionally omitted
       tier: 1,
     };
@@ -99,7 +104,7 @@ describe("makeBaselineSchema", () => {
       id: "b1",
       type: "free_text" as const,
       prompt: "Explain this.",
-      freetextRubric: "rubric",
+      freetextRubric: REAL_RUBRIC,
       conceptName: "concept",
       // tier intentionally omitted
     };
@@ -128,6 +133,47 @@ describe("makeBaselineSchema", () => {
     ];
     const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
     expect(() => schema.parse(wrap(qs))).toThrow(/missing required correct key/i);
+  });
+
+  // Issue #22: the model copied clarify's placeholder onto graded baseline
+  // questions. The close-turn grader then had no answer key to grade by.
+  describe("graded free-text rubric", () => {
+    /** Seven valid questions, with b2's free-text rubric swapped for `rubric`. */
+    function withFtRubric(rubric: string) {
+      return [
+        fullMc("b1", 1),
+        { ...fullFt("b2", 1), freetextRubric: rubric },
+        ...Array.from({ length: BASELINE.minQuestions - 2 }, (_, i) => fullMc(`b${i + 3}`, 1)),
+      ];
+    }
+    const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
+
+    it("rejects the clarify placeholder with a teacher-style directive on the rubric path", () => {
+      const result = schema.safeParse(wrap(withFtRubric(UNGRADED_RUBRIC)));
+      expect(result.success).toBe(false);
+      const issue = result.error?.issues.find((i) => i.path.at(-1) === "freetextRubric");
+      expect(issue?.path).toEqual(["questions", "questions", 1, "freetextRubric"]);
+      expect(issue?.message).toBe(placeholderRubricDirective("b2"));
+    });
+
+    it("rejects a stub rubric shorter than BASELINE.rubricMinChars", () => {
+      expect(() => schema.parse(wrap(withFtRubric("n/a")))).toThrow(/placeholder freetextRubric/);
+    });
+
+    it("leaves MC escape rubrics unchecked", () => {
+      // The rule targets free-text questions. An MC rubric grades only the
+      // rare free-text escape, so it stays out of scope here.
+      const qs = [
+        { ...fullMc("b1", 1), freetextRubric: UNGRADED_RUBRIC },
+        ...withFtRubric(REAL_RUBRIC).slice(1),
+      ];
+      expect(() => schema.parse(wrap(qs))).not.toThrow();
+    });
+
+    it("keeps the clarify placeholder off the baseline wire", () => {
+      const wire = JSON.stringify(toCerebrasJsonSchema(schema, { name: "baseline" }).schema);
+      expect(wire).not.toContain(UNGRADED_RUBRIC);
+    });
   });
 
   it("rejects duplicate question ids", () => {

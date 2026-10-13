@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { clarifySchema } from "./clarify";
+import { UNGRADED_RUBRIC } from "./questionnaire";
 import { SCOPING } from "@/lib/config/tuning";
+import { toCerebrasJsonSchema } from "@/lib/llm/toCerebrasJsonSchema";
 
 describe("clarifySchema", () => {
   it("accepts a userMessage plus 2 questions", () => {
@@ -75,6 +77,26 @@ describe("clarifySchema", () => {
     const max = Array.from({ length: SCOPING.maxClarifyAnswers }, (_, i) => make(i + 1));
     expect(() =>
       clarifySchema.parse({ userMessage: "hi", questions: { questions: max } }),
+    ).not.toThrow();
+  });
+
+  // Issue #22: the placeholder guidance lives on clarify's own description,
+  // not the shared question schema, so graded stages never see it.
+  it("tells the model to write the ungraded placeholder rubric", () => {
+    const wire = JSON.stringify(toCerebrasJsonSchema(clarifySchema, { name: "clarify" }).schema);
+    expect(wire).toContain(UNGRADED_RUBRIC);
+  });
+
+  // Clarify is elicitation, so its placeholder rubric is legal here.
+  it("accepts the placeholder rubric on clarify questions", () => {
+    const q = (id: string) => ({
+      id,
+      type: "free_text" as const,
+      prompt: "p",
+      freetextRubric: UNGRADED_RUBRIC,
+    });
+    expect(() =>
+      clarifySchema.parse({ userMessage: "hi", questions: { questions: [q("q1"), q("q2")] } }),
     ).not.toThrow();
   });
 });

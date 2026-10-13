@@ -187,6 +187,11 @@ export const BASELINE = {
   conceptNameMaxChars: 120,
   questionMaxChars: 500,
   optionMaxChars: 200,
+  // Floor for a graded free-text rubric (issue #22). A rubric states what a
+  // correct answer contains; under ~four words it cannot, so "n/a"-style
+  // stubs fail. `isPlaceholderRubric` (prompts/questionnaire.ts) applies it.
+  // The Wave quiz tool reads it too.
+  rubricMinChars: 20,
   rubricMaxChars: 400,
   rationaleMaxChars: 400,
   // Mechanical MC scoring. A correct click maps to q=4 ("correct
