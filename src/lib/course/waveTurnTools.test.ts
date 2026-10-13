@@ -7,6 +7,19 @@ import { buildWaveMidTurnTools } from "./waveTurnTools";
 /** Minimal ToolCallOptions stub — execute only reads none of it today. */
 const callOpts = (id: string) => ({ toolCallId: id, messages: [] });
 
+/** Scope of a chat-text turn: the learner answered no questions. */
+const CHAT_TURN = { answeredQuestionIds: [] } as const;
+
+/** Scope of a turn where the learner answered three quiz questions. */
+const ANSWERED_THREE = { answeredQuestionIds: ["q1", "q2", "q3"] } as const;
+
+/** One valid mc-index grading signal for `questionId`. */
+const mcSignal = (questionId: string, rationale = "Grasp. Extend.") => ({
+  kind: "mc-index" as const,
+  questionId,
+  rationale,
+});
+
 /**
  * Narrow a tool's `inputSchema` (typed as the FlexibleSchema union) to the
  * validating `Schema` wrapper our tools always build via `toToolInputSchema`.
@@ -35,7 +48,7 @@ const FT_QUESTION = {
 
 describe("buildWaveMidTurnTools", () => {
   it("stages a valid questionnaire into the collector as CANONICAL questions", async () => {
-    const { tools, collector } = buildWaveMidTurnTools();
+    const { tools, collector } = buildWaveMidTurnTools(CHAT_TURN);
     const result = await tools.presentQuestionnaire.execute!(
       { questions: [MC_QUESTION] },
       callOpts("c1"),
@@ -48,7 +61,7 @@ describe("buildWaveMidTurnTools", () => {
   });
 
   it("questionnaire inputSchema rejects an MC question without options, teacher-style directive", async () => {
-    const { tools } = buildWaveMidTurnTools();
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
     const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
     const { options, ...noOptions } = MC_QUESTION;
     const result = await schema.validate!({ questions: [noOptions] });
@@ -61,7 +74,7 @@ describe("buildWaveMidTurnTools", () => {
   // Issue #22: a quiz question is graded, so a free-text rubric must say
   // what a correct answer contains. A placeholder leaves the grader no key.
   it("questionnaire inputSchema rejects a free-text placeholder rubric, teacher-style directive", async () => {
-    const { tools } = buildWaveMidTurnTools();
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
     const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
     for (const rubric of [UNGRADED_RUBRIC, "n/a"]) {
       const result = await schema.validate!({
@@ -77,7 +90,7 @@ describe("buildWaveMidTurnTools", () => {
   // The model reads the rubric rule and its floor before it writes, so a
   // short key does not cost a tool-error round trip.
   it("questionnaire tool wire states the rubric rule and its floor", async () => {
-    const { tools } = buildWaveMidTurnTools();
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
     const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
     const wire = JSON.stringify(await schema.jsonSchema);
     expect(wire).toContain("what a correct answer must contain");
@@ -87,7 +100,7 @@ describe("buildWaveMidTurnTools", () => {
   // Issue #63: the description promised 1-3 questions but nothing enforced
   // the upper bound. The SDK feeds the violation back as a tool error.
   it("questionnaire inputSchema enforces the WAVE.quizMaxQuestions upper bound", async () => {
-    const { tools } = buildWaveMidTurnTools();
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
     const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
     const questionsOf = (n: number) =>
       Array.from({ length: n }, (_v, i) => ({ ...FT_QUESTION, id: `q${i + 1}` }));
@@ -98,7 +111,7 @@ describe("buildWaveMidTurnTools", () => {
   });
 
   it("signals inputSchema rejects a free-text signal without verdict/qualityScore", async () => {
-    const { tools } = buildWaveMidTurnTools();
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
     const schema = asValidatingSchema(tools.recordComprehensionSignals.inputSchema);
     const result = await schema.validate!({
       signals: [{ kind: "free-text", questionId: "q2", rationale: "Half right. Revisit moves." }],
@@ -110,7 +123,7 @@ describe("buildWaveMidTurnTools", () => {
   });
 
   it("rejects a second questionnaire in the same turn with a model-readable refusal", async () => {
-    const { tools, collector } = buildWaveMidTurnTools();
+    const { tools, collector } = buildWaveMidTurnTools(CHAT_TURN);
     await tools.presentQuestionnaire.execute!({ questions: [FT_QUESTION] }, callOpts("c1"));
     const second = await tools.presentQuestionnaire.execute!(
       { questions: [FT_QUESTION] },
@@ -121,7 +134,7 @@ describe("buildWaveMidTurnTools", () => {
   });
 
   it("stages comprehension signals across multiple calls", async () => {
-    const { tools, collector } = buildWaveMidTurnTools();
+    const { tools, collector } = buildWaveMidTurnTools(CHAT_TURN);
     await tools.recordComprehensionSignals.execute!(
       {
         signals: [
@@ -153,7 +166,7 @@ describe("buildWaveMidTurnTools", () => {
   // assessment row twice and double the client's XP floater. The first
   // grading stands; the duplicate is refused in a model-readable result.
   it("refuses a duplicate questionId within one call; the first signal stands", async () => {
-    const { tools, collector } = buildWaveMidTurnTools();
+    const { tools, collector } = buildWaveMidTurnTools(CHAT_TURN);
     const result = await tools.recordComprehensionSignals.execute!(
       {
         signals: [
@@ -192,7 +205,7 @@ describe("buildWaveMidTurnTools", () => {
   });
 
   it("refuses a questionId already staged by an earlier call", async () => {
-    const { tools, collector } = buildWaveMidTurnTools();
+    const { tools, collector } = buildWaveMidTurnTools(CHAT_TURN);
     await tools.recordComprehensionSignals.execute!(
       { signals: [{ kind: "mc-index", questionId: "q1", rationale: "Grasp. Extend." }] },
       callOpts("c1"),
@@ -212,7 +225,7 @@ describe("buildWaveMidTurnTools", () => {
   });
 
   it("keeps the plain result bytes when nothing is refused", async () => {
-    const { tools } = buildWaveMidTurnTools();
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
     const result = await tools.recordComprehensionSignals.execute!(
       { signals: [{ kind: "mc-index", questionId: "q1", rationale: "Grasp. Extend." }] },
       callOpts("c1"),
@@ -220,16 +233,88 @@ describe("buildWaveMidTurnTools", () => {
     expect(result).toEqual({ recorded: 1 });
   });
 
+  // Issue #144: the Harness binds the answered ids by closure. A partial
+  // call learns, in-loop, which answers still lack a grade. That saves a
+  // whole-Turn retry from the post-loop gate.
+  it("names the answered questions a partial call left ungraded", async () => {
+    const { tools, collector } = buildWaveMidTurnTools(ANSWERED_THREE);
+    const result = await tools.recordComprehensionSignals.execute!(
+      { signals: [mcSignal("q1")] },
+      callOpts("c1"),
+    );
+    // Partial signals still stage. The tool does not throw: a thrown error
+    // becomes a tool-error part, and its replay is issue #147.
+    expect(collector.signals.map((s) => s.questionId)).toEqual(["q1"]);
+    expect(result).toEqual({
+      recorded: 1,
+      stillUngraded: ["q2", "q3"],
+      nextStep:
+        "Questions q2, q3 were answered but have no grading signal yet. Call recordComprehensionSignals again with one signal for each, before you continue teaching.",
+    });
+  });
+
+  it("returns the plain result once a second call grades the rest", async () => {
+    const { tools, collector } = buildWaveMidTurnTools(ANSWERED_THREE);
+    await tools.recordComprehensionSignals.execute!({ signals: [mcSignal("q1")] }, callOpts("c1"));
+    const second = await tools.recordComprehensionSignals.execute!(
+      { signals: [mcSignal("q2"), mcSignal("q3")] },
+      callOpts("c2"),
+    );
+    // The calls merge into one collector, so the post-loop gate passes.
+    expect(collector.signals.map((s) => s.questionId)).toEqual(["q1", "q2", "q3"]);
+    expect(second).toEqual({ recorded: 2 });
+  });
+
+  // A model told to finish the job often resends the whole set. The first
+  // grading of q1 stands (issue #61); the new one for q2 stages.
+  it("on a resend, the first grading stands and the missing ones stage", async () => {
+    const { tools, collector } = buildWaveMidTurnTools({ answeredQuestionIds: ["q1", "q2"] });
+    await tools.recordComprehensionSignals.execute!(
+      { signals: [mcSignal("q1", "First take. Stands.")] },
+      callOpts("c1"),
+    );
+    const second = await tools.recordComprehensionSignals.execute!(
+      { signals: [mcSignal("q1", "Second take. Refused."), mcSignal("q2")] },
+      callOpts("c2"),
+    );
+    expect(collector.signals.map((s) => s.rationale)).toEqual([
+      "First take. Stands.",
+      "Grasp. Extend.",
+    ]);
+    // Nothing is left ungraded, so only the refusal fields appear.
+    expect(second).toMatchObject({ recorded: 1, rejected: ["q1"] });
+    expect(second).not.toHaveProperty("stillUngraded");
+  });
+
+  it("names the ungraded ids alongside a refusal", async () => {
+    const { tools } = buildWaveMidTurnTools({ answeredQuestionIds: ["q1", "q2"] });
+    await tools.recordComprehensionSignals.execute!({ signals: [mcSignal("q1")] }, callOpts("c1"));
+    const second = await tools.recordComprehensionSignals.execute!(
+      { signals: [mcSignal("q1")] },
+      callOpts("c2"),
+    );
+    expect(second).toMatchObject({ recorded: 0, rejected: ["q1"], stillUngraded: ["q2"] });
+  });
+
+  it("keeps the plain result on a chat turn, whatever ids the model grades", async () => {
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
+    const result = await tools.recordComprehensionSignals.execute!(
+      { signals: [mcSignal("q1")] },
+      callOpts("c1"),
+    );
+    expect(result).toEqual({ recorded: 1 });
+  });
+
   it("each build returns a fresh, independent collector", async () => {
-    const first = buildWaveMidTurnTools();
-    const second = buildWaveMidTurnTools();
+    const first = buildWaveMidTurnTools(CHAT_TURN);
+    const second = buildWaveMidTurnTools(CHAT_TURN);
     await first.tools.presentQuestionnaire.execute!({ questions: [MC_QUESTION] }, callOpts("c1"));
     expect(first.collector.questionnaire).not.toBeNull();
     expect(second.collector.questionnaire).toBeNull();
   });
 
   it("questionnaire inputSchema rejects a missing conceptName with the mega-schema's verbatim directive", async () => {
-    const { tools } = buildWaveMidTurnTools();
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
     const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
     const { conceptName, ...noConcept } = FT_QUESTION;
     const result = await schema.validate!({ questions: [noConcept] });
@@ -250,7 +335,7 @@ describe("buildWaveMidTurnTools", () => {
     // `"   "` is a truthy string, so a presence-only check would let it
     // through. The trim-aware check must reject it before it becomes a
     // concept with a blank name.
-    const { tools } = buildWaveMidTurnTools();
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
     const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
     const result = await schema.validate!({ questions: [{ ...FT_QUESTION, conceptName }] });
     expect(result.success).toBe(false);
@@ -260,7 +345,7 @@ describe("buildWaveMidTurnTools", () => {
   });
 
   it("questionnaire inputSchema rejects an MC question without correct, verbatim directive", async () => {
-    const { tools } = buildWaveMidTurnTools();
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
     const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
     const { correct, ...noCorrect } = MC_QUESTION;
     const result = await schema.validate!({ questions: [noCorrect] });
@@ -273,7 +358,7 @@ describe("buildWaveMidTurnTools", () => {
   });
 
   it("questionnaire inputSchema absorbs explicit nulls on optional fields (probe finding)", async () => {
-    const { tools } = buildWaveMidTurnTools();
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
     const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
     // Models emit `"correct": null` / `"conceptName": null`-style explicit
     // nulls for inapplicable optionals; tier is genuinely optional here.

@@ -26,18 +26,16 @@ const STEP_USAGE = {
 } as const;
 
 /**
- * Two-Step mock: a getDueConcepts tool call, then closing prose. A function,
- * not the mock's array form: the array form indexes after recording the
- * call, so its first Step would return element 1.
+ * Two-Step mock: one tool call (default getDueConcepts), then closing prose.
+ * A function, not the mock's array form: the array form indexes after
+ * recording the call, so its first Step would return element 1.
  */
-function twoStepModel(): MockLanguageModelV3 {
+function twoStepModel(toolName = "getDueConcepts", input = "{}"): MockLanguageModelV3 {
   const model: MockLanguageModelV3 = new MockLanguageModelV3({
     doGenerate: async () =>
       model.doGenerateCalls.length === 1
         ? {
-            content: [
-              { type: "tool-call", toolCallId: "call-1", toolName: "getDueConcepts", input: "{}" },
-            ],
+            content: [{ type: "tool-call", toolCallId: "call-1", toolName, input }],
             finishReason: { unified: "tool-calls", raw: undefined },
             usage: STEP_USAGE,
             warnings: [],
@@ -105,9 +103,12 @@ const SEED: WaveSeedInputs = {
 
 const COURSE_ID = "11111111-1111-4111-8111-111111111111";
 
+/** Agent params for a chat-text turn: no questions answered. */
+const CHAT_TURN = { seed: SEED, courseId: COURSE_ID, answeredQuestionIds: [] } as const;
+
 describe("buildWaveMidTurnAgent", () => {
   it("binds emission + lookup tools and a fresh collector", () => {
-    const { agent, collector } = buildWaveMidTurnAgent({ seed: SEED, courseId: COURSE_ID });
+    const { agent, collector } = buildWaveMidTurnAgent(CHAT_TURN);
     // Tool surface is the contract the prompt + client rely on.
     expect(Object.keys(agent.tools).sort()).toEqual([
       "getConceptHistory",
@@ -119,8 +120,8 @@ describe("buildWaveMidTurnAgent", () => {
   });
 
   it("builds a FRESH collector + tool set per call (retry isolation)", () => {
-    const first = buildWaveMidTurnAgent({ seed: SEED, courseId: COURSE_ID });
-    const second = buildWaveMidTurnAgent({ seed: SEED, courseId: COURSE_ID });
+    const first = buildWaveMidTurnAgent(CHAT_TURN);
+    const second = buildWaveMidTurnAgent(CHAT_TURN);
     expect(first.collector).not.toBe(second.collector);
     expect(first.agent).not.toBe(second.agent);
   });
@@ -129,7 +130,7 @@ describe("buildWaveMidTurnAgent", () => {
     // renderContext.system === renderTeachingSystem(seed) for wave seeds —
     // the agent MUST NOT drift from what the message-assembly path renders,
     // or the provider cache prefix breaks (renderContext invariant).
-    const { instructions } = buildWaveMidTurnAgent({ seed: SEED, courseId: COURSE_ID });
+    const { instructions } = buildWaveMidTurnAgent(CHAT_TURN);
     expect(instructions).toBe(renderTeachingSystem(SEED));
   });
 
@@ -137,11 +138,7 @@ describe("buildWaveMidTurnAgent", () => {
     // Each Step is one billed provider call. The tool loop bypasses
     // generateChat, so the agent's onStepFinish must record usage itself.
     resetRunUsageTally();
-    const { agent } = buildWaveMidTurnAgent({
-      seed: SEED,
-      courseId: COURSE_ID,
-      model: twoStepModel(),
-    });
+    const { agent } = buildWaveMidTurnAgent({ ...CHAT_TURN, model: twoStepModel() });
 
     const result = await agent.generate({ messages: [{ role: "user", content: "hi" }] });
 
@@ -154,11 +151,7 @@ describe("buildWaveMidTurnAgent", () => {
   it("folds every streamed loop Step's usage into the run tally", async () => {
     // The production path: executeToolTurnStream drives agent.stream.
     resetRunUsageTally();
-    const { agent } = buildWaveMidTurnAgent({
-      seed: SEED,
-      courseId: COURSE_ID,
-      model: twoStepStreamModel(),
-    });
+    const { agent } = buildWaveMidTurnAgent({ ...CHAT_TURN, model: twoStepStreamModel() });
 
     const result = await agent.stream({ messages: [{ role: "user", content: "hi" }] });
     for await (const part of result.fullStream) {
@@ -168,5 +161,25 @@ describe("buildWaveMidTurnAgent", () => {
     // Guard the fixture: the loop really ran two Steps.
     expect(await result.steps).toHaveLength(2);
     expect(getRunUsageTally()).toMatchObject({ steps: 2, inputTokens: 200, outputTokens: 80 });
+  });
+
+  // Issue #144: the answered ids reach the grading tool by closure, so a
+  // partial call learns in-loop which answers still lack a grade.
+  it("binds the answered ids into the grading tool's result", async () => {
+    const partialCall = JSON.stringify({
+      signals: [{ kind: "mc-index", questionId: "q1", rationale: "Grasp. Extend." }],
+    });
+    const { agent } = buildWaveMidTurnAgent({
+      ...CHAT_TURN,
+      answeredQuestionIds: ["q1", "q2"],
+      model: twoStepModel("recordComprehensionSignals", partialCall),
+    });
+
+    const result = await agent.generate({ messages: [{ role: "user", content: "answers" }] });
+
+    expect(result.steps[0]?.toolResults[0]?.output).toMatchObject({
+      recorded: 1,
+      stillUngraded: ["q2"],
+    });
   });
 });

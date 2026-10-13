@@ -83,6 +83,12 @@ export async function streamWaveTurn(
   // lets the dispatcher drop the assembled system message (cache prefix).
   const seed = buildWaveSeed(prep.dispatchCtx.course, prep.dispatchCtx.wave);
 
+  // The questions this turn answers, known before the loop starts. The
+  // grading tool names any still ungraded, so the model completes a partial
+  // call in-loop (issue #144). The post-loop gate stays the backstop.
+  const answeredQuestionIds =
+    prep.payload.kind === "questionnaire-answers" ? prep.payload.answers.map((a) => a.id) : [];
+
   // finalText deliberately unused: the learner-visible prose is accumulated
   // in attemptState (all steps, not just the closing step). usage is
   // surfaced to the caller for smoke-run cost logging only.
@@ -99,7 +105,11 @@ export async function streamWaveTurn(
       // Fresh agent + collector per attempt — a retry must not inherit a
       // failed attempt's staged state (executeToolTurnStream contract). The
       // lookup tools are scoped to the server-resolved course by closure.
-      const instance = buildWaveMidTurnAgent({ seed, courseId: prep.dispatchCtx.course.id });
+      const instance = buildWaveMidTurnAgent({
+        seed,
+        courseId: prep.dispatchCtx.course.id,
+        answeredQuestionIds,
+      });
       attemptState.collector = instance.collector;
       return {
         agent: instance.agent,

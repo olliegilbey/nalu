@@ -5,7 +5,8 @@ model + instructions (from src/lib/prompts/) + tools + stopWhen +
 `cerebrasToolLoopPrepareStep` (per-step pacing + reasoning strip — NEVER
 omit it) + an `onStepFinish` that calls `recordStepFinished` (rate-limit
 headers for pacing, usage for the cost tally), built fresh per attempt with
-turn-scoped closures (collector, lookup courseId). Dispatch goes through
+turn-scoped closures (collector, answered question ids, lookup courseId).
+Dispatch goes through
 `executeToolTurnStream` (src/lib/turn/), which drops the assembled
 leading system message because `instructions` carries identical bytes.
 
