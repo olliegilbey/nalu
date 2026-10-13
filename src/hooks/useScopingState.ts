@@ -9,18 +9,19 @@ import { deriveChatEntries } from "@/lib/course/deriveChatEntries";
 import type { ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
 import { deriveActiveScopingQuestionnaire } from "@/lib/course/deriveActiveScopingQuestionnaire";
 import { deriveStrandedScopingTurn } from "@/lib/course/deriveStrandedScopingTurn";
+import { hasScopingTurnLanded, type ScopingTurnKind } from "@/lib/course/hasScopingTurnLanded";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { CourseState } from "@/lib/course/getState";
 
 /**
  * The last scoping Turn that failed, with a closure that re-sends it. Drives the
  * inline Retry row: a toast alone fades and leaves the learner with no way on.
- * `kind` names the scoping stage that failed; `scopingClose` is `submitBaseline`.
+ * `kind` names the scoping stage that failed.
  * `retry` re-runs the same mutation with the same variables. After a reload,
  * it re-sends the answers the server saved (`deriveStrandedScopingTurn`).
  */
 export interface FailedScopingTurn {
-  readonly kind: "framework" | "baseline" | "scopingClose";
+  readonly kind: ScopingTurnKind;
   readonly retry: () => void;
 }
 
@@ -218,14 +219,12 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     );
   };
 
-  // The server can commit a Turn whose reply never reached the client (a
-  // network drop). Once a refetch shows that stage landed, the failure is
-  // stale, so hide it. Otherwise "Move on" could sit beside a Retry row.
-  const landed = {
-    framework: Boolean(state.data?.framework),
-    baseline: Boolean(state.data?.baseline),
-    scopingClose: Boolean(state.data?.scopingResult),
-  };
+  // A failure whose Turn a refetch shows landed is stale (`hasScopingTurnLanded`),
+  // so hide it. Otherwise "Move on" could sit beside a Retry row.
+  const staleFailure =
+    failedTurn !== null &&
+    state.data !== undefined &&
+    hasScopingTurnLanded(state.data, failedTurn.kind);
   // A reload drops `failedTurn`, and a saved-answers Turn shows no question
   // card. Rebuild its Retry from server state (issue #103). Skip while a Turn
   // is in flight: its answers are saved before the LLM call, so a mid-call
@@ -240,7 +239,7 @@ export function useScopingState(courseId: string): UseScopingStateResult {
       : stranded.kind === "framework"
         ? { kind: "framework", retry: () => submitClarify(stranded.responses) }
         : { kind: "scopingClose", retry: () => submitBaselineAnswers(stranded.answers) };
-  const openFailedTurn = failedTurn && !landed[failedTurn.kind] ? failedTurn : strandedTurn;
+  const openFailedTurn = failedTurn && !staleFailure ? failedTurn : strandedTurn;
 
   return {
     chatEntries,
