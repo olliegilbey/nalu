@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { WAVE } from "@/lib/config/tuning";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles, courses } from "@/db/schema";
-import { openWave, getWaveById, appendWaveChatLog } from "./waves";
+import { openWave, appendWaveChatLog } from "./waves.writes";
+import { getWaveById } from "./waves";
 
 /**
  * Integration coverage for `appendWaveChatLog` — Task 4 of the wave chat_log

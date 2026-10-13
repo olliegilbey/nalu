@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { appendWaveChatLog } from "@/db/queries/waves";
+import { appendWaveChatLog } from "@/db/queries/waves.writes";
 import { contextMessages } from "@/db/schema";
 import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";

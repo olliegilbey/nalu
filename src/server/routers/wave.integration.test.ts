@@ -4,7 +4,7 @@ import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
 import { setCourseStartingState } from "@/db/queries/courses.scoping";
-import { openWave, appendWaveChatLog } from "@/db/queries/waves";
+import { openWave, appendWaveChatLog } from "@/db/queries/waves.writes";
 import { appendMessage } from "@/db/queries/contextMessages";
 import { WAVE } from "@/lib/config/tuning";
 import { appRouter } from "./index";

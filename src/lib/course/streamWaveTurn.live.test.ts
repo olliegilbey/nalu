@@ -21,7 +21,7 @@ import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
 import { setCourseStartingState } from "@/db/queries/courses.scoping";
-import { openWave } from "@/db/queries/waves";
+import { openWave } from "@/db/queries/waves.writes";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
 import { updateConceptSm2, upsertConcept } from "@/db/queries/concepts";
 import { userIdStore } from "@/lib/llm/userIdStore";

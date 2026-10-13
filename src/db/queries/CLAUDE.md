@@ -20,6 +20,8 @@ siblings, one concern each:
 
 - `courses.ts`: row guard, create, reads. `courses.scoping.ts`: scoping-phase
   writes. `courses.progress.ts`: summary, tier, XP, and archive writes.
+- `waves.ts`: row guard and reads. `waves.writes.ts`: open, close, and the
+  `chat_log` append.
 
 Each sibling has its own `*.integration.test.ts`. The barrel `index.ts`
 re-exports every module. Add each new sibling there: knip sees test-only

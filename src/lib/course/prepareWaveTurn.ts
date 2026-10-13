@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { db } from "@/db/client";
-import { appendWaveChatLog, getWaveByCourseAndNumber } from "@/db/queries/waves";
+import { appendWaveChatLog } from "@/db/queries/waves.writes";
+import { getWaveByCourseAndNumber } from "@/db/queries/waves";
 import { WAVE } from "@/lib/config/tuning";
 import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 import { buildLearnerInput, type SubmitTurnPayload } from "./buildLearnerInput";

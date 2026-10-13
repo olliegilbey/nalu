@@ -14,6 +14,7 @@ export * from "./courses.scoping";
 export * from "./courses.progress";
 export * from "./scopingPasses";
 export * from "./waves";
+export * from "./waves.writes";
 export * from "./contextMessages";
 export * from "./concepts";
 export * from "./assessments";

@@ -3,8 +3,8 @@ import { WAVE } from "@/lib/config/tuning";
 import { persistScopingClose } from "./submitBaseline.persist";
 import { getCourseById } from "@/db/queries/courses";
 import { getConceptsByCourse } from "@/db/queries/concepts";
+import { openWave } from "@/db/queries/waves.writes";
 import {
-  openWave,
   getOpenWaveByCourse,
   getLatestWaveNumberByCourse,
   getWaveByCourseAndNumber,

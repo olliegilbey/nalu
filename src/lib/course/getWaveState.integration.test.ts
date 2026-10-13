@@ -4,7 +4,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
-import { appendWaveChatLog, closeWave, openWave } from "@/db/queries/waves";
+import { appendWaveChatLog, closeWave, openWave } from "@/db/queries/waves.writes";
 import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
 import { WAVE } from "@/lib/config/tuning";
 import { KEY_TO_INDEX } from "./buildLearnerInput";
