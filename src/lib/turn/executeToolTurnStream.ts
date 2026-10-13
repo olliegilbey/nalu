@@ -58,8 +58,6 @@ export interface ExecuteToolTurnStreamParams<TOOLS extends ToolSet = ToolSet> {
   readonly userMessageContent: string;
   /** Build a fresh agent + validation gate per attempt (0-based). */
   readonly makeAttempt: (attempt: number) => ToolTurnAttempt<TOOLS>;
-  /** Directive text for the retry row. Default: the gate failure's detail. */
-  readonly retryDirective?: (err: ValidationGateFailure, attempt: number) => string;
   /** Called with each prose text delta as it streams (any loop step). */
   readonly onTextDelta: (delta: string, attempt: number) => void;
   /** Called before each attempt's stream starts (attempt is 0-based). */
@@ -143,7 +141,6 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
     content: params.userMessageContent,
   };
   const totalAttempts = SCOPING.maxParseRetries + 1;
-  const directiveFn = params.retryDirective ?? ((err) => err.detail);
 
   /**
    * Map one loop step to its persisted row pair (empty for pure-text steps).
@@ -288,7 +285,8 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
       seq: batch.length + 1,
       kind: "harness_retry_directive",
       role: "user",
-      content: directiveFn(gate, i + 1),
+      // The gate's detail is already a model-readable directive.
+      content: gate.detail,
     };
     return attempt(i + 1, [...batch, failedRow, directiveRow]);
   }
