@@ -35,11 +35,12 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { appRouter } from "./index";
 import { userProfiles, courses, contextMessages, waves } from "@/db/schema";
 import { SCOPING_TOPICS } from "@/lib/testing/topicPool";
+import { answerFromRubric } from "@/lib/testing/answerFromRubric";
 import {
   assertFrameworkStructural,
   assertBaselineStructural,
 } from "@/lib/testing/scopingInvariants";
-import { seedSourceSchema } from "@/lib/types/jsonb";
+import { baselineJsonbSchema, seedSourceSchema } from "@/lib/types/jsonb";
 import type { BaselineAnswer } from "@/lib/course/submitBaseline";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 import { WAVE } from "@/lib/config/tuning";
@@ -126,13 +127,22 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
         readonly id: string;
         readonly type: "multiple_choice" | "free_text";
       }>;
+      // Free text answers correctly from the persisted rubric (issue #22),
+      // so the scoping-close `[grading-debug]` lines are diagnostic. The
+      // wire drops rubrics once issue #58 lands; the JSONB keeps them.
+      const persistedBaseline = baselineJsonbSchema.parse(
+        (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!.baseline,
+      );
+      const rubricById = new Map(
+        persistedBaseline.questions.map((q) => [q.id, q.freetextRubric] as const),
+      );
       const baselineAnswers: BaselineAnswer[] = questions.map((q) =>
         q.type === "multiple_choice"
           ? ({ id: q.id, kind: "mc", selected: "A" } as const)
           : ({
               id: q.id,
               kind: "freetext",
-              text: TOPIC.answerPool[0]!,
+              text: answerFromRubric(rubricById.get(q.id)!),
               fromEscape: false,
             } as const),
       );

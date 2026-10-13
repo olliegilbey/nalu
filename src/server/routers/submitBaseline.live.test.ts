@@ -20,6 +20,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { appRouter } from "./index";
 import { userProfiles, courses, contextMessages, waves } from "@/db/schema";
 import { SCOPING_TOPICS } from "@/lib/testing/topicPool";
+import { answerFromRubric } from "@/lib/testing/answerFromRubric";
 import {
   assertFrameworkStructural,
   assertBaselineStructural,
@@ -87,13 +88,16 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       //    ~1/3 of runs: when the model places the right answer off that key
       //    on every MC question, mechanical XP is 0, and with generic
       //    free-text answers also scoring 0, `totalXp` is legitimately 0.
-      //    free_text: a plausible learner answer from the topic pool.
+      //    free_text: answer CORRECTLY too, from the persisted rubric
+      //    (issue #22). A known-correct reply makes the `[grading-debug]`
+      //    lines diagnostic: `q=0` blames the grader, `xp=0` the plumbing.
       const persistedQuestions = baselineJsonbSchema.parse(
         (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!.baseline,
       ).questions as ReadonlyArray<{
         readonly id: string;
         readonly type: "multiple_choice" | "free_text";
         readonly correct?: "A" | "B" | "C" | "D";
+        readonly freetextRubric: string;
       }>;
       // questionId → correct option key (MC questions only).
       const correctById = new Map(
@@ -101,6 +105,8 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
           .filter((q) => q.type === "multiple_choice" && q.correct !== undefined)
           .map((q) => [q.id, q.correct!] as const),
       );
+      // questionId → rubric (every question carries one).
+      const rubricById = new Map(persistedQuestions.map((q) => [q.id, q.freetextRubric] as const));
       const questions = baseline.questions.questions as ReadonlyArray<{
         readonly id: string;
         readonly type: "multiple_choice" | "free_text";
@@ -113,7 +119,7 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
           : ({
               id: q.id,
               kind: "freetext",
-              text: TOPIC.answerPool[0]!,
+              text: answerFromRubric(rubricById.get(q.id)!),
               fromEscape: false,
             } as const),
       );
