@@ -36,7 +36,7 @@ export interface ScopingStatePatch {
  * Data written when scoping completes and the first Wave is seeded.
  *
  * `startingTier` is frozen here and never mutated again; `currentTier` starts
- * equal but may diverge via `updateCourseTier` as the learner progresses.
+ * equal but may diverge when Wave close advances it (`updateCourseTierInTx`).
  */
 export interface StartingStatePatch {
   /** LLM-generated course summary from the baseline evaluation. */
@@ -145,7 +145,8 @@ export async function setCourseStartingState(
   patch: StartingStatePatch,
 ): Promise<Course> {
   // App-layer activation invariant: at the moment scoping closes, current_tier
-  // must equal starting_tier (divergence only happens later via updateCourseTier).
+  // must equal starting_tier (divergence only happens later, at Wave close,
+  // via updateCourseTierInTx).
   // Tiers are 1-indexed (matches `framework.tiers` ordinals); the DB CHECKs
   // `courses_current_tier_positive` / `courses_starting_tier_positive_or_null`
   // would also catch a non-positive value, but a typed error here surfaces the
