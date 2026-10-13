@@ -93,10 +93,11 @@ export interface ExecuteTurnResult<T> {
  *   4. On success: append `[user_message, ..., assistant_response]`
  *      as one batch via `appendMessages` and return.
  *   5. On `NoObjectGeneratedError`: convert to `ValidationGateFailure`
- *      (directive re-derived from the raw text), append a
- *      `failed_assistant_response` + `harness_retry_directive` to the
- *      in-memory batch and re-attempt up to `SCOPING.maxParseRetries`
- *      more times.
+ *      (detail re-derived from the raw text), build the retry directive
+ *      from that detail plus the schema (`buildRetryDirective`), append a
+ *      `failed_assistant_response` + `harness_retry_directive` (holding the
+ *      directive) to the in-memory batch and re-attempt up to
+ *      `SCOPING.maxParseRetries` more times.
  *   6. Terminal exhaust: persist `[user, failed, directive, ..., failed]`
  *      (drop trailing directive — the caller's next turn IS the recovery
  *      context) and throw the `ValidationGateFailure`.
@@ -222,6 +223,11 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       const dt = Date.now() - t0;
       const raw = err.text ?? "";
       const gate = toValidationGateFailure(raw, params.responseSchema);
+      // The text the model reads on its next attempt. Built once so the live
+      // banner prints the same bytes the directive row persists. It flattens
+      // the Zod issues to prose bullets and re-attaches the schema; weak
+      // models misread the raw issue JSON (`retryDirective.ts`).
+      const directive = buildRetryDirective(gate, schemaJson());
       // Issue #22 Zod-drop visibility (gated by LLM_DEBUG_GRADINGS — no-op when
       // off). On a validation failure the raw candidate is persisted as a
       // `failed_assistant_response` row but never reaches stderr outside
@@ -240,7 +246,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
         }
         process.stderr.write(formatResponseBlock(raw, dt, err.usage));
         const diagnosis = diagnoseFailure(gate, raw);
-        process.stderr.write(formatParseFailure(label, gate, diagnosis));
+        process.stderr.write(formatParseFailure(label, gate, diagnosis, directive));
       }
       const failedRow: AppendMessageParams = {
         parent: params.parent,
@@ -258,15 +264,13 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
         throw gate;
       }
       // Retry path: append failed row + directive and recurse with i+1.
-      // The directive flattens the Zod issues to prose bullets and re-attaches
-      // the schema; weak models misread the raw issue JSON (`retryDirective.ts`).
       const directiveRow: AppendMessageParams = {
         parent: params.parent,
         turnIndex,
         seq: batch.length + 1,
         kind: "harness_retry_directive",
         role: "user",
-        content: buildRetryDirective(gate, schemaJson()),
+        content: directive,
       };
       return attempt(i + 1, [...batch, failedRow, directiveRow]);
     }
@@ -276,12 +280,13 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
 }
 
 /**
- * Rebuild the legacy retry directive from a NoObjectGeneratedError's raw
+ * Rebuild the gate failure detail from a NoObjectGeneratedError's raw
  * text. Re-runs the same JSON.parse + safeParse the old in-harness gate
- * ran, so directive strings (and therefore persisted
- * `harness_retry_directive` rows and replayed prompts) are byte-identical
- * to the pre-Output implementation. The double-parse only happens on the
- * failure path — rare, and trivially cheap next to the LLM call.
+ * ran, so the detail strings are byte-identical to the pre-Output
+ * implementation. `buildRetryDirective` turns the detail into the
+ * directive that `harness_retry_directive` rows hold, so those rows and
+ * replayed prompts stay byte-identical too. The double-parse only happens
+ * on the failure path — rare, and trivially cheap next to the LLM call.
  */
 function toValidationGateFailure<T>(raw: string, schema: z.ZodType<T>): ValidationGateFailure {
   const parsed: unknown = (() => {
@@ -297,7 +302,7 @@ function toValidationGateFailure<T>(raw: string, schema: z.ZodType<T>): Validati
   const safe = schema.safeParse(parsed);
   // safeParse succeeding here means the SDK rejected for a reason our
   // re-parse can't see (e.g. secure-JSON prototype-pollution guard) —
-  // treat as a JSON-shape failure rather than inventing a directive.
+  // treat as a JSON-shape failure rather than inventing a detail.
   return new ValidationGateFailure(
     "missing_response",
     safe.success ? JSON_PARSE_RETRY_DIRECTIVE : safe.error.message,

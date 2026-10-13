@@ -203,21 +203,24 @@ export function formatParseSuccess(label: string, summary: string): string {
 /**
  * Multi-block ✗ failure: gate reason, diagnosis heuristic, and the
  * retry directive the model will see next attempt (verbatim).
- * `diagnosis` is the output of `diagnoseFailure()`.
+ * `diagnosis` is the output of `diagnoseFailure()`. `directive` is the
+ * built `buildRetryDirective` text, not `err.detail`: the banner must show
+ * the bytes the model reads.
  */
 export function formatParseFailure(
   label: string,
   err: ValidationGateFailure,
   diagnosis: string,
+  directive: string,
 ): string {
   const head = `${red("✗")} ${bold("parse FAILED")}  ${cyan(label)}  ${yellow(err.reason)}`;
   const diag = `  ${dim("└─")} ${bold("diagnosis:")} ${diagnosis}`;
   // Indent each line of the retry directive so multi-line ones stay aligned.
-  // If the text holds a `<response_schema>` block, dim those lines so the
-  // imperative prose stands out against the schema body.
-  const indented = colorizeDirectiveLines(err.detail);
-  const directive = `  ${dim("└─")} ${bold("retry directive (sent to model verbatim next attempt):")}\n${indented}`;
-  return `${head}\n${diag}\n${directive}\n`;
+  // Dim its `<response_schema>` block so the imperative prose stands out
+  // against the schema body.
+  const indented = colorizeDirectiveLines(directive);
+  const directiveBlock = `  ${dim("└─")} ${bold("retry directive (sent to model verbatim next attempt):")}\n${indented}`;
+  return `${head}\n${diag}\n${directiveBlock}\n`;
 }
 
 /**

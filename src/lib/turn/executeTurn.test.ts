@@ -181,6 +181,34 @@ describe("executeTurn", () => {
     expect(toSchemaJsonString).toHaveBeenCalledWith(VALUE_SCHEMA, { name: "value" });
   });
 
+  it("live banner prints the built directive the row persists, not the raw gate detail", async () => {
+    vi.stubEnv("CEREBRAS_LIVE", "1");
+    // Swallow the live-smoke output; keep it for the assertion.
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.mocked(generateChat).mockRejectedValue(noObjectError("not json"));
+    try {
+      await expect(
+        executeTurn({
+          parent: { kind: "scoping", id: SCOPING_ID },
+          seed: SEED,
+          userMessageContent: "hi",
+          responseSchema: VALUE_SCHEMA,
+        }),
+      ).rejects.toBeInstanceOf(ValidationGateFailure);
+      const printed = stderr.mock.calls.map((c) => String(c[0])).join("");
+      const batch = vi.mocked(appendMessages).mock.calls[0]![0];
+      // Each persisted directive line appears in the banner, indented.
+      for (const line of batch[2]!.content.split("\n")) {
+        expect(printed).toContain(line);
+      }
+      // Only the built directive says this; the raw detail does not.
+      expect(printed).toContain("Here is the schema your reply must match.");
+    } finally {
+      stderr.mockRestore();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("wave parent: dispatches to getMessagesForWave (not scoping)", async () => {
     // `renderContext` is mocked → wave seed fields are not inspected; this
     // test verifies only the parent-kind dispatch in executeTurn.
