@@ -37,9 +37,12 @@ siblings, one concern each:
 
 Integration tests split the same way and sit beside their module
 (`courses.scoping.integration.test.ts`). The barrel `index.ts` re-exports
-every module. Add each new sibling there: knip sees test-only
-exports as used only through the barrel. Shared `NotFoundError` lives in
-`errors.ts`.
+every module; add each new sibling there. Knip follows the barrel's
+`export *` and flags an export that nothing imports. Keep query modules
+out of knip's `entry` list: knip counts every export of an entry as used.
+Knip also counts a test import as use; `bun x knip --production` skips
+tests and lists the exports only tests call. Shared `NotFoundError` lives
+in `errors.ts`.
 
 Conventions:
 
