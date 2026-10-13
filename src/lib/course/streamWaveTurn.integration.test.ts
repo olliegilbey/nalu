@@ -619,8 +619,9 @@ describe("streamWaveTurn (integration)", () => {
       expect(textEnds.map((p) => p["id"])).toEqual(textStarts.map((p) => p["id"]));
       expect(parts.at(-1)!["data"]).toMatchObject({ kind: "mid-turn" });
 
-      // DB: the failed attempt persists as ONE JSON envelope + directive —
-      // never as tool-kind rows (cache-prefix invariant).
+      // DB: the failed attempt persists as ONE prose row + directive —
+      // never as tool-kind rows (cache-prefix invariant). It showed no
+      // prose, so its row is empty.
       const ctxRows = await getMessagesForWave(waveId);
       expect(ctxRows.map((r) => r.kind)).toEqual([
         "user_message",
@@ -628,6 +629,7 @@ describe("streamWaveTurn (integration)", () => {
         "harness_retry_directive",
         "assistant_response",
       ]);
+      expect(ctxRows[1]!.content).toBe("");
       const directive = ctxRows[2]!;
       expect(directive.content).toContain("teaching prose");
     });
@@ -637,7 +639,7 @@ describe("streamWaveTurn (integration)", () => {
   // 3b. Leak guard: a JSON-imitation attempt dumps the would-be tool input
   //     (answer key included) into the TEXT channel. Deltas from the unfenced
   //     line-start `{` onward must NOT cross the wire; the gate then retries.
-  //     Persistence still records the full failed prose (context fidelity).
+  //     Persistence records the failed prose cut at the same index (#140).
   // -------------------------------------------------------------------------
   it("json-imitation attempt: withholds leaked text deltas, gate retries clean", async () => {
     await withTestDb(async () => {
@@ -684,8 +686,8 @@ describe("streamWaveTurn (integration)", () => {
       expect(forwarded.some((d) => d.includes("correct"))).toBe(false);
       expect(parts.filter((p) => p.type === "data-turn-reset")).toHaveLength(1);
 
-      // The failed attempt's FULL prose (JSON included) still persists in the
-      // retry-exhaust envelope — the leak guard gates the client wire only.
+      // The failed attempt persists as the prose the learner saw, cut at the
+      // same leak index (#140): the retry must not replay the JSON dump.
       const ctxRows = await getMessagesForWave(waveId);
       expect(ctxRows.map((r) => r.kind)).toEqual([
         "user_message",
@@ -693,9 +695,11 @@ describe("streamWaveTurn (integration)", () => {
         "harness_retry_directive",
         "assistant_response",
       ]);
-      // (inner quotes are JSON-escaped inside the envelope's text field)
-      expect(ctxRows[1]!.content).toContain('\\"correct\\"');
+      expect(ctxRows[1]!.content).toBe("Here you go!");
       expect(ctxRows[2]!.content).toContain("raw JSON object");
+      // The retry's rendered context replays that prose, never the dump.
+      const replayed = streamedMessages.at(-1)!.filter((m) => m.role === "assistant");
+      expect(replayed.at(-1)).toEqual({ role: "assistant", content: "Here you go!" });
 
       // chat_log carries only the successful attempt's prose.
       const wave = await getWaveById(waveId);

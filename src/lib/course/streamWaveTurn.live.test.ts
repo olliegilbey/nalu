@@ -27,7 +27,7 @@ import { updateConceptSm2, upsertConcept } from "@/db/queries/concepts.writes";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import { WAVE } from "@/lib/config/tuning";
 import type { WaveTurnUIMessage } from "@/lib/types/waveStream";
-import { findJsonProseLeakIndex } from "./waveMidTurnGate";
+import { findJsonProseLeakIndex } from "@/lib/turn/findJsonProseLeakIndex";
 import { streamWaveTurn } from "./streamWaveTurn";
 
 const LIVE = process.env.CEREBRAS_LIVE === "1" && Boolean(process.env.LLM_API_KEY);

@@ -13,7 +13,8 @@ import {
 import { persistWaveMidTurn } from "./persistWaveMidTurn";
 import { executeWaveClose } from "./executeWaveClose";
 import type { WaveTurnCollector } from "./waveTurnTools";
-import { findJsonProseLeakIndex, validateWaveMidToolTurn } from "./waveMidTurnGate";
+import { findJsonProseLeakIndex } from "@/lib/turn/findJsonProseLeakIndex";
+import { validateWaveMidToolTurn } from "./waveMidTurnGate";
 
 /**
  * Runs one learner turn against an open Wave and streams it to the client.

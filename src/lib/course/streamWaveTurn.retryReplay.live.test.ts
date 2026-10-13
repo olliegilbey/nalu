@@ -8,6 +8,8 @@
  *   JSON-leak directive, whatever the model wrote.
  * - scripted-leak: attempt 0 is scripted as the live-observed leak (prose,
  *   then a quiz dumped as JSON text), so the real gate rejects it.
+ * - scripted-empty: attempt 0 is scripted with no prose. Its failed row is
+ *   "", so this case proves Cerebras accepts an empty assistant message.
  * The replayed failed attempt is what #140 is about: it must read as the
  * prose the learner saw, never as a JSON object that primes the model to
  * answer in JSON again.
@@ -26,10 +28,12 @@ import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
 import { setCourseStartingState } from "@/db/queries/courses.scoping";
 import { openWave } from "@/db/queries/waves.writes";
+import { getMessagesForWave } from "@/db/queries/contextMessages";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import { WAVE } from "@/lib/config/tuning";
 import * as waveMidTurnAgentModule from "@/lib/agents/waveMidTurnAgent";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
+import { findJsonProseLeakIndex } from "@/lib/turn/findJsonProseLeakIndex";
 import type { WaveTurnUIMessage } from "@/lib/types/waveStream";
 import type { SubmitTurnPayload } from "./buildLearnerInput";
 import * as gateModule from "./waveMidTurnGate";
@@ -75,7 +79,7 @@ const LEAKED_PROSE =
   });
 
 /** Seed user + course + open Wave 1 (no scoping LLM calls). */
-async function seedOpenWave(): Promise<{ readonly courseId: string }> {
+async function seedOpenWave(): Promise<{ readonly courseId: string; readonly waveId: string }> {
   await db
     .insert(userProfiles)
     .values({ id: LIVE_TEST_USER, displayName: "Live Test User (retry replay)" });
@@ -85,7 +89,7 @@ async function seedOpenWave(): Promise<{ readonly courseId: string }> {
     startingTier: 1,
     currentTier: 1,
   });
-  await openWave({
+  const wave = await openWave({
     courseId: course.id,
     waveNumber: 1,
     tier: 1,
@@ -103,7 +107,7 @@ async function seedOpenWave(): Promise<{ readonly courseId: string }> {
     },
     turnBudget: WAVE.turnCount,
   });
-  return { courseId: course.id };
+  return { courseId: course.id, waveId: wave.id };
 }
 
 /** A writer that drops every part: these tests assert on gate verdicts. */
@@ -181,6 +185,14 @@ function runTurn(courseId: string): Promise<unknown> {
     );
 }
 
+/** The first failed attempt's persisted content: what the retry replayed. */
+async function failedRowContent(waveId: string): Promise<string> {
+  const rows = await getMessagesForWave(waveId);
+  const failed = rows.find((r) => r.kind === "failed_assistant_response");
+  if (failed === undefined) throw new Error("no failed_assistant_response row persisted");
+  return failed.content;
+}
+
 /** Log the countable `[forced-retry]` line, then assert attempt 1 passed. */
 function expectAttemptOnePassed(
   label: string,
@@ -207,7 +219,7 @@ afterEach(() => {
 describe.skipIf(!LIVE)("streamWaveTurn retry replay — live Cerebras (#140)", () => {
   test("after a forced JSON-leak failure, attempt 1 passes the real gate", async () => {
     await withTestDb(async () => {
-      const { courseId } = await seedOpenWave();
+      const { courseId, waveId } = await seedOpenWave();
       // The real JSON-leak directive, so the test never copies its bytes.
       const forced = gateModule.validateWaveMidToolTurn(
         { questionnaire: null, signals: [] },
@@ -220,12 +232,14 @@ describe.skipIf(!LIVE)("streamWaveTurn retry replay — live Cerebras (#140)", (
       const error = await runTurn(courseId);
 
       expectAttemptOnePassed("forced-gate", verdicts, error);
+      const replayed = await failedRowContent(waveId);
+      expect(findJsonProseLeakIndex(replayed), "failed row replays no JSON").toBeNull();
     });
   }, 300_000); // two tool loops, each up to LLM.maxToolSteps provider calls
 
   test("after a real JSON leak on attempt 0, attempt 1 passes the real gate", async () => {
     await withTestDb(async () => {
-      const { courseId } = await seedOpenWave();
+      const { courseId, waveId } = await seedOpenWave();
       scriptFirstAttempt(LEAKED_PROSE);
       const verdicts = recordGateVerdicts(null);
 
@@ -233,6 +247,25 @@ describe.skipIf(!LIVE)("streamWaveTurn retry replay — live Cerebras (#140)", (
 
       expect(verdicts[0]?.detail, "attempt 0 fails as a JSON leak").toContain("raw JSON object");
       expectAttemptOnePassed("scripted-leak", verdicts, error);
+      expect(await failedRowContent(waveId), "failed row is the safe lead-in").toBe(
+        "Ownership means each value has exactly one owner. Let's check that.",
+      );
+    });
+  }, 300_000);
+
+  test("after an attempt with no prose, Cerebras accepts the empty failed row", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedOpenWave();
+      // The empty-prose gate rejects attempt 0. Its failed row is "", so
+      // attempt 1 sends Cerebras an assistant message with empty content.
+      scriptFirstAttempt("");
+      const verdicts = recordGateVerdicts(null);
+
+      const error = await runTurn(courseId);
+
+      expect(verdicts[0]?.detail, "attempt 0 fails as empty prose").toContain("teaching prose");
+      expectAttemptOnePassed("scripted-empty", verdicts, error);
+      expect(await failedRowContent(waveId), "failed row is empty").toBe("");
     });
   }, 300_000);
 });

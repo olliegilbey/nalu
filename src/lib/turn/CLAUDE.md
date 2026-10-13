@@ -18,10 +18,18 @@ message list's leading system message — the agent's constructor
 system prompt on the wire). Each
 step persists `assistant_tool_call` + `tool_result` rows, then the final
 prose as `assistant_response`; failed attempts collapse to
-`failed_assistant_response` (JSON envelope of the step trail) +
-`harness_retry_directive` — never tool-kind rows — so renderContext's
-retry filter keeps working. Learner-visible prose = ALL steps' streamed
-deltas accumulated at the call site, NOT `finalText` (last step only).
+`failed_assistant_response` + `harness_retry_directive` — never tool-kind
+rows — so renderContext's retry filter keeps working. Learner-visible
+prose = ALL steps' streamed deltas, NOT `finalText` (last step only).
+
+A failed tool-loop attempt persists as that prose, cut at
+`findJsonProseLeakIndex` and trimmed, with no tool trail (#140). The retry
+replays it as the model's previous reply, and this model imitates JSON
+replies in history. Replayed tool results would also claim staged work
+that died with the attempt. When nothing safe was shown, the row is `""`;
+Cerebras accepts an empty assistant message (live test
+`streamWaveTurn.retryReplay.live.test.ts`). Rows written before this
+change hold a `{text, steps}` JSON envelope; they render unchanged.
 
 - Callers live in `src/lib/course/`: scoping turns and the Wave close turn
   run `executeTurn`; Wave mid-turns run `executeToolTurnStream`.

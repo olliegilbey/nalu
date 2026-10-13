@@ -10,6 +10,7 @@ import {
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { SCOPING } from "@/lib/config/tuning";
 import { UnpairedToolCallError } from "./unpairedToolCallError";
+import { findJsonProseLeakIndex } from "./findJsonProseLeakIndex";
 import type { SeedInputs } from "@/lib/types/context";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 import { assembleLlmMessages } from "./contextAssembly";
@@ -107,14 +108,19 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
  *   holding the closing prose. The Context replays the loop faithfully.
  * - Validation is the caller's post-loop gate (`validateTurn`), not a
  *   response schema. On failure the attempt persists ONE
- *   `failed_assistant_response` row whose content is a JSON envelope of the
- *   attempt exhaust (`{text, steps:[{toolCalls, results}]}`) + the usual
- *   `harness_retry_directive` — NOT tool-kind rows. WHY: renderContext's
- *   retry filter drops failed/directive kinds from recovered turns; persisting
- *   failed-attempt exhaust under the tool kinds would leak it into the
- *   recovered turn's rendered context and break the cache-prefix invariant
- *   ("a recovered turn renders identically to a non-retry turn"). The JSON
- *   envelope keeps the audit trail and gives the retry attempt full context.
+ *   `failed_assistant_response` row + the usual `harness_retry_directive` —
+ *   NOT tool-kind rows. WHY: renderContext's retry filter drops
+ *   failed/directive kinds from recovered turns; persisting failed-attempt
+ *   exhaust under the tool kinds would leak it into the recovered turn's
+ *   rendered context and break the cache-prefix invariant ("a recovered turn
+ *   renders identically to a non-retry turn").
+ * - The failed row holds the prose the learner saw: every Step's text, cut
+ *   at `findJsonProseLeakIndex` and trimmed ("" when nothing safe showed).
+ *   No tool trail (#140). The retry replays it as the model's previous
+ *   reply, so a JSON reply there would prime the model to answer in JSON
+ *   again. Staged tool state dies with the attempt, so replaying its tool
+ *   results would also claim work the retry must redo. The directive
+ *   already says to redo the tool calls.
  * - In-loop self-corrections (schema-invalid call → tool-error fed back →
  *   corrected call) are NOT harness retries; they stay inside one attempt's
  *   step trail and persist with it.
@@ -212,8 +218,13 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
 
     // Drain the stream: forward prose deltas and tool lifecycle events.
     // Tool-turn prose is plain text — no monotonic-prefix workaround needed.
+    // `visibleProse` accumulates every Step's deltas: the learner-visible
+    // prose, the same string the caller streams and gates. A failed attempt
+    // replays as this prose (below). `let`: built up across the loop.
+    let visibleProse = "";
     for await (const part of result.fullStream) {
       if (part.type === "text-delta") {
+        visibleProse += part.text;
         params.onTextDelta(part.text, i);
       } else if (TOOL_EVENT_TYPES.has(part.type)) {
         params.onToolEvent?.(part, i);
@@ -251,28 +262,17 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
       return { finalText, usage };
     }
 
-    // Validation failure: persist the exhaust as a JSON envelope (see TSDoc).
+    // Validation failure: persist the attempt as the prose the learner saw,
+    // cut at any JSON leak and trimmed (see TSDoc). "" when nothing safe
+    // was shown: the row still marks the attempt in the Turn.
+    const leakAt = findJsonProseLeakIndex(visibleProse);
     const failedRow: AppendMessageParams = {
       parent: params.parent,
       turnIndex,
       seq: batch.length,
       kind: "failed_assistant_response",
       role: "assistant",
-      content: JSON.stringify({
-        text: finalText,
-        steps: steps.map((step) => ({
-          toolCalls: step.toolCalls.map((c) => ({
-            toolCallId: c.toolCallId,
-            toolName: c.toolName,
-            input: c.input,
-          })),
-          results: step.toolResults.map((r) => ({
-            toolCallId: r.toolCallId,
-            toolName: r.toolName,
-            output: r.output,
-          })),
-        })),
-      }),
+      content: (leakAt === null ? visibleProse : visibleProse.slice(0, leakAt)).trim(),
     };
     if (i + 1 >= totalAttempts) {
       // Terminal exhaust: persist failure trail without trailing directive.
