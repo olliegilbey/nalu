@@ -14,4 +14,12 @@ describe("answerFromRubric", () => {
     const rubric = "Mentions the #[entry] attribute on the reset handler.";
     expect(answerFromRubric(rubric)).toBe(rubric);
   });
+
+  // Live smoke 2026-10-13: a mid-claim "that" cut this answer to its last
+  // clause, and the grader fairly marked it partial.
+  it("keeps a claim whose only 'that' sits past the lead-in", () => {
+    const rubric =
+      "Answer must mention using atomic types or critical sections (e.g., disabling interrupts) to protect shared data, and that unsafe static mut must be wrapped safely.";
+    expect(answerFromRubric(rubric)).toBe(rubric);
+  });
 });
