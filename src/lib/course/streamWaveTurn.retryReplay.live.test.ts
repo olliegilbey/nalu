@@ -26,7 +26,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
-import { setCourseStartingState } from "@/db/queries/courses.scoping";
+import { setCourseStartingStateInTx } from "@/db/queries/courses.tx";
 import { openWave } from "@/db/queries/waves.writes";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
 import { userIdStore } from "@/lib/llm/userIdStore";
@@ -84,11 +84,11 @@ async function seedOpenWave(): Promise<{ readonly courseId: string; readonly wav
     .insert(userProfiles)
     .values({ id: LIVE_TEST_USER, displayName: "Live Test User (retry replay)" });
   const course = await createCourse({ userId: LIVE_TEST_USER, topic: "Rust ownership" });
-  await setCourseStartingState(course.id, {
-    initialSummary: "Learner knows basic syntax; start at ownership fundamentals.",
-    startingTier: 1,
-    currentTier: 1,
-  });
+  await setCourseStartingStateInTx(
+    course.id,
+    { summary: "Learner knows basic syntax; start at ownership fundamentals.", startingTier: 1 },
+    db,
+  );
   const wave = await openWave({
     courseId: course.id,
     waveNumber: 1,
