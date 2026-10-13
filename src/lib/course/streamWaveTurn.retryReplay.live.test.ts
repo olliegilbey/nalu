@@ -2,7 +2,7 @@
  * Forced-retry live proof for issue #140: after a failed tool-turn attempt,
  * does the retry pass the real gate?
  *
- * WHY forced: a real first-attempt failure is rare model variance. Two
+ * WHY forced: a real first-attempt failure is rare model variance. Three
  * cases force one, then let attempt 1 meet the real gate:
  * - forced-gate: the gate is wrapped so attempt 0 fails ONCE with the real
  *   JSON-leak directive, whatever the model wrote.

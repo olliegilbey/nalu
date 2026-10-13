@@ -47,10 +47,12 @@ import { scopingPasses } from "./scopingPasses";
  *   harness_turn_counter, harness_review_block,
  *   failed_assistant_response, harness_retry_directive,
  *   assistant_tool_call, tool_result.
- * failed_assistant_response / harness_retry_directive are persisted by
- * executeTurn's per-turn retry loop when the model emits an unparseable
- * response (failed_assistant_response = raw output that failed parsing;
- * harness_retry_directive = synthesised user-role nudge to retry). They share
+ * failed_assistant_response / harness_retry_directive are persisted by the
+ * per-turn retry loops when an attempt fails its gate. Two writers fill
+ * failed_assistant_response: executeTurn stores the raw output that failed
+ * parsing; executeToolTurnStream stores the attempt's visible prose, cut at
+ * the JSON leak (#140). harness_retry_directive = synthesised user-role
+ * nudge to retry. They share
  * (parent, turn_index) with the original attempt and are filtered out of
  * successful turns by renderContext, but retained in DB so the LLM sees them
  * during a retry and terminal failures keep an audit trail.

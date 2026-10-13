@@ -16,7 +16,8 @@ post-loop `validateTurn` gate. The dispatcher DROPS the assembled
 message list's leading system message — the agent's constructor
 `instructions` carries identical bytes (double-send would duplicate the
 system prompt on the wire). Each
-step persists `assistant_tool_call` + `tool_result` rows, then the final
+step persists `assistant_tool_call` + `tool_result` rows (mapped by the
+pure `toolStepRows.ts`), then the final
 prose as `assistant_response`; failed attempts collapse to
 `failed_assistant_response` + `harness_retry_directive` — never tool-kind
 rows — so renderContext's retry filter keeps working. Learner-visible
@@ -49,12 +50,14 @@ change hold a `{text, steps}` JSON envelope; they render unchanged.
   most once per Turn. `retryDirective.callSites.test.ts` in
   `src/lib/course/` pins the directive bytes.
 - Transport errors (timeouts, 5xx) propagate untouched; no rows are
-  persisted on transport failure. In the tool loop, a failed Step does not
-  throw: the SDK emits an `error` stream part and still resolves `steps`
-  with the earlier Steps. `executeToolTurnStream` rethrows that part's
+  persisted on transport failure. In the tool loop, the SDK does not throw:
+  a failed Step emits an `error` stream part and still resolves `steps`
+  with the earlier Steps, and a provider chunk error emits one without
+  closing the stream. `executeToolTurnStream` rethrows any `error` part's
   error, so a partial loop never reaches the gate or the DB. A tool call
-  with no result and no tool-error throws `UnpairedToolCallError` instead
-  of persisting: Cerebras rejects an unanswered call on replay.
+  with no result and no tool-error throws `UnpairedToolCallError`
+  (`toolStepRows.ts`) instead of persisting: Cerebras rejects an
+  unanswered call on replay.
 
 Do not put per-stage logic here. If a turn-shape needs stage-specific
 behaviour, that belongs in the caller in `src/lib/course/`, not behind a flag here.

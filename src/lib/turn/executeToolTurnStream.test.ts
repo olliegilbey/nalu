@@ -235,7 +235,7 @@ describe("executeToolTurnStream", () => {
     expect(batch?.[2]?.content).toBe("call the grading tool");
   });
 
-  it("persists a failed attempt as the prose the learner saw, never as JSON (#140)", async () => {
+  it("replays a failed attempt as its prose cut at a line-start JSON leak (#140)", async () => {
     const leaked = 'Nice work!\n{"questions":[{"id":"q1","correct":"B"}]}';
     const first = agentOf([{ type: "text-delta", id: "t", text: leaked }], [textStep(leaked)]);
     const second = agentOf([], [textStep("Recovered.")]);
@@ -344,39 +344,5 @@ describe("executeToolTurnStream", () => {
     await expect(run).rejects.toBeInstanceOf(UnpairedToolCallError);
     await expect(run).rejects.toMatchObject({ toolCallIds: ["c2"] });
     expect(appendMessages).not.toHaveBeenCalled();
-  });
-
-  it("persists tool-error feedback into the tool_result row (in-loop self-correction trail)", async () => {
-    const stepWithError = {
-      text: "",
-      toolCalls: [{ toolCallId: "bad", toolName: "presentQuestionnaire", input: { x: 1 } }],
-      toolResults: [],
-      content: [
-        {
-          type: "tool-error",
-          toolCallId: "bad",
-          toolName: "presentQuestionnaire",
-          error: "Invalid input",
-        },
-      ],
-    };
-    const { agent } = agentOf([], [stepWithError, textStep("recovered in-loop")]);
-    await executeToolTurnStream({
-      parent: { kind: "wave", id: WAVE_ID },
-      seed: WAVE_SEED,
-      userMessageContent: "u",
-      makeAttempt: () => ({ agent, validateTurn: () => null }),
-      ...noopHooks,
-    });
-    const batch = vi.mocked(appendMessages).mock.calls[0]?.[0];
-    expect(JSON.parse(batch?.[2]?.content ?? "")).toEqual({
-      results: [
-        {
-          toolCallId: "bad",
-          toolName: "presentQuestionnaire",
-          output: { toolError: "Invalid input" },
-        },
-      ],
-    });
   });
 });

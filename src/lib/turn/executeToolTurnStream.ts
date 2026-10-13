@@ -9,7 +9,7 @@ import {
 } from "@/db/queries/contextMessages";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { SCOPING } from "@/lib/config/tuning";
-import { UnpairedToolCallError } from "./unpairedToolCallError";
+import { toolStepRows } from "./toolStepRows";
 import { findJsonProseLeakIndex } from "./findJsonProseLeakIndex";
 import type { SeedInputs } from "@/lib/types/context";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
@@ -123,11 +123,13 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
  *   already says to redo the tool calls.
  * - In-loop self-corrections (schema-invalid call → tool-error fed back →
  *   corrected call) are NOT harness retries; they stay inside one attempt's
- *   step trail and persist with it.
- * - An abnormal loop end is a transport failure, not a gate failure: an
+ *   step trail. They persist only when that attempt succeeds: a failed
+ *   attempt persists no tool trail (above).
+ * - An abnormal loop end is a transport failure, not a gate failure: any
  *   `error` stream part rethrows its error, and no rows persist. A tool call
  *   with neither a result nor a tool-error throws `UnpairedToolCallError`
- *   rather than persist an orphan that Cerebras would reject on replay.
+ *   (`toolStepRows`) rather than persist an orphan that Cerebras would
+ *   reject on replay.
  */
 export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
   params: ExecuteToolTurnStreamParams<TOOLS>,
@@ -147,60 +149,6 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
     content: params.userMessageContent,
   };
   const totalAttempts = SCOPING.maxParseRetries + 1;
-
-  /**
-   * Map one loop step to its persisted row pair (empty for pure-text steps).
-   * Throws {@link UnpairedToolCallError} when a call has no answer.
-   */
-  function stepRows(step: StepResult<TOOLS>, seqStart: number): readonly AppendMessageParams[] {
-    if (step.toolCalls.length === 0) return [];
-    const callRow: AppendMessageParams = {
-      parent: params.parent,
-      turnIndex,
-      seq: seqStart,
-      kind: "assistant_tool_call",
-      role: "assistant",
-      content: JSON.stringify({
-        text: step.text,
-        toolCalls: step.toolCalls.map((c) => ({
-          toolCallId: c.toolCallId,
-          toolName: c.toolName,
-          input: c.input,
-        })),
-      }),
-    };
-    // Results batch: successful executes plus tool-error feedback (invalid
-    // inputs / execute throws) — both were fed back to the model, so both
-    // must replay for context fidelity.
-    const errors = step.content.filter((p) => p.type === "tool-error");
-    const results = [
-      ...step.toolResults.map((r) => ({
-        toolCallId: r.toolCallId,
-        toolName: r.toolName,
-        output: r.output,
-      })),
-      ...errors.map((e) => ({
-        toolCallId: e.toolCallId,
-        toolName: e.toolName,
-        output: { toolError: String(e.error) },
-      })),
-    ];
-    // Every call needs its answer: Cerebras rejects an unanswered tool call
-    // on replay, which would break every later Turn of the Wave. Refuse to
-    // write the orphan; end the attempt abnormally instead.
-    const answered = new Set(results.map((r) => r.toolCallId));
-    const unpaired = step.toolCalls.map((c) => c.toolCallId).filter((id) => !answered.has(id));
-    if (unpaired.length > 0) throw new UnpairedToolCallError(unpaired);
-    const resultRow: AppendMessageParams = {
-      parent: params.parent,
-      turnIndex,
-      seq: seqStart + 1,
-      kind: "tool_result",
-      role: "tool",
-      content: JSON.stringify({ results }),
-    };
-    return [callRow, resultRow];
-  }
 
   async function attempt(
     i: number,
@@ -229,11 +177,14 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
       } else if (TOOL_EVENT_TYPES.has(part.type)) {
         params.onToolEvent?.(part, i);
       } else if (part.type === "error") {
-        // A Step failed (transport/API error, retries spent). The SDK does
-        // not throw: it emits this part, closes the stream, and still
-        // RESOLVES `steps` with the earlier Steps (ai@6.0.158). Rethrow the
-        // underlying error untouched, so the partial attempt never reaches
-        // the gate or the DB — a transport failure persists no rows.
+        // Any `error` part ends the attempt as a transport failure. The SDK
+        // does not throw for them. A failed Step (transport/API error,
+        // retries spent) emits one, closes the stream, and still RESOLVES
+        // `steps` with the earlier Steps (ai@6.0.158). A provider chunk
+        // error (openai-compatible) emits one WITHOUT closing the stream; it
+        // is non-fatal to the SDK but still corrupts the attempt. Rethrow
+        // the underlying error untouched, so the partial attempt never
+        // reaches the gate or the DB — a transport failure persists no rows.
         throw part.error;
       }
     }
@@ -247,7 +198,14 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
     if (gate === null) {
       // Success: persist the loop trail + closing prose in one atomic batch.
       const stepRowsAll = steps.reduce<readonly AppendMessageParams[]>(
-        (acc, step) => [...acc, ...stepRows(step, batch.length + acc.length)],
+        (acc, step) => [
+          ...acc,
+          ...toolStepRows(step, {
+            parent: params.parent,
+            turnIndex,
+            seqStart: batch.length + acc.length,
+          }),
+        ],
         [],
       );
       const successRow: AppendMessageParams = {
