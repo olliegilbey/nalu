@@ -1,8 +1,8 @@
-import { sql } from "drizzle-orm";
 import type { DbOrTx } from "@/db/client";
 import { getAssessmentByWaveAndQuestionId } from "@/db/queries/assessments";
 import { getConceptById } from "@/db/queries/concepts";
 import { getWaveChatLog } from "@/db/queries/waves";
+import { updateCourseTierInTx } from "@/db/queries/courses.tx";
 import { checkTierAdvancement } from "@/lib/scoring/progression";
 import type { ConceptState } from "@/lib/types/scoring";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
@@ -174,8 +174,8 @@ export async function applyCloseGradings(
 /**
  * Run `checkTierAdvancement` against current-tier concepts with a known
  * lastQualityScore. On advance, bump `courses.current_tier` inside the same
- * tx (raw UPDATE — the helper `updateCourseTier` uses the `db` singleton and
- * would deadlock here, same rationale as in `persistScopingClose`).
+ * tx via `updateCourseTierInTx` (the singleton `updateCourseTier` would
+ * deadlock against this tx's row lock).
  *
  * Returns the new tier number on advance; null otherwise.
  */
@@ -195,11 +195,6 @@ export async function maybeAdvanceTier(
   const advancement = checkTierAdvancement(conceptStates);
   if (!advancement.canAdvance) return null;
   const newTier = currentTier + 1;
-  await tx.execute(sql`
-    UPDATE courses
-    SET current_tier = ${newTier},
-        updated_at = NOW()
-    WHERE id = ${courseId}
-  `);
+  await updateCourseTierInTx(courseId, newTier, tx);
   return newTier;
 }

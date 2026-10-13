@@ -1,15 +1,19 @@
 # src/db/queries
 
-Intended home for all SQL. Callers import either the barrel `@/db/queries`
-(`src/server/trpc.ts`, the wave-turn route) or a single module such as
-`@/db/queries/courses` (all of `src/lib/`).
+Home for all SQL. Outside `src/db/`, only tests and `src/lib/testing/`
+import `drizzle-orm` (the eslint `no-restricted-imports` rule). Callers
+import either the barrel `@/db/queries` (`src/server/trpc.ts`, the
+wave-turn route) or a single module such as `@/db/queries/courses` (all of
+`src/lib/`).
 
-Exceptions: the transactional persist files in `src/lib/course/` open
-`db.transaction` themselves. `submitBaseline.persist.ts`,
-`persistWaveClose.ts`, and `persistWaveClose.helpers.ts` write `courses`
-with raw ``tx.execute(sql`UPDATE courses ...`)``, because the `courses`
-helpers here take no `tx` and run on the `db` singleton. Issue #46 tracks
-moving these into tx-aware query helpers.
+Transactions: the persist files in `src/lib/course/` open `db.transaction`
+and pass `tx` to every helper they call, so the writes commit or roll back
+together. Most helpers take an optional trailing `tx`. `courses.tx.ts`
+holds the `courses` reads and writes the close transactions run; each
+takes `tx` and re-fetches nothing. Their singleton twins
+(`setCourseStartingState`, `updateCourseTier`, `incrementCourseXp`) run on
+`db`: inside a transaction, their UPDATE would deadlock on the
+transaction's row lock.
 
 Modules: one base file per table (`userProfiles.ts`, `courses.ts`,
 `scopingPasses.ts`, `waves.ts`, `contextMessages.ts`, `concepts.ts`,
@@ -18,6 +22,7 @@ siblings, one concern each:
 
 - `courses.ts`: row guard, create, reads. `courses.scoping.ts`: scoping-phase
   writes. `courses.progress.ts`: summary, tier, XP, and archive writes.
+  `courses.tx.ts`: the close transactions' reads and writes.
 - `waves.ts`: row guard and reads. `waves.writes.ts`: open, close, and the
   `chat_log` append.
 - `concepts.ts`: reads. `concepts.writes.ts`: upsert, SM-2 results, and

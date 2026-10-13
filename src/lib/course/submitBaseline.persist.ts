@@ -1,10 +1,15 @@
-import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { WAVE } from "@/lib/config/tuning";
 import { upsertConcept } from "@/db/queries/concepts.writes";
 import { appendWaveChatLog, openWave } from "@/db/queries/waves.writes";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
 import { closeScopingPass } from "@/db/queries/scopingPasses";
+import {
+  getCourseBaselineAndFrameworkInTx,
+  setCourseBaselineInTx,
+  setCourseStartingStateInTx,
+  incrementCourseXpInTx,
+} from "@/db/queries/courses.tx";
 import {
   baselineClosedJsonbSchema,
   baselineQuestionsJsonbSchema,
@@ -44,12 +49,10 @@ export interface PersistScopingCloseResult {
  * in `scoping`, retryable by the orchestrator (status-gated idempotency —
  * NOT enforced here). The order within the transaction does not matter.
  *
- * Every `courses` write uses `tx.execute` so they roll back atomically.
- * Inlined raw SQL for `courses` (not via `setCourseStartingState` /
- * `incrementCourseXp`) is required because those helpers use the `db`
- * singleton and would deadlock against the transaction's row lock. This
- * file, `persistWaveClose.ts`, and `persistWaveClose.helpers.ts` are the
- * places outside `src/db/queries/` that issue raw SQL.
+ * Every `courses` read and write goes through the tx helpers in
+ * `@/db/queries/courses.tx`, so they roll back atomically. The singleton
+ * helpers (`setCourseStartingState`, `incrementCourseXp`) would deadlock
+ * against the transaction's row lock.
  *
  * `closeScopingPass` / `upsertConcept` / `openWave` / `appendMessage` are
  * passed `tx` so their writes participate in the same transaction — a
@@ -79,12 +82,7 @@ export async function persistScopingClose(
   return db.transaction(async (tx) => {
     // 1. Re-fetch baseline + framework so the widened payload preserves the
     //    full question/response history without re-deriving it from `parsed`.
-    //    Raw `tx.execute` returns snake_case rows (no Drizzle camelCase map).
-    const rows = await tx.execute<{
-      readonly baseline: unknown;
-      readonly framework: unknown;
-    }>(sql`SELECT baseline, framework FROM courses WHERE id = ${courseId}`);
-    const courseRow = rows[0];
+    const courseRow = await getCourseBaselineAndFrameworkInTx(courseId, tx);
     if (!courseRow?.baseline || !courseRow?.framework) {
       throw new Error(
         `persistScopingClose: course ${courseId} missing baseline or framework JSONB`,
@@ -115,12 +113,7 @@ export async function persistScopingClose(
       summarySeed: parsed.summary,
       startingTier: parsed.startingTier,
     });
-    await tx.execute(sql`
-      UPDATE courses
-      SET baseline = ${JSON.stringify(widened)}::jsonb,
-          updated_at = NOW()
-      WHERE id = ${courseId}
-    `);
+    await setCourseBaselineInTx(courseId, widened, tx);
 
     // 2b. Close the scoping pass: its Context is done; Wave 1 opens a fresh
     //     one below. Same tx, so a rollback leaves the pass open for a retry.
@@ -192,33 +185,21 @@ export async function persistScopingClose(
 
     // 6. Flip course status, persist starting/current tier + the evolving
     //    summary seed (NOT the immutable summary — that lives only in the
-    //    baseline JSONB column). Inline `tx.execute` instead of
-    //    `setCourseStartingState` to keep this write inside the transaction
-    //    (the helper uses the `db` singleton, which would deadlock against
-    //    the earlier baseline widen's row lock).
-    //    WHERE status='scoping' mirrors the helper's scope guard — a no-op
-    //    if the course is already active (idempotency at the row level).
-    await tx.execute(sql`
-      UPDATE courses
-      SET status = 'active',
-          summary = ${parsed.summary},
-          summary_updated_at = NOW(),
-          starting_tier = ${parsed.startingTier},
-          current_tier = ${parsed.startingTier},
-          updated_at = NOW()
-      WHERE id = ${courseId}
-        AND status = 'scoping'
-    `);
+    //    baseline JSONB column). The tx helper, not `setCourseStartingState`:
+    //    that one uses the `db` singleton, which would deadlock against the
+    //    earlier baseline widen's row lock.
+    //    The helper's WHERE status='scoping' makes it a no-op if the course
+    //    is already active (idempotency at the row level).
+    await setCourseStartingStateInTx(
+      courseId,
+      { summary: parsed.summary, startingTier: parsed.startingTier },
+      tx,
+    );
 
     // 7. Bump total_xp atomically. Skip the call when totalXp is 0 — saves a
     //    round-trip on no-XP runs (e.g. all q=0 gradings).
     if (merged.totalXp > 0) {
-      await tx.execute(sql`
-        UPDATE courses
-        SET total_xp = total_xp + ${merged.totalXp},
-            updated_at = NOW()
-        WHERE id = ${courseId}
-      `);
+      await incrementCourseXpInTx(courseId, merged.totalXp, tx);
     }
 
     return { wave1Id: wave1.id } as const;

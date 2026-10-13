@@ -1,9 +1,9 @@
-import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { WAVE } from "@/lib/config/tuning";
 import { appendWaveChatLog, closeWave, openWave } from "@/db/queries/waves.writes";
 import { getConceptsByCourse, getDueConceptsByCourse } from "@/db/queries/concepts";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
+import { incrementCourseXpInTx } from "@/db/queries/courses.tx";
 import { dueConceptsSnapshotSchema, type FrameworkJsonb } from "@/lib/types/jsonb";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { LoadedWaveContext } from "./loadWaveContext";
@@ -55,18 +55,18 @@ export interface PersistWaveCloseResult {
  *        (waveNumber % WAVE.tierCheckInterval === 0)
  *        || (plannedConcepts.length === 0)
  *      The consolidation gate (empty plannedConcepts) overrides the modulo
- *      gate. On advance, `maybeAdvanceTier` bumps `current_tier` via raw
- *      `tx.execute` (same rationale as persistScopingClose).
+ *      gate. On advance, `maybeAdvanceTier` bumps `current_tier` via
+ *      `updateCourseTierInTx`.
  *   5. Open Wave N+1 with `seed_source.prior_blueprint` carrying the just-
  *      emitted blueprint and a fresh `dueConceptsSnapshot` taken via the SAME
  *      tx so SM-2 advances from step 2 are reflected.
  *   6. Insert turn-0 assistant message on Wave N+1 carrying `openingText`.
  *   7. Bump `courses.total_xp` by `WAVE.completionXp` (flat reward).
  *
- * Mirrors `persistScopingClose` for the raw-SQL transactional update style on
- * the `courses` row (`tx.execute(sql\`UPDATE courses ...\`)`) — the helpers
- * `incrementCourseXp` / `updateCourseTier` use the `db` singleton and would
- * deadlock against this tx's row lock.
+ * Like `persistScopingClose`, every `courses` write goes through the tx
+ * helpers in `@/db/queries/courses.tx`. The singleton helpers
+ * `incrementCourseXp` / `updateCourseTier` would deadlock against this tx's
+ * row lock.
  */
 export async function persistWaveClose(
   params: PersistWaveCloseParams,
@@ -185,14 +185,9 @@ export async function persistWaveClose(
       content: parsed.nextUnitBlueprint.openingText,
     });
 
-    // 8. Bump total_xp by completionXp. Inline raw UPDATE rather than
-    //    `incrementCourseXp` (singleton-bound).
-    await tx.execute(sql`
-      UPDATE courses
-      SET total_xp = total_xp + ${WAVE.completionXp},
-          updated_at = NOW()
-      WHERE id = ${ctx.course.id}
-    `);
+    // 8. Bump total_xp by completionXp. The tx helper, not the
+    //    singleton-bound `incrementCourseXp`.
+    await incrementCourseXpInTx(ctx.course.id, WAVE.completionXp, tx);
 
     return {
       nextWaveId: nextWave.id,
