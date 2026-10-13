@@ -90,14 +90,14 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Tool-loop sibling of `executeTurnStream` (same skeleton: reserve turnIndex,
+ * Tool-loop sibling of `executeTurn` (same skeleton: reserve turnIndex,
  * load priors, assemble messages, persist one atomic batch; same retry
  * budget). Differences:
  *
  * - The LLM call is `agent.stream({messages})` on the attempt's ToolLoopAgent
- *   (agent-loop plan Task 4): prose is plain streamed text (no partial-JSON
- *   projection — deltas forward as-is), structured actions arrive as tool
- *   calls staged by the agent's tool executes.
+ *   (agent-loop plan Task 4): prose is plain streamed text (deltas forward
+ *   as-is), structured actions arrive as tool calls staged by the agent's
+ *   tool executes.
  * - The assembled message list's LEADING SYSTEM MESSAGE IS DROPPED before
  *   dispatch: the agent carries the identical bytes as constructor
  *   `instructions` (ToolLoopAgent maps instructions → system and passes

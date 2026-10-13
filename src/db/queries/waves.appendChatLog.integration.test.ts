@@ -13,7 +13,7 @@ import { openWave, getWaveById, appendWaveChatLog } from "./waves";
  *  2. Multiple sequential appends preserve insertion order (the `||` operator
  *     concatenates right-onto-left in invocation order).
  *  3. A caller-supplied transaction wraps the append so the row is unchanged
- *     when the tx rolls back — required for `executeWaveMid` and friends to
+ *     when the tx rolls back — required for `persistWaveMidTurn` and friends to
  *     keep chat-log writes atomic with sibling inserts (assessments,
  *     context_messages) inside the same tx.
  *

@@ -12,7 +12,7 @@ import type { OpenQuestionnaireRecord } from "./buildLearnerInput";
  * envelope-read coupling went away).
  *
  * Produces an `OpenQuestionnaireRecord` (the server-side shape used by
- * `buildLearnerInput` for envelope rendering and by `executeWaveMid` for
+ * `buildLearnerInput` for envelope rendering and by `persistWaveMidTurn` for
  * mechanical MC correctness). The wire-side projection
  * (`WaveChatLogEntryForClient`) is computed separately by
  * `redactWaveChatLog`.
@@ -68,7 +68,7 @@ export function findOpenQuestionnaire(
  *
  * Pure projection of `OpenQuestionnaireRecord.questions`. Shared by the two
  * mechanical-grading paths so the typed filter+map lives in exactly one place:
- * `executeWaveMid` (mid-turn grading) and `applyCloseGradings` in
+ * `persistWaveMidTurn` (mid-turn grading) and `applyCloseGradings` in
  * `persistWaveClose.helpers` (bug_003 close-turn MC grading). If
  * `OpenQuestionnaireRecord` or the MC key type changes, only this builder moves.
  */

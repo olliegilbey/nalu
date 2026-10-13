@@ -8,7 +8,7 @@ Glossary of terms used across Nalu. Update this doc before renaming any of these
 
 An LLM wrapped in a loop that appends messages each turn. The loop: send messages → receive response → if the response requests tools, execute them and append results → repeat until the model stops calling tools. Per [ampcode.com/notes/how-to-build-an-agent](https://ampcode.com/notes/how-to-build-an-agent), the whole thing is "an LLM, a loop, and enough tokens" — ~300-400 lines of real code. Complexity should emerge from engineering polish, not architecture or docs.
 
-Nalu is a **heuristically structured** variant of this pattern. The outer loop is distributed across HTTP turns; the DB is the agent's memory. Streamed mid-Wave turns also run a bounded inner tool loop: a `ToolLoopAgent` from `src/lib/agents/`, capped at `LLM.maxToolSteps`. On each turn the Harness injects signals the model didn't ask for — the turn countdown within the current Wave, and on the final turn of a Wave the concepts due for review and the fresh concepts for the next Wave, plus a response schema that requires the next Wave's blueprint. The LLM stays stateless; the Harness loads the Context from DB, appends injections plus the user's message, and sends. That injection layer is what makes Nalu a harness and not a passthrough.
+Nalu is a **heuristically structured** variant of this pattern. The outer loop is distributed across HTTP turns; the DB is the agent's memory. Mid-Wave turns also run a bounded inner tool loop: a `ToolLoopAgent` from `src/lib/agents/`, capped at `LLM.maxToolSteps`. On each turn the Harness injects signals the model didn't ask for — the turn countdown within the current Wave, and on the final turn of a Wave the concepts due for review and the fresh concepts for the next Wave, plus a response schema that requires the next Wave's blueprint. The LLM stays stateless; the Harness loads the Context from DB, appends injections plus the user's message, and sends. That injection layer is what makes Nalu a harness and not a passthrough.
 
 ## Blueprint
 
@@ -83,11 +83,11 @@ This repo. The system that wraps the LLM with deterministic logic (XP, SM-2 sche
 
 ## LLM
 
-The stateless text model, served by Cerebras through an OpenAI-compatible API. The `LLM_MODEL` env var selects it; the `justfile` notes the current default. Stateless: it holds no memory between HTTP calls. Each turn, the Harness loads the current Context from DB and sends it as-is — no regeneration from components. Only the system prompt is re-rendered per call, byte-identical within a phase (see **Context**). LLM calls go through `src/lib/llm/`: `provider.ts` builds the model, and `generate.ts` and `streamChat.ts` make structured calls. Tool-loop turns run agents from `src/lib/agents/`.
+The stateless text model, served by Cerebras through an OpenAI-compatible API. The `LLM_MODEL` env var selects it; the `justfile` notes the current default. Stateless: it holds no memory between HTTP calls. Each turn, the Harness loads the current Context from DB and sends it as-is — no regeneration from components. Only the system prompt is re-rendered per call, byte-identical within a phase (see **Context**). LLM calls go through `src/lib/llm/`: `provider.ts` builds the model, and `generate.ts` makes structured calls. Tool-loop turns run agents from `src/lib/agents/`.
 
 ## Router
 
-`src/server/routers/`. Transport layer only — tRPC procedure dispatch, input Zod validation, and auth. Streamed Wave turns use a second transport, the route handler under `src/app/api/course/`. Calls one `src/lib/course/` function per turn and returns its result. That function owns the heuristics (turn-count decisions, wrap-up triggers, prompt shaping) and the persistence.
+`src/server/routers/`. Transport layer only — tRPC procedure dispatch, input Zod validation, and auth. Wave turns stream over a second transport, the route handler under `src/app/api/course/`. Calls one `src/lib/course/` function per turn and returns its result. That function owns the heuristics (turn-count decisions, wrap-up triggers, prompt shaping) and the persistence.
 
 ## Scoping
 

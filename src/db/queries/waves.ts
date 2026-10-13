@@ -133,7 +133,7 @@ export async function getOpenWaveByCourse(courseId: string): Promise<Wave | null
  * the client uses (URLs carry the ordinal, not the row id). The unique index
  * `waves_course_wave_number_unique` guarantees at most one match.
  *
- * Returns `null` when no row exists; callers (e.g. `submitWaveTurn`,
+ * Returns `null` when no row exists; callers (e.g. `prepareWaveTurn`,
  * `getWaveState`) translate that into a TRPC error with the appropriate code.
  * Returning `null` rather than throwing keeps the query layer's NotFoundError
  * convention reserved for primary-key lookups.
@@ -185,7 +185,7 @@ export async function getLatestWaveNumberByCourse(courseId: string): Promise<num
  * Optional `tx` opts the read into a caller's transaction so an append that
  * committed before the tx opened (or one made earlier in the same tx) is
  * visible. Used by `applyCloseGradings`: the learner's close-turn
- * `user.answers` entry lands on `chat_log` pre-LLM (see `submitWaveTurn`),
+ * `user.answers` entry lands on `chat_log` pre-LLM (see `prepareWaveTurn`),
  * AFTER `loadWaveContext` snapshots `ctx.wave.chatLog` — so the close-grading
  * path must re-read the live column to see the learner's MC click.
  *
@@ -314,8 +314,8 @@ export async function closeWave(id: string, params: CloseWaveParams, tx?: DbOrTx
  * same wave (they serialise on the row lock and apply in commit order).
  *
  * `tx` opts the UPDATE into a caller's transaction so the chat_log append
- * rolls back atomically with sibling writes (e.g. the executeWaveMid tx that
- * inserts assessment rows + persists context_messages).
+ * rolls back atomically with sibling writes (e.g. the persistWaveMidTurn tx that
+ * grades answers and inserts assessment rows).
  */
 export async function appendWaveChatLog(
   exec: DbOrTx,

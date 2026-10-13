@@ -6,7 +6,9 @@ import { createCourse, setCourseStartingState } from "@/db/queries/courses";
 import { appendWaveChatLog, getWaveById, openWave } from "@/db/queries/waves";
 import { appendMessage, getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { updateConceptSm2, upsertConcept } from "@/db/queries/concepts";
+import { getAssessmentByWaveAndQuestionId } from "@/db/queries/assessments";
 import { WAVE } from "@/lib/config/tuning";
+import { calculateMcXp } from "@/lib/scoring/xp";
 import * as waveMidTurnAgentModule from "@/lib/agents/waveMidTurnAgent";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import type { WaveMidTurnAgentTools } from "@/lib/agents/waveMidTurnAgent";
@@ -15,6 +17,7 @@ import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import type { LlmMessage } from "@/lib/types/llm";
 import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTurn";
 import { streamWaveTurn } from "./streamWaveTurn";
+import { namespaceQuestionId } from "./namespaceQuestionId";
 
 // The provider needs env at build time; the stubbed agent stream never calls it.
 vi.mock("@/lib/llm/provider", () => ({
@@ -28,12 +31,11 @@ vi.mock("@/lib/llm/provider", () => ({
  * LLM boundary is mocked at `buildWaveMidTurnAgent` (mid-turns — the REAL
  * builder runs, only the agent's `.stream()` is stubbed, so
  * `executeToolTurnStream` persists production-shaped context_messages rows
- * INCLUDING the tool kinds) and at `executeTurn` (close turns, which run the
- * blocking path inside the stream). Scripted attempts invoke the REAL tool
+ * INCLUDING the tool kinds) and at `executeTurn` (close turns, which run
+ * it blocking inside the stream). Scripted attempts invoke the REAL tool
  * executes (collector staging AND DB-backed lookups) so state moves exactly
  * as `streamText` would move it in production. Assertions cover the UIMessage
- * part sequence (text + tool chunks) AND the same DB row trails the blocking
- * suite asserts.
+ * part sequence (text + tool chunks) AND the DB row trails each turn leaves.
  */
 
 const USER_ID = "55555555-5555-5555-5555-555555555555";
@@ -71,6 +73,26 @@ const QUIZ_INPUT = {
     },
   ],
 };
+
+/** A recordComprehensionSignals tool input grading QUIZ_INPUT's q1. */
+const SIGNALS_INPUT = {
+  signals: [
+    {
+      kind: "mc-index" as const,
+      questionId: "q1",
+      rationale: "Knows let moves. Teach borrowing next.",
+    },
+  ],
+};
+
+/** The learner's answer to QUIZ_INPUT: q1 = "A", its `correct` key. */
+function correctAnswerPayload(questionnaireId: string) {
+  return {
+    kind: "questionnaire-answers" as const,
+    questionnaireId,
+    answers: [{ id: "q1", kind: "mc" as const, selected: "A" as const }],
+  };
+}
 
 /** Seed user + course + open Wave 1. Returns the ids each test needs. */
 async function seedCourseWithOpenWave(): Promise<{
@@ -161,6 +183,43 @@ function mockAgentAttempts(...attempts: readonly ScriptedAttempt[]) {
 /** fullStream text-delta part (note: `text`, not `delta`, at this layer). */
 const textDelta = (text: string) => ({ type: "text-delta", id: "t0", text });
 
+/**
+ * Scripted attempt that runs one emission tool through its REAL execute,
+ * then writes `prose`. Two steps: the tool call, then the closing text.
+ */
+function toolCallAttempt(
+  toolName: "presentQuestionnaire" | "recordComprehensionSignals",
+  input: unknown,
+  output: unknown,
+  prose: string,
+): ScriptedAttempt {
+  return {
+    parts: [textDelta(prose)],
+    steps: [
+      {
+        text: "",
+        toolCalls: [{ toolCallId: `${toolName}-1`, toolName, input }],
+        toolResults: [{ toolCallId: `${toolName}-1`, toolName, output }],
+        content: [],
+      },
+      { text: prose, toolCalls: [], toolResults: [], content: [] },
+    ],
+    run: async (tools) => {
+      await tools[toolName]!.execute!(input as never, {
+        toolCallId: `${toolName}-1`,
+        messages: [],
+      });
+    },
+  };
+}
+
+/** Scripted attempt whose stream dies mid-flight, like a dropped connection. */
+const failingAttempt: ScriptedAttempt = {
+  parts: [],
+  steps: [],
+  run: () => Promise.reject(new Error("LLM transport failure")),
+};
+
 /** Minimal recording writer satisfying UIMessageStreamWriter for assertions. */
 function recordingWriter() {
   const parts: { type: string; [k: string]: unknown }[] = [];
@@ -177,9 +236,8 @@ function recordingWriter() {
 }
 
 /**
- * Blocking-path executeTurn mock for close turns (mirrors the blocking
- * suite): persists user + assistant rows so executeWaveClose sees
- * production-shaped context_messages.
+ * executeTurn mock for close turns: persists user + assistant rows so
+ * executeWaveClose sees production-shaped context_messages.
  */
 function makeBlockingTurnMock(parsed: unknown) {
   return async <T>(params: ExecuteTurnParams<T>): Promise<ExecuteTurnResult<T>> => {
@@ -213,7 +271,7 @@ describe("streamWaveTurn (integration)", () => {
 
   // -------------------------------------------------------------------------
   // 1. Happy mid-turn (pure teaching, no tool calls): text part lifecycle +
-  //    transient result part + the same DB rows the blocking path persists.
+  //    transient result part + the rows in both stores.
   // -------------------------------------------------------------------------
   it("happy mid-turn: streams text parts, emits data-turn-result, persists both stores", async () => {
     await withTestDb(async () => {
@@ -644,8 +702,8 @@ describe("streamWaveTurn (integration)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 4. Close turn: blocking path inside the stream — result part only, no
-  //    text parts, tool loop never touched.
+  // 4. Close turn: a blocking `executeTurn` inside the stream. Result part
+  //    only: no text parts, and the tool loop is never touched.
   // -------------------------------------------------------------------------
   it("close turn: emits only data-turn-result (kind close-turn), no text parts", async () => {
     await withTestDb(async () => {
@@ -709,6 +767,128 @@ describe("streamWaveTurn (integration)", () => {
       });
       // The streaming agent loop is never touched on a close turn.
       expect(agentBuildSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 5. Grading end to end: turn 1 presents a quiz, turn 2 answers it and the
+  //    model records a signal. The harness grades the MC mechanically and
+  //    awards XP on the assessment row.
+  // -------------------------------------------------------------------------
+  it("answered quiz: grades the MC correct and awards XP on the assessment row", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      mockAgentAttempts(
+        toolCallAttempt(
+          "presentQuestionnaire",
+          QUIZ_INPUT,
+          { accepted: true, questionCount: 1 },
+          "Quiz below!",
+        ),
+        toolCallAttempt("recordComprehensionSignals", SIGNALS_INPUT, { recorded: 1 }, "Right!"),
+      );
+
+      // Turn 1: the quiz lands through production code (row + chat_log entry).
+      const first = recordingWriter();
+      await streamWaveTurn(
+        {
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: { kind: "chat-text", text: "quiz me" },
+        },
+        first.writer,
+      );
+      const firstData = first.parts.at(-1)!["data"] as {
+        newQuestionnaire: { questionnaireId: string } | null;
+      };
+      const questionnaireId = firstData.newQuestionnaire!.questionnaireId;
+
+      // Turn 2: the learner picks the correct option.
+      const second = recordingWriter();
+      await streamWaveTurn(
+        {
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: correctAnswerPayload(questionnaireId),
+        },
+        second.writer,
+      );
+
+      // The result part carries the grade. It fails if grading is skipped.
+      const resultPart = second.parts.at(-1)!;
+      expect(resultPart.type).toBe("data-turn-result");
+      const expectedXp = calculateMcXp(QUIZ_INPUT.questions[0]!.tier, true);
+      expect(resultPart["data"]).toMatchObject({
+        kind: "mid-turn",
+        gradedSignals: [{ questionId: "q1", correct: true, xpAwarded: expectedXp }],
+      });
+      // The assessment row holds the same grade, keyed on the namespaced id.
+      const row = await getAssessmentByWaveAndQuestionId(
+        waveId,
+        namespaceQuestionId(questionnaireId, "q1"),
+      );
+      expect(row).toMatchObject({ isCorrect: true, xpAwarded: expectedXp, userAnswer: "A" });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 6. bug_001 retry, then grade: the first answers turn dies after the
+  //    pre-LLM append. The identical retry must reuse that entry, still find
+  //    the quiz open, and grade it.
+  // -------------------------------------------------------------------------
+  it("answered quiz after a failed attempt: retry grades once, one answers entry", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      mockAgentAttempts(
+        toolCallAttempt(
+          "presentQuestionnaire",
+          QUIZ_INPUT,
+          { accepted: true, questionCount: 1 },
+          "Quiz below!",
+        ),
+        failingAttempt,
+        toolCallAttempt("recordComprehensionSignals", SIGNALS_INPUT, { recorded: 1 }, "Right!"),
+      );
+      const first = recordingWriter();
+      await streamWaveTurn(
+        {
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: { kind: "chat-text", text: "quiz me" },
+        },
+        first.writer,
+      );
+      const firstData = first.parts.at(-1)!["data"] as {
+        newQuestionnaire: { questionnaireId: string } | null;
+      };
+      const params = {
+        userId: USER_ID,
+        courseId,
+        waveNumber: 1,
+        payload: correctAnswerPayload(firstData.newQuestionnaire!.questionnaireId),
+      };
+
+      // Attempt 1 dies after prepareWaveTurn appended the learner's answers.
+      await expect(streamWaveTurn(params, recordingWriter().writer)).rejects.toThrow(
+        "LLM transport failure",
+      );
+
+      // The identical retry grades the MC.
+      const retry = recordingWriter();
+      await streamWaveTurn(params, retry.writer);
+      expect(retry.parts.at(-1)!["data"]).toMatchObject({
+        kind: "mid-turn",
+        gradedSignals: [{ questionId: "q1", correct: true }],
+      });
+      // chat_log holds exactly one learner answers entry.
+      const wave = await getWaveById(waveId);
+      const answers = (wave.chatLog as WaveChatLog).filter(
+        (e) => e.role === "user" && e.kind === "answers",
+      );
+      expect(answers).toHaveLength(1);
     });
   });
 });

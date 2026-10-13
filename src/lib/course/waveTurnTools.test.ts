@@ -216,6 +216,22 @@ describe("buildWaveMidTurnTools", () => {
     }
   });
 
+  it.each([
+    ["an empty", ""],
+    ["a whitespace-only", "   "],
+  ])("questionnaire inputSchema rejects %s conceptName", async (_label, conceptName) => {
+    // `"   "` is a truthy string, so a presence-only check would let it
+    // through. The trim-aware check must reject it before it becomes a
+    // concept with a blank name.
+    const { tools } = buildWaveMidTurnTools();
+    const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);
+    const result = await schema.validate!({ questions: [{ ...FT_QUESTION, conceptName }] });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(String(result.error)).toContain("is missing required conceptName");
+    }
+  });
+
   it("questionnaire inputSchema rejects an MC question without correct, verbatim directive", async () => {
     const { tools } = buildWaveMidTurnTools();
     const schema = asValidatingSchema(tools.presentQuestionnaire.inputSchema);

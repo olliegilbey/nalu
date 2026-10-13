@@ -1,8 +1,8 @@
 import type { ChoiceQuestion } from "./adaptQuestionnaire";
 
 /**
- * One entry in the answer payload submitted to questionnaire-consuming
- * procedures (`course.submitBaseline`, `wave.submitTurn` with the
+ * One entry in the answer payload submitted to questionnaire consumers
+ * (`course.submitBaseline`, and the Wave turn route's
  * `questionnaire-answers` branch). Same wire shape across phases.
  */
 export type ShapedQuestionnaireAnswer =
@@ -38,8 +38,8 @@ export function matchOptionIndex(question: ChoiceQuestion, answer: string): numb
 
 /**
  * Shape Composer-emitted `{ question, answer }` pairs into the discriminated
- * union that questionnaire-consuming procedures expect (`submitBaseline` and
- * `wave.submitTurn`'s `questionnaire-answers` branch share this wire shape).
+ * union that questionnaire consumers expect (`submitBaseline` and the Wave
+ * turn route's `questionnaire-answers` branch share this wire shape).
  *
  * MC vs free-text is disambiguated by `matchOptionIndex` — the Composer
  * returns the option text verbatim for taps, or the user's typed reply for

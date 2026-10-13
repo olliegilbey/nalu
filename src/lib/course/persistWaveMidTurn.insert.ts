@@ -7,12 +7,12 @@ import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { Questionnaire } from "@/lib/prompts/questionnaire";
 
 /**
- * Internal helper for `executeWaveMid` — insert N placeholder assessment rows
- * for a newly-emitted questionnaire, upsert any new concepts, and project to
- * the client-safe shape with `correctEnc` for MC questions.
+ * Internal helper for `persistWaveMidTurn` — insert N placeholder assessment
+ * rows for a newly-emitted questionnaire, upsert any new concepts, and project
+ * to the client-safe shape with `correctEnc` for MC questions.
  *
- * Split out of `executeWaveMid.ts` to keep both under the ~200-line ceiling.
- * Not re-exported via the barrel; only `executeWaveMid` calls it.
+ * Split out of `persistWaveMidTurn.ts` to keep both under the ~200-line
+ * ceiling. Not re-exported via the barrel; only `persistWaveMidTurn` calls it.
  */
 
 /**
@@ -51,7 +51,7 @@ export interface InsertNewQuestionnaireParams {
   readonly assistantMessageId: string;
   /** turn_index the assistant_response landed at — assessments align to this. */
   readonly assistantTurnIndex: number;
-  /** Schema-validated questionnaire from `waveMidTurnSchema`. */
+  /** Questionnaire validated by the `presentQuestionnaire` tool's input schema. */
   readonly questionnaire: Questionnaire;
   /** Default tier for upsertConcept when the question omits its own tier. */
   readonly waveTier: number;
@@ -60,8 +60,8 @@ export interface InsertNewQuestionnaireParams {
 /**
  * Insert placeholder assessment rows for a new questionnaire and project to
  * the client-safe shape. Each question:
- *   - REQUIRES `conceptName` (`waveMidTurnSchema`'s superRefine guarantees it;
- *     the throw below is a defensive backstop).
+ *   - REQUIRES `conceptName` (the `presentQuestionnaire` tool's superRefine
+ *     guarantees it; the throw below is a defensive backstop).
  *   - Upserts the concept at `q.tier ?? waveTier` (immutable post-first-sight).
  *   - Maps to one assessment row with `assessment_kind = card_mc|card_freetext`,
  *     placeholder grading fields, and `${assistantMessageId}:${q.id}` as
@@ -77,7 +77,7 @@ export interface InsertNewQuestionnaireParams {
  * `questionnaireId` is the just-persisted `assistant_response` row id. This
  * matches what `loadWaveContext` reconstructs (`loadWaveContext.ts:117`), so
  * the value the client receives on emission is the same value it would see
- * after a page reload. The client passes it back verbatim in `submitTurn`.
+ * after a page reload. The client passes it back verbatim with its answers.
  */
 export async function insertNewQuestionnaire(
   params: InsertNewQuestionnaireParams,
@@ -98,13 +98,12 @@ export async function insertNewQuestionnaire(
   >(async (accP, q) => {
     const acc = await accP;
     if (!q.conceptName?.trim()) {
-      // Defensive backstop: `waveMidTurnSchema`'s superRefine already requires
-      // a non-blank conceptName on every questionnaire question, so an omission
-      // is caught upstream as a retryable ValidationGateFailure. This throw only
-      // fires if that guard regresses: fail loud rather than upsert a nameless
-      // concept.
+      // Defensive backstop: the `presentQuestionnaire` tool's superRefine
+      // already requires a non-blank conceptName on every question, so an
+      // omission is fed back to the model in-loop. This throw only fires if
+      // that guard regresses: fail loud rather than upsert a nameless concept.
       throw new Error(
-        `executeWaveMid: questionnaire question id=${q.id} missing required conceptName`,
+        `insertNewQuestionnaire: questionnaire question id=${q.id} missing required conceptName`,
       );
     }
     const concept = await upsertConcept(
@@ -146,10 +145,13 @@ export async function insertNewQuestionnaire(
   const questions = params.questionnaire.questions.map((q) => {
     if (q.type === "multiple_choice") {
       if (q.correct === undefined) {
-        // Defensive backstop: `waveMidTurnSchema`'s superRefine already requires
-        // `correct` on every MC question; this throw only fires if that guard
-        // regresses. Fail loud rather than emit a useless projection.
-        throw new Error(`executeWaveMid: MC question id=${q.id} missing required correct key`);
+        // Defensive backstop: the `presentQuestionnaire` tool's superRefine
+        // already requires `correct` on every MC question; this throw only
+        // fires if that guard regresses. Fail loud rather than emit a useless
+        // projection.
+        throw new Error(
+          `insertNewQuestionnaire: MC question id=${q.id} missing required correct key`,
+        );
       }
       return {
         id: q.id,

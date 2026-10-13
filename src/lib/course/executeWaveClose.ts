@@ -8,7 +8,6 @@ import {
   renderConceptInjection,
 } from "@/lib/spaced-repetition/scheduler";
 import { getConceptsByCourse } from "@/db/queries/concepts";
-import type { WaveOutputContract } from "@/lib/types/context";
 import type { FrameworkJsonb } from "@/lib/types/jsonb";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { buildWaveSeed } from "./buildWaveSeed";
@@ -18,15 +17,15 @@ import { persistWaveClose, type PersistedGradedSignal } from "./persistWaveClose
 import type { LoadedWaveContext } from "./loadWaveContext";
 
 /**
- * Per-close orchestration result. The router projects this to the client-safe
- * shape; the discriminator `kind` lets `submitWaveTurn` return either
- * mid-turn or close-turn under one union (spec §3.3).
+ * Per-close orchestration result, streamed to the client as the
+ * `data-turn-result` part. The discriminator `kind` puts mid-turn and
+ * close-turn results under one union (`WaveTurnResultData`, spec §3.3).
  */
 export interface ExecuteWaveCloseResult {
   readonly kind: "close-turn";
   /** Closing chat message the learner sees (`parsed.userMessage`). */
   readonly closingMessage: string;
-  /** Row id of the just-opened Wave N+1. `submitWaveTurn` uses it to redirect/refresh the client. */
+  /** Row id of the just-opened Wave N+1. The client uses it to redirect/refresh. */
   readonly nextWaveId: string;
   /** Ordinal of the just-opened Wave N+1. */
   readonly nextWaveNumber: number;
@@ -53,20 +52,12 @@ export interface ExecuteWaveCloseResult {
  *      gradings → SM-2 → close Wave N → tier check → open Wave N+1 → seed
  *      opening message → bump total_xp.
  *
- * The orchestrator stops short of the redaction step — `submitWaveTurn`
- * (Task 13) is responsible for projecting the persisted result to the
- * client-safe shape (no questionnaire is emitted on a close turn).
+ * No redaction step is needed: a close turn emits no questionnaire, so the
+ * result carries no answer keys.
  */
 export async function executeWaveClose(
   ctx: LoadedWaveContext,
   learnerInput: string,
-  // The close turn itself is ALWAYS single-JSON (blocking executeTurn +
-  // response_format); the contract only selects which system prompt the
-  // whole Wave renders under. The streaming transport passes "tools" so the
-  // close turn's system prompt is byte-identical to the mid turns' — the
-  // provider cache prefix survives the mid→close switch. Default "json"
-  // keeps the blocking rollback path and existing tests untouched.
-  outputContract: WaveOutputContract = "json",
 ): Promise<ExecuteWaveCloseResult> {
   const now = new Date();
 
@@ -99,9 +90,12 @@ export async function executeWaveClose(
   const schemaJson = toSchemaJsonString(schema, { name: "wave_close" });
   const conceptsBlock = renderConceptInjection(fresh, due);
 
+  // The close turn itself is single-JSON (blocking executeTurn +
+  // response_format), but it renders the same system prompt as the mid
+  // turns, so the provider cache prefix survives the mid→close switch.
   const { parsed } = await executeTurn({
     parent: { kind: "wave", id: ctx.wave.id },
-    seed: buildWaveSeed(ctx.course, ctx.wave, outputContract),
+    seed: buildWaveSeed(ctx.course, ctx.wave),
     userMessageContent: renderWaveCloseEnvelope({
       learnerInput,
       conceptsForNextWaveBlock: conceptsBlock,

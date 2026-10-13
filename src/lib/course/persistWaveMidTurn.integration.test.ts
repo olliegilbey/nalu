@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { eq } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
@@ -9,34 +9,28 @@ import { appendMessage, getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts";
 import { insertOpenAssessments } from "@/db/queries/assessments";
 import { WAVE } from "@/lib/config/tuning";
-import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
-import * as executeTurnModule from "@/lib/turn/executeTurn";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { loadWaveContext } from "./loadWaveContext";
-import { executeWaveMid } from "./executeWaveMid";
+import { persistWaveMidTurn } from "./persistWaveMidTurn";
 import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
 import { namespaceQuestionId } from "./namespaceQuestionId";
-import { buildLearnerInput, type SubmitTurnPayload } from "./buildLearnerInput";
-import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTurn";
+import type { SubmitTurnPayload } from "./buildLearnerInput";
 
 /**
- * Integration tests for `executeWaveMid`.
+ * Integration tests for `persistWaveMidTurn`: the post-LLM transaction of a
+ * mid-Wave turn. Real Postgres testcontainer; no LLM. Each test first
+ * appends the `user_message + assistant_response` pair the turn runner
+ * commits, then hands `persistWaveMidTurn` the turn's output — the shape
+ * `streamWaveTurn` builds from the tool collector.
  *
- * Strategy mirrors `submitBaseline.integration.test.ts`: real Postgres
- * testcontainer for everything EXCEPT the LLM call. `executeTurn` is mocked
- * via `vi.spyOn`, but the mock implementation persists `user_message +
- * assistant_response` to context_messages so the orchestrator's MAX-based
- * turn_index lookup matches production behaviour.
- *
- * Coverage (plan §11 step 1):
- *   1. chat-text reply → assistant prose persists, no new assessments.
- *   2. questionnaire-answers reply against an MC + free-text drop →
- *      assessments updated with grading + XP + userAnswer, no SM-2 mutation.
- *   3. New questionnaire emitted → N placeholder assessments inserted with
- *      matching question_ids, concepts upserted.
- *   4. ValidationGateFailure from executeTurn propagates untouched and the
- *      transaction is never opened (no assessment rows written).
+ * Coverage:
+ *   1. Prose-only turn → assistant prose persists, no new assessments.
+ *   2. Signals against an MC + free-text questionnaire → assessments updated
+ *      with grading + XP + userAnswer, no SM-2 mutation.
+ *   3. New questionnaire → N placeholder assessments inserted with
+ *      namespaced question_ids, concepts upserted.
+ *   4. bug_004: two questionnaires reusing one raw id do not collide.
  */
 
 const USER_ID = "88888888-8888-8888-8888-888888888888";
@@ -83,49 +77,30 @@ async function seedCourseWithOpenWave(): Promise<{
 }
 
 /**
- * Build an executeTurn mock that mimics production persistence:
- *   1. Reserves the next turn_index via `getNextTurnIndex`.
- *   2. Appends a user_message row at (turnIndex, seq=0) with the envelope text.
- *   3. Appends an assistant_response row at (turnIndex, seq=1) with the JSON
- *      content (so loadWaveContext can later reconstruct the questionnaire).
- *   4. Returns the canned `parsed` + zero usage.
- *
- * This makes the orchestrator's MAX-based turn_index calc inside the
- * transaction match production behaviour without needing the real LLM.
+ * Append the turn's `user_message + assistant_response` pair at the next
+ * turn_index, as the turn runner does before `persistWaveMidTurn` runs.
+ * `persistWaveMidTurn` reads the latest assistant_response row back: its id
+ * becomes the questionnaireId, its turn_index the assessments' turn.
  */
-function makeExecuteTurnMock(parsed: WaveMidTurn) {
-  return async <T>(params: ExecuteTurnParams<T>): Promise<ExecuteTurnResult<T>> => {
-    if (params.parent.kind !== "wave") {
-      throw new Error("test mock: only wave parents supported");
-    }
-    const turnIndex = await getNextTurnIndex(params.parent);
-    await appendMessage({
-      parent: params.parent,
-      turnIndex,
-      seq: 0,
-      kind: "user_message",
-      role: "user",
-      content: params.userMessageContent,
-    });
-    await appendMessage({
-      parent: params.parent,
-      turnIndex,
-      seq: 1,
-      kind: "assistant_response",
-      role: "assistant",
-      content: JSON.stringify(parsed),
-    });
-    return {
-      parsed: parsed as unknown as T,
-      usage: {
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-        inputTokenDetails: { noCacheTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-        outputTokenDetails: { textTokens: 0, reasoningTokens: 0 },
-      },
-    };
-  };
+async function appendTurnRows(waveId: string, assistantContent: string): Promise<void> {
+  const parent = { kind: "wave", id: waveId } as const;
+  const turnIndex = await getNextTurnIndex(parent);
+  await appendMessage({
+    parent,
+    turnIndex,
+    seq: 0,
+    kind: "user_message",
+    role: "user",
+    content: "<learner_reply>test</learner_reply>",
+  });
+  await appendMessage({
+    parent,
+    turnIndex,
+    seq: 1,
+    kind: "assistant_response",
+    role: "assistant",
+    content: assistantContent,
+  });
 }
 
 /**
@@ -220,28 +195,20 @@ async function seedOpenQuestionnaire(
   return { mcConceptId: conceptMc.id, ftConceptId: conceptFt.id, mcQuestionId, ftQuestionId };
 }
 
-describe("executeWaveMid (integration)", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
+describe("persistWaveMidTurn (integration)", () => {
   // ---------------------------------------------------------------------------
   // 1. Pure chat-text reply: teaching prose, no questionnaire. No assessment
   //    rows should be created or modified.
   // ---------------------------------------------------------------------------
-  it("chat-text reply → assistant prose persists, no new assessments", async () => {
+  it("prose-only turn → assistant prose persists, no new assessments", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
       const parsed: WaveMidTurn = { userMessage: "Here is a teaching turn." };
-      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
-        makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
-      );
       const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
-      const openQ = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
       const payload: SubmitTurnPayload = { kind: "chat-text", text: "tell me more" };
-      const learnerInput = buildLearnerInput(payload, openQ);
+      await appendTurnRows(waveId, parsed.userMessage);
 
-      const result = await executeWaveMid(ctx, learnerInput, 5, payload);
+      const result = await persistWaveMidTurn({ ctx, parsed, payload, turnsRemaining: 5 });
 
       expect(result.assistantContent).toBe("Here is a teaching turn.");
       expect(result.newQuestionnaire).toBeNull();
@@ -267,7 +234,7 @@ describe("executeWaveMid (integration)", () => {
   //    rows must be updated with grading + XP + the learner's actual answer
   //    text replacing the "" placeholder.
   // ---------------------------------------------------------------------------
-  it("questionnaire-answers → grading + XP + userAnswer applied, no SM-2 mutation", async () => {
+  it("signals for answered questions → grading + XP + userAnswer applied, no SM-2 mutation", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
       const { mcConceptId, ftConceptId, mcQuestionId, ftQuestionId } = await seedOpenQuestionnaire(
@@ -292,9 +259,6 @@ describe("executeWaveMid (integration)", () => {
           },
         ],
       };
-      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
-        makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
-      );
       const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
       const openQ = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
       const payload: SubmitTurnPayload = {
@@ -305,9 +269,9 @@ describe("executeWaveMid (integration)", () => {
           { id: "q-ft", kind: "freetext", text: "borrow is a temporary loan", fromEscape: false },
         ],
       };
-      const learnerInput = buildLearnerInput(payload, openQ);
+      await appendTurnRows(waveId, parsed.userMessage);
 
-      const result = await executeWaveMid(ctx, learnerInput, 4, payload);
+      const result = await persistWaveMidTurn({ ctx, parsed, payload, turnsRemaining: 4 });
 
       expect(result.gradedSignals).toHaveLength(2);
       // gradedSignals surface the RAW model id (what the client matches on),
@@ -354,7 +318,7 @@ describe("executeWaveMid (integration)", () => {
   //    Expect N placeholder assessment rows, concepts upserted, projection
   //    carries correctEnc for MC.
   // ---------------------------------------------------------------------------
-  it("model emits a new questionnaire → assessments inserted, concepts upserted, correctEnc set", async () => {
+  it("new questionnaire → assessments inserted, concepts upserted, correctEnc set", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
       const parsed: WaveMidTurn = {
@@ -382,15 +346,11 @@ describe("executeWaveMid (integration)", () => {
           ],
         },
       };
-      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
-        makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
-      );
       const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
-      const openQ = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
       const payload: SubmitTurnPayload = { kind: "chat-text", text: "ready" };
-      const learnerInput = buildLearnerInput(payload, openQ);
+      await appendTurnRows(waveId, parsed.userMessage);
 
-      const result = await executeWaveMid(ctx, learnerInput, 6, payload);
+      const result = await persistWaveMidTurn({ ctx, parsed, payload, turnsRemaining: 6 });
 
       expect(result.newQuestionnaire).not.toBeNull();
       expect(result.newQuestionnaire!.questions).toHaveLength(2);
@@ -467,31 +427,29 @@ describe("executeWaveMid (integration)", () => {
       });
 
       // --- Turn 1: emit a questionnaire using `q1`. -------------------------
-      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
-        makeExecuteTurnMock(
-          makeQ1Turn("First check", "ownership"),
-        ) as unknown as typeof executeTurnModule.executeTurn,
-      );
+      const turn1 = makeQ1Turn("First check", "ownership");
       const ctx1 = await loadWaveContext({ userId: USER_ID, courseId, waveId });
-      const openQ1 = findOpenQuestionnaire(ctx1.wave.chatLog as WaveChatLog);
-      const payload1: SubmitTurnPayload = { kind: "chat-text", text: "ready" };
-      const result1 = await executeWaveMid(ctx1, buildLearnerInput(payload1, openQ1), 6, payload1);
+      await appendTurnRows(waveId, turn1.userMessage);
+      const result1 = await persistWaveMidTurn({
+        ctx: ctx1,
+        parsed: turn1,
+        payload: { kind: "chat-text", text: "ready" },
+        turnsRemaining: 6,
+      });
       expect(result1.newQuestionnaire).not.toBeNull();
 
       // --- Turn 2: emit ANOTHER questionnaire, ALSO using `q1`. -------------
-      // Pre-fix this throws a 23505 unique-constraint violation. The mock is
-      // re-spied so turn 2 returns its own payload.
-      vi.restoreAllMocks();
-      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
-        makeExecuteTurnMock(
-          makeQ1Turn("Second check", "borrowing"),
-        ) as unknown as typeof executeTurnModule.executeTurn,
-      );
+      // Pre-fix this throws a 23505 unique-constraint violation.
+      const turn2 = makeQ1Turn("Second check", "borrowing");
       const ctx2 = await loadWaveContext({ userId: USER_ID, courseId, waveId });
-      const openQ2 = findOpenQuestionnaire(ctx2.wave.chatLog as WaveChatLog);
-      const payload2: SubmitTurnPayload = { kind: "chat-text", text: "next" };
+      await appendTurnRows(waveId, turn2.userMessage);
       // Must NOT throw — the regression is a hard 500 here pre-fix.
-      const result2 = await executeWaveMid(ctx2, buildLearnerInput(payload2, openQ2), 5, payload2);
+      const result2 = await persistWaveMidTurn({
+        ctx: ctx2,
+        parsed: turn2,
+        payload: { kind: "chat-text", text: "next" },
+        turnsRemaining: 5,
+      });
       expect(result2.newQuestionnaire).not.toBeNull();
 
       // Both questionnaires persisted: two assessment rows on the wave, each
@@ -510,32 +468,6 @@ describe("executeWaveMid (integration)", () => {
       // The client-facing projection keeps the raw model id for both.
       expect(result1.newQuestionnaire!.questions[0]!.id).toBe("q1");
       expect(result2.newQuestionnaire!.questions[0]!.id).toBe("q1");
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // 5. ValidationGateFailure contract: retry logic lives INSIDE executeTurn;
-  //    once it gives up, the failure propagates untouched. executeWaveMid
-  //    must (a) re-raise the original error and (b) never open the persistence
-  //    transaction (no partial writes).
-  // ---------------------------------------------------------------------------
-  it("propagates ValidationGateFailure from executeTurn without touching DB", async () => {
-    await withTestDb(async () => {
-      const { courseId, waveId } = await seedCourseWithOpenWave();
-      vi.spyOn(executeTurnModule, "executeTurn").mockRejectedValue(
-        new ValidationGateFailure("missing_response", "schema invariant violated"),
-      );
-      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
-      const openQ = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
-      const payload: SubmitTurnPayload = { kind: "chat-text", text: "tell me" };
-      const learnerInput = buildLearnerInput(payload, openQ);
-
-      await expect(executeWaveMid(ctx, learnerInput, 5, payload)).rejects.toBeInstanceOf(
-        ValidationGateFailure,
-      );
-      // No assessments inserted on the failure path.
-      const rows = await db.select().from(assessments).where(eq(assessments.waveId, waveId));
-      expect(rows).toHaveLength(0);
     });
   });
 });

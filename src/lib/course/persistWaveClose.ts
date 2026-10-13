@@ -101,7 +101,7 @@ export async function persistWaveClose(
     // 3b. Closing assistant entry on Wave N's chat_log — paired with the
     //     close-turn assistant_response that was persisted by executeTurn in
     //     the parent executeWaveClose. Same two-store invariant as mid-turn
-    //     (see executeWaveMid): context_messages = LLM replay log;
+    //     (see persistWaveMidTurn): context_messages = LLM replay log;
     //     chat_log = wave UI's typed source of truth.
     await appendWaveChatLog(tx, ctx.wave.id, {
       role: "assistant",

@@ -335,13 +335,11 @@ export const AGENT_LOOKUP = {
  *   medium-quality free-text answer, so the per-Wave commitment payoff is
  *   visible without dwarfing in-Wave grading.
  * - `dueReviewInjection` (agent-loop plan Task 5): how the Wave system
- *   prompt surfaces due concepts on the TOOLS contract. `"full"` injects
- *   the whole `<due_for_review>` list (pre-agent behaviour); `"hint"`
- *   replaces it with a one-line nudge to call getDueConcepts, shrinking
- *   the static prompt now that the model can pull the live list on
- *   demand. The json contract ALWAYS gets the full list — it has no
- *   lookup tools. Default stays "full" until the live A/B in
- *   docs/status/ shows hint mode preserves review coverage.
+ *   prompt surfaces due concepts. `"full"` injects the whole
+ *   `<due_for_review>` list. `"hint"` replaces it with a one-line nudge to
+ *   call getDueConcepts, which shrinks the static prompt. Default stays
+ *   "full": the 2026-07-11 live A/B (docs/status/) showed the model does
+ *   not call the lookup unprompted.
  * - `quizMaxQuestions`: upper bound on one mid-Wave `presentQuestionnaire`
  *   call. A quiz is a quick concept check inside a teaching turn, not a
  *   test; three questions keep it short. The tool's input schema enforces

@@ -124,10 +124,11 @@ if (courseId) {
   console.log(`\n=== WAVES (${waves.length}) ===`);
   console.table(waves);
 
-  // Wave teaching turns. A turn whose `executeTurn` committed a clean
+  // Wave teaching turns. A turn whose runner committed a clean
   // `assistant_response` here — yet is not reflected in `chatlog_entries`
-  // above — is a POST-PERSIST failure: executeWaveMid/Close threw AFTER
-  // executeTurn's atomic batch (grading, assessments, or the chat_log append).
+  // above — is a POST-PERSIST failure: persistWaveMidTurn/executeWaveClose
+  // threw AFTER the runner's atomic batch (grading, assessments, or the
+  // chat_log append).
   const waveMsgs = await sql`
     SELECT w.wave_number, cm.turn_index, cm.seq, cm.kind, cm.role,
            length(cm.content) AS len, cm.created_at, cm.content

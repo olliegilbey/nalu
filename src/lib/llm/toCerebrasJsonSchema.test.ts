@@ -8,7 +8,6 @@ import {
 } from "./toCerebrasJsonSchema";
 import { clarifySchema } from "@/lib/prompts/clarify";
 import { frameworkSchema } from "@/lib/prompts/framework";
-import { waveMidTurnSchema } from "@/lib/prompts/waveTurn";
 import { makeWaveCloseSchema } from "@/lib/prompts/waveClose";
 import { makeScopingCloseSchema } from "@/lib/prompts/scopingClose";
 import type { MakeCloseTurnBaseSchemaParams } from "@/lib/prompts/closeTurn";
@@ -267,7 +266,6 @@ describe("toCerebrasJsonSchema", () => {
   it.each<[string, z.ZodType<unknown>]>([
     ["clarify", clarifySchema],
     ["framework", frameworkSchema],
-    ["wave_mid_turn", waveMidTurnSchema],
     // Close-turn schemas are `base.and(extra)` intersections — the exact
     // shape that emits `allOf`. They are the regression target here.
     ["wave_close", makeWaveCloseSchema(closeParams)],

@@ -21,8 +21,8 @@ import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTur
 /**
  * Integration tests for `executeWaveClose`.
  *
- * Mirrors `executeWaveMid.integration.test.ts`: real Postgres testcontainer
- * except for the LLM call (`vi.spyOn(executeTurn)`). The mock persists user +
+ * Real Postgres testcontainer except for the LLM call
+ * (`vi.spyOn(executeTurn)`). The mock persists user +
  * assistant rows so context_messages reflects production semantics, then the
  * orchestrator's persistence transaction runs end-to-end.
  *
@@ -99,7 +99,7 @@ async function seedCourseWithOpenWave(
  * Returns the concept id (for SM-2 assertions) and the namespaced
  * `question_id` so tests can query the row back directly.
  *
- * Mirrors `seedOpenQuestionnaire` in `executeWaveMid.integration.test.ts` but
+ * Mirrors `seedOpenQuestionnaire` in `persistWaveMidTurn.integration.test.ts` but
  * close-turn focused: only one free-text question is needed. Writes BOTH the
  * `context_messages` assistant_response AND the `chat_log`
  * `text_with_questionnaire` entry — `findOpenQuestionnaire` (used by
@@ -173,7 +173,7 @@ async function seedOpenFreeTextQuestionnaire(
  * Seed an OPEN MC questionnaire on the wave plus its placeholder `card_mc`
  * assessment row. Does NOT write the learner's answer — that must land AFTER
  * `loadWaveContext` snapshots `ctx.wave.chatLog` (see `appendCloseMcAnswer`),
- * because in production `submitWaveTurn` appends it post-snapshot.
+ * because in production `prepareWaveTurn` appends it post-snapshot.
  *
  * bug_003: a questionnaire posed on the FINAL mid-turn has no later mid-turn,
  * so its MC question is answered — and graded — at close.
@@ -245,7 +245,7 @@ async function seedOpenMcQuestionnaire(
 
 /**
  * Append the learner's close-turn MC click to the LIVE `chat_log`. Production
- * `submitWaveTurn` does this pre-LLM, AFTER `loadWaveContext` has snapshotted
+ * `prepareWaveTurn` does this pre-LLM, AFTER `loadWaveContext` has snapshotted
  * `ctx.wave.chatLog` — so tests must call this between `loadWaveContext` and
  * `executeWaveClose` to faithfully reproduce the bug_003 path: the snapshot
  * still sees the questionnaire as OPEN; `applyCloseGradings` re-reads the live
@@ -411,8 +411,8 @@ describe("executeWaveClose (integration)", () => {
         priorWaveId: waveId,
         blueprint: { topic: "Borrowing rules", openingText: "Welcome to lesson 2." },
       });
-      // Fix 2: orchestrator must surface the new wave's row id so the upstream
-      // `submitWaveTurn` (Task 13) can redirect/refresh the client.
+      // Fix 2: orchestrator must surface the new wave's row id so the client
+      // can redirect/refresh.
       expect(result.nextWaveId).toBe(nextWave.id);
 
       // Turn-0 assistant message on Wave N+1 carrying openingText -----------
@@ -656,10 +656,10 @@ describe("executeWaveClose (integration)", () => {
         makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
       );
 
-      // Snapshot ctx BEFORE the answer lands — mirrors submitWaveTurn ordering.
+      // Snapshot ctx BEFORE the answer lands — mirrors prepareWaveTurn ordering.
       const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
       // Learner clicks the correct option (B). Lands on the live chat_log after
-      // the snapshot, exactly as submitWaveTurn does pre-LLM.
+      // the snapshot, exactly as prepareWaveTurn does pre-LLM.
       await appendCloseMcAnswer(waveId, questionnaireId, "B");
       // Before the fix this throws (the `mc-index` branch hard-throws); after it
       // resolves and closes the wave.

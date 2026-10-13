@@ -5,18 +5,20 @@ import { renderWaveTurnEnvelope, type WaveMidTurn } from "@/lib/prompts/waveTurn
 import type { ClientForwardedToolName, WaveTurnUIMessage } from "@/lib/types/waveStream";
 import type { LlmUsage } from "@/lib/types/llm";
 import { buildWaveSeed } from "./buildWaveSeed";
-import { prepareWaveTurn, type PreparedWaveTurn } from "./prepareWaveTurn";
+import {
+  prepareWaveTurn,
+  type PreparedWaveTurn,
+  type PrepareWaveTurnParams,
+} from "./prepareWaveTurn";
 import { persistWaveMidTurn } from "./persistWaveMidTurn";
 import { executeWaveClose } from "./executeWaveClose";
 import type { WaveTurnCollector } from "./waveTurnTools";
 import { findJsonProseLeakIndex, validateWaveMidToolTurn } from "./waveMidTurnGate";
-import type { SubmitWaveTurnParams } from "./submitWaveTurn";
 
 /**
- * Streaming counterpart of `submitWaveTurn`. Same guards (via
- * prepareWaveTurn), same persistence (via persistWaveMidTurn /
- * executeWaveClose); the difference is transport AND emission channel:
- * mid-turns dispatch through the wave mid-turn agent (`executeToolTurnStream`
+ * Runs one learner turn against an open Wave and streams it to the client.
+ * Guards via prepareWaveTurn; persistence via persistWaveMidTurn /
+ * executeWaveClose. Mid-turns dispatch through the wave mid-turn agent (`executeToolTurnStream`
  * + `buildWaveMidTurnAgent`, one fresh agent per attempt) — teaching prose
  * streams as plain text parts, structured actions arrive as tool calls
  * (only `presentQuestionnaire` is forwarded to the client, as typed tool
@@ -24,10 +26,6 @@ import type { SubmitWaveTurnParams } from "./submitWaveTurn";
  * finished-turn projection arrives as a transient `data-turn-result` part,
  * and validation retries emit a non-transient `data-turn-reset` marker part
  * (the client slices the message's parts on it).
- *
- * The blocking tRPC path (`executeWaveMid`) keeps the mega-schema JSON
- * contract as the rollback transport — shared pieces are prepareWaveTurn
- * and persistWaveMidTurn, not the LLM dispatch.
  *
  * Close turns (turnsRemaining === 0) run BLOCKING inside the stream —
  * only the final data part is emitted. Streaming close prose is a noted
@@ -39,15 +37,13 @@ import type { SubmitWaveTurnParams } from "./submitWaveTurn";
  * The streaming route ignores the return value.
  */
 export async function streamWaveTurn(
-  params: SubmitWaveTurnParams,
+  params: PrepareWaveTurnParams,
   writer: UIMessageStreamWriter<WaveTurnUIMessage>,
 ): Promise<LlmUsage | null> {
   const prep: PreparedWaveTurn = await prepareWaveTurn(params);
 
   if (prep.isCloseTurn) {
-    // "tools" keeps the close turn's system prompt byte-identical to the
-    // mid turns' (cache prefix) — the close call itself is still single-JSON.
-    const result = await executeWaveClose(prep.dispatchCtx, prep.learnerInput, "tools");
+    const result = await executeWaveClose(prep.dispatchCtx, prep.learnerInput);
     writer.write({ type: "data-turn-result", data: result, transient: true });
     return null;
   }
@@ -85,7 +81,7 @@ export async function streamWaveTurn(
   // One seed serves both the context assembly (executeToolTurnStream) and
   // the agent's instructions — byte-identity between the two renders is what
   // lets the dispatcher drop the assembled system message (cache prefix).
-  const seed = buildWaveSeed(prep.dispatchCtx.course, prep.dispatchCtx.wave, "tools");
+  const seed = buildWaveSeed(prep.dispatchCtx.course, prep.dispatchCtx.wave);
 
   // finalText deliberately unused: the learner-visible prose is accumulated
   // in attemptState (all steps, not just the closing step). usage is
@@ -157,9 +153,7 @@ export async function streamWaveTurn(
   });
   closeText();
 
-  // Adapt the collector to persistWaveMidTurn's EXISTING input shape (the old
-  // parsed mega-schema object) — persistence stays byte-for-byte shared with
-  // the blocking path so grading/XP semantics cannot drift.
+  // Adapt the collector to persistWaveMidTurn's input shape.
   const parsed: WaveMidTurn = {
     userMessage: attemptState.prose,
     comprehensionSignals:

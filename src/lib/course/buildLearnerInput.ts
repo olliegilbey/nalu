@@ -11,7 +11,7 @@ export type SubmittedAnswer =
       readonly fromEscape: boolean;
     };
 
-/** The discriminated payload `wave.submitTurn` accepts (router input type). */
+/** The discriminated payload of one Wave turn submission (validated by `submitTurnInputSchema`). */
 export type SubmitTurnPayload =
   | { readonly kind: "chat-text"; readonly text: string }
   | {
@@ -48,7 +48,7 @@ export interface OpenQuestionnaireRecord {
  * the same numerical encoding the grading + obfuscation path uses (see
  * `encodeCorrect` in `src/lib/security/obfuscateCorrect.ts`).
  *
- * Exported so `executeWaveMid` can compute `encodeCorrect(id, KEY_TO_INDEX[correct])`
+ * Exported so `insertNewQuestionnaire` can compute `encodeCorrect(id, KEY_TO_INDEX[correct])`
  * from the same source of truth — duplicating the literal would risk drift.
  */
 export const KEY_TO_INDEX = { A: 0, B: 1, C: 2, D: 3 } as const;

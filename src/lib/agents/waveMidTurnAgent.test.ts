@@ -101,7 +101,6 @@ const SEED: WaveSeedInputs = {
     blueprint: { topic: "Ownership", outline: ["x"], openingText: "hi", plannedConcepts: [] },
   },
   dueConcepts: [],
-  outputContract: "tools",
 };
 
 const COURSE_ID = "11111111-1111-4111-8111-111111111111";
@@ -132,20 +131,6 @@ describe("buildWaveMidTurnAgent", () => {
     // or the provider cache prefix breaks (renderContext invariant).
     const { instructions } = buildWaveMidTurnAgent({ seed: SEED, courseId: COURSE_ID });
     expect(instructions).toBe(renderTeachingSystem(SEED));
-  });
-
-  it("throws when the seed's output contract is not 'tools'", () => {
-    // The agent path IS the tool channel; a "json"-contract prompt would
-    // instruct mega-schema output into a tool loop. Silently rewriting the
-    // seed would let the agent's instructions diverge from what the caller's
-    // message-assembly path rendered and persisted — throw instead, matching
-    // buildWaveSeed's loud-explicit contract param (PR #35 review).
-    expect(() =>
-      buildWaveMidTurnAgent({ seed: { ...SEED, outputContract: undefined }, courseId: COURSE_ID }),
-    ).toThrowError(/outputContract: "tools"/);
-    expect(() =>
-      buildWaveMidTurnAgent({ seed: { ...SEED, outputContract: "json" }, courseId: COURSE_ID }),
-    ).toThrowError(/outputContract: "tools"/);
   });
 
   it("folds every loop Step's usage into the run tally", async () => {

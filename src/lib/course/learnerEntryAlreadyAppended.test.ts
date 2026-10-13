@@ -4,7 +4,7 @@ import { learnerEntryAlreadyAppended } from "./learnerEntryAlreadyAppended";
 
 /**
  * Unit tests for `learnerEntryAlreadyAppended` — the resume-aware skip that
- * makes `submitWaveTurn`'s pre-LLM `chat_log` append idempotent (bug_001).
+ * makes `prepareWaveTurn`'s pre-LLM `chat_log` append idempotent (bug_001).
  */
 describe("learnerEntryAlreadyAppended", () => {
   const textEntry: WaveChatLogEntry = { role: "user", kind: "text", content: "hello" };

@@ -5,7 +5,7 @@ import type { Course, Wave } from "@/db/schema";
 
 /**
  * One round-trip fetch + access-control check for a (user, course, wave)
- * triple. Used by `submitWaveTurn` (and any future server-side path that
+ * triple. Used by `prepareWaveTurn` (and any future server-side path that
  * needs the loaded course + wave pair).
  *
  * Open-questionnaire reconstruction is gone — it now lives on the typed

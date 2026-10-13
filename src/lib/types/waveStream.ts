@@ -1,14 +1,14 @@
 import type { InferUITools, UIMessage } from "ai";
-import type { SubmitWaveTurnResult } from "@/lib/course/submitWaveTurn";
+import type { PersistWaveMidTurnResult } from "@/lib/course/persistWaveMidTurn";
+import type { ExecuteWaveCloseResult } from "@/lib/course/executeWaveClose";
 import type { WaveMidTurnAgentTools } from "@/lib/agents/waveMidTurnAgent";
 
 /**
  * Client-safe projection of a finished turn, delivered as a transient
- * `data-turn-result` part at the end of the stream. Shape matches what the
- * tRPC mutation returned pre-streaming, so the client's XP/close handling
- * ports across mechanically.
+ * `data-turn-result` part at the end of the stream. `kind` tells a mid-turn
+ * result from a close-turn result.
  */
-export type WaveTurnResultData = SubmitWaveTurnResult;
+export type WaveTurnResultData = PersistWaveMidTurnResult | ExecuteWaveCloseResult;
 
 /**
  * Non-transient marker part written before a validation retry re-streams.

@@ -2,8 +2,8 @@
  * Live smoke for ONE tool-loop teaching turn (`streamWaveTurn` against real
  * Cerebras + testcontainers Postgres) — plan: tool-calling Task 8 Step 1.
  *
- * WHY separate from wave.live.test.ts: that suite drives the BLOCKING
- * mega-schema path end-to-end (scoping → full wave). This test seeds a wave
+ * WHY separate from wave.live.test.ts: that suite drives a whole course
+ * end-to-end (scoping → full wave). This test seeds a wave
  * directly (no scoping LLM calls) and exercises the streaming tool channel:
  * per the plan, assertions are on COLLECTOR OUTCOMES (staged questionnaire /
  * turn projection / persisted row kinds) and on wire-safety invariants

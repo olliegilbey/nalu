@@ -4,9 +4,10 @@
  * testcontainers Postgres.
  *
  * Gated behind `CEREBRAS_LIVE=1 && LLM_API_KEY`; never runs in CI or
- * `just check`. Per-turn observability (banners + prompts + parse outcomes)
- * is emitted by `executeTurn` itself (labels `wave-mid` and `wave-close`)
- * — this file adds no logging.
+ * `just check`. Wave turns run through `streamWaveTurn`, the function the
+ * streaming route calls: mid-turns run the tool loop, the close turn runs
+ * `executeTurn` (label `wave-close`, which emits its own per-turn banners).
+ * Each turn's result is read from the stream's `data-turn-result` part.
  *
  * Coverage (mirrors plan §13 → Task 16 Step 1):
  *   1. Scoping → Wave 1 navigation. Wave 1 row exists and was seeded from
@@ -28,6 +29,7 @@
  */
 
 import { describe, test, expect, beforeAll } from "vitest";
+import type { UIMessageStreamWriter } from "ai";
 import { eq, asc } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { appRouter } from "./index";
@@ -41,6 +43,10 @@ import { seedSourceSchema } from "@/lib/types/jsonb";
 import type { BaselineAnswer } from "@/lib/course/submitBaseline";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 import { WAVE } from "@/lib/config/tuning";
+import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
+import type { PrepareWaveTurnParams } from "@/lib/course/prepareWaveTurn";
+import { userIdStore } from "@/lib/llm/userIdStore";
+import type { WaveTurnResultData, WaveTurnUIMessage } from "@/lib/types/waveStream";
 
 // Gate: skip every test unless both flags are set. Mirrors course.live.test.ts.
 const LIVE = process.env.CEREBRAS_LIVE === "1" && Boolean(process.env.LLM_API_KEY);
@@ -54,6 +60,26 @@ const LIVE_TEST_USER = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 const TOPIC = SCOPING_TOPICS[0]!;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Run one Wave turn the way the streaming route does, and return its
+ * `data-turn-result` payload. The writer records parts; this smoke reads
+ * only the final result. The ALS wrap mirrors the route (rate-limiter lane).
+ */
+async function runWaveTurn(params: PrepareWaveTurnParams): Promise<WaveTurnResultData> {
+  const parts: { type: string; data?: unknown }[] = [];
+  const writer = {
+    write: (part: { type: string; data?: unknown }) => {
+      parts.push(part);
+    },
+    merge: () => undefined,
+    onError: undefined,
+  } as unknown as UIMessageStreamWriter<WaveTurnUIMessage>;
+  await userIdStore.run(params.userId, () => streamWaveTurn(params, writer));
+  const resultPart = parts.findLast((p) => p.type === "data-turn-result");
+  if (!resultPart) throw new Error("stream ended without a data-turn-result part");
+  return resultPart.data as WaveTurnResultData;
+}
 
 // Log provider/model so live output is self-documenting (matches neighbours).
 beforeAll(() => {
@@ -149,12 +175,12 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
       let signalsReturnedCount = 0;
 
       // Loop exactly WAVE.turnCount times. On iteration i = turnCount-1
-      // submitWaveTurn dispatches the close path (`kind === "close-turn"`).
+      // streamWaveTurn dispatches the close path (`kind === "close-turn"`).
       // Use Array.reduce instead of a for-loop — accumulator is the empty
       // Promise chain; iteration index is i. We capture the close result
       // outside the reducer by branching on i === turnCount - 1 (the
       // controller of the loop) and storing into closeResult.
-      let closeResult: Awaited<ReturnType<typeof caller.wave.submitTurn>> | null = null;
+      let closeResult: WaveTurnResultData | null = null;
 
       // Decision matrix per turn — read the current state, then post the
       // matching payload. chat-text when no questionnaire is open;
@@ -204,7 +230,8 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
                 text: "Got it — could you walk me through the next concept with a concrete example?",
               };
 
-        const result = await caller.wave.submitTurn({
+        const result = await runWaveTurn({
+          userId: LIVE_TEST_USER,
           courseId,
           waveNumber: 1,
           payload,

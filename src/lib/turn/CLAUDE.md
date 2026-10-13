@@ -2,17 +2,13 @@
 
 Stage-agnostic per-turn primitives.
 
-`executeTurn` (blocking) and `executeTurnStream` (streaming; adds
-progressText/onTextDelta/onAttemptStart hooks) share one contract: load
-prior rows → assemble context (`contextAssembly.ts`) → call the LLM →
-validate via Output.object → persist one atomic batch (`user_message +
+`executeTurn` runs one structured turn, blocking: load prior rows →
+assemble context (`contextAssembly.ts`) → call the LLM → validate via
+Output.object → persist one atomic batch (`user_message +
 assistant_response`, with optional `failed_assistant_response +
-harness_retry_directive` retry exhaust between). Persisted rows, retry
-budget, and ValidationGateFailure semantics are identical across both —
-tests assert the same row sequences for each. `executeTurnStream` has no
-production caller today; only its tests use it (issue #97).
+harness_retry_directive` retry exhaust between).
 
-`executeToolTurnStream` is the third sibling for TOOL-loop turns
+`executeToolTurnStream` is its sibling for TOOL-loop turns
 (`agent.stream()` on a ToolLoopAgent from `src/lib/agents/` instead of
 `Output.object`): callers supply a `makeAttempt` factory (fresh agent +
 collector per attempt — retries must not inherit staged state) and a
@@ -27,7 +23,8 @@ prose as `assistant_response`; failed attempts collapse to
 retry filter keeps working. Learner-visible prose = ALL steps' streamed
 deltas accumulated at the call site, NOT `finalText` (last step only).
 
-- Used by scoping and Wave turns, both in `src/lib/course/`.
+- Callers live in `src/lib/course/`: scoping turns and the Wave close turn
+  run `executeTurn`; Wave mid-turns run `executeToolTurnStream`.
 - Validation: callers supply a `responseSchema` (Zod). `generateChat`
   validates via the SDK's `Output.object` (JSON-parse + `safeParse`,
   refines included) and throws `NoObjectGeneratedError` on failure;
@@ -57,7 +54,7 @@ trail on failure. Prompt and response bodies are uncolored (raw bytes);
 status, diagnosis, and retry directives use ANSI color when stderr is a
 TTY and `NO_COLOR` is unset. Callers tag their turns with `label`
 (`"clarify"`, `"framework"`, `"baseline"`, `"scoping-close"`,
-`"wave-mid"`, `"wave-close"`) and may pass a `successSummary` projection
+`"wave-close"`) and may pass a `successSummary` projection
 for the ✓ line.
 
 `LLM_DEBUG_GRADINGS=1` adds `[grading-debug]` stderr lines for issue #22:

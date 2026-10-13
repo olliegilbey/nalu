@@ -164,7 +164,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   ): Promise<ExecuteTurnResult<T>> {
     // Render context from prior DB rows + the in-memory batch (including any
     // failed/directive rows from earlier attempts *this turn*) so the model
-    // sees its previous mistakes. Shared with executeTurnStream.
+    // sees its previous mistakes. Shared with executeToolTurnStream.
     const llmMessages = assembleLlmMessages(params.seed, priorRows, batch);
     // Banner per attempt — always emitted under live mode so a 3-retry turn
     // produces three banners and the reader knows which call's output follows.
