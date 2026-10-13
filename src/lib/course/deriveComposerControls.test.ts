@@ -118,4 +118,9 @@ describe("deriveComposerControls", () => {
     const last = deriveComposerControls(card({ questionIndex: 1 }));
     expect([last.canGoPrev, last.canGoNext]).toEqual([true, false]);
   });
+
+  it("chat mode: no navigation, even from an index the last card left behind", () => {
+    const controls = deriveComposerControls(chat({ questionIndex: 2 }));
+    expect([controls.canGoPrev, controls.canGoNext]).toEqual([false, false]);
+  });
 });

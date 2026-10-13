@@ -79,7 +79,7 @@ export function deriveComposerControls(input: ComposerControlsInput): ComposerCo
     // id yet. Its commit brings a key and re-inits the card, which would wipe
     // a draft typed into the preview (#118).
     isPreview: hasQuestions && !input.persistKey,
-    canGoPrev: questionIndex > 0,
-    canGoNext: questionIndex < total - 1,
+    canGoPrev: hasQuestions && questionIndex > 0,
+    canGoNext: hasQuestions && questionIndex < total - 1,
   };
 }
