@@ -1,6 +1,6 @@
 import type { DbOrTx } from "@/db/client";
-import { insertOpenAssessments } from "@/db/queries/assessments";
-import { upsertConcept } from "@/db/queries/concepts";
+import { insertOpenAssessments } from "@/db/queries/assessments.open";
+import { upsertConcept } from "@/db/queries/concepts.writes";
 import { encodeCorrect } from "@/lib/security/obfuscateCorrect";
 import { KEY_TO_INDEX } from "./buildLearnerInput";
 import { namespaceQuestionId } from "./namespaceQuestionId";

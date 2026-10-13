@@ -4,7 +4,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse, NotFoundError } from "@/db/queries/courses";
-import { openWave } from "@/db/queries/waves";
+import { openWave } from "@/db/queries/waves.writes";
 import { WAVE } from "@/lib/config/tuning";
 import { loadWaveContext } from "./loadWaveContext";
 

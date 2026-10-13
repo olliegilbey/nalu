@@ -10,8 +10,8 @@ Layout:
 
 - `schema/` — one file per table; barrel re-exports in `index.ts`.
 - `migrations/` — drizzle-kit output, committed.
-- `queries/` — typed query functions; the intended home for all SQL. See
-  `queries/CLAUDE.md` for the transactional exceptions in `src/lib/course/`.
+- `queries/` — typed query functions; the home for all SQL. See
+  `queries/CLAUDE.md` for how transactions thread `tx` through them.
 - `seed.ts` — idempotent dev-user seed.
 - `reset.ts` — `just db-reset` wipe: drops the `public` and `drizzle`
   schemas at `DIRECT_URL`. Refuses unless `everyHostIsLoopback` passes

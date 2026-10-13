@@ -1,21 +1,45 @@
 # src/db/queries
 
-Intended home for all SQL. Callers import either the barrel `@/db/queries`
-(`src/server/trpc.ts`, the wave-turn route) or a single module such as
-`@/db/queries/courses` (all of `src/lib/`).
+Home for all SQL. Within `src/`, only `src/db/`, tests, and
+`src/lib/testing/` import `drizzle-orm` (the eslint `no-restricted-imports`
+rule, which lints `src/` only; `scripts/` sits outside it). Callers
+import either the barrel `@/db/queries` (`src/server/trpc.ts`, the
+wave-turn route) or a single module such as `@/db/queries/courses` (all of
+`src/lib/`).
 
-Exceptions: the transactional persist files in `src/lib/course/` open
-`db.transaction` themselves. `submitBaseline.persist.ts`,
-`persistWaveClose.ts`, and `persistWaveClose.helpers.ts` write `courses`
-with raw ``tx.execute(sql`UPDATE courses ...`)``, because the `courses`
-helpers here take no `tx` and run on the `db` singleton.
-`persistWaveMidTurn.ts` runs a Drizzle select on `context_messages`
-inside its transaction. Issue #46 tracks moving these into tx-aware query
-helpers.
+Transactions: the persist files in `src/lib/course/` open `db.transaction`
+and pass `tx` to every helper they call, so the writes commit or roll back
+together. Most helpers take an optional trailing `tx`. A helper whose
+name ends in `InTx` requires it. `courses.tx.ts` holds the `courses` reads
+and writes the close transactions run; each re-fetches nothing. Their
+singleton twins (`setCourseStartingState`, `updateCourseTier`,
+`incrementCourseXp`) run on `db`: inside a transaction, their UPDATE would
+deadlock on the transaction's row lock.
 
-Modules (one per domain): `userProfiles.ts`, `courses.ts`, `scopingPasses.ts`,
-`waves.ts`, `contextMessages.ts`, `concepts.ts`, `assessments.ts`. Shared
-`NotFoundError` lives in `errors.ts`.
+Modules: one base file per table (`userProfiles.ts`, `courses.ts`,
+`scopingPasses.ts`, `waves.ts`, `contextMessages.ts`, `concepts.ts`,
+`assessments.ts`). A base file past ~200 lines splits into dot-suffixed
+siblings, one concern each:
+
+- `courses.ts`: row guard, create, reads. `courses.scoping.ts`: scoping-phase
+  writes. `courses.progress.ts`: summary, tier, XP, and archive writes.
+  `courses.tx.ts`: the close transactions' reads and writes.
+- `waves.ts`: row guard and reads. `waves.writes.ts`: open, close, and the
+  `chat_log` append.
+- `concepts.ts`: reads. `concepts.writes.ts`: upsert, SM-2 results, and
+  counters.
+- `contextMessages.ts`: shared types and reads. `contextMessages.writes.ts`:
+  single and batch append.
+- `assessments.ts`: reads. `assessments.record.ts`: one probe, graded at
+  insert. `assessments.open.ts`: a questionnaire's placeholder rows.
+  `assessments.grade.ts`: grades an existing row. `assessments.fixtures.ts`
+  seeds the three integration suites; tests import it, production never does.
+
+Integration tests split the same way and sit beside their module
+(`courses.scoping.integration.test.ts`). The barrel `index.ts` re-exports
+every module. Add each new sibling there: knip sees test-only
+exports as used only through the barrel. Shared `NotFoundError` lives in
+`errors.ts`.
 
 Conventions:
 

@@ -96,7 +96,7 @@ The future option of unifying scoping into the same array shape (e.g. moving its
 
 - **LLM never sees XP, SM-2 internals, or tier-advancement decisions.** It emits content and assesses learner answers; deterministic code owns scoring and progression. See `AGENTS.md` ("The harness owns the score") for the boundary statement.
 - **No code outside `src/lib/turn/` writes to `context_messages`.** That's the only place where the atomicity invariant can be enforced. One exception: the close transactions (`persistScopingClose`, `persistWaveClose`) seed the next Wave's turn-0 `assistant_response` with the blueprint's `openingText`.
-- **No code outside `src/db/queries/` issues raw SQL.** Typed query functions are the trust boundary for DB I/O. The transactional persist files in `src/lib/course/` still break this rule; issue #46 tracks the fix.
+- **No code outside `src/db/queries/` issues raw SQL.** Typed query functions are the trust boundary for DB I/O. Transactions open in `src/lib/course/` and pass `tx` into those functions.
 - **No code rebuilds the envelope from typed JSONB.** Prefix-cache stability depends on canonical envelope bytes; rerendering would silently invalidate the cache.
 
 ## Where to add a new turn-shape

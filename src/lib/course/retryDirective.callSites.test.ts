@@ -22,8 +22,8 @@ import { executeWaveClose } from "./executeWaveClose";
 // LLM boundary: every Step fails structured output (set per test).
 vi.mock("@/lib/llm/generate", () => ({ generateChat: vi.fn() }));
 // Context rows: start empty, capture the persisted batch.
+vi.mock("@/db/queries/contextMessages.writes", () => ({ appendMessages: vi.fn() }));
 vi.mock("@/db/queries/contextMessages", () => ({
-  appendMessages: vi.fn(),
   getMessagesForWave: vi.fn(),
   getMessagesForScopingPass: vi.fn(),
   getNextTurnIndex: vi.fn(),
@@ -33,10 +33,8 @@ vi.mock("@/lib/llm/renderContext", () => ({
   renderContext: vi.fn(() => ({ system: "SYS", messages: [] })),
 }));
 // clarify's DB + operator ping.
-vi.mock("@/db/queries/courses", () => ({
-  createCourse: vi.fn(),
-  updateCourseScopingState: vi.fn(),
-}));
+vi.mock("@/db/queries/courses", () => ({ createCourse: vi.fn() }));
+vi.mock("@/db/queries/courses.scoping", () => ({ updateCourseScopingState: vi.fn() }));
 vi.mock("@/db/queries/scopingPasses", () => ({ ensureOpenScopingPass: vi.fn() }));
 vi.mock("@/lib/notify/ntfy", () => ({ notifyEvent: vi.fn() }));
 // executeWaveClose's concept reads (the scheduler calls these too).
@@ -46,8 +44,8 @@ vi.mock("@/db/queries/concepts", () => ({
 }));
 
 import { generateChat } from "@/lib/llm/generate";
+import { appendMessages } from "@/db/queries/contextMessages.writes";
 import {
-  appendMessages,
   getMessagesForScopingPass,
   getMessagesForWave,
   getNextTurnIndex,

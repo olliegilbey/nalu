@@ -8,16 +8,19 @@ vi.mock("@/db/queries/courses", async () => {
   return {
     ...actual,
     getCourseById: vi.fn(),
-    updateCourseScopingState: vi.fn(),
   };
 });
+vi.mock("@/db/queries/courses.scoping", () => ({
+  updateCourseScopingState: vi.fn(),
+}));
 vi.mock("@/db/queries/scopingPasses", () => ({
   ensureOpenScopingPass: vi.fn(),
 }));
 
 import { generateFramework } from "./generateFramework";
 import { executeTurn } from "@/lib/turn/executeTurn";
-import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
+import { getCourseById } from "@/db/queries/courses";
+import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { SCOPING } from "@/lib/config/tuning";
 import type { Course } from "@/db/schema";
