@@ -1,12 +1,10 @@
 import { TRPCError } from "@trpc/server";
 import { executeTurn } from "@/lib/turn/executeTurn";
-import { buildRetryDirective } from "@/lib/turn/retryDirective";
 import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { SCOPING } from "@/lib/config/tuning";
 import { frameworkSchema, type Framework } from "@/lib/prompts/framework";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
-import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import type { ClarificationJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
 /** Parameters for {@link generateFramework}; responses are the learner's clarify answers. */
@@ -107,9 +105,6 @@ export async function generateFramework(
     .join("\n\n");
 
   const pass = await ensureOpenScopingPass(course.id);
-  // Schema string feeds only the retry directive. Every Step already carries
-  // the schema on the wire, via `response_format`.
-  const schemaJson = toSchemaJsonString(frameworkSchema, { name: "framework" });
   const { parsed } = await executeTurn({
     parent: { kind: "scoping", id: pass.id },
     seed: { kind: "scoping", topic: course.topic },
@@ -119,7 +114,6 @@ export async function generateFramework(
     }),
     responseSchema: frameworkSchema,
     responseSchemaName: "framework",
-    retryDirective: (err) => buildRetryDirective(err, schemaJson),
     label: "framework",
     successSummary: (p) => `tiers=${p.tiers.length} startTier=${p.estimatedStartingTier}`,
   });

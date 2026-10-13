@@ -30,17 +30,16 @@ import {
   isQuiet,
 } from "./formatTurn";
 import { diagnoseFailure } from "./diagnoseFailure";
+import { buildRetryDirective } from "./retryDirective";
 
 /**
  * Parameters for one invocation of `executeTurn`.
  *
  * The harness does JSON-parse + Zod-validate using `responseSchema`.
- * Refine `.message` strings from failed Zod parses become the retry
- * directive verbatim, so schema refine messages must be model-readable.
- *
- * `retryDirective` defaults to `(err) => err.detail` — the detail string
- * is the Zod issue list from `toValidationGateFailure`. Override only if
- * the caller needs different wording per attempt index.
+ * On failure it builds the retry directive itself (`buildRetryDirective`),
+ * so callers pass only the schema and its wire name. Refine `.message`
+ * strings reach the model verbatim in that directive, so schema refine
+ * messages must be model-readable.
  */
 export interface ExecuteTurnParams<T> {
   readonly parent: ContextParent;
@@ -55,14 +54,13 @@ export interface ExecuteTurnParams<T> {
    * this schema's `safeParse` (refines included), enforcing business
    * invariants (`.refine`/`.superRefine` rules that Cerebras strict mode
    * can't express, e.g. tier-scope, count bounds).
-   * Refine `.message` text appears inside Zod's full issue-list JSON, which
-   * becomes the retry directive — the model sees field paths, codes, and the
-   * verbatim refine message together.
+   * On a failed parse the retry directive lists each Zod issue as
+   * `- field path: message`, so the model sees the field path beside the
+   * verbatim refine message, then the schema again inline.
    */
   readonly responseSchema: z.ZodType<T>;
   /** Optional `name` field on the wire JSON schema (defaults to `seed.kind`). */
   readonly responseSchemaName?: string;
-  readonly retryDirective?: (err: ValidationGateFailure, attempt: number) => string;
   /**
    * Optional human label for live-smoke observability (`CEREBRAS_LIVE=1`).
    * Names the per-turn stage in the banner — e.g. "clarify", "framework",
@@ -132,10 +130,15 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   // namespace (e.g. `TURN`) — not worth the rename ripple before there's a
   // second caller.
   const totalAttempts = SCOPING.maxParseRetries + 1;
-  // Default directive surfaces Zod's error.message verbatim (the harness
-  // authors it inside toValidationGateFailure; .retryDirective lets callers
-  // override).
-  const directiveFn = params.retryDirective ?? ((err) => err.detail);
+  // Wire name for `response_format`; callers name their stage's schema.
+  const schemaName = params.responseSchemaName ?? params.seed.kind;
+  // Pretty-printed wire schema body. Two readers: the retry directive, which
+  // re-attaches it inline, and the live-smoke banner. Lazy, because most
+  // Turns pass first time and outside live mode nothing else reads it.
+  // Memoised, so a Turn with two retries builds it once.
+  let schemaJsonMemo: string | undefined;
+  const schemaJson = (): string =>
+    (schemaJsonMemo ??= toSchemaJsonString(params.responseSchema, { name: schemaName }));
 
   // Live-smoke observability (CEREBRAS_LIVE=1). All emit decisions
   // collapse to noop in production — `live` is the master gate.
@@ -144,14 +147,9 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   const label = params.label ?? params.seed.kind;
   const headerTopic = params.seed.kind === "scoping" ? params.seed.topic : params.seed.courseTopic;
   const modelName = process.env.LLM_MODEL ?? "(default)";
-  // Wire-side response_format schema string — built and displayed only in live
-  // mode. Every model receives the schema via `response_format` on the wire,
-  // so the live banner mirrors the real wire payload.
-  const liveSchemaJson = live
-    ? toSchemaJsonString(params.responseSchema, {
-        name: params.responseSchemaName ?? params.seed.kind,
-      })
-    : undefined;
+  // Every model receives the schema via `response_format` on the wire, so
+  // the live banner prints it to mirror the real wire payload.
+  const liveSchemaJson = live ? schemaJson() : undefined;
 
   /**
    * Recursive attempt loop — functional alternative to mutable loop state.
@@ -191,7 +189,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       // `parsed` is the typed result and `text` the raw string we persist.
       const result = await generateChat(llmMessages, {
         responseSchema: params.responseSchema,
-        responseSchemaName: params.responseSchemaName ?? params.seed.kind,
+        responseSchemaName: schemaName,
         // Stage-named OTel span (e.g. "clarify", "wave-close") — same label
         // the live-smoke banners use.
         telemetryFunctionId: label,
@@ -260,13 +258,15 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
         throw gate;
       }
       // Retry path: append failed row + directive and recurse with i+1.
+      // The directive flattens the Zod issues to prose bullets and re-attaches
+      // the schema; weak models misread the raw issue JSON (`retryDirective.ts`).
       const directiveRow: AppendMessageParams = {
         parent: params.parent,
         turnIndex,
         seq: batch.length + 1,
         kind: "harness_retry_directive",
         role: "user",
-        content: directiveFn(gate, i + 1),
+        content: buildRetryDirective(gate, schemaJson()),
       };
       return attempt(i + 1, [...batch, failedRow, directiveRow]);
     }

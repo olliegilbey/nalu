@@ -1,11 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { executeTurn } from "@/lib/turn/executeTurn";
-import { buildRetryDirective } from "@/lib/turn/retryDirective";
 import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { getOpenWaveByCourse } from "@/db/queries/waves";
 import { makeScopingCloseSchema, renderScopingCloseStage } from "@/lib/prompts/scopingClose";
-import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { splitOne, type BaselineAnswer } from "./submitBaseline.internal";
 import { mergeAndComputeXp } from "@/lib/scoring/baselineMerge";
 import { logScopingCloseGradings } from "./closeGradingDebug";
@@ -151,9 +149,6 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
     reviewDueNames: [],
     existingConceptNames: [],
   });
-  // Schema string feeds only the retry directive. Every Step already carries
-  // the schema on the wire, via `response_format`.
-  const schemaJson = toSchemaJsonString(schema, { name: "scoping_close" });
 
   // Persist the learner's answers on the baseline row before calling the LLM,
   // so a retry does not lose them and `deriveChatEntries` can render the user-baseline
@@ -204,7 +199,6 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
       }),
       responseSchema: schema,
       responseSchemaName: "scoping_close",
-      retryDirective: (err) => buildRetryDirective(err, schemaJson),
       label: "scoping-close",
       successSummary: (p) => `gradings=${p.gradings.length} startingTier=${p.startingTier}`,
     });

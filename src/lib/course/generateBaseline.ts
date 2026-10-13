@@ -1,11 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { executeTurn } from "@/lib/turn/executeTurn";
-import { buildRetryDirective } from "@/lib/turn/retryDirective";
 import { getCourseById, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { makeBaselineSchema, type BaselineTurn } from "@/lib/prompts/baseline";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
-import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import type { BaselineJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
 /** Parameters for {@link generateBaseline}. */
@@ -55,9 +53,6 @@ export async function generateBaseline(
   }
 
   const pass = await ensureOpenScopingPass(course.id);
-  // Schema string feeds only the retry directive. Every Step already carries
-  // the schema on the wire, via `response_format`.
-  const schemaJson = toSchemaJsonString(schema, { name: "baseline" });
   const { parsed } = await executeTurn({
     parent: { kind: "scoping", id: pass.id },
     seed: { kind: "scoping", topic: course.topic },
@@ -69,7 +64,6 @@ export async function generateBaseline(
     }),
     responseSchema: schema,
     responseSchemaName: "baseline",
-    retryDirective: (err) => buildRetryDirective(err, schemaJson),
     label: "baseline",
     successSummary: (p) => `questions=${p.questions.questions.length}`,
   });

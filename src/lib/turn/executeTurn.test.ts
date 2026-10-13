@@ -18,8 +18,14 @@ vi.mock("@/db/queries/contextMessages", () => ({
 vi.mock("@/lib/llm/renderContext", () => ({
   renderContext: vi.fn(() => ({ system: "SYS", messages: [] })),
 }));
+// Real implementation behind a spy, so tests can count schema-string builds.
+vi.mock("@/lib/llm/toCerebrasJsonSchema", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/llm/toCerebrasJsonSchema")>();
+  return { ...actual, toSchemaJsonString: vi.fn(actual.toSchemaJsonString) };
+});
 
 import { generateChat } from "@/lib/llm/generate";
+import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import {
   appendMessages,
   getMessagesForScopingPass,
@@ -62,6 +68,7 @@ beforeEach(() => {
   vi.mocked(getMessagesForWave).mockResolvedValue([]);
   vi.mocked(getNextTurnIndex).mockResolvedValue(0);
   vi.mocked(appendMessages).mockResolvedValue([]);
+  vi.mocked(toSchemaJsonString).mockClear();
 });
 
 describe("executeTurn", () => {
@@ -142,6 +149,36 @@ describe("executeTurn", () => {
       "harness_retry_directive",
       "failed_assistant_response",
     ]);
+  });
+
+  it("schema string: never built on a first-time pass, built once across two retries", async () => {
+    // First-time pass outside live mode: no reader, so no build.
+    vi.mocked(generateChat).mockResolvedValueOnce({
+      text: '{"value":"OK"}',
+      parsed: { value: "OK" },
+      usage: FAKE_USAGE,
+    });
+    await executeTurn({
+      parent: { kind: "scoping", id: SCOPING_ID },
+      seed: SEED,
+      userMessageContent: "hi",
+      responseSchema: VALUE_SCHEMA,
+    });
+    expect(toSchemaJsonString).not.toHaveBeenCalled();
+
+    // Terminal exhaust writes two directives; both reuse one build.
+    vi.mocked(generateChat).mockRejectedValue(noObjectError("not json"));
+    await expect(
+      executeTurn({
+        parent: { kind: "scoping", id: SCOPING_ID },
+        seed: SEED,
+        userMessageContent: "hi",
+        responseSchema: VALUE_SCHEMA,
+        responseSchemaName: "value",
+      }),
+    ).rejects.toBeInstanceOf(ValidationGateFailure);
+    expect(toSchemaJsonString).toHaveBeenCalledOnce();
+    expect(toSchemaJsonString).toHaveBeenCalledWith(VALUE_SCHEMA, { name: "value" });
   });
 
   it("wave parent: dispatches to getMessagesForWave (not scoping)", async () => {

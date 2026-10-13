@@ -3,13 +3,13 @@ import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 /**
  * Build a human-readable retry directive for a failed turn.
  *
- * Why this exists: by default `executeTurn` surfaces Zod's raw issue-list
- * JSON as the retry message. Weak models (seen on the retired
- * `llama3.1-8b`) interpret that JSON conversationally — they reply with
- * "please provide a valid input" prose instead of treating it as
- * compiler-style feedback. Wrapping the issues in imperative prose and
- * re-attaching the schema flips the framing back to "fix your last
- * reply", which the same models actually act on.
+ * Why this exists: Zod's raw issue-list JSON makes a poor retry message.
+ * Weak models (seen on the retired `llama3.1-8b`) interpret that JSON
+ * conversationally — they reply with "please provide a valid input" prose
+ * instead of treating it as compiler-style feedback. Wrapping the issues in
+ * imperative prose and re-attaching the schema flips the framing back to
+ * "fix your last reply", which the same models actually act on.
+ * `executeTurn` calls this on every validation failure; call sites never do.
  *
  * Two failure modes are handled:
  *   1. JSON.parse failed — the model returned text that's not JSON at all.
