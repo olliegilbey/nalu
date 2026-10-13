@@ -7,7 +7,7 @@ import {
   getMessagesForWave,
   getMessagesForScopingPass,
   getNextTurnIndex,
-  getLatestAssistantResponseForWave,
+  getLatestAssistantResponseForWaveInTx,
 } from "./contextMessages";
 
 /** Fixed UUIDs per plan §D7. */
@@ -105,14 +105,14 @@ describe("contextMessages queries", () => {
   });
 
   // -------------------------------------------------------------------------
-  // getLatestAssistantResponseForWave — newest assistant_response by turn
+  // getLatestAssistantResponseForWaveInTx — newest assistant_response by turn
   // -------------------------------------------------------------------------
-  it("getLatestAssistantResponseForWave returns the newest assistant_response, or null", async () => {
+  it("getLatestAssistantResponseForWaveInTx returns the newest assistant_response, or null", async () => {
     await withTestDb(async (db) => {
       await seedFixtures(db);
       const parent = { kind: "wave", id: WAVE } as const;
 
-      expect(await getLatestAssistantResponseForWave(WAVE, db)).toBeNull();
+      expect(await getLatestAssistantResponseForWaveInTx(WAVE, db)).toBeNull();
 
       // Turn 2 holds only a user_message, so the kind filter must skip it.
       const rows = await appendMessages([
@@ -136,7 +136,7 @@ describe("contextMessages queries", () => {
         { parent, turnIndex: 2, seq: 0, kind: "user_message", role: "user", content: "r" },
       ]);
 
-      expect(await getLatestAssistantResponseForWave(WAVE, db)).toEqual({
+      expect(await getLatestAssistantResponseForWaveInTx(WAVE, db)).toEqual({
         id: rows[2]?.id,
         turnIndex: 1,
       });

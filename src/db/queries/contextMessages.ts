@@ -137,7 +137,7 @@ export async function getNextTurnIndex(parent: ContextParent): Promise<number> {
  * its id becomes the questionnaire id, its turn index the assessments' turn.
  * `tx` runs the read inside that transaction.
  */
-export async function getLatestAssistantResponseForWave(
+export async function getLatestAssistantResponseForWaveInTx(
   waveId: string,
   tx: DbOrTx,
 ): Promise<{ readonly id: string; readonly turnIndex: number } | null> {
