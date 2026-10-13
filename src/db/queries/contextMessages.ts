@@ -1,5 +1,5 @@
-import { asc, eq, max } from "drizzle-orm";
-import { db } from "@/db/client";
+import { and, asc, desc, eq, max } from "drizzle-orm";
+import { db, type DbOrTx } from "@/db/client";
 import { contextMessages, type ContextMessage } from "@/db/schema";
 
 /**
@@ -127,4 +127,25 @@ export async function getNextTurnIndex(parent: ContextParent): Promise<number> {
   // `max()` returns null when no rows match; treat as -1 so +1 gives 0.
   const current = row?.maxTurnIndex ?? null;
   return current === null ? 0 : current + 1;
+}
+
+/**
+ * Return the newest `assistant_response` row for a Wave (highest
+ * `turn_index`), or `null` when the Wave has none.
+ *
+ * The mid-turn transaction reads the row the turn runner just persisted:
+ * its id becomes the questionnaire id, its turn index the assessments' turn.
+ * `tx` runs the read inside that transaction.
+ */
+export async function getLatestAssistantResponseForWave(
+  waveId: string,
+  tx: DbOrTx,
+): Promise<{ readonly id: string; readonly turnIndex: number } | null> {
+  const [row] = await tx
+    .select({ id: contextMessages.id, turnIndex: contextMessages.turnIndex })
+    .from(contextMessages)
+    .where(and(eq(contextMessages.waveId, waveId), eq(contextMessages.kind, "assistant_response")))
+    .orderBy(desc(contextMessages.turnIndex))
+    .limit(1);
+  return row ?? null;
 }

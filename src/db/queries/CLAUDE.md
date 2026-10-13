@@ -8,10 +8,8 @@ Exceptions: the transactional persist files in `src/lib/course/` open
 `db.transaction` themselves. `submitBaseline.persist.ts`,
 `persistWaveClose.ts`, and `persistWaveClose.helpers.ts` write `courses`
 with raw ``tx.execute(sql`UPDATE courses ...`)``, because the `courses`
-helpers here take no `tx` and run on the `db` singleton.
-`persistWaveMidTurn.ts` runs a Drizzle select on `context_messages`
-inside its transaction. Issue #46 tracks moving these into tx-aware query
-helpers.
+helpers here take no `tx` and run on the `db` singleton. Issue #46 tracks
+moving these into tx-aware query helpers.
 
 Modules: one base file per table (`userProfiles.ts`, `courses.ts`,
 `scopingPasses.ts`, `waves.ts`, `contextMessages.ts`, `concepts.ts`,

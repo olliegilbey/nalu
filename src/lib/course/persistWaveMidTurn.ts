@@ -1,7 +1,6 @@
-import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { appendWaveChatLog } from "@/db/queries/waves.writes";
-import { contextMessages } from "@/db/schema";
+import { getLatestAssistantResponseForWave } from "@/db/queries/contextMessages";
 import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import { type SubmitTurnPayload } from "./buildLearnerInput";
@@ -74,17 +73,7 @@ export async function persistWaveMidTurn(params: {
     // mid-turn projection and the `loadWaveContext` reconstruction agree —
     // see `loadWaveContext.ts:117`) and its turn_index (assessments align
     // to it: questionnaire posed on N → graded on N+1).
-    const [assistantRow] = await tx
-      .select({ id: contextMessages.id, turnIndex: contextMessages.turnIndex })
-      .from(contextMessages)
-      .where(
-        and(
-          eq(contextMessages.waveId, ctx.wave.id),
-          eq(contextMessages.kind, "assistant_response"),
-        ),
-      )
-      .orderBy(desc(contextMessages.turnIndex))
-      .limit(1);
+    const assistantRow = await getLatestAssistantResponseForWave(ctx.wave.id, tx);
     if (!assistantRow) {
       // The turn runner always persists user+assistant on success — absence
       // means something silently skipped persistence. Fail loud.

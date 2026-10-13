@@ -2,8 +2,13 @@ import { describe, it, expect } from "vitest";
 import { WAVE as WAVE_CONFIG } from "@/lib/config/tuning";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles, courses, scopingPasses, waves } from "@/db/schema";
-import { appendMessage } from "./contextMessages.writes";
-import { getMessagesForWave, getMessagesForScopingPass, getNextTurnIndex } from "./contextMessages";
+import { appendMessage, appendMessages } from "./contextMessages.writes";
+import {
+  getMessagesForWave,
+  getMessagesForScopingPass,
+  getNextTurnIndex,
+  getLatestAssistantResponseForWave,
+} from "./contextMessages";
 
 /** Fixed UUIDs per plan §D7. */
 const USER = "55555555-5555-5555-5555-555555555555";
@@ -96,6 +101,45 @@ describe("contextMessages queries", () => {
       // max(turn_index) is now 0, so next is 1.
       const after = await getNextTurnIndex({ kind: "wave", id: WAVE });
       expect(after).toBe(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // getLatestAssistantResponseForWave — newest assistant_response by turn
+  // -------------------------------------------------------------------------
+  it("getLatestAssistantResponseForWave returns the newest assistant_response, or null", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+      const parent = { kind: "wave", id: WAVE } as const;
+
+      expect(await getLatestAssistantResponseForWave(WAVE, db)).toBeNull();
+
+      // Turn 2 holds only a user_message, so the kind filter must skip it.
+      const rows = await appendMessages([
+        {
+          parent,
+          turnIndex: 0,
+          seq: 0,
+          kind: "assistant_response",
+          role: "assistant",
+          content: "a",
+        },
+        { parent, turnIndex: 1, seq: 0, kind: "user_message", role: "user", content: "q" },
+        {
+          parent,
+          turnIndex: 1,
+          seq: 1,
+          kind: "assistant_response",
+          role: "assistant",
+          content: "b",
+        },
+        { parent, turnIndex: 2, seq: 0, kind: "user_message", role: "user", content: "r" },
+      ]);
+
+      expect(await getLatestAssistantResponseForWave(WAVE, db)).toEqual({
+        id: rows[2]?.id,
+        turnIndex: 1,
+      });
     });
   });
 });
