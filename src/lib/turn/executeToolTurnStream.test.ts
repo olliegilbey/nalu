@@ -247,6 +247,30 @@ describe("executeToolTurnStream", () => {
     expect(batch?.[batch.length - 1]?.kind).toBe("failed_assistant_response");
   });
 
+  it("a mid-loop stream error rejects with that error and persists nothing", async () => {
+    // ai@6.0.158: when Step N≥2 fails, the SDK enqueues an `error` part,
+    // closes the stream, and still RESOLVES `steps` with the earlier Steps.
+    // The partial Turn must not pass the gate or reach the DB.
+    const transport = new Error("Step 2 failed: 503");
+    const { agent } = agentOf(
+      [
+        { type: "text-delta", id: "t1", text: "Let me grade that." },
+        { type: "error", error: transport },
+      ],
+      [toolStep("Let me grade that.")],
+    );
+    await expect(
+      executeToolTurnStream({
+        parent: { kind: "wave", id: WAVE_ID },
+        seed: WAVE_SEED,
+        userMessageContent: "u",
+        makeAttempt: () => ({ agent, validateTurn: () => null }),
+        ...noopHooks,
+      }),
+    ).rejects.toBe(transport);
+    expect(appendMessages).not.toHaveBeenCalled();
+  });
+
   it("persists tool-error feedback into the tool_result row (in-loop self-correction trail)", async () => {
     const stepWithError = {
       text: "",

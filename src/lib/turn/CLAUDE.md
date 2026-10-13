@@ -41,7 +41,10 @@ deltas accumulated at the call site, NOT `finalText` (last step only).
   most once per Turn. `retryDirective.callSites.test.ts` in
   `src/lib/course/` pins the directive bytes.
 - Transport errors (timeouts, 5xx) propagate untouched; no rows are
-  persisted on transport failure.
+  persisted on transport failure. In the tool loop, a failed Step does not
+  throw: the SDK emits an `error` stream part and still resolves `steps`
+  with the earlier Steps. `executeToolTurnStream` rethrows that part's
+  error, so a partial loop never reaches the gate or the DB.
 
 Do not put per-stage logic here. If a turn-shape needs stage-specific
 behaviour, that belongs in the caller in `src/lib/course/`, not behind a flag here.

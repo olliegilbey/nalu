@@ -119,6 +119,8 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
  * - In-loop self-corrections (schema-invalid call → tool-error fed back →
  *   corrected call) are NOT harness retries; they stay inside one attempt's
  *   step trail and persist with it.
+ * - An abnormal loop end is a transport failure, not a gate failure: an
+ *   `error` stream part rethrows its error, and no rows persist.
  */
 export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
   params: ExecuteToolTurnStreamParams<TOOLS>,
@@ -207,6 +209,13 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
         params.onTextDelta(part.text, i);
       } else if (TOOL_EVENT_TYPES.has(part.type)) {
         params.onToolEvent?.(part, i);
+      } else if (part.type === "error") {
+        // A Step failed (transport/API error, retries spent). The SDK does
+        // not throw: it emits this part, closes the stream, and still
+        // RESOLVES `steps` with the earlier Steps (ai@6.0.158). Rethrow the
+        // underlying error untouched, so the partial attempt never reaches
+        // the gate or the DB — a transport failure persists no rows.
+        throw part.error;
       }
     }
 
