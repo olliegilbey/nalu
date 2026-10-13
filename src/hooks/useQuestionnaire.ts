@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { playWrong } from "@/lib/sound";
 import { replaceAt } from "@/lib/utils";
 import { deriveMcFeedback, type ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
@@ -101,6 +101,8 @@ export function useQuestionnaire({
   const [pending, setPending] = useState<readonly (number | null)[]>([]);
   const [feedback, setFeedback] = useState<readonly McFeedback[]>([]);
   const [locked, setLocked] = useState(false);
+  // The confirm pulse's pending advance, so a card swap or unmount can cancel it.
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const awardMcXpOnce = useMcXpAward({ persistKey, questionsKey, waveTier, onCorrectAnswer });
 
   const controls = deriveComposerControls({
@@ -134,6 +136,11 @@ export function useQuestionnaire({
     setLocked(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [questionsKey, persistKey]);
+
+  // Cancel a pulsing confirm when the card swaps or unmounts. Its callback
+  // closes over the old card's answers: it would record them on the new card,
+  // or call `onComplete` with them (#132). Same identity as the init effect.
+  useEffect(() => () => clearTimeout(confirmTimer.current), [questionsKey, persistKey]);
 
   // Persist the buffer on every change. Declared AFTER the init effect so
   // that, on mount, init reads localStorage before this writes — the restore
@@ -205,7 +212,7 @@ export function useQuestionnaire({
     // and advances below on the same uniform timer.
     const chosen = current.options[currentPending]!;
     // Hold the pulse briefly so it's perceivable, then advance.
-    setTimeout(() => {
+    confirmTimer.current = setTimeout(() => {
       setLocked(false);
       advanceAfterAnswer(chosen);
     }, CONFIRM_PULSE_MS);
