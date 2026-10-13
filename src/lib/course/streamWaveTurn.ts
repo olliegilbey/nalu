@@ -142,10 +142,11 @@ export async function streamWaveTurn(
       // Leak guard: a JSON-imitation attempt dumps the would-be tool input —
       // plaintext `correct` included — into the TEXT channel, bypassing all
       // tool-chunk redaction (observed live). Once the accumulated prose hits
-      // an unfenced line-start `{`, withhold everything from that point for
-      // the rest of the attempt. The gate then usually retries the turn; if
-      // it accepts (false positive), the full prose still reaches the client
-      // via chat_log on the turn-end refetch.
+      // an unfenced JSON-opening `{` (line-start, or followed by a quoted
+      // key), withhold everything from that point for the rest of the
+      // attempt. The gate then usually retries the turn; if it accepts
+      // (false positive), the full prose still reaches the client via
+      // chat_log on the turn-end refetch.
       if (attemptState.suppressedAt !== null) return;
       const leakAt = findJsonProseLeakIndex(attemptState.prose);
       if (leakAt === null) {
@@ -153,6 +154,10 @@ export async function streamWaveTurn(
         return;
       }
       attemptState.suppressedAt = leakAt;
+      // leakAt can fall BEHIND this delta (#156): a prior delta ended in
+      // `{` with no verdict yet, and this one opens its quoted key. Then
+      // max(0, …) forwards nothing. Only the `{` and its whitespace reached
+      // the client, never a byte of the JSON body.
       const safe = delta.slice(0, Math.max(0, leakAt - priorLength));
       if (safe.length > 0) {
         writer.write({ type: "text-delta", id: textState.id, delta: safe });

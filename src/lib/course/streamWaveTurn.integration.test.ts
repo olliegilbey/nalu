@@ -705,6 +705,63 @@ describe("streamWaveTurn (integration)", () => {
   });
 
   // -------------------------------------------------------------------------
+  // 3c. Leak guard, mid-line and split across deltas (#156). One delta ends
+  //     in `{`; the next opens its quoted key. The guard has no verdict on a
+  //     trailing `{`, so the brace streams. No byte of the JSON body may.
+  // -------------------------------------------------------------------------
+  it("json-imitation attempt split mid-line across deltas: forwards at most the brace", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      const jsonBody = '"questions": [{"id": "q1", "correct": "C"}]}';
+      mockAgentAttempts(
+        {
+          parts: [textDelta("Here is your quiz: {"), textDelta(jsonBody)],
+          steps: [
+            {
+              text: `Here is your quiz: {${jsonBody}`,
+              toolCalls: [],
+              toolResults: [],
+              content: [],
+            },
+          ],
+        },
+        {
+          parts: [textDelta("Clean retry.")],
+          steps: [{ text: "Clean retry.", toolCalls: [], toolResults: [], content: [] }],
+        },
+      );
+      const { parts, writer } = recordingWriter();
+
+      await streamWaveTurn(
+        {
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: { kind: "chat-text", text: "quiz me" },
+        },
+        writer,
+      );
+
+      // The first delta crossed whole, stray `{` included. The second
+      // delta's cut index fell behind the forwarded text, so none of it did.
+      const forwarded = parts
+        .filter((p) => p.type === "text-delta")
+        .map((p) => p["delta"] as string);
+      expect(forwarded).toEqual(["Here is your quiz: {", "Clean retry."]);
+
+      // The failed row is cut at the mid-line brace and trimmed (#140).
+      const ctxRows = await getMessagesForWave(waveId);
+      expect(ctxRows.map((r) => r.kind)).toEqual([
+        "user_message",
+        "failed_assistant_response",
+        "harness_retry_directive",
+        "assistant_response",
+      ]);
+      expect(ctxRows[1]!.content).toBe("Here is your quiz:");
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // 4. Close turn: a blocking `executeTurn` inside the stream. Result part
   //    only: no text parts, and the tool loop is never touched.
   // -------------------------------------------------------------------------

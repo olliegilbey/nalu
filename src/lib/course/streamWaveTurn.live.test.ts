@@ -145,7 +145,8 @@ describe.skipIf(!LIVE)("streamWaveTurn tool loop — live Cerebras", () => {
       expect(data.assistantContent.length, "learner-visible prose non-empty").toBeGreaterThan(0);
 
       // Wire safety 1 — text channel: the forwarded prose must never contain
-      // an unfenced line-start JSON dump (the leak guard's invariant).
+      // an unfenced JSON dump, line-start or mid-line (the leak guard's
+      // invariant).
       const forwardedText = parts
         .filter((p) => p.type === "text-delta")
         .map((p) => p["delta"] as string)
