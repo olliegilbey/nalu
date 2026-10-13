@@ -6,20 +6,24 @@ import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
 import { formatMutationError, isNotFoundError } from "@/lib/errors";
 import { deriveChatEntries } from "@/lib/course/deriveChatEntries";
-import { adaptQuestionnaire, type ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
+import type { ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
+import { deriveActiveScopingQuestionnaire } from "@/lib/course/deriveActiveScopingQuestionnaire";
 import { deriveStrandedScopingTurn } from "@/lib/course/deriveStrandedScopingTurn";
+import { hasScopingTurnLanded, type ScopingTurnKind } from "@/lib/course/hasScopingTurnLanded";
+import type { ShapedClarifyAnswer } from "@/lib/course/shapeClarifyAnswers";
+import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { CourseState } from "@/lib/course/getState";
 
 /**
  * The last scoping Turn that failed, with a closure that re-sends it. Drives the
  * inline Retry row: a toast alone fades and leaves the learner with no way on.
- * `kind` names the scoping stage that failed; `scopingClose` is `submitBaseline`.
+ * `kind` names the scoping stage that failed.
  * `retry` re-runs the same mutation with the same variables. After a reload,
  * it re-sends the answers the server saved (`deriveStrandedScopingTurn`).
  */
 export interface FailedScopingTurn {
-  readonly kind: "framework" | "baseline" | "scopingClose";
+  readonly kind: ScopingTurnKind;
   readonly retry: () => void;
 }
 
@@ -36,19 +40,11 @@ export interface UseScopingStateResult {
   /** True when `course.getState` found no course for this learner: a wrong URL, or another browser's course. */
   readonly courseNotFound: boolean;
   readonly submitClarify: (
-    answers: ReadonlyArray<{ readonly questionId: string; readonly freetext: string }>,
+    answers: readonly ShapedClarifyAnswer[],
     opts?: { readonly onError?: () => void },
   ) => void;
   readonly submitBaselineAnswers: (
-    answers: ReadonlyArray<
-      | { readonly id: string; readonly kind: "mc"; readonly selected: "A" | "B" | "C" | "D" }
-      | {
-          readonly id: string;
-          readonly kind: "freetext";
-          readonly text: string;
-          readonly fromEscape: boolean;
-        }
-    >,
+    answers: readonly ShapedQuestionnaireAnswer[],
     // `onSuccess` carries the free-text XP subtotal so the caller can pop the
     // header badge; `onError` lets it recover its optimistic UI. Both optional.
     opts?: {
@@ -129,36 +125,12 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     [state.data],
   );
 
-  const activeQuestionnaire = useMemo<ActiveQuestionnaire | null>(() => {
-    if (!state.data) return null;
-    const s = state.data;
-
-    // Clarify is active while there's a clarification with no responses AND
-    // no framework yet.
-    if (s.clarification && s.clarification.responses.length === 0 && !s.framework) {
-      const { questions } = adaptQuestionnaire(s.clarification.questions);
-      return {
-        kind: "clarify",
-        questions,
-        questionsKey: questions.map((q) => q.id).join("|"),
-        persistKey: `nalu:scoping:${s.courseId}:clarify`,
-      };
-    }
-
-    // Baseline is active while there's a baseline with no responses AND status
-    // still 'scoping' (so the close hasn't landed).
-    if (s.baseline && s.baseline.responses.length === 0 && s.status === "scoping") {
-      const { questions } = adaptQuestionnaire(s.baseline.questions);
-      return {
-        kind: "baseline",
-        questions,
-        questionsKey: questions.map((q) => q.id).join("|"),
-        persistKey: `nalu:scoping:${s.courseId}:baseline`,
-      };
-    }
-
-    return null;
-  }, [state.data]);
+  // Open clarify or baseline card. `deriveActiveScopingQuestionnaire` holds
+  // the logic; the memo keeps the result stable across consumer re-renders.
+  const activeQuestionnaire = useMemo<ActiveQuestionnaire | null>(
+    () => (state.data ? deriveActiveScopingQuestionnaire(state.data) : null),
+    [state.data],
+  );
 
   // Auto-dispatch generateBaseline when framework is present and baseline is not.
   // Use a ref guard so we don't re-fire during refetch settling.
@@ -241,14 +213,12 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     );
   };
 
-  // The server can commit a Turn whose reply never reached the client (a
-  // network drop). Once a refetch shows that stage landed, the failure is
-  // stale, so hide it. Otherwise "Move on" could sit beside a Retry row.
-  const landed = {
-    framework: Boolean(state.data?.framework),
-    baseline: Boolean(state.data?.baseline),
-    scopingClose: Boolean(state.data?.scopingResult),
-  };
+  // A failure whose Turn a refetch shows landed is stale (`hasScopingTurnLanded`),
+  // so hide it. Otherwise "Move on" could sit beside a Retry row.
+  const staleFailure =
+    failedTurn !== null &&
+    state.data !== undefined &&
+    hasScopingTurnLanded(state.data, failedTurn.kind);
   // A reload drops `failedTurn`, and a saved-answers Turn shows no question
   // card. Rebuild its Retry from server state (issue #103). Skip while a Turn
   // is in flight: its answers are saved before the LLM call, so a mid-call
@@ -263,7 +233,7 @@ export function useScopingState(courseId: string): UseScopingStateResult {
       : stranded.kind === "framework"
         ? { kind: "framework", retry: () => submitClarify(stranded.responses) }
         : { kind: "scopingClose", retry: () => submitBaselineAnswers(stranded.answers) };
-  const openFailedTurn = failedTurn && !landed[failedTurn.kind] ? failedTurn : strandedTurn;
+  const openFailedTurn = failedTurn && !staleFailure ? failedTurn : strandedTurn;
 
   return {
     chatEntries,
