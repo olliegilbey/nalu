@@ -10,6 +10,8 @@ import type { ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
 import { deriveActiveScopingQuestionnaire } from "@/lib/course/deriveActiveScopingQuestionnaire";
 import { deriveStrandedScopingTurn } from "@/lib/course/deriveStrandedScopingTurn";
 import { hasScopingTurnLanded, type ScopingTurnKind } from "@/lib/course/hasScopingTurnLanded";
+import type { ShapedClarifyAnswer } from "@/lib/course/shapeClarifyAnswers";
+import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { CourseState } from "@/lib/course/getState";
 
@@ -38,19 +40,11 @@ export interface UseScopingStateResult {
   /** True when `course.getState` found no course for this learner: a wrong URL, or another browser's course. */
   readonly courseNotFound: boolean;
   readonly submitClarify: (
-    answers: ReadonlyArray<{ readonly questionId: string; readonly freetext: string }>,
+    answers: readonly ShapedClarifyAnswer[],
     opts?: { readonly onError?: () => void },
   ) => void;
   readonly submitBaselineAnswers: (
-    answers: ReadonlyArray<
-      | { readonly id: string; readonly kind: "mc"; readonly selected: "A" | "B" | "C" | "D" }
-      | {
-          readonly id: string;
-          readonly kind: "freetext";
-          readonly text: string;
-          readonly fromEscape: boolean;
-        }
-    >,
+    answers: readonly ShapedQuestionnaireAnswer[],
     // `onSuccess` carries the free-text XP subtotal so the caller can pop the
     // header badge; `onError` lets it recover its optimistic UI. Both optional.
     opts?: {
