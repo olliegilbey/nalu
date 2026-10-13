@@ -138,6 +138,8 @@ export function useQuestionnaire({
   // Cancel a pulsing confirm when the card swaps or unmounts. Its callback
   // closes over the old card's answers: it would record them on the new card,
   // or call `onComplete` with them (#132). Same identity as the init effect.
+  // Keyed on ids, not the `questions` array: a refetch hands over a new array
+  // for the same card, and cancelling then would freeze it locked.
   useEffect(() => () => clearTimeout(confirmTimer.current), [questionsKey, persistKey]);
 
   // Persist the buffer on every change. Declared AFTER the init effect so

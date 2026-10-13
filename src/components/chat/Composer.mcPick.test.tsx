@@ -162,4 +162,17 @@ describe("Composer confirm timer (#132)", () => {
     expect(option("Jupiter").disabled).toBe(false);
     expect(onComplete).not.toHaveBeenCalled();
   });
+
+  it("keeps the pending advance when a refetch re-renders the same card mid-pulse", () => {
+    fireEvent.click(option("Paris"));
+    fireEvent.click(confirmButton()!);
+    // A refetch hands the parent a new array with the same questions and key.
+    // The cancel keys on question ids, not array identity, so it must not fire.
+    view.rerender(card([...questions], "nalu:test:mc-pick"));
+    elapse(750);
+
+    // A cancelled timer would leave the card frozen on q1 with the pulse lock on.
+    expect(screen.getByText("Capital of Italy?")).toBeTruthy();
+    expect(option("Rome").disabled).toBe(false);
+  });
 });
