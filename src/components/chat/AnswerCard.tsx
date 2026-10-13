@@ -5,8 +5,8 @@ import { t } from "@/i18n";
 import type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import type { UseQuestionnaireResult } from "@/hooks/useQuestionnaire";
 
-/** Props of {@link QuestionCard}. */
-interface QuestionCardProps {
+/** Props of {@link AnswerCard}. */
+interface AnswerCardProps {
   /** The question on screen. */
   readonly question: ChoiceQuestion;
   readonly questionnaire: UseQuestionnaireResult;
@@ -14,7 +14,7 @@ interface QuestionCardProps {
 }
 
 /** The Composer's answer card: header with prev/next, the prompt, and the MC option grid. */
-export function QuestionCard({ question, questionnaire: q, disabled }: QuestionCardProps) {
+export function AnswerCard({ question, questionnaire: q, disabled }: AnswerCardProps) {
   return (
     <div className="mb-3 animate-message-in">
       {/* Header: counter + prev/next */}

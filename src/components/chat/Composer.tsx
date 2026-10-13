@@ -5,7 +5,7 @@ import { ArrowUp, Check, Mic, Plus } from "lucide-react";
 import { t } from "@/i18n";
 import { useQuestionnaire, type UseQuestionnaireOptions } from "@/hooks/useQuestionnaire";
 import { useAdoptPreHydrationText } from "@/hooks/useAdoptPreHydrationText";
-import { QuestionCard } from "./QuestionCard";
+import { AnswerCard } from "./AnswerCard";
 
 export type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 
@@ -67,7 +67,7 @@ export function Composer({ isFirstMessage, moveOn, ...options }: ComposerProps) 
   return (
     <div className="px-3 pb-4 pt-3 bg-sumi-1/85 backdrop-blur-xl border-t border-sumi-4/60">
       {q.hasQuestions && q.current && (
-        <QuestionCard question={q.current} questionnaire={q} disabled={disabled} />
+        <AnswerCard question={q.current} questionnaire={q} disabled={disabled} />
       )}
       <div className="flex items-end gap-1.5 rounded-2xl bg-sumi-3 border border-sumi-4 px-1.5 py-1 transition-colors focus-within:border-crystal/50">
         <button
