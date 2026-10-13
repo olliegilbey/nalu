@@ -1,3 +1,5 @@
+import { findBracesOutsideCode, opensJsonKey } from "./proseBraces";
+
 /**
  * Index of the first `{` that starts a JSON leak in prose, or null. A `{`
  * leaks when it opens a line, or when a quoted key follows it after
@@ -7,16 +9,19 @@
  * plaintext `correct` answer key) into the TEXT channel, which bypasses
  * every tool-chunk redaction (observed live, 2026-07-08).
  *
- * Exempt, so teaching examples pass: anything inside a ``` fence, and
- * anything inside a `backtick` span. Span state resets at each line end.
- * A `{` with no quote after it passes too: set notation `{a, b}`, a Rust
- * block brace. A line-start `{` counts with or without a quote.
+ * Exempt, so teaching examples pass: anything inside a ``` fence or a
+ * `backtick` span (`findBracesOutsideCode`). A `{` with no quote after it
+ * passes too: set notation `{a, b}`, a Rust block brace. A line-start `{`
+ * counts with or without a quote.
  *
  * Known gaps, where a dump streams live: a fenced or backticked dump (exempt
- * by design), and spans this per-backtick toggle misreads, such as
+ * by design), and spans the backtick scanner misreads, such as
  * double-backtick spans and spans that cross a line. The post-loop gate
- * (`waveMidTurnGate.ts`) is fence-blind and is their backstop: it fails the
- * attempt, so the answer key never persists. #159 tracks the live glimpse.
+ * (`waveMidTurnGate.ts`) is their backstop. Its secret check is fence-blind
+ * and fails any attempt whose prose uses the questionnaire tool's own field
+ * names (`freetextRubric`, or `correct` with `conceptName`). Such a dump
+ * never persists. A dump under invented field names can still persist.
+ * #159 tracks the live glimpse.
  *
  * Accepted false positive: inline JSON written without backticks, such as
  * `you write { "key": "value" }` in a Wave that teaches JSON. The cut costs
@@ -26,7 +31,7 @@
  * - `streamWaveTurn` stops forwarding text deltas to the client from this
  *   index for the rest of the attempt. Unlike the post-loop gate, it runs
  *   per delta and needs no parse: a false positive only truncates the
- *   TRANSIENT stream. The gate passes such prose (no envelope or answer
+ *   TRANSIENT stream. The gate passes such prose (no envelope or secret
  *   key), `persistWaveMidTurn` writes it whole to chat_log, and
  *   `useWaveState` swaps the streamed bubble for chat_log on finish.
  * - `executeToolTurnStream` persists a failed attempt as its prose cut
@@ -41,54 +46,8 @@
  * never a byte of the JSON body.
  */
 export function findJsonProseLeakIndex(prose: string): number | null {
-  let inFence = false;
-  let offset = 0;
-  for (const line of prose.split("\n")) {
-    const indent = line.length - line.trimStart().length;
-    if (line.startsWith("```", indent)) {
-      inFence = !inFence;
-    } else if (!inFence) {
-      const leakAt = findLeakInLine(prose, offset, line, indent);
-      if (leakAt !== null) return leakAt;
-    }
-    offset += line.length + 1; // +1 for the split-away "\n"
-  }
-  return null;
-}
-
-/**
- * Prose index of the first leaking `{` on one unfenced line, or null. The
- * line starts at `offset` in `prose`; `indent` counts its leading
- * whitespace. Each backtick toggles an inline code span, like ``` toggles a
- * fence. That is simpler than CommonMark, so it misreads double-backtick
- * spans (see Known gaps above).
- */
-function findLeakInLine(
-  prose: string,
-  offset: number,
-  line: string,
-  indent: number,
-): number | null {
-  let inCode = false;
-  for (let i = indent; i < line.length; i++) {
-    if (line[i] === "`") {
-      inCode = !inCode;
-    } else if (line[i] === "{" && !inCode && (i === indent || opensJsonKey(prose, offset + i))) {
-      return offset + i;
-    }
-  }
-  return null;
-}
-
-/**
- * True when the next non-whitespace character after the `{` at `braceAt`
- * is `"`, the start of a JSON key. Looks past line ends, so a prose line
- * ending in `{` above a pretty-printed body still counts.
- */
-function opensJsonKey(prose: string, braceAt: number): boolean {
-  // Sticky: match exactly at lastIndex, so no per-brace copy of the prose.
-  // The literal builds a fresh RegExp per call, so lastIndex is never shared.
-  const keyAhead = /\s*"/y;
-  keyAhead.lastIndex = braceAt + 1;
-  return keyAhead.test(prose);
+  const leak = findBracesOutsideCode(prose).find(
+    (brace) => brace.opensLine || opensJsonKey(prose, brace.index),
+  );
+  return leak?.index ?? null;
 }

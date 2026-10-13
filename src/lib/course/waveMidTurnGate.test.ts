@@ -63,7 +63,10 @@ describe("validateWaveMidToolTurn", () => {
     expect(validateWaveMidToolTurn(emptyCollector(), prose, CHAT_PAYLOAD)).toBeNull();
   });
 
-  // --- Dumps with trailing text, invented wrappers, code formatting (#156) ---
+  // --- JSON dumps the gate must catch (#156) ---------------------------------
+  // Two checks. Secret check: the tool's own field names, anywhere in the
+  // prose, fenced or not. Envelope check: a balanced object outside code with
+  // an envelope key at top level.
 
   /** Asserts the gate rejects `prose` as a raw JSON dump. */
   const expectJsonDumpRejected = (prose: string) => {
@@ -72,18 +75,37 @@ describe("validateWaveMidToolTurn", () => {
     expect(failure?.detail).toContain("raw JSON object");
   };
 
+  /** Asserts the gate accepts `prose`. */
+  const expectAccepted = (prose: string) => {
+    expect(validateWaveMidToolTurn(emptyCollector(), prose, CHAT_PAYLOAD)).toBeNull();
+  };
+
+  /** One presentQuestionnaire question as the model would dump it. */
+  const NALU_QUESTION =
+    '{"id":"q1","type":"multiple_choice","prompt":"Which binding moves?",' +
+    '"options":{"A":"let","B":"const","C":"both","D":"neither"},"correct":"A",' +
+    '"freetextRubric":"n/a","conceptName":"ownership","tier":1}';
+
   it("rejects a mid-line questionnaire dump with trailing prose", () => {
     expectJsonDumpRejected(
       'Here is your quiz: {"questions":[{"prompt":"…","correct":"B"}]} Good luck!',
     );
   });
 
-  it("rejects an invented wrapper that nests a `correct` answer key", () => {
-    expectJsonDumpRejected('Quiz time: {"items":[{"prompt":"?","correct":"B"}]} Have fun.');
+  it("rejects an invented wrapper around an answer key and its concept", () => {
+    expectJsonDumpRejected(
+      'Quiz time: {"items":[{"prompt":"?","correct":"B","conceptName":"ownership"}]} Have fun.',
+    );
   });
 
-  it("rejects a top-level `correct` key", () => {
-    expectJsonDumpRejected('The answer: {"correct": "B"}. Next question.');
+  it("rejects an invented wrapper around a free-text rubric", () => {
+    expectJsonDumpRejected(
+      'Quiz: {"items":[{"type":"free_text","freetextRubric":"Names the owner."}]} Go!',
+    );
+  });
+
+  it("rejects `correct` beside `conceptName` with no wrapper at all", () => {
+    expectJsonDumpRejected('The answer: {"correct": "B", "conceptName": "ownership"}. Next.');
   });
 
   it("matches braces string-aware, so a `}` inside a string does not end the object", () => {
@@ -98,29 +120,61 @@ describe("validateWaveMidToolTurn", () => {
     );
   });
 
-  it("rejects a fenced dump: the gate is fence-blind", () => {
+  it("rejects a fenced Nalu question dump: the secret check is fence-blind", () => {
     expectJsonDumpRejected(
-      'Here it is:\n```json\n{"questions":[{"prompt":"?","correct":"B"}]}\n```\nGood luck!',
+      `Here it is:\n\`\`\`json\n{"questions":[${NALU_QUESTION}]}\n\`\`\`\nGood luck!`,
     );
   });
 
-  it("rejects a backticked dump: the gate is fence-blind", () => {
-    expectJsonDumpRejected('Try this: `{"correct": "B"}` then answer.');
+  it("rejects a backticked dump: the secret check is fence-blind", () => {
+    expectJsonDumpRejected('Try this: `{"freetextRubric": "Names the owner."}` then answer.');
   });
 
-  it("accepts a fenced teaching example with no envelope or `correct` key", () => {
-    const prose = 'An object:\n```json\n{ "name": "Ada", "langs": ["en"] }\n```\nSee the braces?';
-    expect(validateWaveMidToolTurn(emptyCollector(), prose, CHAT_PAYLOAD)).toBeNull();
+  it("rejects a truncated dump with no closing brace", () => {
+    expectJsonDumpRejected(
+      'Quiz: {"questions":[{"id":"q1","type":"free_text","prompt":"Why?","freetextRubric":"Mentions',
+    );
+  });
+
+  it("rejects an envelope dump after 20+ decoy braces in code and LaTeX", () => {
+    // Decoys do not open a quoted key, so they do not use up the candidate cap.
+    const latex = String.raw`$\frac{a}{b}$ `.repeat(12);
+    const code = "`fn main() {}` ".repeat(4);
+    expectJsonDumpRejected(`${latex}${code}Now: {"questions":[{"id":"q1","prompt":"?"}]}`);
+  });
+
+  // --- Teaching JSON the gate must accept (#156) ------------------------------
+
+  it("accepts a fenced teaching example with no envelope or secret key", () => {
+    expectAccepted('An object:\n```json\n{ "name": "Ada", "langs": ["en"] }\n```\nSee the braces?');
+  });
+
+  it("accepts a fenced survey API example with a `questions` key", () => {
+    expectAccepted(
+      'A survey payload:\n```json\n{"questions":[{"text":"How was it?"}]}\n```\nEach item is one question.',
+    );
+  });
+
+  it("accepts an unfenced quiz-app item with a `correct` key", () => {
+    expectAccepted('A quiz app might store {"question":"2+2","correct":"4"} per item.');
+  });
+
+  it("accepts an eval row with a boolean `correct`", () => {
+    expectAccepted('Each eval row looks like {"correct": true} or false.');
+  });
+
+  it("accepts a JSON Schema that declares a `correct` property", () => {
+    expectAccepted(
+      'The schema:\n```json\n{"type":"object","properties":{"correct":{"type":"boolean"}}}\n```',
+    );
   });
 
   it("accepts set notation", () => {
-    const prose = "The set {a, b} has two members, and {} is empty.";
-    expect(validateWaveMidToolTurn(emptyCollector(), prose, CHAT_PAYLOAD)).toBeNull();
+    expectAccepted("The set {a, b} has two members, and {} is empty.");
   });
 
   it("accepts template placeholders like {{name}}", () => {
-    const prose = "In Handlebars, {{name}} prints the name.";
-    expect(validateWaveMidToolTurn(emptyCollector(), prose, CHAT_PAYLOAD)).toBeNull();
+    expectAccepted("In Handlebars, {{name}} prints the name.");
   });
 
   it("rejects answered questions with no grading signals, naming the missing ids", () => {

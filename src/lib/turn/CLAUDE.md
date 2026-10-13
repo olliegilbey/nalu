@@ -24,7 +24,9 @@ rows — so renderContext's retry filter keeps working. Learner-visible
 prose = ALL steps' streamed deltas, NOT `finalText` (last step only).
 
 A failed tool-loop attempt persists as that prose, cut at
-`findJsonProseLeakIndex` and trimmed, with no tool trail (#140). The retry
+`findJsonProseLeakIndex` and trimmed, with no tool trail (#140). That
+guard and the Wave gate's envelope check share one scanner,
+`proseBraces.ts`: the `{`s outside fences and backtick spans. The retry
 replays it as the model's previous reply, and this model imitates JSON
 replies in history. Replayed tool results would also claim staged work
 that died with the attempt. When nothing safe was shown, the row is `""`;

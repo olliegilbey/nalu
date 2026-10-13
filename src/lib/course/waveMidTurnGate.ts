@@ -1,4 +1,5 @@
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
+import { findBracesOutsideCode, opensJsonKey } from "@/lib/turn/proseBraces";
 import type { ToolQuestionInput, WaveTurnCollector } from "./waveTurnTools";
 import type { SubmitTurnPayload } from "./buildLearnerInput";
 
@@ -19,9 +20,10 @@ import type { SubmitTurnPayload } from "./buildLearnerInput";
  *    `<response_schema>`) in their replayed context; the model imitates the
  *    history and dumps the old JSON envelope as text instead of calling
  *    tools (observed live, 2026-07-08). The directive breaks the few-shot
- *    pattern so the retry recovers. It also keeps an answer key out of
- *    chat_log: accepted prose persists whole, even past the stream guard's
- *    cut (#156).
+ *    pattern so the retry recovers. Two parts: a fence-blind secret check
+ *    on the tool's field names, and an envelope check outside code. The
+ *    secret check also keeps an answer key out of chat_log: accepted prose
+ *    persists whole, even past the stream guard's cut (#156).
  * 3. Grading coverage — every answered question carries a staged signal.
  *    The old schema left `comprehensionSignals` optional, silently skipping
  *    grading when the model forgot; the tool channel makes the omission
@@ -60,6 +62,37 @@ export function validateWaveMidToolTurn(
   return null;
 }
 
+/** True when the prose holds a questionnaire secret or a response envelope. */
+function containsResponseJsonBlob(prose: string): boolean {
+  return containsQuestionnaireSecret(prose) || containsResponseEnvelope(prose);
+}
+
+// Field names the presentQuestionnaire input requires on every question.
+// `satisfies` pins each to the tool schema, so a rename breaks the build.
+const RUBRIC_FIELD = "freetextRubric" satisfies keyof ToolQuestionInput;
+const ANSWER_KEY_FIELD = "correct" satisfies keyof ToolQuestionInput;
+const CONCEPT_FIELD = "conceptName" satisfies keyof ToolQuestionInput;
+
+/** Matches `"name"` used as a JSON key: the quoted name, optional whitespace, `:`. */
+const jsonKeyPattern = (name: string): RegExp => new RegExp(`"${name}"\\s*:`);
+const RUBRIC_KEY = jsonKeyPattern(RUBRIC_FIELD);
+const ANSWER_KEY = jsonKeyPattern(ANSWER_KEY_FIELD);
+const CONCEPT_KEY = jsonKeyPattern(CONCEPT_FIELD);
+
+/**
+ * Secret check: true when the prose uses the questionnaire tool's own field
+ * names as JSON keys, `"freetextRubric":`, or `"correct":` together with
+ * `"conceptName":`. Any imitation dump of the tool input carries them;
+ * teaching JSON does not. Matched by name on the whole prose, with no brace
+ * walk, so it catches fenced, backticked, wrapped, nested and truncated
+ * dumps alike. Fence-blind on purpose: the stream guard exempts code, so
+ * this is the backstop that keeps an answer key out of chat_log (#156).
+ * A dump under invented field names slips past it.
+ */
+function containsQuestionnaireSecret(prose: string): boolean {
+  return RUBRIC_KEY.test(prose) || (ANSWER_KEY.test(prose) && CONCEPT_KEY.test(prose));
+}
+
 /** Top-level keys of the retired mega-schema envelope and the tool inputs. */
 const RESPONSE_ENVELOPE_KEYS = [
   "userMessage",
@@ -68,36 +101,32 @@ const RESPONSE_ENVELOPE_KEYS = [
   "comprehensionSignals",
 ] as const;
 
-/** The answer-key field of a questionnaire question. Typed, so a rename breaks the build. */
-const ANSWER_KEY_FIELD: keyof ToolQuestionInput = "correct";
+/** At most this many key-opening braces are parsed as candidates. */
+const MAX_ENVELOPE_CANDIDATES = 20;
 
 /**
- * True when the prose embeds a raw model-response JSON object. Observed live
- * as the whole message, as a blob trailing the prose, and mid-line (#156).
- * Each candidate is the balanced `{…}` that opens at one `{`, so prose after
- * the object cannot hide it. Precision over recall: a candidate trips only
- * when it parses AND carries an envelope key at top level, or an answer key
- * (`correct`) at any depth. The second rule catches invented wrappers such
- * as `{"items":[{"correct":"B"}]}`. Teaching prose that merely shows JSON
- * passes. Fence-blind on purpose: a fenced or backticked answer key is still
- * a leak, so it fails here even though the stream guard exempts it.
+ * Envelope check: true when prose OUTSIDE code holds a JSON object with an
+ * envelope key at top level. Observed live as the whole message, as a blob
+ * trailing the prose, and mid-line (#156). Candidates are braces that open
+ * a quoted key, so decoys (LaTeX, set notation) do not use up the cap. Each
+ * parses only its balanced `{…}`, so prose after the object cannot hide it.
+ * Code is skipped: a fenced `{"questions": …}` is a teaching example, and
+ * the secret check already covers a fenced Nalu dump.
  */
-function containsResponseJsonBlob(prose: string): boolean {
+function containsResponseEnvelope(prose: string): boolean {
   const trimmed = prose.trim();
-  // Pathological-length guard: the scan is O(braces × length). FAIL CLOSED —
-  // beyond the bound we cannot prove the prose is clean, and legit teaching
-  // prose never approaches 20k chars; reject rather than let an oversized
-  // JSON-imitation leak (answer keys ride in those blobs) through the gate.
+  // Pathological-length guard: the scan is O(candidates × length). FAIL
+  // CLOSED — beyond the bound we cannot prove the prose is clean, and legit
+  // teaching prose never approaches 20k chars; reject rather than let an
+  // oversized JSON-imitation leak through the gate.
   if (trimmed.length > 20_000) return true;
-  const braceIndices = [...trimmed.matchAll(/\{/g)].slice(0, 20).map((m) => m.index);
-  return braceIndices.some((i) => {
-    const candidate = parseJsonObjectAt(trimmed, i);
-    return (
-      candidate !== null &&
-      (RESPONSE_ENVELOPE_KEYS.some((key) => key in candidate) ||
-        hasKeyAtAnyDepth(candidate, ANSWER_KEY_FIELD))
-    );
-  });
+  return findBracesOutsideCode(trimmed)
+    .filter((brace) => opensJsonKey(trimmed, brace.index))
+    .slice(0, MAX_ENVELOPE_CANDIDATES)
+    .some((brace) => {
+      const candidate = parseJsonObjectAt(trimmed, brace.index);
+      return candidate !== null && RESPONSE_ENVELOPE_KEYS.some((key) => key in candidate);
+    });
 }
 
 /**
@@ -141,10 +170,4 @@ function findMatchingBrace(text: string, start: number): number | null {
     }
   }
   return null;
-}
-
-/** True when `value` or any object or array nested in it holds `key`. */
-function hasKeyAtAnyDepth(value: unknown, key: string): boolean {
-  if (typeof value !== "object" || value === null) return false;
-  return key in value || Object.values(value).some((child) => hasKeyAtAnyDepth(child, key));
 }
