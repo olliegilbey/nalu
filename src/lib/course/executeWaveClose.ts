@@ -1,6 +1,4 @@
 import { executeTurn } from "@/lib/turn/executeTurn";
-import { buildRetryDirective } from "@/lib/turn/retryDirective";
-import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { makeWaveCloseSchema, renderWaveCloseEnvelope } from "@/lib/prompts/waveClose";
 import {
   getFreshConcepts,
@@ -85,9 +83,6 @@ export async function executeWaveClose(
     existingConceptNames: allConcepts.map((c) => c.name),
   });
 
-  // Schema string feeds only the retry directive. Every Step already carries
-  // the schema on the wire, via `response_format`.
-  const schemaJson = toSchemaJsonString(schema, { name: "wave_close" });
   const conceptsBlock = renderConceptInjection(fresh, due);
 
   // The close turn itself is single-JSON (blocking executeTurn +
@@ -102,7 +97,6 @@ export async function executeWaveClose(
     }),
     responseSchema: schema,
     responseSchemaName: "wave_close",
-    retryDirective: (err) => buildRetryDirective(err, schemaJson),
     label: "wave-close",
     successSummary: (p) =>
       `gradings=${p.gradings.length} updates=${p.conceptUpdates.length} planned=${p.nextUnitBlueprint.plannedConcepts.length}`,

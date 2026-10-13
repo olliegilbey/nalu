@@ -203,22 +203,24 @@ export function formatParseSuccess(label: string, summary: string): string {
 /**
  * Multi-block ✗ failure: gate reason, diagnosis heuristic, and the
  * retry directive the model will see next attempt (verbatim).
- * `diagnosis` is the output of `diagnoseFailure()`.
+ * `diagnosis` is the output of `diagnoseFailure()`. `directive` is the
+ * built `buildRetryDirective` text, not `err.detail`: the banner must show
+ * the bytes the model reads.
  */
 export function formatParseFailure(
   label: string,
   err: ValidationGateFailure,
   diagnosis: string,
+  directive: string,
 ): string {
   const head = `${red("✗")} ${bold("parse FAILED")}  ${cyan(label)}  ${yellow(err.reason)}`;
   const diag = `  ${dim("└─")} ${bold("diagnosis:")} ${diagnosis}`;
   // Indent each line of the retry directive so multi-line ones stay aligned.
-  // The directive may include a `<response_schema>` block (when callers
-  // pass a `buildRetryDirective` factory). Dim those lines so the
-  // imperative prose stands out against the schema body.
-  const indented = colorizeDirectiveLines(err.detail);
-  const directive = `  ${dim("└─")} ${bold("retry directive (sent to model verbatim next attempt):")}\n${indented}`;
-  return `${head}\n${diag}\n${directive}\n`;
+  // Dim its `<response_schema>` block so the imperative prose stands out
+  // against the schema body.
+  const indented = colorizeDirectiveLines(directive);
+  const directiveBlock = `  ${dim("└─")} ${bold("retry directive (sent to model verbatim next attempt):")}\n${indented}`;
+  return `${head}\n${diag}\n${directiveBlock}\n`;
 }
 
 /**
@@ -232,8 +234,7 @@ export function formatParseFailure(
  *
  * We dim everything from the opening tag through the closing tag so the
  * actionable prose stays bright while the bulky schema body recedes.
- * If no `<response_schema>` block is present (e.g. caller didn't pass a
- * factory), every line is left uncoloured.
+ * If no `<response_schema>` block is present, every line is left uncoloured.
  */
 function colorizeDirectiveLines(detail: string): string {
   const lines = detail.split("\n");

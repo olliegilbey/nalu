@@ -117,17 +117,21 @@ describe("formatParseSuccess / formatParseFailure", () => {
     expect(out).toContain("clarify");
     expect(out).toContain("questions=3");
   });
-  test("failure surfaces reason, diagnosis and retry directive verbatim", () => {
-    const err = new ValidationGateFailure(
-      "missing_response",
+  test("failure surfaces reason, diagnosis and the built retry directive verbatim", () => {
+    const err = new ValidationGateFailure("missing_response", "RAW_ZOD_DETAIL");
+    const out = formatParseFailure(
+      "baseline",
+      err,
+      "diagnosis-text",
       "Your <baseline> payload failed schema validation: foo.",
     );
-    const out = formatParseFailure("baseline", err, "diagnosis-text");
     expect(out).toContain("parse FAILED");
     expect(out).toContain("baseline");
     expect(out).toContain("missing_response");
     expect(out).toContain("diagnosis-text");
-    // Directive content preserved exactly so the reader sees what the model sees.
+    // The built directive, preserved exactly, so the reader sees what the model sees.
     expect(out).toContain("Your <baseline> payload failed schema validation: foo.");
+    // The raw gate detail never reaches the model, so the banner omits it.
+    expect(out).not.toContain("RAW_ZOD_DETAIL");
   });
 });

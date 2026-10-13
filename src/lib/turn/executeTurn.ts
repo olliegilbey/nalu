@@ -30,17 +30,16 @@ import {
   isQuiet,
 } from "./formatTurn";
 import { diagnoseFailure } from "./diagnoseFailure";
+import { buildRetryDirective } from "./retryDirective";
 
 /**
  * Parameters for one invocation of `executeTurn`.
  *
  * The harness does JSON-parse + Zod-validate using `responseSchema`.
- * Refine `.message` strings from failed Zod parses become the retry
- * directive verbatim, so schema refine messages must be model-readable.
- *
- * `retryDirective` defaults to `(err) => err.detail` — the detail string
- * is the Zod issue list from `toValidationGateFailure`. Override only if
- * the caller needs different wording per attempt index.
+ * On failure it builds the retry directive itself (`buildRetryDirective`),
+ * so callers pass only the schema and its wire name. Refine `.message`
+ * strings reach the model verbatim in that directive, so schema refine
+ * messages must be model-readable.
  */
 export interface ExecuteTurnParams<T> {
   readonly parent: ContextParent;
@@ -55,14 +54,13 @@ export interface ExecuteTurnParams<T> {
    * this schema's `safeParse` (refines included), enforcing business
    * invariants (`.refine`/`.superRefine` rules that Cerebras strict mode
    * can't express, e.g. tier-scope, count bounds).
-   * Refine `.message` text appears inside Zod's full issue-list JSON, which
-   * becomes the retry directive — the model sees field paths, codes, and the
-   * verbatim refine message together.
+   * On a failed parse the retry directive lists each Zod issue as
+   * `- field path: message`, so the model sees the field path beside the
+   * verbatim refine message, then the schema again inline.
    */
   readonly responseSchema: z.ZodType<T>;
   /** Optional `name` field on the wire JSON schema (defaults to `seed.kind`). */
   readonly responseSchemaName?: string;
-  readonly retryDirective?: (err: ValidationGateFailure, attempt: number) => string;
   /**
    * Optional human label for live-smoke observability (`CEREBRAS_LIVE=1`).
    * Names the per-turn stage in the banner — e.g. "clarify", "framework",
@@ -95,10 +93,11 @@ export interface ExecuteTurnResult<T> {
  *   4. On success: append `[user_message, ..., assistant_response]`
  *      as one batch via `appendMessages` and return.
  *   5. On `NoObjectGeneratedError`: convert to `ValidationGateFailure`
- *      (directive re-derived from the raw text), append a
- *      `failed_assistant_response` + `harness_retry_directive` to the
- *      in-memory batch and re-attempt up to `SCOPING.maxParseRetries`
- *      more times.
+ *      (detail re-derived from the raw text), build the retry directive
+ *      from that detail plus the schema (`buildRetryDirective`), append a
+ *      `failed_assistant_response` + `harness_retry_directive` (holding the
+ *      directive) to the in-memory batch and re-attempt up to
+ *      `SCOPING.maxParseRetries` more times.
  *   6. Terminal exhaust: persist `[user, failed, directive, ..., failed]`
  *      (drop trailing directive — the caller's next turn IS the recovery
  *      context) and throw the `ValidationGateFailure`.
@@ -132,10 +131,15 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   // namespace (e.g. `TURN`) — not worth the rename ripple before there's a
   // second caller.
   const totalAttempts = SCOPING.maxParseRetries + 1;
-  // Default directive surfaces Zod's error.message verbatim (the harness
-  // authors it inside toValidationGateFailure; .retryDirective lets callers
-  // override).
-  const directiveFn = params.retryDirective ?? ((err) => err.detail);
+  // Wire name for `response_format`; callers name their stage's schema.
+  const schemaName = params.responseSchemaName ?? params.seed.kind;
+  // Pretty-printed wire schema body. Two readers: the retry directive, which
+  // re-attaches it inline, and the live-smoke banner. Lazy, because most
+  // Turns pass first time and outside live mode nothing else reads it.
+  // Memoised, so a Turn with two retries builds it once.
+  let schemaJsonMemo: string | undefined;
+  const schemaJson = (): string =>
+    (schemaJsonMemo ??= toSchemaJsonString(params.responseSchema, { name: schemaName }));
 
   // Live-smoke observability (CEREBRAS_LIVE=1). All emit decisions
   // collapse to noop in production — `live` is the master gate.
@@ -144,14 +148,9 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   const label = params.label ?? params.seed.kind;
   const headerTopic = params.seed.kind === "scoping" ? params.seed.topic : params.seed.courseTopic;
   const modelName = process.env.LLM_MODEL ?? "(default)";
-  // Wire-side response_format schema string — built and displayed only in live
-  // mode. Every model receives the schema via `response_format` on the wire,
-  // so the live banner mirrors the real wire payload.
-  const liveSchemaJson = live
-    ? toSchemaJsonString(params.responseSchema, {
-        name: params.responseSchemaName ?? params.seed.kind,
-      })
-    : undefined;
+  // Every model receives the schema via `response_format` on the wire, so
+  // the live banner prints it to mirror the real wire payload.
+  const liveSchemaJson = live ? schemaJson() : undefined;
 
   /**
    * Recursive attempt loop — functional alternative to mutable loop state.
@@ -191,7 +190,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       // `parsed` is the typed result and `text` the raw string we persist.
       const result = await generateChat(llmMessages, {
         responseSchema: params.responseSchema,
-        responseSchemaName: params.responseSchemaName ?? params.seed.kind,
+        responseSchemaName: schemaName,
         // Stage-named OTel span (e.g. "clarify", "wave-close") — same label
         // the live-smoke banners use.
         telemetryFunctionId: label,
@@ -224,6 +223,11 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       const dt = Date.now() - t0;
       const raw = err.text ?? "";
       const gate = toValidationGateFailure(raw, params.responseSchema);
+      // The text the model reads on its next attempt. Built once so the live
+      // banner prints the same bytes the directive row persists. It flattens
+      // the Zod issues to prose bullets and re-attaches the schema; weak
+      // models misread the raw issue JSON (`retryDirective.ts`).
+      const directive = buildRetryDirective(gate, schemaJson());
       // Issue #22 Zod-drop visibility (gated by LLM_DEBUG_GRADINGS — no-op when
       // off). On a validation failure the raw candidate is persisted as a
       // `failed_assistant_response` row but never reaches stderr outside
@@ -242,7 +246,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
         }
         process.stderr.write(formatResponseBlock(raw, dt, err.usage));
         const diagnosis = diagnoseFailure(gate, raw);
-        process.stderr.write(formatParseFailure(label, gate, diagnosis));
+        process.stderr.write(formatParseFailure(label, gate, diagnosis, directive));
       }
       const failedRow: AppendMessageParams = {
         parent: params.parent,
@@ -266,7 +270,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
         seq: batch.length + 1,
         kind: "harness_retry_directive",
         role: "user",
-        content: directiveFn(gate, i + 1),
+        content: directive,
       };
       return attempt(i + 1, [...batch, failedRow, directiveRow]);
     }
@@ -276,12 +280,13 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
 }
 
 /**
- * Rebuild the legacy retry directive from a NoObjectGeneratedError's raw
+ * Rebuild the gate failure detail from a NoObjectGeneratedError's raw
  * text. Re-runs the same JSON.parse + safeParse the old in-harness gate
- * ran, so directive strings (and therefore persisted
- * `harness_retry_directive` rows and replayed prompts) are byte-identical
- * to the pre-Output implementation. The double-parse only happens on the
- * failure path — rare, and trivially cheap next to the LLM call.
+ * ran, so the detail strings are byte-identical to the pre-Output
+ * implementation. `buildRetryDirective` turns the detail into the
+ * directive that `harness_retry_directive` rows hold, so those rows and
+ * replayed prompts stay byte-identical too. The double-parse only happens
+ * on the failure path — rare, and trivially cheap next to the LLM call.
  */
 function toValidationGateFailure<T>(raw: string, schema: z.ZodType<T>): ValidationGateFailure {
   const parsed: unknown = (() => {
@@ -297,7 +302,7 @@ function toValidationGateFailure<T>(raw: string, schema: z.ZodType<T>): Validati
   const safe = schema.safeParse(parsed);
   // safeParse succeeding here means the SDK rejected for a reason our
   // re-parse can't see (e.g. secure-JSON prototype-pollution guard) —
-  // treat as a JSON-shape failure rather than inventing a directive.
+  // treat as a JSON-shape failure rather than inventing a detail.
   return new ValidationGateFailure(
     "missing_response",
     safe.success ? JSON_PARSE_RETRY_DIRECTIVE : safe.error.message,

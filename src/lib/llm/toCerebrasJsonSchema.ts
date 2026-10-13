@@ -64,10 +64,11 @@ export function toCerebrasJsonSchema<T>(
 /**
  * Convenience: stringify just the cleaned schema body (no wrapper).
  *
- * Two consumers. `buildRetryDirective` re-attaches it inline after a
- * validation failure, so the model sees the contract again. `executeTurn`
- * prints it in the live-smoke banner. Normal Steps carry the schema only
- * on the wire, via `response_format`.
+ * One caller, `executeTurn`, with two uses. It hands the string to
+ * `buildRetryDirective`, which re-attaches it inline after a validation
+ * failure, so the model sees the contract again. It also prints it in the
+ * live-smoke banner. Normal Steps carry the schema only on the wire, via
+ * `response_format`.
  *
  * The string returned here is byte-equivalent to
  * `JSON.stringify(toCerebrasJsonSchema(schema, opts).schema, null, 2)` — i.e.

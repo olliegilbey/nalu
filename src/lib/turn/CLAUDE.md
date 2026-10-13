@@ -25,19 +25,21 @@ deltas accumulated at the call site, NOT `finalText` (last step only).
 
 - Callers live in `src/lib/course/`: scoping turns and the Wave close turn
   run `executeTurn`; Wave mid-turns run `executeToolTurnStream`.
-- Validation: callers supply a `responseSchema` (Zod). `generateChat`
-  validates via the SDK's `Output.object` (JSON-parse + `safeParse`,
-  refines included) and throws `NoObjectGeneratedError` on failure;
-  `executeTurn` converts that to
-  `ValidationGateFailure("missing_response", <directive>)`, where the
-  directive is re-derived from the raw text so its strings are identical
-  to the pre-SDK implementation. Zod's error message includes field
-  paths, issue codes, and refine `.message` strings — that JSON is the
-  default retry directive. Every current caller overrides it with
-  `buildRetryDirective` (`retryDirective.ts`), which flattens the issues
-  to `- field path: message` bullets and re-attaches the schema. Weak
-  models act on that prose but misread raw issue JSON (seen on the retired
-  `llama3.1-8b`).
+- Validation: callers supply a `responseSchema` (Zod) and its wire name
+  (`responseSchemaName`). That is all; `executeTurn` owns the retry
+  directive. `generateChat` validates via the SDK's `Output.object`
+  (JSON-parse + `safeParse`, refines included) and throws
+  `NoObjectGeneratedError` on failure. `executeTurn` converts that to
+  `ValidationGateFailure("missing_response", <detail>)`. The detail is
+  re-derived from the raw text, so its strings are identical to the
+  pre-SDK implementation: Zod's issue-list JSON, with field paths, issue
+  codes, and refine `.message` strings. `executeTurn` then builds the
+  directive with `buildRetryDirective` (`retryDirective.ts`). It flattens
+  the issues to `- field path: message` bullets and re-attaches the
+  schema. Weak models act on that prose but misread raw issue JSON (seen
+  on the retired `llama3.1-8b`). The schema string is built lazily, at
+  most once per Turn. `retryDirective.callSites.test.ts` in
+  `src/lib/course/` pins the directive bytes.
 - Transport errors (timeouts, 5xx) propagate untouched; no rows are
   persisted on transport failure.
 

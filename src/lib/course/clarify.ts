@@ -1,10 +1,8 @@
 import { executeTurn } from "@/lib/turn/executeTurn";
-import { buildRetryDirective } from "@/lib/turn/retryDirective";
 import { createCourse, updateCourseScopingState } from "@/db/queries/courses";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { clarifySchema, type ClarifyTurn } from "@/lib/prompts/clarify";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
-import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { notifyEvent } from "@/lib/notify/ntfy";
 import type { ClarificationJsonb } from "@/lib/types/jsonb";
 
@@ -60,14 +58,10 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
   }
 
   const pass = await ensureOpenScopingPass(course.id);
-  // Schema string feeds only the retry directive: a failed model must see the
-  // contract again inline (`buildRetryDirective`). Every Step already carries
-  // the schema on the wire, via `response_format`.
   // `sanitiseUserInput` is intentionally NOT applied here: the
   // `<user_message>` wrapper was a teaching-layer convention and the new
   // scoping system prompt doesn't reference it. `renderStageEnvelope`
   // already XML-escapes `learnerInput`, so passing the raw topic is safe.
-  const schemaJson = toSchemaJsonString(clarifySchema, { name: "clarify" });
   const { parsed } = await executeTurn({
     parent: { kind: "scoping", id: pass.id },
     seed: { kind: "scoping", topic: params.topic },
@@ -77,7 +71,6 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
     }),
     responseSchema: clarifySchema,
     responseSchemaName: "clarify",
-    retryDirective: (err) => buildRetryDirective(err, schemaJson),
     label: "clarify",
     successSummary: (p) => `questions=${p.questions.questions.length}`,
   });
