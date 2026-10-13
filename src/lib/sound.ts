@@ -1,10 +1,4 @@
-/*
- * Parity-locked port from kanagawa-whispers. Module-level singletons (WebAudio
- * context + mute flag) are intentional. See spec §6.
- *
- * Tiny client-side sound + mute manager. No assets — uses WebAudio oscillators
- * to synthesize a friendly ping (correct) and a sad ping (wrong).
- */
+/** Tab-wide answer sounds and mute flag: WebAudio oscillator pings, held as module singletons. */
 
 let muted = false;
 const listeners = new Set<(m: boolean) => void>();
