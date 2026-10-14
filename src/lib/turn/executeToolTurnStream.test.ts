@@ -36,18 +36,20 @@ const usage = {
   outputTokenDetails: { textTokens: 0, reasoningTokens: 0 },
 };
 
+/** The tool result in {@link toolStep}. The SDK lists it in `content`; `toolResults` filters it out of there. */
+const quizResult = {
+  type: "tool-result",
+  toolCallId: "c1",
+  toolName: "presentQuestionnaire",
+  output: { accepted: true, questionCount: 1 },
+} as const;
+
 /** Canned tool-call step: model called one tool, got one result, wrote optional text. */
 const toolStep = (text: string) => ({
   text,
   toolCalls: [{ toolCallId: "c1", toolName: "presentQuestionnaire", input: { questions: [] } }],
-  toolResults: [
-    {
-      toolCallId: "c1",
-      toolName: "presentQuestionnaire",
-      output: { accepted: true, questionCount: 1 },
-    },
-  ],
-  content: [],
+  toolResults: [quizResult],
+  content: [quizResult],
 });
 
 /** Canned closing-prose step: no tool calls. */
@@ -331,7 +333,9 @@ describe("executeToolTurnStream", () => {
         { toolCallId: "c2", toolName: "getDueConcepts", input: {} },
       ],
       toolResults: [{ toolCallId: "c1", toolName: "presentQuestionnaire", output: {} }],
-      content: [],
+      content: [
+        { type: "tool-result", toolCallId: "c1", toolName: "presentQuestionnaire", output: {} },
+      ],
     };
     const { agent } = agentOf([], [orphanStep, textStep("Done.")]);
     const run = executeToolTurnStream({

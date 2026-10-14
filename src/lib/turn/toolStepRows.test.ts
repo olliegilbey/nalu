@@ -8,17 +8,11 @@ const AT = {
   seqStart: 1,
 } as const;
 
-/** A Step fixture: only the fields `toolStepRows` reads. */
-const stepOf = (step: {
-  text?: string;
-  toolCalls?: unknown[];
-  toolResults?: unknown[];
-  content?: unknown[];
-}) =>
+/** A Step fixture: only the fields `toolStepRows` reads. Results live in `content`. */
+const stepOf = (step: { text?: string; toolCalls?: unknown[]; content?: unknown[] }) =>
   ({
     text: step.text ?? "",
     toolCalls: step.toolCalls ?? [],
-    toolResults: step.toolResults ?? [],
     content: step.content ?? [],
   }) as unknown as Parameters<typeof toolStepRows>[0];
 
@@ -60,13 +54,35 @@ describe("toolStepRows", () => {
     });
   });
 
+  it("keeps results in content order, so an error before a success stays first", () => {
+    const rows = toolStepRows(
+      stepOf({
+        toolCalls: [
+          { toolCallId: "good", toolName: "getDueConcepts", input: {} },
+          { toolCallId: "bad", toolName: "getDueConcepts", input: {} },
+        ],
+        content: [
+          { type: "tool-error", toolCallId: "bad", toolName: "getDueConcepts", error: "x" },
+          { type: "tool-result", toolCallId: "good", toolName: "getDueConcepts", output: {} },
+        ],
+      }),
+      AT,
+    );
+    const { results } = JSON.parse(rows[1]?.content ?? "") as {
+      results: { toolCallId: string }[];
+    };
+    expect(results.map((r) => r.toolCallId)).toEqual(["bad", "good"]);
+  });
+
   it("throws UnpairedToolCallError naming each call with no result or tool-error", () => {
     const step = stepOf({
       toolCalls: [
         { toolCallId: "c1", toolName: "presentQuestionnaire", input: {} },
         { toolCallId: "c2", toolName: "getDueConcepts", input: {} },
       ],
-      toolResults: [{ toolCallId: "c1", toolName: "presentQuestionnaire", output: {} }],
+      content: [
+        { type: "tool-result", toolCallId: "c1", toolName: "presentQuestionnaire", output: {} },
+      ],
     });
     expect(() => toolStepRows(step, AT)).toThrow(UnpairedToolCallError);
     expect(() => toolStepRows(step, AT)).toThrow(/c2/);

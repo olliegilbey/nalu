@@ -485,4 +485,17 @@ describe("renderContext", () => {
     ];
     expect(() => renderContext(SEED, rows)).toThrow(/assistant_tool_call/);
   });
+
+  it("throws on a tool_result entry with neither output nor errorText (trust boundary)", () => {
+    const rows: readonly ContextMessage[] = [
+      mkRow({
+        turnIndex: 0,
+        seq: 0,
+        kind: "tool_result",
+        role: "tool",
+        content: JSON.stringify({ results: [{ toolCallId: "c1", toolName: "t" }] }),
+      }),
+    ];
+    expect(() => renderContext(SEED, rows)).toThrow(/corrupt tool_result row/);
+  });
 });

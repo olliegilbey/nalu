@@ -1,5 +1,6 @@
 import type { StepResult, ToolSet } from "ai";
 import type { AppendMessageParams, ContextParent } from "@/db/queries/contextMessages";
+import type { RenderedToolResult } from "@/lib/llm/renderContext";
 import { toolErrorText } from "@/lib/llm/toolErrorText";
 import { UnpairedToolCallError } from "./unpairedToolCallError";
 
@@ -38,23 +39,25 @@ export function toolStepRows<TOOLS extends ToolSet>(
   };
   // Results batch: successful executes plus tool-error feedback (invalid
   // inputs / execute throws) — both were fed back to the model, so both
-  // must replay for context fidelity. A tool error stores the exact text
-  // the loop sent as `errorText`, so it replays as the same `error-text`
-  // bytes (#147). Rows written before that hold `output: {toolError}`.
+  // must replay for context fidelity. Content order, as the loop sent them:
+  // the SDK builds the next Step's tool message from `step.content`, where
+  // results sit in arrival order, not call order. A tool error stores the
+  // exact text the loop sent as `errorText`, so it replays as the same
+  // `error-text` bytes (#147). Rows written before that hold
+  // `output: {toolError}`, listed after the successes.
   // The text can quote tool input: it belongs in this row, never in a log.
-  const errors = step.content.filter((p) => p.type === "tool-error");
-  const results = [
-    ...step.toolResults.map((r) => ({
-      toolCallId: r.toolCallId,
-      toolName: r.toolName,
-      output: r.output,
-    })),
-    ...errors.map((e) => ({
-      toolCallId: e.toolCallId,
-      toolName: e.toolName,
-      errorText: toolErrorText(e.error),
-    })),
-  ];
+  // Typed as the renderer's entry, so the writer and reader share one shape.
+  const results = step.content.flatMap((p): RenderedToolResult[] => {
+    if (p.type === "tool-result") {
+      return [{ toolCallId: p.toolCallId, toolName: p.toolName, output: p.output }];
+    }
+    if (p.type === "tool-error") {
+      return [
+        { toolCallId: p.toolCallId, toolName: p.toolName, errorText: toolErrorText(p.error) },
+      ];
+    }
+    return [];
+  });
   // Every call needs its answer: Cerebras rejects an unanswered tool call
   // on replay, which would break every later Turn of the Wave. Refuse to
   // write the orphan; end the attempt abnormally instead.

@@ -85,11 +85,16 @@ const toolCallContentSchema = z.object({
 const toolResultContentSchema = z.object({
   results: z.array(
     z.union([
-      // Tool error (#147). First: the `output` branch below would also
-      // accept this entry, since `z.unknown()` admits a missing key.
+      // Tool error (#147).
       z.object({ toolCallId: z.string(), toolName: z.string(), errorText: z.string() }),
       // Tool success, and a tool error written before #147 (`{toolError}`).
-      z.object({ toolCallId: z.string(), toolName: z.string(), output: z.unknown() }),
+      // `z.unknown()` alone admits a missing key; the refine makes `output`
+      // required, so an entry with neither key fails here, naming the row.
+      z.object({
+        toolCallId: z.string(),
+        toolName: z.string(),
+        output: z.unknown().refine((v) => v !== undefined),
+      }),
     ]),
   ),
 });

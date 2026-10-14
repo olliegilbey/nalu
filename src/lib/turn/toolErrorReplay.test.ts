@@ -52,10 +52,16 @@ const STEP_USAGE = {
   outputTokens: { total: 1, text: 1, reasoning: undefined },
 } as const;
 
-/** A streamed Step: optional prose, then optional tool calls, then finish. */
+/** How long a successful `lookUp` takes, so an input error lands first. */
+const LOOKUP_SUCCESS_DELAY_MS = 10;
+
+/**
+ * A streamed Step: optional prose, then one `lookUp` call per input
+ * (`call-1`, `call-2`, …), then finish.
+ */
 function stepChunks(step: {
   readonly text?: string;
-  readonly toolInput?: string;
+  readonly toolInputs?: readonly string[];
 }): LanguageModelV3StreamPart[] {
   const prose: LanguageModelV3StreamPart[] =
     step.text === undefined
@@ -65,14 +71,18 @@ function stepChunks(step: {
           { type: "text-delta", id: "t1", delta: step.text },
           { type: "text-end", id: "t1" },
         ];
-  const call: LanguageModelV3StreamPart[] =
-    step.toolInput === undefined
-      ? []
-      : [{ type: "tool-call", toolCallId: "call-1", toolName: "lookUp", input: step.toolInput }];
-  const unified = step.toolInput === undefined ? "stop" : "tool-calls";
+  const calls = (step.toolInputs ?? []).map(
+    (input, i): LanguageModelV3StreamPart => ({
+      type: "tool-call",
+      toolCallId: `call-${i + 1}`,
+      toolName: "lookUp",
+      input,
+    }),
+  );
+  const unified = calls.length === 0 ? "stop" : "tool-calls";
   return [
     ...prose,
-    ...call,
+    ...calls,
     { type: "finish", finishReason: { unified, raw: undefined }, usage: STEP_USAGE },
   ];
 }
@@ -88,15 +98,20 @@ function scriptedModel(steps: readonly LanguageModelV3StreamPart[][]): MockLangu
   return model;
 }
 
-/** A one-tool agent whose tool always throws `Error("lookup failed")`. */
+/**
+ * A one-tool agent. `lookUp` throws `Error("lookup failed")` for the name
+ * "missing"; any other name resolves `{found: name}` after a short delay.
+ */
 function agentOn(model: MockLanguageModelV3) {
   return new ToolLoopAgent({
     model,
     tools: {
       lookUp: tool({
         inputSchema: z.object({ name: z.string() }),
-        execute: async (): Promise<string> => {
-          throw new Error("lookup failed");
+        execute: async ({ name }) => {
+          if (name === "missing") throw new Error("lookup failed");
+          await new Promise((resolve) => setTimeout(resolve, LOOKUP_SUCCESS_DELAY_MS));
+          return { found: name };
         },
       }),
     },
@@ -124,11 +139,34 @@ async function runTurn(
   return vi.mocked(appendMessages).mock.calls[0]?.[0] ?? [];
 }
 
+/** A provider-level tool message: one Step's tool results. */
+type ToolMessage = Extract<LanguageModelV3Message, { role: "tool" }>;
+
 /** The one tool message in a provider-level prompt. */
-function toolMessageOf(prompt: readonly LanguageModelV3Message[]): LanguageModelV3Message {
-  const tools = prompt.filter((m) => m.role === "tool");
+function toolMessageOf(prompt: readonly LanguageModelV3Message[]): ToolMessage {
+  const tools = prompt.filter((m): m is ToolMessage => m.role === "tool");
   expect(tools).toHaveLength(1);
-  return tools[0] as LanguageModelV3Message;
+  return tools[0] as ToolMessage;
+}
+
+/**
+ * Run a Turn whose first Step makes the given tool calls, then replay its
+ * rows on the next Turn. Returns the tool message from each side: the
+ * in-loop Step 2 prompt, and the next Turn's first prompt.
+ */
+async function inLoopAndReplayed(
+  toolInputs: readonly string[],
+): Promise<{ readonly inLoop: ToolMessage; readonly replayed: ToolMessage }> {
+  // Turn 0: Step 1 makes the calls; Step 2 recovers in prose.
+  const loopModel = scriptedModel([stepChunks({ toolInputs }), stepChunks({ text: "Recovered." })]);
+  const persisted = await runTurn(loopModel, 0, []);
+  // Turn 1 loads Turn 0's rows from the DB and replays them.
+  const nextModel = scriptedModel([stepChunks({ text: "Next." })]);
+  await runTurn(nextModel, 1, synthesiseRows([], persisted));
+  return {
+    inLoop: toolMessageOf(loopModel.doStreamCalls[1]?.prompt ?? []),
+    replayed: toolMessageOf(nextModel.doStreamCalls[0]?.prompt ?? []),
+  };
 }
 
 beforeEach(() => {
@@ -139,26 +177,28 @@ beforeEach(() => {
 describe("tool-error replay (#147)", () => {
   it.each([
     // Valid input, so the tool runs and its execute throws.
-    { cause: "execute throws", toolInput: JSON.stringify({ name: "borrowing" }) },
+    { cause: "execute throws", toolInput: JSON.stringify({ name: "missing" }) },
     // Parseable JSON that fails the input schema: InvalidToolInputError.
     // Unparseable JSON also diverges in the assistant tool-call message (#163).
     { cause: "input fails validation", toolInput: JSON.stringify({ name: 7 }) },
   ])("replays a tool error ($cause) as the bytes the loop sent", async ({ toolInput }) => {
-    // Turn 0: Step 1 calls the tool and it errors; Step 2 recovers in prose.
-    const loopModel = scriptedModel([
-      stepChunks({ toolInput }),
-      stepChunks({ text: "Recovered." }),
-    ]);
-    const persisted = await runTurn(loopModel, 0, []);
-    // The in-loop Step 2 prompt carries the tool error exactly as the SDK sent it.
-    const inLoop = toolMessageOf(loopModel.doStreamCalls[1]?.prompt ?? []);
-
-    // Turn 1 loads Turn 0's rows from the DB and replays them.
-    const nextModel = scriptedModel([stepChunks({ text: "Next." })]);
-    await runTurn(nextModel, 1, synthesiseRows([], persisted));
-    const replayed = toolMessageOf(nextModel.doStreamCalls[0]?.prompt ?? []);
-
+    const { inLoop, replayed } = await inLoopAndReplayed([toolInput]);
     expect(replayed).toEqual(inLoop);
+  });
+
+  it("replays results in the order the loop sent them, error first", async () => {
+    // call-1 succeeds after a delay; call-2's input fails at once. The loop
+    // sends results in arrival order, so the error leads.
+    const { inLoop, replayed } = await inLoopAndReplayed([
+      JSON.stringify({ name: "borrowing" }),
+      JSON.stringify({ name: 7 }),
+    ]);
+    // Guard the fixture: the in-loop order really is error first.
+    expect(inLoop.content.map((p) => p.type === "tool-result" && p.toolCallId)).toEqual([
+      "call-2",
+      "call-1",
+    ]);
+    expect(JSON.stringify(replayed)).toBe(JSON.stringify(inLoop));
   });
 
   it("renders a tool_result row written before #147 to its old bytes", () => {
