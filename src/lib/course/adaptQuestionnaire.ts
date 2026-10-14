@@ -1,5 +1,5 @@
 import type { Question } from "@/lib/prompts/questionnaire";
-import { MC_OPTION_KEYS, type McOptionKey } from "@/lib/types/mcOptionKey";
+import { KEY_TO_INDEX, MC_OPTION_KEYS, type McOptions } from "@/lib/types/mcOptionKey";
 import type { OpenQuestionForClient } from "./redactQuestionnaire";
 import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
 
@@ -30,8 +30,6 @@ export interface ActiveQuestionnaire {
    */
   readonly persistKey: string;
 }
-
-const KEY_TO_INDEX: Record<McOptionKey, number> = { A: 0, B: 1, C: 2, D: 3 };
 
 /** Three-way MC feedback: "correct" | "wrong", or null for ungraded (no correctIndex) questions. */
 export function deriveMcFeedback(
@@ -108,12 +106,7 @@ export interface StreamedToolQuestion {
   readonly id: string;
   readonly type: "multiple_choice" | "free_text";
   readonly prompt: string;
-  readonly options?: {
-    readonly A: string;
-    readonly B: string;
-    readonly C: string;
-    readonly D: string;
-  };
+  readonly options?: McOptions;
   readonly tier?: number;
 }
 

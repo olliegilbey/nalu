@@ -1,5 +1,10 @@
 import { typedMcGradingRule } from "@/lib/prompts/questionnaire";
-import { MC_OPTION_KEYS, type McOptionKey } from "@/lib/types/mcOptionKey";
+import {
+  KEY_TO_INDEX,
+  MC_OPTION_KEYS,
+  type McOptionKey,
+  type McOptions,
+} from "@/lib/types/mcOptionKey";
 import { escapeXmlText } from "@/lib/security/escapeXmlText";
 import { sanitiseUserInput } from "@/lib/security/sanitiseUserInput";
 
@@ -33,31 +38,11 @@ export interface OpenQuestionnaireRecord {
     readonly id: string;
     readonly type: "multiple_choice" | "free_text";
     readonly prompt: string;
-    readonly options?: {
-      readonly A: string;
-      readonly B: string;
-      readonly C: string;
-      readonly D: string;
-    };
+    readonly options?: McOptions;
     readonly correct?: McOptionKey;
     readonly freetextRubric: string;
   }[];
 }
-
-/**
- * Stable letter→index mapping for MC keys. Mirrors the order of `MC_OPTION_KEYS`
- * (A=0 .. D=3); `satisfies` fails the build if the key set changes and this
- * table does not. Centralised here so the envelope emits exactly
- * the same numerical encoding the grading + obfuscation path uses (see
- * `encodeCorrect` in `src/lib/security/obfuscateCorrect.ts`).
- *
- * Exported so `insertNewQuestionnaire` can compute `encodeCorrect(id, KEY_TO_INDEX[correct])`
- * from the same source of truth — duplicating the literal would risk drift.
- */
-export const KEY_TO_INDEX = { A: 0, B: 1, C: 2, D: 3 } as const satisfies Record<
-  McOptionKey,
-  number
->;
 
 /**
  * Compose the per-turn `learnerInput` envelope body.

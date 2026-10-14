@@ -30,7 +30,7 @@ import {
   baselineClosedJsonbSchema,
   type FrameworkJsonb,
 } from "@/lib/types/jsonb";
-import type { McOptionKey } from "@/lib/types/mcOptionKey";
+import type { McOptionKey, McOptions } from "@/lib/types/mcOptionKey";
 import type { BaselineAnswer } from "@/lib/course/submitBaseline";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 
@@ -97,7 +97,7 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       ).questions as ReadonlyArray<{
         readonly id: string;
         readonly type: "multiple_choice" | "free_text";
-        readonly options?: Readonly<Record<McOptionKey, string>>;
+        readonly options?: McOptions;
         readonly correct?: McOptionKey;
         readonly freetextRubric: string;
       }>;

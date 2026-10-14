@@ -1,6 +1,6 @@
 import { BASELINE, PROGRESSION } from "@/lib/config/tuning";
 import { typedMcGradingRule } from "@/lib/prompts/questionnaire";
-import type { McOptionKey } from "@/lib/types/mcOptionKey";
+import type { McOptionKey, McOptions } from "@/lib/types/mcOptionKey";
 import type { z } from "zod";
 import type { baselineGradingSchema } from "@/lib/types/jsonb";
 
@@ -58,7 +58,7 @@ interface StoredQuestion {
   readonly conceptName?: string;
   readonly tier?: number;
   /** Only on multiple_choice. */
-  readonly options?: { A: string; B: string; C: string; D: string };
+  readonly options?: McOptions;
   readonly correct?: McOptionKey;
 }
 
