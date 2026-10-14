@@ -73,7 +73,12 @@ export function assembleLlmMessages(
             type: "tool-result" as const,
             toolCallId: r.toolCallId,
             toolName: r.toolName,
-            output: { type: "json" as const, value: r.output as never },
+            // A tool error replays as the `error-text` the loop sent (#147).
+            // A tool's return value, and a pre-#147 `{toolError}`, replay as JSON.
+            output:
+              "errorText" in r
+                ? { type: "error-text" as const, value: r.errorText }
+                : { type: "json" as const, value: r.output as never },
           })),
         };
       }

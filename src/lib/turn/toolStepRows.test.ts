@@ -36,7 +36,8 @@ describe("toolStepRows", () => {
             type: "tool-error",
             toolCallId: "bad",
             toolName: "presentQuestionnaire",
-            error: "Invalid input",
+            // An Error, so String(error) would differ: "Error: Invalid input".
+            error: new Error("Invalid input"),
           },
         ],
       }),
@@ -46,13 +47,14 @@ describe("toolStepRows", () => {
       ["assistant_tool_call", 1, 3],
       ["tool_result", 2, 3],
     ]);
-    // The tool-error is the call's answer, so the pair is complete.
+    // The tool-error is the call's answer, so the pair is complete. Its
+    // text is what the SDK sent in-loop: getErrorMessage, not String (#147).
     expect(JSON.parse(rows[1]?.content ?? "")).toEqual({
       results: [
         {
           toolCallId: "bad",
           toolName: "presentQuestionnaire",
-          output: { toolError: "Invalid input" },
+          errorText: "Invalid input",
         },
       ],
     });

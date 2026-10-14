@@ -1,5 +1,6 @@
 import type { StepResult, ToolSet } from "ai";
 import type { AppendMessageParams, ContextParent } from "@/db/queries/contextMessages";
+import { toolErrorText } from "@/lib/llm/toolErrorText";
 import { UnpairedToolCallError } from "./unpairedToolCallError";
 
 /** Where a Step's rows land: the Turn's parent and index, and the first row's seq. */
@@ -37,7 +38,10 @@ export function toolStepRows<TOOLS extends ToolSet>(
   };
   // Results batch: successful executes plus tool-error feedback (invalid
   // inputs / execute throws) — both were fed back to the model, so both
-  // must replay for context fidelity.
+  // must replay for context fidelity. A tool error stores the exact text
+  // the loop sent as `errorText`, so it replays as the same `error-text`
+  // bytes (#147). Rows written before that hold `output: {toolError}`.
+  // The text can quote tool input: it belongs in this row, never in a log.
   const errors = step.content.filter((p) => p.type === "tool-error");
   const results = [
     ...step.toolResults.map((r) => ({
@@ -48,7 +52,7 @@ export function toolStepRows<TOOLS extends ToolSet>(
     ...errors.map((e) => ({
       toolCallId: e.toolCallId,
       toolName: e.toolName,
-      output: { toolError: String(e.error) },
+      errorText: toolErrorText(e.error),
     })),
   ];
   // Every call needs its answer: Cerebras rejects an unanswered tool call
