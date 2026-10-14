@@ -138,10 +138,10 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
  *   tool trail never persists either. That matters for a cut-off INVALID
  *   call: the SDK answers it in-loop with an error that quotes the whole raw
  *   input, and replay must match those bytes, so persisting it would carry
- *   the runaway into every later Turn. The SDK has already run one more Step
- *   on that error by then; the cap bounds what it carried. A cut-off VALID
- *   call never runs (ai 6.0.260+); this check comes first, so it retries
- *   instead of throwing `UnpairedToolCallError`.
+ *   the runaway into every later Turn. The loop can still run more Steps on
+ *   that error before this check sees it; the cap bounds each (#187). A
+ *   cut-off VALID call never runs (ai 6.0.260+); this check comes first, so
+ *   it retries instead of throwing `UnpairedToolCallError`.
  */
 export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
   params: ExecuteToolTurnStreamParams<TOOLS>,

@@ -105,8 +105,8 @@ change hold a `{text, steps}` JSON envelope; they render unchanged.
   replays, and no tool trail persists. Why: the SDK answers a cut-off
   INVALID call in-loop with an error that quotes the whole raw input, and
   replay must match those bytes. Persisting it once carried ~40k tokens
-  into every later Turn of a Wave. The SDK runs one more Step on that error
-  before the loop ends; the cap bounds it. A cut-off VALID call never runs
+  into every later Turn of a Wave. The loop can still run more Steps on
+  that error before it ends; the cap bounds each (issue #187). A cut-off VALID call never runs
   (ai 6.0.260+); the check comes first, so it retries rather than throw
   `UnpairedToolCallError`. Structured calls carry no cap: see the TSDoc on
   `maxToolStepOutputTokens` in `tuning.ts`.
