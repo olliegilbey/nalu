@@ -257,6 +257,20 @@ export const QUESTIONNAIRE = {
  * (docs/status/2026-07-06-tool-call-probe-verdict.md). Every step is one
  * rate-limiter-paced Cerebras call, so raising this raises worst-case
  * turn latency (~+13s per extra step on the slow lane).
+ *
+ * `maxToolStepOutputTokens: 16384`: output ceiling for ONE tool-loop Step,
+ * sent as `max_tokens`. Cerebras counts reasoning tokens against it. It
+ * bounds a runaway: a `presentQuestionnaire` call once ran to ~40k tokens
+ * (issue #181). Sized from 238 Steps in seven local `just smoke` logs
+ * (2026-10-13/14). Wave tool-loop Steps peaked at 4,751 output tokens (p99
+ * 4,215). The longest high-effort reasoning in any stage was 10,796 tokens,
+ * in a baseline call. 16,384 holds that reasoning plus the largest tool call
+ * and prose seen in a Step (1,557) with a third to spare. That is 3.4× the
+ * longest Wave Step. A Step that hits the cap fails its attempt, and the
+ * attempt retries (`executeToolTurnStream`), so a false cut costs one retry.
+ * Structured calls (`generateChat`) carry no cap. Their Steps run longer
+ * (11,720 max), and a cut inside reasoning leaves no text: the SDK then
+ * throws `NoOutputGeneratedError`, and the Turn fails with no retry.
  */
 export const LLM = {
   defaultTemperature: 0.3,
@@ -275,6 +289,7 @@ export const LLM = {
   fastLaneCallsPerUser: 45,
   lowTokenBudgetThreshold: 10_000,
   maxToolSteps: 4,
+  maxToolStepOutputTokens: 16_384,
 } as const;
 
 /**

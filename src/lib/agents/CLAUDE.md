@@ -2,6 +2,8 @@
 
 ToolLoopAgent definitions — one file per LLM-facing stage. An agent =
 model + instructions (from src/lib/prompts/) + tools + stopWhen +
+`maxOutputTokens: LLM.maxToolStepOutputTokens` (per-Step output cap; a
+cut-off Step fails the attempt in `executeToolTurnStream`, #181) +
 `cerebrasToolLoopPrepareStep` (per-step pacing + reasoning strip — NEVER
 omit it) + an `onStepFinish` that calls `recordStepFinished` (rate-limit
 headers for pacing, usage for the cost tally), built fresh per attempt with

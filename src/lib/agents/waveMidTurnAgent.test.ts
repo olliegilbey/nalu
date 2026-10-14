@@ -4,6 +4,7 @@ import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import type { WaveSeedInputs } from "@/lib/types/context";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
 import { getRunUsageTally, resetRunUsageTally } from "@/lib/llm/runUsageTally";
+import { LLM } from "@/lib/config/tuning";
 import { buildWaveMidTurnAgent } from "./waveMidTurnAgent";
 
 // The provider needs env at import time — stub it. Tests that run the
@@ -166,6 +167,23 @@ describe("buildWaveMidTurnAgent", () => {
     // Guard the fixture: the loop really ran two Steps.
     expect(await result.steps).toHaveLength(2);
     expect(getRunUsageTally()).toMatchObject({ steps: 2, inputTokens: 200, outputTokens: 80 });
+  });
+
+  it("caps every loop Step's output at the tuning ceiling (#181)", async () => {
+    // A runaway tool call once ran to ~40k output tokens. The cap must reach
+    // each provider call, the Steps after the first included.
+    const model = twoStepStreamModel();
+    const { agent } = buildWaveMidTurnAgent({ ...CHAT_TURN, model });
+
+    const result = await agent.stream({ messages: [{ role: "user", content: "hi" }] });
+    for await (const part of result.fullStream) {
+      void part; // drain, as executeToolTurnStream does
+    }
+
+    const sent = model.doStreamCalls.map((call) => call.maxOutputTokens);
+    // Guard: a number reached the wire, not an unset option.
+    expect(sent[0]).toBeGreaterThan(0);
+    expect(sent).toEqual([LLM.maxToolStepOutputTokens, LLM.maxToolStepOutputTokens]);
   });
 
   // Issue #144: the answered ids reach the grading tool by closure, so a

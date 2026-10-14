@@ -4,7 +4,13 @@ export class ValidationGateFailure extends Error {
   constructor(
     // "tool_turn_gate": post-loop gate on tool turns (empty prose / answered
     // questions left ungraded) — see src/lib/course/waveMidTurnGate.ts.
-    public readonly reason: "missing_response" | "missing_final_turn_tags" | "tool_turn_gate",
+    // "output_truncated": a tool-loop Step hit the output cap (#181) — see
+    // src/lib/turn/executeToolTurnStream.ts.
+    public readonly reason:
+      | "missing_response"
+      | "missing_final_turn_tags"
+      | "tool_turn_gate"
+      | "output_truncated",
     public readonly detail: string,
   ) {
     super(`validation gate failed: ${reason} — ${detail}`);

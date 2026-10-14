@@ -86,6 +86,8 @@ export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTu
     model: params.model ?? getLlmModel(),
     instructions,
     tools: { ...toolkit.tools, ...lookupTools },
+    // Per-Step output cap. A Step that hits it fails the attempt (#181).
+    maxOutputTokens: LLM.maxToolStepOutputTokens,
     stopWhen: stepCountIs(LLM.maxToolSteps),
     temperature: LLM.defaultTemperature,
     maxRetries: LLM.maxRetries,

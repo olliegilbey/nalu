@@ -9,7 +9,7 @@ import {
 } from "@/db/queries/contextMessages";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { SCOPING } from "@/lib/config/tuning";
-import { renderHarnessFeedback } from "@/lib/prompts/turn";
+import { OUTPUT_TRUNCATED_RETRY_DIRECTIVE, renderHarnessFeedback } from "@/lib/prompts/turn";
 import { toolStepRows } from "./toolStepRows";
 import { findJsonProseLeakIndex } from "./findJsonProseLeakIndex";
 import type { SeedInputs } from "@/lib/types/context";
@@ -131,6 +131,17 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
  *   with neither a result nor a tool-error throws `UnpairedToolCallError`
  *   (`toolStepRows`) rather than persist an orphan that Cerebras would
  *   reject on replay.
+ * - A Step cut off at the output cap (`finishReason: "length"`; the agent
+ *   sets `maxOutputTokens`) fails the attempt before the gate runs. It takes
+ *   the gate-failure path as `output_truncated`, so the standard retry runs
+ *   (#181). Its failed row is "": an unfinished reply never replays. Its
+ *   tool trail never persists either. That matters for a cut-off INVALID
+ *   call: the SDK answers it in-loop with an error that quotes the whole raw
+ *   input, and replay must match those bytes, so persisting it would carry
+ *   the runaway into every later Turn. The SDK has already run one more Step
+ *   on that error by then; the cap bounds what it carried. A cut-off VALID
+ *   call never runs (ai 6.0.260+); this check comes first, so it retries
+ *   instead of throwing `UnpairedToolCallError`.
  */
 export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
   params: ExecuteToolTurnStreamParams<TOOLS>,
@@ -197,7 +208,12 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
     // Closing prose = the FINAL step's text ("" when the loop ended on a
     // tool-call step); the caller's validation gate decides acceptability.
     const finalText = steps[steps.length - 1]?.text ?? "";
-    const gate = validateTurn(finalText);
+    // A Step cut off at the output cap fails the attempt before the gate
+    // runs (#181; see the dispatch TSDoc).
+    const truncated = steps.some((step) => step.finishReason === "length");
+    const gate = truncated
+      ? new ValidationGateFailure("output_truncated", OUTPUT_TRUNCATED_RETRY_DIRECTIVE)
+      : validateTurn(finalText);
 
     if (gate === null) {
       // Success: persist the loop trail + closing prose in one atomic batch.
@@ -226,15 +242,17 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
 
     // Validation failure: persist the attempt as the prose the learner saw,
     // cut at any JSON leak and trimmed (see TSDoc). "" when nothing safe
-    // was shown: the row still marks the attempt in the Turn.
+    // was shown, or when a Step was cut off: an unfinished reply never
+    // replays. The row still marks the attempt in the Turn.
     const leakAt = findJsonProseLeakIndex(visibleProse);
+    const shownProse = (leakAt === null ? visibleProse : visibleProse.slice(0, leakAt)).trim();
     const failedRow: AppendMessageParams = {
       parent: params.parent,
       turnIndex,
       seq: batch.length,
       kind: "failed_assistant_response",
       role: "assistant",
-      content: (leakAt === null ? visibleProse : visibleProse.slice(0, leakAt)).trim(),
+      content: truncated ? "" : shownProse,
     };
     if (i + 1 >= totalAttempts) {
       // Terminal exhaust: persist failure trail without trailing directive.
