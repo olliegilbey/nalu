@@ -18,7 +18,7 @@ import {
  * `context_messages`, partial unique indexes (one-open-per-course,
  * per-parent message ordering), and the
  * case-insensitive functional unique on `concepts`. Plain NOT NULL / FK
- * cascade behavior is covered transitively by drizzle-zod + the migration
+ * cascade behavior is covered transitively by the migration
  * smoke; this file targets the bits where the docstrings make a promise the
  * generated SQL has to keep.
  *

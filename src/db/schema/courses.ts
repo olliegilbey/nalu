@@ -1,7 +1,6 @@
 import { pgTable, uuid, text, integer, timestamp, jsonb, check, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
-import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import type { InferSelectModel } from "drizzle-orm";
 import { userProfiles } from "./userProfiles";
 
 /**
@@ -65,18 +64,3 @@ export const courses = pgTable(
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type Course = InferSelectModel<typeof courses>;
-
-/**
- * Shape for INSERT statements. `userId` and `topic` are required (notNull,
- * no default). All other columns are optional: `id` defaults to a random UUID;
- * `currentTier`, `totalXp`, `status`, `createdAt`, `updatedAt` have defaults;
- * `clarification`, `framework`, `baseline`, `startingTier`, `summary`, and
- * `summaryUpdatedAt` are nullable.
- */
-export type CourseInsert = InferInsertModel<typeof courses>;
-
-/** Zod schema for validating insert payloads at trust boundaries (e.g. API input). */
-export const coursesInsertSchema = createInsertSchema(courses);
-
-/** Zod schema for validating rows read from the DB. */
-export const coursesSelectSchema = createSelectSchema(courses);
