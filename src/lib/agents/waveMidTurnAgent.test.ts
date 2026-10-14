@@ -13,11 +13,14 @@ vi.mock("@/lib/llm/provider", () => ({
   llmProviderOptions: () => ({ "nalu-llm": { reasoningEffort: "high" } }),
 }));
 
-// The getDueConcepts lookup reads the DB; nothing is due in these tests.
+// The getConceptHistory lookup reads the DB; no concept matches in these tests.
 vi.mock("@/db/queries/concepts", () => ({
-  getDueConceptsByCourse: vi.fn().mockResolvedValue([]),
-  getConceptByNameForCourse: vi.fn(),
+  getDueConceptsByCourse: vi.fn(),
+  getConceptByNameForCourse: vi.fn().mockResolvedValue(null),
 }));
+
+/** Input for the default mocked lookup call. */
+const LOOKUP_INPUT = JSON.stringify({ conceptName: "ownership" });
 
 /** Token usage every mocked Step reports. */
 const STEP_USAGE = {
@@ -26,11 +29,11 @@ const STEP_USAGE = {
 } as const;
 
 /**
- * Two-Step mock: one tool call (default getDueConcepts), then closing prose.
+ * Two-Step mock: one tool call (default getConceptHistory), then closing prose.
  * A function, not the mock's array form: the array form indexes after
  * recording the call, so its first Step would return element 1.
  */
-function twoStepModel(toolName = "getDueConcepts", input = "{}"): MockLanguageModelV3 {
+function twoStepModel(toolName = "getConceptHistory", input = LOOKUP_INPUT): MockLanguageModelV3 {
   const model: MockLanguageModelV3 = new MockLanguageModelV3({
     doGenerate: async () =>
       model.doGenerateCalls.length === 1
@@ -41,7 +44,7 @@ function twoStepModel(toolName = "getDueConcepts", input = "{}"): MockLanguageMo
             warnings: [],
           }
         : {
-            content: [{ type: "text", text: "Nothing is due yet." }],
+            content: [{ type: "text", text: "No history yet." }],
             finishReason: { unified: "stop", raw: undefined },
             usage: STEP_USAGE,
             warnings: [],
@@ -62,12 +65,12 @@ function twoStepStreamModel(): MockLanguageModelV3 {
     usage: STEP_USAGE,
   });
   const toolCallStep: readonly LanguageModelV3StreamPart[] = [
-    { type: "tool-call", toolCallId: "call-1", toolName: "getDueConcepts", input: "{}" },
+    { type: "tool-call", toolCallId: "call-1", toolName: "getConceptHistory", input: LOOKUP_INPUT },
     finish("tool-calls"),
   ];
   const proseStep: readonly LanguageModelV3StreamPart[] = [
     { type: "text-start", id: "t1" },
-    { type: "text-delta", id: "t1", delta: "Nothing is due yet." },
+    { type: "text-delta", id: "t1", delta: "No history yet." },
     { type: "text-end", id: "t1" },
     finish("stop"),
   ];
@@ -109,10 +112,12 @@ const CHAT_TURN = { seed: SEED, courseId: COURSE_ID, answeredQuestionIds: [] } a
 describe("buildWaveMidTurnAgent", () => {
   it("binds emission + lookup tools and a fresh collector", () => {
     const { agent, collector } = buildWaveMidTurnAgent(CHAT_TURN);
-    // Tool surface is the contract the prompt + client rely on.
+    // Tool surface is the contract the prompt + client rely on. Default
+    // "full" mode offers no getDueConcepts: <due_for_review> already lists
+    // the due set, so the call only burned a loop Step (audit F4). Hint mode
+    // keeps it (waveMidTurnAgent.dueInjection.test.ts).
     expect(Object.keys(agent.tools).sort()).toEqual([
       "getConceptHistory",
-      "getDueConcepts",
       "presentQuestionnaire",
       "recordComprehensionSignals",
     ]);

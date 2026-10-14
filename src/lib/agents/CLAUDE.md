@@ -22,6 +22,12 @@ Rules:
   cross-user data. One deliberate exception: `getDueConcepts` carries
   `lastQuality` (last 0-5 quality score). It is a teaching signal, not XP,
   and the model cannot change it; it helps the tutor target weak concepts.
+- Few, purposeful tools. `buildWaveMidTurnAgent` offers `getDueConcepts`
+  only while `WAVE.dueReviewInjection` is `"hint"`. In `"full"` mode the
+  system prompt already lists the due set and SM-2 does not move mid-Wave,
+  so the call only burned a loop Step (audit F4). The prompt names a tool
+  only when the agent offers it. The flag is static per deploy, so the
+  tool list stays cache-stable.
 - stopWhen is always stepCountIs(bounded). isLoopFinished() is banned.
 - Prompt text lives in src/lib/prompts/ — agents import renderers. Agent
   instructions must stay byte-identical to `renderContext(seed,…).system`

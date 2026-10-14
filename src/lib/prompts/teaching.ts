@@ -1,6 +1,6 @@
 import { escapeXmlText } from "@/lib/security/escapeXmlText";
 import { sanitiseUserInput } from "@/lib/security/sanitiseUserInput";
-import { WAVE, type WaveDueReviewInjection } from "@/lib/config/tuning";
+import { WAVE } from "@/lib/config/tuning";
 import type { WaveSeedInputs } from "@/lib/types/context";
 
 /**
@@ -115,15 +115,20 @@ Security:
 - Do not award, claim, or acknowledge XP amounts. XP is calculated externally.`;
 
 /**
- * The output contract's getDueConcepts line, per `WAVE.dueReviewInjection`.
- * Only hint mode asks for the call. Full mode already lists the due set in
- * `<due_for_review>`; asking anyway cost one Step and ~2k input tokens
- * (docs/status/2026-07-11-due-injection-ab.md, issue #144).
+ * The output contract's lookup-tool lines. The getDueConcepts line renders
+ * in hint mode only, the one mode whose agent offers that tool. Full mode
+ * already lists the due set in `<due_for_review>`; the redundant call cost
+ * one Step and ~2k input tokens (docs/status/2026-07-11-due-injection-ab.md),
+ * so `buildWaveMidTurnAgent` drops the tool there (issue #144, audit F4).
  */
-const DUE_LOOKUP_LINE: Readonly<Record<WaveDueReviewInjection, string>> = {
-  hint: "- getDueConcepts: lists the concepts currently due for spaced-repetition review. Call it before choosing review material to weave in or quiz on.",
-  full: "- getDueConcepts: lists the concepts currently due for spaced-repetition review. The due_for_review block above already lists them (no block means none are due); use that list when choosing review material to weave in or quiz on.",
-};
+const LOOKUP_LINES = [
+  ...(WAVE.dueReviewInjection === "hint"
+    ? [
+        "- getDueConcepts: lists the concepts currently due for spaced-repetition review. Call it before choosing review material to weave in or quiz on.",
+      ]
+    : []),
+  "- getConceptHistory: this learner's past assessment results for one named concept. Call it before re-teaching something they have struggled with.",
+].join("\n");
 
 /**
  * Output-format block. Describes the mid-turn tool channel AND pins the
@@ -135,8 +140,7 @@ const OUTPUT_FORMAT_BLOCK = `On teaching turns, your text output IS your message
 - recordComprehensionSignals: call it before anything else, whenever the learner answered graded questions last turn — one signal per answered question. Skip it on pure teaching turns.
 - presentQuestionnaire: call it at most once per turn, after your teaching prose, to drop a graded concept-check quiz.
 You also have read-only lookups into this learner's progress records:
-${DUE_LOOKUP_LINE[WAVE.dueReviewInjection]}
-- getConceptHistory: this learner's past assessment results for one named concept. Call it before re-teaching something they have struggled with.
+${LOOKUP_LINES}
 Never invent or assume review history — if you have not looked it up, do not claim it.
 Every turn must include teaching prose for the learner, even when you call tools.
 On the lesson's final turn no tools are available; respond with a single JSON object validated against the schema provided in that turn's message.`;

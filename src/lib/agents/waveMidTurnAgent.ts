@@ -4,7 +4,7 @@ import { getLlmModel, llmProviderOptions } from "@/lib/llm/provider";
 import { cerebrasToolLoopPrepareStep } from "@/lib/llm/cerebrasToolLoopPrepareStep";
 import { recordStepFinished } from "@/lib/llm/recordStepFinished";
 import { llmTelemetry } from "@/lib/llm/telemetry";
-import { LLM } from "@/lib/config/tuning";
+import { LLM, WAVE } from "@/lib/config/tuning";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
 import {
   buildWaveMidTurnTools,
@@ -14,13 +14,18 @@ import {
 import type { WaveSeedInputs } from "@/lib/types/context";
 import { buildWaveLookupTools } from "./waveLookupTools";
 
+/** Both read-only lookups, as `buildWaveLookupTools` builds them. */
+type WaveLookupTools = ReturnType<typeof buildWaveLookupTools>;
+
 /**
  * The mid-turn agent's full tool map: emission staging + read-only lookups.
+ * `getDueConcepts` is optional: only `"hint"` mode offers it (audit F4).
  * `src/lib/types/waveStream.ts` derives the client's typed UI tool parts from
  * this, so the wire and the client can never drift on the tool surface.
  */
 export type WaveMidTurnAgentTools = WaveMidTurnToolkit["tools"] &
-  ReturnType<typeof buildWaveLookupTools>;
+  Pick<WaveLookupTools, "getConceptHistory"> &
+  Partial<Pick<WaveLookupTools, "getDueConcepts">>;
 
 /** Inputs that scope one agent instance to one wave turn. */
 export interface WaveMidTurnAgentParams {
@@ -64,7 +69,15 @@ export interface WaveMidTurnAgentInstance {
  */
 export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTurnAgentInstance {
   const toolkit = buildWaveMidTurnTools({ answeredQuestionIds: params.answeredQuestionIds });
-  const lookupTools = buildWaveLookupTools({ courseId: params.courseId });
+  const { getConceptHistory, getDueConcepts } = buildWaveLookupTools({ courseId: params.courseId });
+  // "full" mode lists every due concept in <due_for_review>, and SM-2 does
+  // not move mid-Wave, so the due lookup would only burn a loop Step (audit
+  // F4). "hint" mode keeps it: its hint asks the model to call it. The flag
+  // is static per deploy, so the tool list stays cache-stable.
+  const lookupTools: Pick<WaveMidTurnAgentTools, "getConceptHistory" | "getDueConcepts"> =
+    WAVE.dueReviewInjection === "hint"
+      ? { getConceptHistory, getDueConcepts }
+      : { getConceptHistory };
   // Byte-identical to renderContext(seed).system: executeToolTurnStream drops
   // that system message, trusting the identity.
   const instructions = renderTeachingSystem(params.seed);

@@ -8,7 +8,7 @@ import { appendWaveChatLog, openWave } from "@/db/queries/waves.writes";
 import { getWaveById } from "@/db/queries/waves";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
 import { getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
-import { updateConceptSm2, upsertConcept } from "@/db/queries/concepts.writes";
+import { upsertConcept } from "@/db/queries/concepts.writes";
 import { getAssessmentByWaveAndQuestionId } from "@/db/queries/assessments";
 import { WAVE } from "@/lib/config/tuning";
 import { calculateMcXp } from "@/lib/scoring/xp";
@@ -468,39 +468,39 @@ describe("streamWaveTurn (integration)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 2b. Lookup turn (agent-loop Task 4): the REAL getDueConcepts execute hits
-  //     the test DB; the loop trail persists as tool-kind rows; the NEXT
+  // 2b. Lookup turn (agent-loop Task 4): the REAL getConceptHistory execute
+  //     hits the test DB; the loop trail persists as tool-kind rows; the NEXT
   //     turn's dispatched messages replay the lookup (context fidelity) and
   //     carry no system message (the agent's instructions own that slot).
+  //     getConceptHistory, since default "full" mode offers no getDueConcepts
+  //     (audit F4).
   // -------------------------------------------------------------------------
-  it("lookup turn: getDueConcepts rows persist and feed the next turn's context", async () => {
+  it("lookup turn: getConceptHistory rows persist and feed the next turn's context", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
-      // Seed one concept due YESTERDAY so the real lookup projects it.
-      const concept = await upsertConcept({ courseId, name: "ownership", tier: 1 });
-      await updateConceptSm2(concept.id, {
-        easinessFactor: 2.5,
-        intervalDays: 1,
-        repetitionCount: 1,
-        lastQualityScore: 3,
-        lastReviewedAt: new Date(Date.now() - 2 * 86_400_000),
-        nextReviewAt: new Date(Date.now() - 86_400_000),
-      });
+      // Seed one concept, never assessed, so the real lookup resolves its name.
+      await upsertConcept({ courseId, name: "ownership", tier: 1 });
 
       // Canned steps mirror what the REAL execute returns for the seeded row
       // (asserted below) — persistence reads the step trail, not the execute.
-      const lookupOutput = { dueConcepts: [{ name: "ownership", tier: 1, lastQuality: 3 }] };
+      const lookupInput = { conceptName: "ownership" };
+      const lookupOutput = { conceptName: "ownership", attempts: [] };
       const captured: { lookup: unknown } = { lookup: null };
       mockAgentAttempts(
         {
           parts: [
-            { type: "tool-input-start", id: "l1", toolName: "getDueConcepts" },
-            { type: "tool-call", toolCallId: "l1", toolName: "getDueConcepts", input: {} },
+            { type: "tool-input-start", id: "l1", toolName: "getConceptHistory" },
+            {
+              type: "tool-call",
+              toolCallId: "l1",
+              toolName: "getConceptHistory",
+              input: lookupInput,
+            },
             {
               type: "tool-result",
               toolCallId: "l1",
-              toolName: "getDueConcepts",
-              input: {},
+              toolName: "getConceptHistory",
+              input: lookupInput,
               output: lookupOutput,
             },
             textDelta("Let's revisit ownership."),
@@ -508,13 +508,15 @@ describe("streamWaveTurn (integration)", () => {
           steps: [
             {
               text: "",
-              toolCalls: [{ toolCallId: "l1", toolName: "getDueConcepts", input: {} }],
-              toolResults: [{ toolCallId: "l1", toolName: "getDueConcepts", output: lookupOutput }],
+              toolCalls: [{ toolCallId: "l1", toolName: "getConceptHistory", input: lookupInput }],
+              toolResults: [
+                { toolCallId: "l1", toolName: "getConceptHistory", output: lookupOutput },
+              ],
               content: [
                 {
                   type: "tool-result",
                   toolCallId: "l1",
-                  toolName: "getDueConcepts",
+                  toolName: "getConceptHistory",
                   output: lookupOutput,
                 },
               ],
@@ -523,10 +525,10 @@ describe("streamWaveTurn (integration)", () => {
           ],
           // Drive the REAL lookup execute against the testcontainer DB.
           run: async (tools) => {
-            captured.lookup = await tools.getDueConcepts.execute!(
-              {},
-              { toolCallId: "l1", messages: [] },
-            );
+            captured.lookup = await tools.getConceptHistory.execute!(lookupInput, {
+              toolCallId: "l1",
+              messages: [],
+            });
           },
         },
         // Turn 2: plain teaching — exists to capture the messages the next
@@ -548,7 +550,7 @@ describe("streamWaveTurn (integration)", () => {
         first.writer,
       );
 
-      // The real execute projected the seeded concept (capped, name-keyed).
+      // The real execute resolved the seeded concept by name (no attempts yet).
       expect(captured.lookup).toEqual(lookupOutput);
       // Lookup tool chunks stay server-side (issue #59): only
       // presentQuestionnaire has a client consumer, so nothing else crosses.
@@ -563,7 +565,7 @@ describe("streamWaveTurn (integration)", () => {
         "tool_result",
         "assistant_response",
       ]);
-      expect(ctxRows[1]!.content).toContain("getDueConcepts");
+      expect(ctxRows[1]!.content).toContain("getConceptHistory");
       expect(ctxRows[2]!.content).toContain("ownership");
 
       // Turn 2: the dispatched context replays the lookup call + result.
@@ -580,7 +582,7 @@ describe("streamWaveTurn (integration)", () => {
         (m) =>
           m.role === "assistant" &&
           Array.isArray(m.content) &&
-          m.content.some((p) => p.type === "tool-call" && p.toolName === "getDueConcepts"),
+          m.content.some((p) => p.type === "tool-call" && p.toolName === "getConceptHistory"),
       );
       expect(replayedCall).toBeDefined();
       const replayedResult = turn2Messages.find((m) => m.role === "tool");
