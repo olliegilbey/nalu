@@ -63,8 +63,9 @@ import { scopingPasses } from "./scopingPasses";
  *   - `assistant_tool_call`: role='assistant', content =
  *     `{ "text": string, "toolCalls": [{ "toolCallId", "toolName", "input" }] }`
  *     — one row per assistant step that contained tool calls (text may be "").
- *     `input` is what the loop sent: `{}` for unparseable arguments (#163).
- *     Rows written before #163 hold the raw string there.
+ *     `input` is what the loop sent: `{}` for an invalid call whose input
+ *     is not an object, such as unparseable arguments (#163). Rows written
+ *     before #163 hold the raw string there.
  *   - `tool_result`: role='tool', content =
  *     `{ "results": [{ "toolCallId", "toolName", "output" | "errorText" }] }`
  *     — one row per step's results batch. `errorText` (a string) is a tool

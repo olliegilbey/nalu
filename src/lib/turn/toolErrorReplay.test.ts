@@ -9,8 +9,9 @@ import type { WaveSeedInputs } from "@/lib/types/context";
 import { executeToolTurnStream } from "./executeToolTurnStream";
 import { assembleLlmMessages, synthesiseRows } from "./contextAssembly";
 
-// Issue #147: a tool error must replay on the next Turn as the same bytes
-// the loop sent in-loop, or the provider's prompt cache misses from there.
+// Issues #147 and #163: a tool error and the call that caused it must
+// replay on the next Turn as the same bytes the loop sent in-loop, or the
+// provider's prompt cache misses from there.
 
 vi.mock("@/db/queries/contextMessages.writes", () => ({
   appendMessages: vi.fn(),

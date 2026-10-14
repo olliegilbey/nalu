@@ -29,7 +29,7 @@ One row is not raw model output: a failed tool-loop attempt's `failed_assistant_
 
 A `tool_result` row stores each tool call's answer as the loop sent it, in the order the loop sent them. A tool's return value replays as JSON. A tool error stores the SDK's error text as `errorText` and replays as `error-text`, the shape the loop sent (#147). Rows written before #147 hold `output: {toolError}` and keep their old JSON bytes.
 
-An `assistant_tool_call` row stores each call's input as the loop sent it. For unparseable arguments the SDK sends `{}`, so the row stores `{}`, not the raw string (#163). Rows written before #163 keep the string.
+An `assistant_tool_call` row stores each call's input as the loop sent it. When a call is invalid and its input is not an object, such as unparseable arguments, the SDK sends `{}`, so the row stores `{}` (#163). An object, an array, or null passes through. Rows written before #163 keep the raw string.
 
 ## The system prompt is recomputed, never persisted
 

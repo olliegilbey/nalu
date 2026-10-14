@@ -36,10 +36,12 @@ as JSON, byte-identical. The error text can quote tool input, so it
 never enters a log line.
 
 An `assistant_tool_call` row holds each call's `input` as the loop sent
-it. Unparseable arguments mark a call invalid, and the SDK sends its
-input as `{}`, not the raw string. The row stores `{}` too (#163, pinned
-by `toolErrorReplay.test.ts`). Parseable input that fails the schema
-keeps its parsed object. Rows written before #163 hold the raw string.
+it. When a call is invalid and its input is not an object, the SDK
+sends `{}`, so the row stores `{}` (#163, pinned by
+`toolErrorReplay.test.ts`). That covers unparseable arguments, which
+leave the raw string, and JSON that parses to a number or a string. An
+object, an array, or null passes through. Rows written before #163 hold
+the raw string.
 
 A failed tool-loop attempt persists as that prose, cut at
 `findJsonProseLeakIndex` and trimmed, with no tool trail (#140). That
