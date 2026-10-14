@@ -1,6 +1,7 @@
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { findBracesOutsideCode, opensJsonKey } from "@/lib/turn/proseBraces";
 import { escapeXmlText } from "@/lib/security/escapeXmlText";
+import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { ToolQuestionInput, WaveTurnCollector } from "./waveTurnTools";
 import type { SubmitTurnPayload } from "./buildLearnerInput";
 
@@ -96,12 +97,26 @@ function containsQuestionnaireSecret(prose: string): boolean {
   return RUBRIC_KEY.test(prose) || (ANSWER_KEY.test(prose) && CONCEPT_KEY.test(prose));
 }
 
-/** Top-level keys of the retired mega-schema envelope and the tool inputs. */
+/** The close turn's next-lesson blueprint, as the Wave close schema emits it. */
+type CloseBlueprint = WaveCloseTurn["nextUnitBlueprint"];
+
+/**
+ * Top-level keys of the retired mega-schema envelope, the tool inputs, and
+ * the close turn. A mid-turn can mistake itself for the close and dump the
+ * close's JSON or its bare blueprint as prose (#172). Only close keys that
+ * teaching JSON will not use are listed: generic ones (`topic`, `outline`,
+ * `summary`, `gradings`) stay out, since a teaching example may use them.
+ * `satisfies` pins each close key to its schema, so a rename breaks the build.
+ */
 const RESPONSE_ENVELOPE_KEYS = [
   "userMessage",
   "questionnaire",
   "questions",
   "comprehensionSignals",
+  "nextUnitBlueprint" satisfies keyof WaveCloseTurn,
+  "conceptUpdates" satisfies keyof WaveCloseTurn,
+  "openingText" satisfies keyof CloseBlueprint,
+  "plannedConcepts" satisfies keyof CloseBlueprint,
 ] as const;
 
 /** At most this many key-opening braces are parsed as candidates. */

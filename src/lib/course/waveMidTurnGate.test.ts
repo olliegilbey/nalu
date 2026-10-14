@@ -136,6 +136,23 @@ describe("validateWaveMidToolTurn", () => {
     );
   });
 
+  /** A next-lesson blueprint dumped as the whole mid-turn prose (#172). */
+  const BLUEPRINT_DUMP = JSON.stringify(
+    {
+      topic: "Interrupt-Driven Driver Development in Embedded Rust",
+      outline: ["Interrupt vectors", "Shared state", "Critical sections"],
+      openingText: "Welcome to the next step! …",
+      plannedConcepts: [{ name: "zero_cost_unsafe", tier: 4, role: "fresh" }],
+      concepts_for_next_wave: [],
+    },
+    null,
+    2,
+  );
+
+  it("rejects a next-lesson blueprint dumped as prose a turn early (#172)", () => {
+    expectJsonDumpRejected(BLUEPRINT_DUMP);
+  });
+
   it("rejects an envelope dump after 20+ decoy braces in code and LaTeX", () => {
     // Decoys do not open a quoted key, so they do not use up the candidate cap.
     const latex = String.raw`$\frac{a}{b}$ `.repeat(12);
@@ -167,6 +184,17 @@ describe("validateWaveMidToolTurn", () => {
     expectAccepted(
       'The schema:\n```json\n{"type":"object","properties":{"correct":{"type":"boolean"}}}\n```',
     );
+  });
+
+  it("accepts an unfenced teaching example keyed only by `topic` and `outline`", () => {
+    // Pins the narrow key choice: generic blueprint keys stay off the list.
+    expectAccepted(
+      'A course plan might look like {"topic": "Rust ownership", "outline": ["moves", "borrows"]}.',
+    );
+  });
+
+  it("accepts a fenced blueprint dump: the envelope check skips code", () => {
+    expectAccepted(`A lesson plan in JSON:\n\`\`\`json\n${BLUEPRINT_DUMP}\n\`\`\`\nSee the shape?`);
   });
 
   it("accepts set notation", () => {
