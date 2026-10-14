@@ -73,10 +73,11 @@ export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTu
   // "full" mode lists every due concept in <due_for_review>, and SM-2 does
   // not move mid-Wave, so the due lookup would only burn a loop Step (audit
   // F4). "hint" mode keeps it: its hint asks the model to call it. The flag
-  // is static per deploy, so the tool list stays cache-stable.
+  // is static per deploy, so the tool list stays cache-stable. Hint keeps
+  // the pre-F4 order, so its request bytes do not change.
   const lookupTools: Pick<WaveMidTurnAgentTools, "getConceptHistory" | "getDueConcepts"> =
     WAVE.dueReviewInjection === "hint"
-      ? { getConceptHistory, getDueConcepts }
+      ? { getDueConcepts, getConceptHistory }
       : { getConceptHistory };
   // Byte-identical to renderContext(seed).system: executeToolTurnStream drops
   // that system message, trusting the identity.

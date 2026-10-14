@@ -116,6 +116,22 @@ describe("renderTeachingSystem (due-review injection, default full)", () => {
     expect(renderTeachingSystem(dueInputs)).not.toContain("getDueConcepts");
     expect(renderTeachingSystem(baseInputs)).not.toContain("getDueConcepts");
   });
+
+  // Issue #144 kept the review cue on purpose: the list says what it is for.
+  it("leads the due list with the review cue", () => {
+    const out = renderTeachingSystem(dueInputs);
+    expect(out).toContain(
+      "<due_for_review>\nConcepts from earlier lessons are due for spaced-repetition review. Use this list when choosing review material to weave in or quiz on.\n- Markets (tier 1)",
+    );
+  });
+
+  // One lookup in full mode, so the header speaks of one.
+  it("introduces the single lookup in the singular", () => {
+    const out = renderTeachingSystem(baseInputs);
+    expect(out).toContain(
+      "You also have a read-only lookup into this learner's progress records:\n- getConceptHistory:",
+    );
+  });
 });
 
 describe("renderTeachingSystem (output contract)", () => {

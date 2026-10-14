@@ -57,6 +57,15 @@ describe("buildWaveMidTurnAgent (dueReviewInjection: hint)", () => {
     ]);
   });
 
+  // The tool list rides the request; the pre-F4 order keeps its bytes.
+  it("keeps the pre-F4 lookup order", () => {
+    const { agent } = buildWaveMidTurnAgent(CHAT_TURN);
+    expect(Object.keys(agent.tools).filter((name) => name.startsWith("get"))).toEqual([
+      "getDueConcepts",
+      "getConceptHistory",
+    ]);
+  });
+
   it("instructions are byte-identical to the rendered wave system prompt", () => {
     const { instructions } = buildWaveMidTurnAgent(CHAT_TURN);
     expect(instructions).toBe(renderTeachingSystem(SEED));
