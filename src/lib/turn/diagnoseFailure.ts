@@ -8,8 +8,8 @@ import type { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
  *   1. Non-JSON response — directive starts with "Your previous response did not parse as JSON".
  *   2. Missing required field — Zod error mentions a field path.
  *   3. Refine failure — the shape parsed; only `.refine` / `.superRefine` rules broke.
- *   4. Wrong stage payload — the raw text JSON-parses but its keys belong to another stage.
- *   5. Generic Zod failure — fall through with a short gloss.
+ *   4. Wrong stage payload — a top-level key is missing and the body's keys belong to a stage.
+ *   5. Shape failure — list the Zod issues; any other detail gets a short gloss.
  */
 
 // `ZodError.message` is the issue list as JSON. The detail is our own string,
@@ -77,27 +77,36 @@ export function diagnoseFailure(err: ValidationGateFailure, raw: string): string
     return "response is missing the required `userMessage` field — every turn must include it.";
   }
 
+  // Past the JSON check, the detail is always Zod's issue list. Anything else
+  // gets the short gloss.
+  const issues = zodIssueListSchema.safeParse(tryParseJson(detail));
+  if (!issues.success) {
+    return `gate '${err.reason}' tripped — see retry directive below.`;
+  }
+  // `<root>` matches retryDirective.ts for an issue with no path.
+  const listed = issues.data
+    .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "<root>"}: ${issue.message}`)
+    .join("; ");
+
   // (3) Refine failure. Zod emits `custom` issues only from refines, and a
   // type error aborts refines. An all-custom list means the body fit this
   // turn's shape, so name the rules it broke instead of guessing a stage.
-  const issues = zodIssueListSchema.safeParse(tryParseJson(detail));
-  if (issues.success && issues.data.every((issue) => issue.code === "custom")) {
-    // `<root>` matches retryDirective.ts for a refine with no path.
-    const broken = issues.data.map(
-      (issue) => `${issue.path.length > 0 ? issue.path.join(".") : "<root>"}: ${issue.message}`,
-    );
-    return `body has the right shape but broke a schema rule — ${broken.join("; ")}`;
+  if (issues.data.every((issue) => issue.code === "custom")) {
+    return `body has the right shape but broke a schema rule — ${listed}`;
   }
 
-  // (4) Wrong-stage detection.
-  const detected = detectStageFromBody(raw);
+  // (4) Wrong-stage detection. The stage guess reads only the body's keys, so
+  // a right-stage body always matches its own stage. Trust the guess only when
+  // a top-level key is missing or mistyped: `invalid_type` at a one-segment
+  // path (issue #130).
+  const topLevelKeyBroken = issues.data.some(
+    (issue) => issue.code === "invalid_type" && issue.path.length === 1,
+  );
+  const detected = topLevelKeyBroken ? detectStageFromBody(raw) : null;
   if (detected !== null) {
     return `body matches the ${detected} stage schema — model appears to have answered the wrong turn.`;
   }
 
-  // (5) Generic Zod fallback.
-  if (detail.match(/\[\s*\{[\s\S]*?"path":\s*\[/)) {
-    return "zod schema validation failed — see retry directive below.";
-  }
-  return `gate '${err.reason}' tripped — see retry directive below.`;
+  // (5) Shape failure on a body that may well be this turn's: list the issues.
+  return `body failed the schema — ${listed}`;
 }

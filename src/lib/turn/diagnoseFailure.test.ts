@@ -16,10 +16,41 @@ describe("diagnoseFailure (JSON contract)", () => {
   });
 
   it("notes a plausible cross-stage payload (framework keys in a baseline turn)", () => {
-    const err = fail("baselineScopeTiers");
+    // A baseline turn missing its top-level `questions` key: Zod reports
+    // `invalid_type` at a one-segment path.
+    const issues = [
+      {
+        expected: "object",
+        code: "invalid_type",
+        path: ["questions"],
+        message: "Invalid input: expected object, received undefined",
+      },
+    ];
+    const err = fail(JSON.stringify(issues, null, 2));
     const raw =
       '{"tiers":[{"number":1,"name":"a","description":"d","exampleConcepts":["x"]}],"estimatedStartingTier":1,"baselineScopeTiers":[1]}';
-    expect(diagnoseFailure(err, raw)).toMatch(/framework|stage/i);
+    expect(diagnoseFailure(err, raw)).toMatch(/framework stage .* wrong turn/);
+  });
+
+  // Issue #130: a right-stage body with a nested shape issue still read as
+  // "answered the wrong turn", because the stage guess matches the body's own
+  // keys. Only a missing top-level key can mean the model answered another turn.
+  it("lists nested shape issues on a right-stage body instead of claiming a wrong turn", () => {
+    const issues = [
+      {
+        expected: "string",
+        code: "invalid_type",
+        path: ["questions", "questions", 0, "prompt"],
+        message: "Invalid input: expected string, received undefined",
+      },
+    ];
+    const err = fail(JSON.stringify(issues, null, 2));
+    const raw =
+      '{"userMessage":"hi","questions":{"questions":[{"id":"b1","type":"free_text","freetextRubric":"r","conceptName":"c","tier":1,"correct":"A"}]}}';
+    const out = diagnoseFailure(err, raw);
+    expect(out).toContain("questions.questions.0.prompt");
+    expect(out).toContain("Invalid input: expected string, received undefined");
+    expect(out).not.toMatch(/wrong turn/);
   });
 
   // Issue #129: a well-formed baseline that broke only the scope superRefine
