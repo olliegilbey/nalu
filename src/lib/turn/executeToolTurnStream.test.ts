@@ -234,7 +234,10 @@ describe("executeToolTurnStream", () => {
     // tool-kind rows, which would leak into the recovered turn's rendered
     // context, and never as JSON, which primes the retry to answer in JSON.
     expect(batch?.[1]?.content).toBe("Let me set a quiz. No grading happened.");
-    expect(batch?.[2]?.content).toBe("call the grading tool");
+    // The gate's detail persists inside the Harness-owned tag (issue #123).
+    expect(batch?.[2]?.content).toBe(
+      "<harness_feedback>\ncall the grading tool\n</harness_feedback>",
+    );
   });
 
   it("replays a failed attempt as its prose cut at a line-start JSON leak (#140)", async () => {

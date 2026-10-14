@@ -1,4 +1,5 @@
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
+import { escapeXmlText } from "@/lib/security/escapeXmlText";
 
 /**
  * Build a human-readable retry directive for a failed turn.
@@ -10,6 +11,8 @@ import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
  * imperative prose and re-attaching the schema flips the framing back to
  * "fix your last reply", which the same models actually act on.
  * `executeTurn` calls this on every validation failure; call sites never do.
+ * `executeTurn` then wraps the result in `<harness_feedback>`
+ * (`renderHarnessFeedback`); this builder returns the bare body.
  *
  * Two failure modes are handled:
  *   1. JSON.parse failed — the model returned text that's not JSON at all.
@@ -50,10 +53,15 @@ function summariseZodIssues(detail: string): string | null {
   if (issues.length === 0) return null;
   // Compact one-per-line. Use `<root>` for top-level shape mismatches
   // where `path` is empty (Zod emits `[]` for the root object itself).
+  // Paths and messages can echo model output, so both are escaped: a raw
+  // `</harness_feedback>` would split the trusted block (#123).
   return issues
     .map((iss) => {
-      const path = Array.isArray(iss.path) && iss.path.length > 0 ? iss.path.join(".") : "<root>";
-      const msg = typeof iss.message === "string" ? iss.message : "(no message)";
+      const path =
+        Array.isArray(iss.path) && iss.path.length > 0
+          ? escapeXmlText(iss.path.join("."))
+          : "<root>";
+      const msg = typeof iss.message === "string" ? escapeXmlText(iss.message) : "(no message)";
       return `- field ${path}: ${msg}`;
     })
     .join("\n");
@@ -80,8 +88,8 @@ export function buildRetryDirective(err: ValidationGateFailure, schemaJson: stri
   const issuesBlock =
     summary !== null
       ? `The decoded JSON had these issues, listed by field path:\n${summary}`
-      : // Fallback: surface the raw detail if it wasn't parseable Zod JSON.
-        `The decoded JSON failed validation: ${err.detail}`;
+      : // Fallback: surface the raw detail, escaped, if it wasn't parseable Zod JSON.
+        `The decoded JSON failed validation: ${escapeXmlText(err.detail)}`;
   return [
     "Your previous response did not match the required JSON schema.",
     issuesBlock,
