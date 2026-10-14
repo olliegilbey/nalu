@@ -116,8 +116,9 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
  *   rendered context and break the cache-prefix invariant ("a recovered turn
  *   renders identically to a non-retry turn").
  * - The failed row holds the prose the learner saw: every Step's text, cut
- *   at `findJsonProseLeakIndex` and trimmed ("" when nothing safe showed).
- *   No tool trail (#140). The retry replays it as the model's previous
+ *   at `findJsonProseLeakIndex` and trimmed ("" when nothing safe showed),
+ *   or "" when a Step was cut off at the output cap (below). No tool trail
+ *   (#140). The retry replays it as the model's previous
  *   reply, so a JSON reply there would prime the model to answer in JSON
  *   again. Staged tool state dies with the attempt, so replaying its tool
  *   results would also claim work the retry must redo. The directive
@@ -138,8 +139,8 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
  *   tool trail never persists either. That matters for a cut-off INVALID
  *   call: the SDK answers it in-loop with an error that quotes the whole raw
  *   input, and replay must match those bytes, so persisting it would carry
- *   the runaway into every later Turn. The loop can still run more Steps on
- *   that error before this check sees it; the cap bounds each (#187). A
+ *   the runaway into every later Turn. The agent's `stopWhen` ends the loop
+ *   right after the cut-off Step, so no Step runs on that error (#187). A
  *   cut-off VALID call never runs (ai 6.0.260+); this check comes first, so
  *   it retries instead of throwing `UnpairedToolCallError`.
  */

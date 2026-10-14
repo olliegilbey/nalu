@@ -30,7 +30,12 @@ Rules:
   so the call only burned a loop Step (audit F4). The prompt names a tool
   only when the agent offers it. The flag is static per deploy, so the
   tool list stays cache-stable.
-- stopWhen is always stepCountIs(bounded). isLoopFinished() is banned.
+- stopWhen always includes stepCountIs(bounded). isLoopFinished() is
+  banned. `buildWaveMidTurnAgent` adds one early stop,
+  `lastStepHitOutputCap`: the loop ends right after a Step cut off on
+  `length` (#187). Without it the SDK runs another Step on the cut-off
+  call's error, which quotes the runaway input, though the attempt fails
+  anyway.
 - Prompt text lives in src/lib/prompts/ — agents import renderers. Agent
   instructions must stay byte-identical to `renderContext(seed,…).system`
   (tested) or the provider cache prefix breaks.

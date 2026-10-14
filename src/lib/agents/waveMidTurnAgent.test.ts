@@ -85,6 +85,37 @@ function twoStepStreamModel(): MockLanguageModelV3 {
   return model;
 }
 
+/**
+ * A runaway Step, then prose if asked. Step 1 is a `presentQuestionnaire`
+ * call cut off mid-JSON on `length`, so the SDK marks it invalid and
+ * answers it with a tool error at once. Step 2 exists only to be counted.
+ */
+function cutOffStreamModel(): MockLanguageModelV3 {
+  const cutOffStep: readonly LanguageModelV3StreamPart[] = [
+    {
+      type: "tool-call",
+      toolCallId: "call-1",
+      toolName: "presentQuestionnaire",
+      input: `{"questions":[{"prompt":"${"ownership ".repeat(500)}`,
+    },
+    { type: "finish", finishReason: { unified: "length", raw: "length" }, usage: STEP_USAGE },
+  ];
+  const proseStep: readonly LanguageModelV3StreamPart[] = [
+    { type: "text-start", id: "t1" },
+    { type: "text-delta", id: "t1", delta: "Recovered." },
+    { type: "text-end", id: "t1" },
+    { type: "finish", finishReason: { unified: "stop", raw: undefined }, usage: STEP_USAGE },
+  ];
+  const model: MockLanguageModelV3 = new MockLanguageModelV3({
+    doStream: async () => ({
+      stream: simulateReadableStream({
+        chunks: [...(model.doStreamCalls.length === 1 ? cutOffStep : proseStep)],
+      }),
+    }),
+  });
+  return model;
+}
+
 const SEED: WaveSeedInputs = {
   kind: "wave",
   courseTopic: "Rust",
@@ -184,6 +215,25 @@ describe("buildWaveMidTurnAgent", () => {
     // Guard: a number reached the wire, not an unset option.
     expect(sent[0]).toBeGreaterThan(0);
     expect(sent).toEqual([LLM.maxToolStepOutputTokens, LLM.maxToolStepOutputTokens]);
+  });
+
+  it("ends the loop right after a Step cut off at the output cap (#187)", async () => {
+    // The cut-off call's tool error counts as its answer, so the SDK would
+    // run Step 2 with that error, which quotes the runaway input. The
+    // attempt fails anyway (executeToolTurnStream), so Step 2 is waste.
+    const model = cutOffStreamModel();
+    const { agent } = buildWaveMidTurnAgent({ ...CHAT_TURN, model });
+
+    const result = await agent.stream({ messages: [{ role: "user", content: "hi" }] });
+    for await (const part of result.fullStream) {
+      void part; // drain, as executeToolTurnStream does
+    }
+
+    const steps = await result.steps;
+    // Guard the fixture: the call really was invalid and answered in-loop.
+    expect(steps[0]?.content.map((p) => p.type)).toEqual(["tool-call", "tool-error"]);
+    expect(steps.map((s) => s.finishReason)).toEqual(["length"]);
+    expect(model.doStreamCalls).toHaveLength(1);
   });
 
   // Issue #144: the answered ids reach the grading tool by closure, so a

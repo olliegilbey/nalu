@@ -22,11 +22,12 @@ export const JSON_PARSE_RETRY_DIRECTIVE =
  * Retry directive when a tool-loop Step hit the output cap
  * (`LLM.maxToolStepOutputTokens`, issue #181). The cut-off reply replays as
  * an empty message, so this text is all the model learns of it. Seen live
- * as a runaway quiz tool call, so it names the tool-call input as well as
- * the prose.
+ * as a runaway quiz tool call, so it names the tool-call input. It does not
+ * ask for shorter prose: no cut has come from prose, and that ask could
+ * thin out the retry's teaching.
  */
 export const OUTPUT_TRUNCATED_RETRY_DIRECTIVE =
-  "Your previous reply hit the output length limit and was cut off, so it was discarded. Write this turn again, more concisely: keep your reasoning focused, keep every tool call's input compact, and keep your message to the learner short.";
+  "Your previous reply hit the output length limit and was cut off, so it was discarded. Write this turn again, more concisely: keep your reasoning focused and keep every tool call's input compact.";
 
 /**
  * Wrap a retry directive in the Harness-owned `<harness_feedback>` tag.
