@@ -23,6 +23,18 @@ prose as `assistant_response`; failed attempts collapse to
 rows — so renderContext's retry filter keeps working. Learner-visible
 prose = ALL steps' streamed deltas, NOT `finalText` (last step only).
 
+A `tool_result` row holds `{results: [{toolCallId, toolName, …}]}`, in
+`step.content` order: the order the loop sent them, which follows
+arrival, not the call order. A
+success entry carries the tool's `output`; it replays as JSON. A tool
+error entry carries `errorText`: the text the SDK sent in-loop
+(`getErrorMessage`, wrapped by `src/lib/llm/toolErrorText.ts`). It
+replays as the same `error-text` output, so the next Turn's bytes match
+the loop's (#147, pinned by `toolErrorReplay.test.ts`). Rows written
+before #147 hold `output: {toolError: String(error)}`; they still replay
+as JSON, byte-identical. The error text can quote tool input, so it
+never enters a log line.
+
 A failed tool-loop attempt persists as that prose, cut at
 `findJsonProseLeakIndex` and trimmed, with no tool trail (#140). That
 guard and the Wave gate's envelope check share one scanner,

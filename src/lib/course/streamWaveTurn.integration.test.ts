@@ -199,7 +199,8 @@ function toolCallAttempt(
         text: "",
         toolCalls: [{ toolCallId: `${toolName}-1`, toolName, input }],
         toolResults: [{ toolCallId: `${toolName}-1`, toolName, output }],
-        content: [],
+        // The SDK lists results in `content`; toolStepRows reads them there.
+        content: [{ type: "tool-result", toolCallId: `${toolName}-1`, toolName, output }],
       },
       { text: prose, toolCalls: [], toolResults: [], content: [] },
     ],
@@ -380,7 +381,14 @@ describe("streamWaveTurn (integration)", () => {
                 output: { accepted: true, questionCount: 1 },
               },
             ],
-            content: [],
+            content: [
+              {
+                type: "tool-result",
+                toolCallId: "c1",
+                toolName: "presentQuestionnaire",
+                output: { accepted: true, questionCount: 1 },
+              },
+            ],
           },
           { text: "Quiz below!", toolCalls: [], toolResults: [], content: [] },
         ],
@@ -502,7 +510,14 @@ describe("streamWaveTurn (integration)", () => {
               text: "",
               toolCalls: [{ toolCallId: "l1", toolName: "getDueConcepts", input: {} }],
               toolResults: [{ toolCallId: "l1", toolName: "getDueConcepts", output: lookupOutput }],
-              content: [],
+              content: [
+                {
+                  type: "tool-result",
+                  toolCallId: "l1",
+                  toolName: "getDueConcepts",
+                  output: lookupOutput,
+                },
+              ],
             },
             { text: "Let's revisit ownership.", toolCalls: [], toolResults: [], content: [] },
           ],

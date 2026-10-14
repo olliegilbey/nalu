@@ -57,14 +57,16 @@ export type LlmRenderedMessage =
         readonly input: unknown;
       }[];
     }
-  | {
-      readonly role: "tool";
-      readonly results: readonly {
-        readonly toolCallId: string;
-        readonly toolName: string;
-        readonly output: unknown;
-      }[];
-    };
+  | { readonly role: "tool"; readonly results: readonly RenderedToolResult[] };
+
+/**
+ * One tool call's answer in a `tool_result` row. `output` is a tool's
+ * return value; `errorText` is the text the loop sent for a tool error (#147).
+ * Tool errors written before #147 carry `output: {toolError}` instead.
+ */
+export type RenderedToolResult =
+  | { readonly toolCallId: string; readonly toolName: string; readonly output: unknown }
+  | { readonly toolCallId: string; readonly toolName: string; readonly errorText: string };
 
 /** Output of {@link renderContext}: the system string + role-tagged message list. */
 export interface RenderedContext {
@@ -81,7 +83,20 @@ const toolCallContentSchema = z.object({
   ),
 });
 const toolResultContentSchema = z.object({
-  results: z.array(z.object({ toolCallId: z.string(), toolName: z.string(), output: z.unknown() })),
+  results: z.array(
+    z.union([
+      // Tool error (#147).
+      z.object({ toolCallId: z.string(), toolName: z.string(), errorText: z.string() }),
+      // Tool success, and a tool error written before #147 (`{toolError}`).
+      // `z.unknown()` alone admits a missing key; the refine makes `output`
+      // required, so an entry with neither key fails here, naming the row.
+      z.object({
+        toolCallId: z.string(),
+        toolName: z.string(),
+        output: z.unknown().refine((v) => v !== undefined),
+      }),
+    ]),
+  ),
 });
 
 /** Parse a tool row's JSON content against its guard; throw with row identity on corruption. */

@@ -64,8 +64,10 @@ import { scopingPasses } from "./scopingPasses";
  *     `{ "text": string, "toolCalls": [{ "toolCallId", "toolName", "input" }] }`
  *     — one row per assistant step that contained tool calls (text may be "").
  *   - `tool_result`: role='tool', content =
- *     `{ "results": [{ "toolCallId", "toolName", "output" }] }`
- *     — one row per step's results batch.
+ *     `{ "results": [{ "toolCallId", "toolName", "output" | "errorText" }] }`
+ *     — one row per step's results batch. `errorText` (a string) is a tool
+ *     error, as the loop sent it (#147). Rows written before #147 hold a
+ *     tool error as `"output": { "toolError": string }`.
  *
  * Two partial unique indexes enforce (turn_index, seq) ordering uniqueness
  * scoped to each parent type without conflicting across the XOR.

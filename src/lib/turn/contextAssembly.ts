@@ -55,8 +55,9 @@ export function assembleLlmMessages(
   // demands array `ToolContent` rather than a plain string. Structured
   // variants (tool-call / tool-result, from the persisted tool rows) map to
   // the SDK's typed content parts; part property names (`input`/`output`,
-  // `output: {type:'json', value}`) verified against installed ai@6.0.158
-  // (`ToolCallPart`/`ToolResultPart` in @ai-sdk/provider-utils).
+  // `output: {type:'json', value}` and `output: {type:'error-text', value}`)
+  // verified against installed ai@6.0.158 (`ToolCallPart`/`ToolResultPart`
+  // in @ai-sdk/provider-utils).
   return [
     { role: "system", content: rendered.system } satisfies LlmMessage,
     ...rendered.messages.map((m): LlmMessage => {
@@ -73,7 +74,12 @@ export function assembleLlmMessages(
             type: "tool-result" as const,
             toolCallId: r.toolCallId,
             toolName: r.toolName,
-            output: { type: "json" as const, value: r.output as never },
+            // A tool error replays as the `error-text` the loop sent (#147).
+            // A tool's return value, and a pre-#147 `{toolError}`, replay as JSON.
+            output:
+              "errorText" in r
+                ? { type: "error-text" as const, value: r.errorText }
+                : { type: "json" as const, value: r.output as never },
           })),
         };
       }
