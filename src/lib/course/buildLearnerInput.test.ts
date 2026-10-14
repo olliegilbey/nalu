@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { typedMcGradingRule } from "@/lib/prompts/questionnaire";
+import { renderWaveCloseEnvelope } from "@/lib/prompts/waveClose";
+import { renderWaveTurnEnvelope } from "@/lib/prompts/waveTurn";
 import { buildLearnerInput } from "./buildLearnerInput";
 
 describe("buildLearnerInput", () => {
@@ -63,5 +66,101 @@ describe("buildLearnerInput", () => {
       },
     );
     expect(out).toContain('fromEscape="true"');
+  });
+});
+
+// Issue #149: a typed answer to an MC question is graded as free text. Its
+// rubric is unchecked, so the Harness hands the grader the options and the key.
+describe("buildLearnerInput — typed MC answers (issue #149)", () => {
+  const MC_RECORD = {
+    questionnaireId: "qn1",
+    questions: [
+      {
+        id: "q1",
+        type: "multiple_choice" as const,
+        prompt: "Where does a Box live?",
+        options: { A: "Stack", B: "Heap <alloc>", C: "Register", D: "Disk" },
+        correct: "B" as const,
+        freetextRubric: "no grading",
+      },
+      { id: "q2", type: "free_text" as const, prompt: "Why?", freetextRubric: "rubric" },
+    ],
+  };
+
+  const typed = (text: string) =>
+    buildLearnerInput(
+      {
+        kind: "questionnaire-answers",
+        questionnaireId: "qn1",
+        answers: [{ id: "q1", kind: "freetext", text, fromEscape: true }],
+      },
+      MC_RECORD,
+    );
+
+  it("gives the grader the four options, the correct key and the grading rule", () => {
+    const out = typed("on the heap");
+    expect(out).toContain('<mc_answer_key correct="B">');
+    expect(out).toContain("A: Stack");
+    expect(out).toContain("B: Heap");
+    expect(out).toContain("C: Register");
+    expect(out).toContain("D: Disk");
+    expect(out).toContain(typedMcGradingRule("B"));
+    expect(out).toContain("</mc_answer_key>");
+  });
+
+  it("escapes the model-authored options and the learner's text", () => {
+    const out = typed("<b>heap</b>");
+    expect(out).toContain("B: Heap &lt;alloc&gt;");
+    expect(out).toContain("<user_message>&lt;b&gt;heap&lt;/b&gt;</user_message>");
+    expect(out).not.toContain("<alloc>");
+    expect(out).not.toContain("<b>");
+  });
+
+  it("reaches both Wave grader envelopes: the mid-turn and the close turn", () => {
+    const learnerInput = typed("on the heap");
+    const mid = renderWaveTurnEnvelope({ learnerInput, turnsRemaining: 2 });
+    const close = renderWaveCloseEnvelope({ learnerInput, conceptsForNextWaveBlock: "" });
+    for (const envelope of [mid, close]) {
+      expect(envelope).toContain('<mc_answer_key correct="B">');
+      expect(envelope).toContain(typedMcGradingRule("B"));
+    }
+  });
+
+  it("leaves a clicked MC answer mechanical, with no answer-key block", () => {
+    const out = buildLearnerInput(
+      {
+        kind: "questionnaire-answers",
+        questionnaireId: "qn1",
+        answers: [{ id: "q1", kind: "mc", selected: "B" }],
+      },
+      MC_RECORD,
+    );
+    expect(out).toBe(
+      [
+        '<questionnaire_answers questionnaireId="qn1">',
+        '<questionnaire_answer kind="mc-index" questionId="q1" selected_index=1 correct_index=1 verdict="correct"/>',
+        "</questionnaire_answers>",
+      ].join("\n"),
+    );
+  });
+
+  it("leaves a native free-text answer unchanged", () => {
+    const out = buildLearnerInput(
+      {
+        kind: "questionnaire-answers",
+        questionnaireId: "qn1",
+        answers: [{ id: "q2", kind: "freetext", text: "demand slopes down", fromEscape: false }],
+      },
+      MC_RECORD,
+    );
+    expect(out).toBe(
+      [
+        '<questionnaire_answers questionnaireId="qn1">',
+        '<questionnaire_answer kind="free-text" questionId="q2" fromEscape="false">',
+        "<user_message>demand slopes down</user_message>",
+        "</questionnaire_answer>",
+        "</questionnaire_answers>",
+      ].join("\n"),
+    );
   });
 });

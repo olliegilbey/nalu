@@ -16,7 +16,7 @@ The `{topic, outline, openingText, plannedConcepts}` payload the LLM emits as th
 
 ## Card answer
 
-What the User submits when the assessment-card UI replaces the chat input. A turn carries either a card answer or a chat message, never both. In a Wave, the Harness stores it as a `{role: "user", kind: "answers"}` entry in `waves.chat_log`. In `context_messages` it is a `user_message` row whose envelope carries `<questionnaire_answers>`. The server grades MC answers mechanically. The model grades free-text answers in the same turn: mid-Wave through the `recordComprehensionSignals` tool, and at the close turn in the `gradings` field. The schema CHECK still allows a `card_answer` row kind, but nothing writes it.
+What the User submits when the assessment-card UI replaces the chat input. A turn carries either a card answer or a chat message, never both. In a Wave, the Harness stores it as a `{role: "user", kind: "answers"}` entry in `waves.chat_log`. In `context_messages` it is a `user_message` row whose envelope carries `<questionnaire_answers>`. The server grades MC answers mechanically. The model grades free-text answers in the same turn: mid-Wave through the `recordComprehensionSignals` tool, and at the close turn in the `gradings` field. A typed answer to an MC question is free text; its envelope carries the options and the correct key, so the model grades it against the correct option. The schema CHECK still allows a `card_answer` row kind, but nothing writes it.
 
 ## Cumulative summary
 

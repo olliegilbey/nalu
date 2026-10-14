@@ -1,5 +1,5 @@
 import { BASELINE, PROGRESSION } from "@/lib/config/tuning";
-import type { McOptionKey } from "@/lib/prompts/questionnaire";
+import { typedMcGradingRule, type McOptionKey } from "@/lib/prompts/questionnaire";
 import type { z } from "zod";
 import type { baselineGradingSchema } from "@/lib/types/jsonb";
 
@@ -163,4 +163,36 @@ export function splitOne(question: StoredQuestion, answer: BaselineAnswer): Ques
     qid: question.id,
     item: toEvaluationItem(question, answer.text, viaEscape),
   };
+}
+
+/**
+ * The close turn's learner input: the answers, plus the mechanical MC
+ * gradings so the model does not re-grade clicks. A typed answer to an MC
+ * question also carries `mcAnswerKey` (issue #149): the options, the correct
+ * key and the rule to grade against it. The MC rubric is unchecked, so the
+ * grader cannot rely on it. The caller's envelope XML-escapes the whole JSON.
+ */
+export function buildScopingCloseLearnerInput(params: {
+  readonly questions: readonly StoredQuestion[];
+  readonly answers: readonly BaselineAnswer[];
+  readonly mechanicalGradings: readonly GradingEntry[];
+}): string {
+  const questionById = new Map(params.questions.map((q) => [q.id, q] as const));
+  const answers = params.answers.map((answer) => {
+    const question = questionById.get(answer.id);
+    // A click is graded mechanically; a native free-text answer has its rubric.
+    if (answer.kind === "mc" || question?.type !== "multiple_choice") return answer;
+    // The question type is server truth, so it gates the key, not `fromEscape`.
+    // Baseline MC questions always carry both (baseline.ts superRefine).
+    if (question.options === undefined || question.correct === undefined) {
+      throw new Error(`buildScopingCloseLearnerInput: MC q ${question.id} missing options or key`);
+    }
+    const mcAnswerKey = {
+      correct: question.correct,
+      options: question.options,
+      gradingRule: typedMcGradingRule(question.correct),
+    };
+    return { ...answer, mcAnswerKey };
+  });
+  return JSON.stringify({ answers, mechanicalGradings: params.mechanicalGradings });
 }

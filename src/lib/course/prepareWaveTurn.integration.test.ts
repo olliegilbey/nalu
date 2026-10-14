@@ -16,6 +16,7 @@ import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { prepareWaveTurn } from "./prepareWaveTurn";
 import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
+import { getWaveState } from "./getWaveState";
 import { namespaceQuestionId } from "./namespaceQuestionId";
 
 /**
@@ -361,6 +362,41 @@ describe("prepareWaveTurn (integration)", () => {
       ]);
       const ctxRows = await getMessagesForWave(waveId);
       expect(ctxRows.filter((r) => r.kind === "user_message")).toHaveLength(0);
+    });
+  });
+
+  // Issue #149: a typed MC answer's grader envelope carries the options and
+  // the correct key. That envelope reaches only the model. chat_log keeps the
+  // learner's raw text, so the reload wire (`getWaveState`) gains no key.
+  it("typed MC answer: the envelope carries the key; chat_log and the client wire do not", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      const { questionnaireMsgId } = await seedOpenMcQuestionnaire(courseId, waveId);
+
+      const prep = await prepareWaveTurn({
+        userId: USER_ID,
+        courseId,
+        waveNumber: 1,
+        payload: {
+          kind: "questionnaire-answers",
+          questionnaireId: questionnaireMsgId,
+          answers: [{ id: "q-mc", kind: "freetext", text: "it is b", fromEscape: true }],
+        },
+      });
+
+      // Mid and close turns both send this one envelope to the grader.
+      expect(prep.learnerInput).toContain('<mc_answer_key correct="B">');
+      expect(await learnerEntries(waveId)).toEqual([
+        {
+          role: "user",
+          kind: "answers",
+          questionnaireId: questionnaireMsgId,
+          responses: [{ questionId: "q-mc", freetext: "it is b" }],
+        },
+      ]);
+      const wire = JSON.stringify(await getWaveState({ userId: USER_ID, courseId, waveNumber: 1 }));
+      expect(wire).not.toContain("mc_answer_key");
+      expect(wire).not.toContain('"correct"');
     });
   });
 
