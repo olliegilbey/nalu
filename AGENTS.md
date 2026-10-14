@@ -42,7 +42,7 @@ The stack: Next.js 16.2 (App Router, Turbopack), TypeScript strict, tRPC v11, Zo
 - Immutable by default: `readonly`, `const`, spread. Reach for `let` or mutation when the immutable form would be contorted, such as singleton caches, rate-limiter clocks, and test-fixture slots. Make the need obvious from context.
 - Small files, one concern each, near 200 lines. Split when one grows uncomfortable. Tests sit beside their code and are exempt from the limit.
 - TDD the pure algorithms: SM-2, XP, and tier advancement. The red test comes first. Write tests that fail when the logic flips.
-- Names are explicit and boring: `calculateXPForAssessment`.
+- Names are explicit and boring: `calculateMcXp`, `setCourseStartingStateInTx`.
 - TSDoc on every export: one terse line for the next agent, saying what the symbol is in context. Self-evident shapes skip `@param` and `@returns`. `src/lib/types/jsonb.ts` shows the style for Zod-inferred types.
 - Comment more than usual. Comments explain why; during MVP they also explain what, so Ollie can review fast.
 - Pre-commit blocks on secrets, format, lint errors, types, unit tests, and dead code. Lint warnings are recall triggers for what agents forget: missing TSDoc, magic numbers in scoring and SR code, floating promises (`void` or `await` them), `any`, and `ai` or `drizzle-orm` imports outside their homes. Fix a warning when it fires. A legitimate exception keeps its warning, so review sees it.

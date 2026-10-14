@@ -14,8 +14,8 @@ Layout:
   `queries/CLAUDE.md` for how transactions thread `tx` through them.
 - `seed.ts` — idempotent dev-user seed.
 - `reset.ts` — `just db-reset` wipe: drops the `public` and `drizzle`
-  schemas at `DIRECT_URL`. Refuses unless `everyHostIsLoopback` passes
-  the hosts postgres-js parsed; `.env.local` may point at production.
+  schemas at `DIRECT_URL`. Refuses unless `everyHostIsLoopback` (`everyHostIsLoopback.ts`)
+  passes the hosts postgres-js parsed; `.env.local` may point at production.
 - `testing/` — testcontainers harness for integration tests.
 - `client.ts` — Drizzle singleton against `DATABASE_URL` (pooled).
 

@@ -2,8 +2,8 @@
 
 # Auto-load .env.local for every recipe so drizzle-kit / seed scripts /
 # any other recipe that reads process.env sees the same values the
-# Next.js app does. Required because drizzle.config.ts and seed.ts
-# read DIRECT_URL / DEV_USER_ID directly from process.env.
+# Next.js app does. Required because drizzle.config.ts reads DIRECT_URL
+# from process.env, and seed.ts validates the full env schema via getEnv().
 set dotenv-filename := ".env.local"
 
 # `.env.local` holds plain values loaded via `set dotenv-filename` above
