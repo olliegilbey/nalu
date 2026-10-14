@@ -11,8 +11,10 @@ const VERDICT_QUALITY_BANDS: Readonly<
 
 /**
  * Grading item — discriminated by ANSWER kind, not card kind. An MC question
- * answered via the free-text escape is graded as free-text because that is
- * what the model has to evaluate (spec §4.1 rationale).
+ * answered via the free-text escape is graded as free-text because the model
+ * evaluates the learner's text (spec §4.1 rationale). For a typed MC answer
+ * the envelope also carries the Harness's answer key: the options and the
+ * correct key (issue #149).
  */
 export const closeGradingItemSchema = z.discriminatedUnion("kind", [
   z.object({

@@ -108,6 +108,32 @@ describe("buildLearnerInput — typed MC answers (issue #149)", () => {
     expect(out).toContain("</mc_answer_key>");
   });
 
+  // The question type is server truth; `fromEscape` is client-reported. These
+  // two cases fail if the gate reads `fromEscape` instead.
+  it("keys an MC question answered in text even when fromEscape is false", () => {
+    const out = buildLearnerInput(
+      {
+        kind: "questionnaire-answers",
+        questionnaireId: "qn1",
+        answers: [{ id: "q1", kind: "freetext", text: "on the heap", fromEscape: false }],
+      },
+      MC_RECORD,
+    );
+    expect(out).toContain('<mc_answer_key correct="B">');
+  });
+
+  it("gives a free-text question no key, and does not throw, even when fromEscape is true", () => {
+    const out = buildLearnerInput(
+      {
+        kind: "questionnaire-answers",
+        questionnaireId: "qn1",
+        answers: [{ id: "q2", kind: "freetext", text: "demand slopes down", fromEscape: true }],
+      },
+      MC_RECORD,
+    );
+    expect(out).not.toContain("mc_answer_key");
+  });
+
   it("escapes the model-authored options and the learner's text", () => {
     const out = typed("<b>heap</b>");
     expect(out).toContain("B: Heap &lt;alloc&gt;");

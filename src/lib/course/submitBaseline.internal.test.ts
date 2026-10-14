@@ -48,6 +48,29 @@ describe("buildScopingCloseLearnerInput", () => {
     ]);
   });
 
+  // The question type is server truth; `fromEscape` is client-reported. These
+  // two cases fail if the gate reads `fromEscape` instead.
+  it("keys an MC question answered in text even when fromEscape is false", () => {
+    const learnerInput = buildScopingCloseLearnerInput({
+      questions: QUESTIONS,
+      answers: [{ id: "b1", kind: "freetext", text: "on the heap", fromEscape: false }],
+      mechanicalGradings: [],
+    });
+    expect(answersOf(learnerInput)[0]).toHaveProperty("mcAnswerKey.correct", "B");
+  });
+
+  it("gives a free-text question no key, and does not throw, even when fromEscape is true", () => {
+    const answers = [
+      { id: "b2", kind: "freetext", text: "one owner per value", fromEscape: true },
+    ] as const;
+    const learnerInput = buildScopingCloseLearnerInput({
+      questions: QUESTIONS,
+      answers,
+      mechanicalGradings: [],
+    });
+    expect(answersOf(learnerInput)).toEqual(answers);
+  });
+
   it("escapes the options and the learner's text in the close envelope", () => {
     const envelope = renderScopingCloseStage({
       learnerInput: buildScopingCloseLearnerInput({
