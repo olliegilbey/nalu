@@ -115,10 +115,12 @@ TTY and `NO_COLOR` is unset. Callers tag their turns with `label`
 `"wave-close"`) and may pass a `successSummary` projection
 for the ✓ line.
 
-`diagnoseFailure` guesses the stage from the body's keys, so a
-right-stage body always matches itself. It claims "wrong turn" only
-when Zod reports `invalid_type` at a one-segment path: a top-level key
-is missing or mistyped. Otherwise it lists the Zod issues (#130).
+`diagnoseFailure` takes the Turn's `label` as the stage it expects. Its
+key signatures are keyed by these labels. It claims "wrong turn" only
+when the body's keys fit another stage strictly better than the
+expected one. Otherwise it lists the Zod issues, so a right-stage body
+with a broken key never reads as a wrong turn (#130). A new label
+needs a signature there, or its failures always list.
 
 `LLM_DEBUG_GRADINGS=1` adds `[grading-debug]` stderr lines for issue #22:
 a parse-failure line here (Zod issue paths + the `gradings` fragment), and
