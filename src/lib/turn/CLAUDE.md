@@ -64,10 +64,13 @@ change hold a `{text, steps}` JSON envelope; they render unchanged.
   directive. `generateChat` validates via the SDK's `Output.object`
   (JSON-parse + `safeParse`, refines included) and throws
   `NoObjectGeneratedError` on failure. `executeTurn` converts that to
-  `ValidationGateFailure("missing_response", <detail>)`. The detail is
-  re-derived from the raw text, so its strings are identical to the
-  pre-SDK implementation: Zod's issue-list JSON, with field paths, issue
-  codes, and refine `.message` strings. `executeTurn` then builds the
+  `ValidationGateFailure("missing_response", <detail>)`. Since ai 6.0.267
+  a truncated reply counts too: the SDK parses non-empty text whose finish
+  reason is not `stop` or `tool-calls`, such as `length`. So a cut-off
+  reply spends a retry and writes retry rows. Before, it failed the Turn
+  with no rows. The `<detail>` is re-derived from the raw text, so its
+  strings are identical to the pre-SDK implementation: Zod's issue-list
+  JSON, with field paths, issue codes, and refine `.message` strings. `executeTurn` then builds the
   directive with `buildRetryDirective` (`retryDirective.ts`). It flattens
   the issues to `- field path: message` bullets and re-attaches the
   schema. Weak models act on that prose but misread raw issue JSON (seen
@@ -92,7 +95,9 @@ change hold a `{text, steps}` JSON envelope; they render unchanged.
   error, so a partial loop never reaches the gate or the DB. A tool call
   with no result and no tool-error throws `UnpairedToolCallError`
   (`toolStepRows.ts`) instead of persisting: Cerebras rejects an
-  unanswered call on replay.
+  unanswered call on replay. Since ai 6.0.260 a Step that finishes on
+  `length` runs none of its valid calls, so if the gate passes, the Turn
+  fails with `UnpairedToolCallError` and no retry (issue #181).
 
 Do not put per-stage logic here. If a turn-shape needs stage-specific
 behaviour, that belongs in the caller in `src/lib/course/`, not behind a flag here.

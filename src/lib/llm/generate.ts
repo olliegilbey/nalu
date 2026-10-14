@@ -60,6 +60,10 @@ export interface ChatResult<T = unknown> {
  * SDK's `NoObjectGeneratedError` (carrying `text` + `usage`); transport
  * errors propagate as before. `executeTurn` converts
  * `NoObjectGeneratedError` into its `ValidationGateFailure` retry flow.
+ * Since ai 6.0.267 that includes a truncated response: the SDK parses any
+ * non-empty text whose finish reason is not `stop` or `tool-calls`, such
+ * as `length`, so a cut-off reply spends a retry. Before, it threw
+ * `NoOutputGeneratedError` and the Turn failed with no rows.
  *
  * Docs: node_modules/ai/docs/03-ai-sdk-core/10-generating-structured-data.mdx
  *       (https://ai-sdk.dev/docs/ai-sdk-core/generating-structured-data)
