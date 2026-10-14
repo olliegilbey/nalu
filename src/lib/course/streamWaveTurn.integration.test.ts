@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
@@ -211,6 +213,88 @@ function toolCallAttempt(
       });
     },
   };
+}
+
+/** A rubric string that must never reach the client (#169). */
+const SECRET_RUBRIC = "Full marks only if the answer names move semantics.";
+
+/**
+ * A presentQuestionnaire input that fails the tool's superRefine: q1 has no
+ * conceptName. It still carries a plaintext answer key and rubric.
+ */
+const INVALID_QUIZ_INPUT = {
+  questions: [
+    {
+      id: "q1",
+      type: "multiple_choice",
+      prompt: "Which binding moves?",
+      options: { A: "let", B: "const", C: "both", D: "neither" },
+      correct: "B",
+      freetextRubric: SECRET_RUBRIC,
+    },
+  ],
+};
+
+/** Fails when any chunk written to the client carries a quiz secret. */
+function expectNoQuizSecrets(parts: readonly unknown[]): void {
+  // Unescape, so a secret nested in a string field such as errorText matches.
+  const wire = JSON.stringify(parts).replaceAll('\\"', '"');
+  expect(wire).not.toContain('"correct":"B"');
+  expect(wire).not.toContain(SECRET_RUBRIC);
+}
+
+/** Token usage every mocked Step reports. */
+const STEP_USAGE = {
+  inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+  outputTokens: { total: 1, text: 1, reasoning: undefined },
+} as const;
+
+/**
+ * Two-Step model: an invalid presentQuestionnaire call, then closing prose
+ * once the SDK feeds the validation error back. A function, not the mock's
+ * array form, so each Step picks its chunks by call count.
+ */
+function invalidQuizThenProseModel(): MockLanguageModelV3 {
+  const finish = (unified: "tool-calls" | "stop"): LanguageModelV3StreamPart => ({
+    type: "finish",
+    finishReason: { unified, raw: undefined },
+    usage: STEP_USAGE,
+  });
+  const toolCallStep: readonly LanguageModelV3StreamPart[] = [
+    {
+      type: "tool-call",
+      toolCallId: "c1",
+      toolName: "presentQuestionnaire",
+      input: JSON.stringify(INVALID_QUIZ_INPUT),
+    },
+    finish("tool-calls"),
+  ];
+  const proseStep: readonly LanguageModelV3StreamPart[] = [
+    { type: "text-start", id: "t1" },
+    { type: "text-delta", id: "t1", delta: "Let's keep going." },
+    { type: "text-end", id: "t1" },
+    finish("stop"),
+  ];
+  const model: MockLanguageModelV3 = new MockLanguageModelV3({
+    doStream: async () => ({
+      stream: simulateReadableStream({
+        chunks: [...(model.doStreamCalls.length === 1 ? toolCallStep : proseStep)],
+      }),
+    }),
+  });
+  return model;
+}
+
+/**
+ * Mock the agent's MODEL, not its stream: the REAL builder and the REAL SDK
+ * loop run, so tool-input parsing and its errors are production-shaped.
+ */
+function mockAgentModel(model: MockLanguageModelV3) {
+  // Capture the original before spying; see mockAgentAttempts.
+  const realBuild = waveMidTurnAgentModule.buildWaveMidTurnAgent;
+  return vi
+    .spyOn(waveMidTurnAgentModule, "buildWaveMidTurnAgent")
+    .mockImplementation((params) => realBuild({ ...params, model }));
 }
 
 /** Scripted attempt whose stream dies mid-flight, like a dropped connection. */
@@ -773,6 +857,89 @@ describe("streamWaveTurn (integration)", () => {
         "assistant_response",
       ]);
       expect(ctxRows[1]!.content).toBe("Here is your quiz:");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 3d. Invalid quiz input (#169). The REAL SDK rejects a presentQuestionnaire
+  //     call that fails the tool's superRefine. Its error message embeds the
+  //     whole input as JSON, answer key and rubric included. Neither error
+  //     chunk may carry that message to the client.
+  // -------------------------------------------------------------------------
+  it("invalid quiz input: tool error chunks carry no answer key or rubric", async () => {
+    await withTestDb(async () => {
+      const { courseId } = await seedCourseWithOpenWave();
+      mockAgentModel(invalidQuizThenProseModel());
+      const { parts, writer } = recordingWriter();
+
+      await streamWaveTurn(
+        {
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: { kind: "chat-text", text: "quiz me" },
+        },
+        writer,
+      );
+
+      // Guard the fixture: the SDK rejected the call, and both error chunks
+      // reached the client with a non-empty errorText.
+      const errorChunks = parts.filter(
+        (p) => p.type === "tool-input-error" || p.type === "tool-output-error",
+      );
+      expect(errorChunks.map((p) => p.type)).toEqual(["tool-input-error", "tool-output-error"]);
+      for (const chunk of errorChunks) {
+        expect(chunk["errorText"]).toEqual(expect.stringMatching(/\S/));
+      }
+      expectNoQuizSecrets(parts);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 3e. Quiz execute throws (#169). A thrown error's message can carry the
+  //     input. The tool-output-error chunk must not forward it.
+  // -------------------------------------------------------------------------
+  it("quiz tool-error: the tool-output-error chunk carries no answer key or rubric", async () => {
+    await withTestDb(async () => {
+      const { courseId } = await seedCourseWithOpenWave();
+      const quizInput = {
+        questions: [{ ...INVALID_QUIZ_INPUT.questions[0]!, conceptName: "ownership" }],
+      };
+      mockAgentAttempts({
+        // The error rides the stream only; persistence reads `steps`.
+        parts: [
+          {
+            type: "tool-call",
+            toolCallId: "c1",
+            toolName: "presentQuestionnaire",
+            input: quizInput,
+          },
+          {
+            type: "tool-error",
+            toolCallId: "c1",
+            toolName: "presentQuestionnaire",
+            input: quizInput,
+            error: new Error(`execute failed on ${JSON.stringify(quizInput)}`),
+          },
+          textDelta("Let's keep going."),
+        ],
+        steps: [{ text: "Let's keep going.", toolCalls: [], toolResults: [], content: [] }],
+      });
+      const { parts, writer } = recordingWriter();
+
+      await streamWaveTurn(
+        {
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: { kind: "chat-text", text: "quiz me" },
+        },
+        writer,
+      );
+
+      // Guard the fixture: the error chunk reached the client.
+      expect(parts.filter((p) => p.type === "tool-output-error")).toHaveLength(1);
+      expectNoQuizSecrets(parts);
     });
   });
 
