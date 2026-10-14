@@ -1,7 +1,5 @@
 import { pgTable, uuid, text, integer, timestamp, check } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { createInsertSchema, createSelectSchema } from "drizzle-zod";
-import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
 
 /**
  * `user_profiles` — one row per learner (spec §3.1).
@@ -32,18 +30,3 @@ export const userProfiles = pgTable(
     check("user_profiles_total_xp_nonneg", sql`${t.totalXp} >= 0`),
   ],
 ).enableRLS();
-
-/** Use in query-layer return signatures so callers never import drizzle internals. */
-export type UserProfile = InferSelectModel<typeof userProfiles>;
-
-/**
- * Shape for INSERT statements. `createdAt` and `totalXp` are optional (both
- * have defaults); `id` is required — caller supplies the auth.users UUID.
- */
-export type UserProfileInsert = InferInsertModel<typeof userProfiles>;
-
-/** Zod schema for validating insert payloads at trust boundaries (e.g. API input). */
-export const userProfilesInsertSchema = createInsertSchema(userProfiles);
-
-/** Zod schema for validating rows read from the DB. */
-export const userProfilesSelectSchema = createSelectSchema(userProfiles);

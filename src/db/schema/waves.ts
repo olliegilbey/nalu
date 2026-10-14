@@ -9,8 +9,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
-import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import type { InferSelectModel } from "drizzle-orm";
 import { courses } from "./courses";
 
 /**
@@ -76,23 +75,3 @@ export const waves = pgTable(
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type Wave = InferSelectModel<typeof waves>;
-
-/**
- * Shape for INSERT statements.
- *
- * Required (notNull, no default): `courseId`, `waveNumber`, `tier`,
- * `frameworkSnapshot`, `dueConceptsSnapshot`, `seedSource`, `turnBudget`.
- *
- * Optional with server defaults: `id` (defaultRandom), `status` (default
- * 'open'), `openedAt` (defaultNow).
- *
- * Nullable (no default): `customInstructionsSnapshot`, `summary`,
- * `blueprintEmitted`, `closedAt`.
- */
-export type WaveInsert = InferInsertModel<typeof waves>;
-
-/** Zod schema for validating insert payloads at trust boundaries (e.g. API input). */
-export const wavesInsertSchema = createInsertSchema(waves);
-
-/** Zod schema for validating rows read from the DB. */
-export const wavesSelectSchema = createSelectSchema(waves);

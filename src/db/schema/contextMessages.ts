@@ -9,8 +9,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
-import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import type { InferSelectModel } from "drizzle-orm";
 import { waves } from "./waves";
 import { scopingPasses } from "./scopingPasses";
 
@@ -135,23 +134,3 @@ export const contextMessages = pgTable(
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type ContextMessage = InferSelectModel<typeof contextMessages>;
-
-/**
- * Shape for INSERT statements.
- *
- * Required (notNull, no default): `turnIndex`, `seq`, `kind`, `role`, `content`.
- *
- * Optional with server defaults: `id` (defaultRandom), `createdAt` (defaultNow).
- *
- * Nullable (no default, polymorphic): `waveId`, `scopingPassId`. Exactly one
- * of `waveId` / `scopingPassId` must be set per row (CHECK enforces this);
- * both are column-nullable so the type marks them optional, but inserts
- * violating the XOR will be rejected by the DB.
- */
-export type ContextMessageInsert = InferInsertModel<typeof contextMessages>;
-
-/** Zod schema for validating insert payloads at trust boundaries (e.g. API input). */
-export const contextMessagesInsertSchema = createInsertSchema(contextMessages);
-
-/** Zod schema for validating rows read from the DB. */
-export const contextMessagesSelectSchema = createSelectSchema(contextMessages);
