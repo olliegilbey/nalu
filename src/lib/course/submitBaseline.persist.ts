@@ -50,9 +50,8 @@ export interface PersistScopingCloseResult {
  * NOT enforced here). The order within the transaction does not matter.
  *
  * Every `courses` read and write goes through the tx helpers in
- * `@/db/queries/courses.tx`, so they roll back atomically. The singleton
- * helpers (`setCourseStartingState`, `incrementCourseXp`) would deadlock
- * against the transaction's row lock.
+ * `@/db/queries/courses.tx`, so they roll back atomically. A write on the
+ * `db` singleton would deadlock against the transaction's row lock.
  *
  * `closeScopingPass` / `upsertConcept` / `openWave` / `appendMessage` are
  * passed `tx` so their writes participate in the same transaction — a
@@ -66,8 +65,8 @@ export async function persistScopingClose(
 ): Promise<PersistScopingCloseResult> {
   const { courseId, scopingPassId, parsed, merged } = params;
 
-  // App-layer invariants mirroring `setCourseStartingState` — surface a clear
-  // error at the boundary rather than as a Postgres CHECK violation.
+  // App-layer invariants — surface a clear error at the boundary rather than
+  // as a Postgres CHECK violation.
   if (!Number.isInteger(parsed.startingTier) || parsed.startingTier < 1) {
     throw new Error(
       `persistScopingClose: startingTier must be a positive integer (got ${parsed.startingTier})`,
@@ -185,9 +184,9 @@ export async function persistScopingClose(
 
     // 6. Flip course status, persist starting/current tier + the evolving
     //    summary seed (NOT the immutable summary — that lives only in the
-    //    baseline JSONB column). The tx helper, not `setCourseStartingState`:
-    //    that one uses the `db` singleton, which would deadlock against the
-    //    earlier baseline widen's row lock.
+    //    baseline JSONB column). The tx helper: a write on the `db`
+    //    singleton would deadlock against the earlier baseline widen's row
+    //    lock.
     //    The helper's WHERE status='scoping' makes it a no-op if the course
     //    is already active (idempotency at the row level).
     await setCourseStartingStateInTx(

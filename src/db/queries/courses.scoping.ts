@@ -10,8 +10,8 @@ import { CourseNotScopingError } from "./errors";
 import { getCourseById } from "./courses";
 
 /**
- * `courses` writes for the scoping phase: the per-stage JSONB columns, then
- * the flip to `active` when scoping closes.
+ * `courses` writes for the scoping phase: the per-stage JSONB columns. The
+ * flip to `active` when scoping closes lives in `courses.tx.ts`.
  *
  * All UPDATE statements use raw `db.execute(sql\`...\`)` (house style).
  */
@@ -30,21 +30,6 @@ export interface ScopingStatePatch {
   clarification?: unknown;
   framework?: unknown;
   baseline?: unknown;
-}
-
-/**
- * Data written when scoping completes and the first Wave is seeded.
- *
- * `startingTier` is frozen here and never mutated again; `currentTier` starts
- * equal but may diverge when Wave close advances it (`updateCourseTierInTx`).
- */
-export interface StartingStatePatch {
-  /** LLM-generated course summary from the baseline evaluation. */
-  initialSummary: string;
-  /** Tier determined by the baseline grading — immutable after this call. */
-  startingTier: number;
-  /** Initial current tier; equals `startingTier` at first Wave open. */
-  currentTier: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,65 +110,6 @@ export async function updateCourseScopingState(
   const course = await getCourseById(id);
   if (updated.length === 0) throw new CourseNotScopingError(id, course.status);
   return course;
-}
-
-/**
- * Transition a course from `scoping` to `active` and record the baseline
- * outputs that never change again (`starting_tier`, `summary`).
- *
- * Also sets `current_tier` — it starts equal to `starting_tier` but may
- * diverge as the learner moves through Waves.
- *
- * The `WHERE status = 'scoping'` scope makes the UPDATE a no-op if the course
- * is in any other status. `getCourseById` throws `NotFoundError` if the id is
- * unknown; the explicit status check surfaces the lifecycle mismatch clearly.
- *
- * Re-fetches after update to get Drizzle's camelCase-mapped row.
- */
-export async function setCourseStartingState(
-  id: string,
-  patch: StartingStatePatch,
-): Promise<Course> {
-  // App-layer activation invariant: at the moment scoping closes, current_tier
-  // must equal starting_tier (divergence only happens later, at Wave close,
-  // via updateCourseTierInTx).
-  // Tiers are 1-indexed (matches `framework.tiers` ordinals); the DB CHECKs
-  // `courses_current_tier_positive` / `courses_starting_tier_positive_or_null`
-  // would also catch a non-positive value, but a typed error here surfaces the
-  // bug at the call site rather than as a generic constraint violation.
-  if (!Number.isInteger(patch.startingTier) || patch.startingTier < 1) {
-    throw new Error(
-      `setCourseStartingState: startingTier must be a positive integer (got ${patch.startingTier})`,
-    );
-  }
-  if (patch.currentTier !== patch.startingTier) {
-    throw new Error(
-      `setCourseStartingState: currentTier (${patch.currentTier}) must equal startingTier (${patch.startingTier}) at activation`,
-    );
-  }
-  // Scope to 'scoping' status so a concurrent call or re-play can never
-  // accidentally overwrite starting_tier on an already-active course.
-  await db.execute(sql`
-    UPDATE courses
-    SET status = 'active',
-        summary = ${patch.initialSummary},
-        summary_updated_at = NOW(),
-        starting_tier = ${patch.startingTier},
-        current_tier = ${patch.currentTier},
-        updated_at = NOW()
-    WHERE id = ${id}
-      AND status = 'scoping'
-  `);
-  // getCourseById throws NotFoundError if the id is unknown.
-  // If the id existed but was not in 'scoping' status, the row is unchanged
-  // and we surface that as a domain-level error.
-  const row = await getCourseById(id);
-  if (row.status !== "active") {
-    throw new Error(
-      `setCourseStartingState: course ${id} was in status='${row.status}', expected 'scoping'`,
-    );
-  }
-  return row;
 }
 
 // ---------------------------------------------------------------------------

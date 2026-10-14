@@ -5,7 +5,7 @@ import type { QualityScore } from "@/lib/types/spaced-repetition";
 import { NotFoundError } from "./errors";
 
 /**
- * `concepts` writes: upsert, SM-2 review results, and counters.
+ * `concepts` writes: upsert and SM-2 review results.
  *
  * Dedup: `INSERT … ON CONFLICT (course_id, lower(name)) DO NOTHING`. On
  * conflict the existing `tier` is preserved — it is immutable post-first-sight
@@ -150,24 +150,4 @@ export async function updateConceptSm2(id: string, sm2: Sm2Update, tx?: DbOrTx):
   const [row] = await exec.select().from(concepts).where(eq(concepts.id, id));
   if (!row) throw new NotFoundError("concept", id);
   return row;
-}
-
-/**
- * Atomically increment `times_correct` by 1.
- *
- * SQL expression avoids lost-update races when concurrent assessments fire.
- * Returns void — callers don't need the updated row for counter bumps.
- */
-export async function incrementCorrect(id: string): Promise<void> {
-  await db.execute(sql`UPDATE concepts SET times_correct = times_correct + 1 WHERE id = ${id}`);
-}
-
-/**
- * Atomically increment `times_incorrect` by 1.
- *
- * SQL expression avoids lost-update races when concurrent assessments fire.
- * Returns void — callers don't need the updated row for counter bumps.
- */
-export async function incrementIncorrect(id: string): Promise<void> {
-  await db.execute(sql`UPDATE concepts SET times_incorrect = times_incorrect + 1 WHERE id = ${id}`);
 }

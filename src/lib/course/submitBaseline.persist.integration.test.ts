@@ -1,14 +1,13 @@
 import { describe, it, expect } from "vitest";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { waves } from "@/db/schema";
 import { WAVE } from "@/lib/config/tuning";
 import { persistScopingClose } from "./submitBaseline.persist";
 import { getCourseById } from "@/db/queries/courses";
 import { getConceptsByCourse } from "@/db/queries/concepts";
 import { openWave } from "@/db/queries/waves.writes";
-import {
-  getOpenWaveByCourse,
-  getLatestWaveNumberByCourse,
-  getWaveByCourseAndNumber,
-} from "@/db/queries/waves";
+import { getOpenWaveByCourse, getWaveByCourseAndNumber } from "@/db/queries/waves";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
 import { getOpenScopingPassByCourse } from "@/db/queries/scopingPasses";
 import { FRAMEWORK, PARSED, MERGED, seedScopingCourseAndRun } from "./submitBaseline.fixtures";
@@ -175,7 +174,8 @@ describe("persistScopingClose (integration)", () => {
       });
       // The pre-existing Wave 1 is the only Wave row for this course — no
       // partial second-Wave row leaked in either.
-      expect(await getLatestWaveNumberByCourse(courseId)).toBe(1);
+      const waveRows = await db.select().from(waves).where(eq(waves.courseId, courseId));
+      expect(waveRows).toHaveLength(1);
 
       // Concept upsert is now inside the transaction — must roll back too.
       // Pre-fix this would have left an "ownership" row behind.

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { assessments } from "@/db/schema";
 import { getAssessmentsByConcept, getAssessmentByWaveAndQuestionId } from "./assessments";
-import { recordAssessment } from "./assessments.record";
+import { insertOpenAssessments } from "./assessments.open";
 import { WAVE, CONCEPT, seedFixtures } from "./assessments.fixtures";
 
 describe("assessments queries", () => {
@@ -98,17 +98,12 @@ describe("assessments queries", () => {
     await withTestDb(async (db) => {
       await seedFixtures(db);
 
-      await recordAssessment({
+      await insertOpenAssessments({
         waveId: WAVE,
-        conceptId: CONCEPT,
         turnIndex: 1,
-        question: "q?",
-        questionId: "q-lookup",
-        userAnswer: "B",
-        isCorrect: true,
-        qualityScore: 4,
-        assessmentKind: "card_mc",
-        xpAwarded: 20,
+        rows: [
+          { conceptId: CONCEPT, questionId: "q-lookup", question: "q?", assessmentKind: "card_mc" },
+        ],
       });
 
       const row = await getAssessmentByWaveAndQuestionId(WAVE, "q-lookup");

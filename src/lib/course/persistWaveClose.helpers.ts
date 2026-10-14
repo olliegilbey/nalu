@@ -174,7 +174,7 @@ export async function applyCloseGradings(
 /**
  * Run `checkTierAdvancement` against current-tier concepts with a known
  * lastQualityScore. On advance, bump `courses.current_tier` inside the same
- * tx via `updateCourseTierInTx` (the singleton `updateCourseTier` would
+ * tx via `updateCourseTierInTx` (a write on the `db` singleton would
  * deadlock against this tx's row lock).
  *
  * Returns the new tier number on advance; null otherwise.

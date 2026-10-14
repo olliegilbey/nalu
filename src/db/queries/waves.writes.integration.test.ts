@@ -4,7 +4,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles, courses } from "@/db/schema";
 import { NotFoundError } from "./errors";
 import { openWave, closeWave } from "./waves.writes";
-import { getOpenWaveByCourse, listClosedWavesByCourse, getLatestWaveNumberByCourse } from "./waves";
+import { getOpenWaveByCourse, getWaveByCourseAndNumber } from "./waves";
 
 /** Fixed UUIDs — avoids runtime UUID generation. */
 const USER_ID = "44444444-4444-4444-4444-444444444444";
@@ -124,9 +124,9 @@ describe("waves writes", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 3: closeWave + listClosedWavesByCourse + getLatestWaveNumberByCourse
+  // Test 3: closeWave, then open the next Wave
   // -------------------------------------------------------------------------
-  it("closeWave permits opening the next wave; list and max wave number reflect state", async () => {
+  it("closeWave permits opening the next wave; reads reflect the new state", async () => {
     await seedAndRun(async () => {
       // Open Wave 1.
       const wave1 = await openWave({
@@ -171,14 +171,9 @@ describe("waves writes", () => {
         turnBudget: WAVE.turnCount,
       });
 
-      // listClosedWavesByCourse must return exactly Wave 1.
-      const closedWaves = await listClosedWavesByCourse(COURSE_ID);
-      expect(closedWaves).toHaveLength(1);
-      expect(closedWaves[0]?.waveNumber).toBe(1);
-
-      // getLatestWaveNumberByCourse must return 2 (open Wave 2 is latest).
-      const latestNum = await getLatestWaveNumberByCourse(COURSE_ID);
-      expect(latestNum).toBe(2);
+      // Wave 1 stays closed; Wave 2, the latest, is the open one.
+      expect((await getWaveByCourseAndNumber(COURSE_ID, 1))?.status).toBe("closed");
+      expect((await getOpenWaveByCourse(COURSE_ID))?.waveNumber).toBe(2);
     });
   });
 

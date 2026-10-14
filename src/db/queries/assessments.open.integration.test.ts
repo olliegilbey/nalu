@@ -1,18 +1,18 @@
 import { describe, it, expect } from "vitest";
+import { eq } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
+import { assessments } from "@/db/schema";
 import { namespaceQuestionId } from "@/lib/course/namespaceQuestionId";
-import { getAssessmentsByWave, getAssessmentByWaveAndQuestionId } from "./assessments";
-import { recordAssessment } from "./assessments.record";
+import { NotFoundError } from "./errors";
+import { getAssessmentByWaveAndQuestionId } from "./assessments";
 import { insertOpenAssessments } from "./assessments.open";
 import { WAVE, CONCEPT, CONCEPT_B, seedFixtures } from "./assessments.fixtures";
 
 describe("assessments open", () => {
   // -------------------------------------------------------------------------
   // Test 8: insertOpenAssessments — batch path under happy + guard conditions
-  // Direct coverage for the mid-turn batch insert helper. recordAssessment
-  // tests above exercise the equivalent guards on the single-row path, but
-  // the batched code is structurally different (one MAX/scope-check per batch
-  // rather than per row), so it gets its own scenarios.
+  // Direct coverage for the mid-turn batch insert helper: one MAX/scope-check
+  // per batch rather than per row.
   // -------------------------------------------------------------------------
   it("insertOpenAssessments rejects empty batches", async () => {
     await withTestDb(async (db) => {
@@ -53,7 +53,7 @@ describe("assessments open", () => {
       ).rejects.toThrow(/different courses/);
 
       // Verify no rows leaked in.
-      const rows = await getAssessmentsByWave(WAVE);
+      const rows = await db.select().from(assessments).where(eq(assessments.waveId, WAVE));
       expect(rows).toHaveLength(0);
     });
   });
@@ -62,19 +62,13 @@ describe("assessments open", () => {
     await withTestDb(async (db) => {
       await seedFixtures(db);
 
-      // Seed a turn-5 assessment via the single-row path so the wave's
-      // current MAX is 5.
-      await recordAssessment({
+      // Seed a turn-5 assessment so the wave's current MAX is 5.
+      await insertOpenAssessments({
         waveId: WAVE,
-        conceptId: CONCEPT,
         turnIndex: 5,
-        question: "seed",
-        questionId: "q-seed",
-        userAnswer: "A",
-        isCorrect: true,
-        qualityScore: 4,
-        assessmentKind: "card_mc",
-        xpAwarded: 20,
+        rows: [
+          { conceptId: CONCEPT, questionId: "q-seed", question: "seed", assessmentKind: "card_mc" },
+        ],
       });
 
       await expect(
@@ -91,6 +85,57 @@ describe("assessments open", () => {
           ],
         }),
       ).rejects.toThrow(/turnIndex 3 < current max 5/);
+    });
+  });
+
+  it("insertOpenAssessments accepts an equal and a strictly greater turnIndex", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      // Turn 3, then 5, then 5 again — all valid. Equal is allowed: a second
+      // batch on the same turn. Each row needs a distinct question_id because
+      // the partial unique index `assessments_wave_question_unique` forbids
+      // dupes within a wave.
+      for (const [turnIndex, questionId] of [
+        [3, "q-asc-1"],
+        [5, "q-asc-2"],
+        [5, "q-asc-3"],
+      ] as const) {
+        await insertOpenAssessments({
+          waveId: WAVE,
+          turnIndex,
+          rows: [{ conceptId: CONCEPT, questionId, question: "q?", assessmentKind: "card_mc" }],
+        });
+      }
+
+      const rows = await db.select().from(assessments).where(eq(assessments.waveId, WAVE));
+      expect(rows).toHaveLength(3);
+    });
+  });
+
+  it("insertOpenAssessments throws NotFoundError for an unknown wave or concept", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+      const unknownId = "00000000-0000-0000-0000-000000000000";
+      const row = { questionId: "q-missing", question: "q?", assessmentKind: "card_mc" } as const;
+
+      // Unknown wave: the wave lookup misses before any concept is checked.
+      await expect(
+        insertOpenAssessments({
+          waveId: unknownId,
+          turnIndex: 0,
+          rows: [{ ...row, conceptId: CONCEPT }],
+        }),
+      ).rejects.toBeInstanceOf(NotFoundError);
+
+      // Known wave, unknown concept.
+      await expect(
+        insertOpenAssessments({
+          waveId: WAVE,
+          turnIndex: 0,
+          rows: [{ ...row, conceptId: unknownId }],
+        }),
+      ).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 
@@ -163,11 +208,56 @@ describe("assessments open", () => {
         ],
       });
 
-      const rows = await getAssessmentsByWave(WAVE);
+      const rows = await db.select().from(assessments).where(eq(assessments.waveId, WAVE));
       expect(rows).toHaveLength(2);
       // Each namespaced id resolves to exactly its own row.
       expect((await getAssessmentByWaveAndQuestionId(WAVE, idA))!.question).toBe("first q1");
       expect((await getAssessmentByWaveAndQuestionId(WAVE, idB))!.question).toBe("second q1");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 10: bug_004 — the partial unique index `assessments_wave_question_unique`
+  // keys on `(wave_id, question_id)` only (NOT turn_index). Two rows in the same
+  // wave sharing a `question_id` collide regardless of turn. This pins the
+  // collision (raw reuse); the test above pins the fix (namespacing makes ids
+  // distinct).
+  // -------------------------------------------------------------------------
+  it("rejects two rows in the same wave that share a raw question_id (cross-turn collision)", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+
+      // Turn 3: a questionnaire emits `q1`.
+      await insertOpenAssessments({
+        waveId: WAVE,
+        turnIndex: 3,
+        rows: [
+          {
+            conceptId: CONCEPT,
+            questionId: "q1",
+            question: "first q1",
+            assessmentKind: "card_freetext",
+          },
+        ],
+      });
+
+      // Turn 6: a DIFFERENT questionnaire restarts numbering and emits `q1`
+      // again. Same `(wave_id, 'q1')` → the partial unique index rejects it.
+      // This is the bug_004 failure mode — an uncaught 23505 that 500s the turn.
+      await expect(
+        insertOpenAssessments({
+          waveId: WAVE,
+          turnIndex: 6,
+          rows: [
+            {
+              conceptId: CONCEPT,
+              questionId: "q1",
+              question: "second q1",
+              assessmentKind: "card_freetext",
+            },
+          ],
+        }),
+      ).rejects.toThrow();
     });
   });
 });

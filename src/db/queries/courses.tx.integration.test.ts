@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
+import { eq } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
-import { userProfiles } from "@/db/schema";
+import { courses, userProfiles } from "@/db/schema";
 import type { BaselineClosedJsonb } from "@/lib/types/jsonb";
 import { createCourse, getCourseById } from "./courses";
 import { updateCourseScopingState } from "./courses.scoping";
-import { archiveCourse } from "./courses.progress";
 import {
   getCourseBaselineAndFrameworkInTx,
   setCourseBaselineInTx,
@@ -82,9 +82,27 @@ describe("courses close-transaction queries", () => {
     });
   });
 
+  it("setCourseStartingStateInTx sets status='active', the summary, and both tiers", async () => {
+    await seedCourseAndRun(async (db, courseId) => {
+      // No transaction open: the helper runs on the `db` handle as-is.
+      await setCourseStartingStateInTx(
+        courseId,
+        { summary: "Covers B-tree and hash indexes", startingTier: 2 },
+        db,
+      );
+
+      const after = await getCourseById(courseId);
+      expect(after.status).toBe("active");
+      expect(after.startingTier).toBe(2);
+      expect(after.currentTier).toBe(2);
+      expect(after.summary).toBe("Covers B-tree and hash indexes");
+    });
+  });
+
   it("setCourseStartingStateInTx leaves a course that has left scoping untouched", async () => {
     await seedCourseAndRun(async (db, courseId) => {
-      await archiveCourse(courseId);
+      // No query helper archives a course; set the status directly.
+      await db.update(courses).set({ status: "archived" }).where(eq(courses.id, courseId));
       await db.transaction(async (tx) => {
         await setCourseStartingStateInTx(courseId, { summary: "late", startingTier: 2 }, tx);
       });

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles } from "@/db/schema";
 import { NotFoundError } from "./errors";
-import { createCourse, getCourseById, listCoursesByUser } from "./courses";
+import { createCourse, getCourseById } from "./courses";
 
 /** Fixed UUID for the test user — avoids generating UUIDs at runtime. */
 const USER = "22222222-2222-2222-2222-222222222222";
@@ -37,25 +37,6 @@ describe("courses queries", () => {
       expect(fetched.id).toBe(course.id);
       expect(fetched.topic).toBe("Rust ownership");
       expect(fetched.status).toBe("scoping");
-    });
-  });
-
-  // -----------------------------------------------------------------------
-  // Test 2: listCoursesByUser returns most-recent first
-  // -----------------------------------------------------------------------
-  it("listCoursesByUser returns courses ordered most-recent first", async () => {
-    await seedUserAndRun(async () => {
-      const a = await createCourse({ userId: USER, topic: "Topic A" });
-      // Small pause to ensure createdAt differs (Postgres timestamp resolution
-      // is microseconds; a tight loop can produce equal timestamps).
-      await new Promise((r) => setTimeout(r, 5));
-      const b = await createCourse({ userId: USER, topic: "Topic B" });
-
-      const list = await listCoursesByUser(USER);
-      expect(list).toHaveLength(2);
-      // Most recent (B) must come first.
-      expect(list[0]?.id).toBe(b.id);
-      expect(list[1]?.id).toBe(a.id);
     });
   });
 

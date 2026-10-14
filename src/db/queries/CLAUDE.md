@@ -11,10 +11,10 @@ Transactions: the persist files in `src/lib/course/` open `db.transaction`
 and pass `tx` to every helper they call, so the writes commit or roll back
 together. Most helpers take an optional trailing `tx`. A helper whose
 name ends in `InTx` requires it. `courses.tx.ts` holds the `courses` reads
-and writes the close transactions run; each re-fetches nothing. Their
-singleton twins (`setCourseStartingState`, `updateCourseTier`,
-`incrementCourseXp`) run on `db`: inside a transaction, their UPDATE would
-deadlock on the transaction's row lock.
+and writes the close transactions run; each re-fetches nothing. A
+`courses` UPDATE on the `db` singleton inside a close transaction would
+deadlock on the transaction's row lock. A test that needs one of these
+writes passes `db` as the handle; do not add a `db`-bound twin.
 
 Modules: one base file per table (`userProfiles.ts`, `courses.ts`,
 `scopingPasses.ts`, `waves.ts`, `contextMessages.ts`, `concepts.ts`,
@@ -22,24 +22,26 @@ Modules: one base file per table (`userProfiles.ts`, `courses.ts`,
 siblings, one concern each:
 
 - `courses.ts`: row guard, create, reads. `courses.scoping.ts`: scoping-phase
-  writes. `courses.progress.ts`: summary, tier, XP, and archive writes.
-  `courses.tx.ts`: the close transactions' reads and writes.
+  writes. `courses.tx.ts`: the close transactions' reads and writes:
+  activation, tier, and XP.
 - `waves.ts`: row guard and reads. `waves.writes.ts`: open, close, and the
   `chat_log` append.
-- `concepts.ts`: reads. `concepts.writes.ts`: upsert, SM-2 results, and
-  counters.
+- `concepts.ts`: reads. `concepts.writes.ts`: upsert and SM-2 results.
 - `contextMessages.ts`: shared types and reads. `contextMessages.writes.ts`:
   single and batch append.
-- `assessments.ts`: reads. `assessments.record.ts`: one probe, graded at
-  insert. `assessments.open.ts`: a questionnaire's placeholder rows.
-  `assessments.grade.ts`: grades an existing row. `assessments.fixtures.ts`
-  seeds the three integration suites; tests import it, production never does.
+- `assessments.ts`: reads. `assessments.open.ts`: a questionnaire's
+  placeholder rows. `assessments.grade.ts`: grades an existing row.
+  `assessments.fixtures.ts` seeds the two integration suites; tests import
+  it, production never does.
 
 Integration tests split the same way and sit beside their module
 (`courses.scoping.integration.test.ts`). The barrel `index.ts` re-exports
-every module. Add each new sibling there: knip sees test-only
-exports as used only through the barrel. Shared `NotFoundError` lives in
-`errors.ts`.
+every module; add each new sibling there. Knip follows the barrel's
+`export *` and flags an export that nothing imports. Keep query modules
+out of knip's `entry` list: knip counts every export of an entry as used.
+Knip also counts a test import as use; `bun x knip --production` skips
+tests and lists the exports only tests call. Shared `NotFoundError` lives
+in `errors.ts`.
 
 Conventions:
 

@@ -4,7 +4,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
-import { setCourseStartingState } from "@/db/queries/courses.scoping";
+import { setCourseStartingStateInTx } from "@/db/queries/courses.tx";
 import { appendWaveChatLog, openWave } from "@/db/queries/waves.writes";
 import { getWaveById } from "@/db/queries/waves";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
@@ -52,11 +52,7 @@ async function seedCourseWithOpenWave(): Promise<{
 }> {
   await db.insert(userProfiles).values({ id: USER_ID, displayName: "U" });
   const course = await createCourse({ userId: USER_ID, topic: "Rust" });
-  await setCourseStartingState(course.id, {
-    initialSummary: "seed",
-    startingTier: 1,
-    currentTier: 1,
-  });
+  await setCourseStartingStateInTx(course.id, { summary: "seed", startingTier: 1 }, db);
   const wave = await openWave({
     courseId: course.id,
     waveNumber: 1,

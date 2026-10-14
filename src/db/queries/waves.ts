@@ -1,4 +1,4 @@
-import { asc, eq, and, max } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { waves, type Wave } from "@/db/schema";
 import {
@@ -100,36 +100,6 @@ export async function getWaveByCourseAndNumber(
     .from(waves)
     .where(and(eq(waves.courseId, courseId), eq(waves.waveNumber, waveNumber)));
   return row ? waveRowGuard(row) : null;
-}
-
-/**
- * List all closed Waves for a course, ordered by `waveNumber` ascending.
- *
- * Ordered asc so consumers can reconstruct the Wave sequence in presentation
- * order without re-sorting.
- */
-export async function listClosedWavesByCourse(courseId: string): Promise<readonly Wave[]> {
-  const rows = await db
-    .select()
-    .from(waves)
-    .where(and(eq(waves.courseId, courseId), eq(waves.status, "closed")))
-    .orderBy(asc(waves.waveNumber));
-  return rows.map(waveRowGuard);
-}
-
-/**
- * Return the highest `waveNumber` for any Wave on a course.
- *
- * Returns `0` if no Waves exist yet — callers use this to determine the
- * ordinal of the next Wave to open (`getLatestWaveNumberByCourse(id) + 1`).
- */
-export async function getLatestWaveNumberByCourse(courseId: string): Promise<number> {
-  const [row] = await db
-    .select({ maxWaveNumber: max(waves.waveNumber) })
-    .from(waves)
-    .where(eq(waves.courseId, courseId));
-  // `max()` returns null when no rows match; treat as 0.
-  return row?.maxWaveNumber ?? 0;
 }
 
 /**
