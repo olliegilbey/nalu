@@ -10,7 +10,7 @@ import { NoObjectGeneratedError } from "ai";
 import { generateChat } from "@/lib/llm/generate";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
-import { JSON_PARSE_RETRY_DIRECTIVE } from "@/lib/prompts/turn";
+import { JSON_PARSE_RETRY_DIRECTIVE, renderHarnessFeedback } from "@/lib/prompts/turn";
 import { SCOPING } from "@/lib/config/tuning";
 import {
   formatParseFailureDebugLine,
@@ -226,8 +226,9 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       // The text the model reads on its next attempt. Built once so the live
       // banner prints the same bytes the directive row persists. It flattens
       // the Zod issues to prose bullets and re-attaches the schema; weak
-      // models misread the raw issue JSON (`retryDirective.ts`).
-      const directive = buildRetryDirective(gate, schemaJson());
+      // models misread the raw issue JSON (`retryDirective.ts`). The
+      // `<harness_feedback>` tag marks it as Harness text to follow (#123).
+      const directive = renderHarnessFeedback(buildRetryDirective(gate, schemaJson()));
       // Issue #22 Zod-drop visibility (gated by LLM_DEBUG_GRADINGS — no-op when
       // off). On a validation failure the raw candidate is persisted as a
       // `failed_assistant_response` row but never reaches stderr outside

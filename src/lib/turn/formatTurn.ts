@@ -227,10 +227,12 @@ export function formatParseFailure(
  * Indent + dim-highlight the schema portion of a retry directive.
  *
  * The directive format is:
+ *   <harness_feedback>
  *   <imperative prose>
  *   <response_schema>
  *   …JSON…
  *   </response_schema>
+ *   </harness_feedback>
  *
  * We dim everything from the opening tag through the closing tag so the
  * actionable prose stays bright while the bulky schema body recedes.

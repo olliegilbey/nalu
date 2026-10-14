@@ -10,6 +10,8 @@ import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
  * imperative prose and re-attaching the schema flips the framing back to
  * "fix your last reply", which the same models actually act on.
  * `executeTurn` calls this on every validation failure; call sites never do.
+ * `executeTurn` then wraps the result in `<harness_feedback>`
+ * (`renderHarnessFeedback`); this builder returns the bare body.
  *
  * Two failure modes are handled:
  *   1. JSON.parse failed — the model returned text that's not JSON at all.

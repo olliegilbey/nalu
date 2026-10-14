@@ -14,7 +14,8 @@ import { executeWaveClose } from "./executeWaveClose";
  * The directive persists as a `harness_retry_directive` row, and the model
  * reads it on the next attempt. Each test drives a call site through the
  * real `executeTurn`, fails every Step, and pins the persisted directive to
- * an exact string: fixed prose plus the call site's wire schema body.
+ * an exact string: fixed prose plus the call site's wire schema body,
+ * wrapped in the Harness-owned `<harness_feedback>` tag (issue #123).
  * The schema body comes from `toSchemaJsonString`, so a `.describe()` edit
  * does not churn this test; a change to the prose or the schema choice does.
  */
@@ -118,12 +119,14 @@ describe("retry directive bytes at call sites", () => {
     const schemaJson = toSchemaJsonString(clarifySchema, { name: "clarify" });
     expect(firstPersistedDirective()).toBe(
       [
+        "<harness_feedback>",
         "Your previous response did not match the required JSON schema.",
         "The decoded JSON had these issues, listed by field path:",
         "- field questions: Invalid input: expected object, received undefined",
         "",
         "Here is the schema your reply must match. Emit exactly one JSON object matching this schema, with no surrounding prose:",
         `<response_schema>\n${schemaJson}\n</response_schema>`,
+        "</harness_feedback>",
       ].join("\n"),
     );
   });
@@ -162,10 +165,12 @@ describe("retry directive bytes at call sites", () => {
     const schemaJson = toSchemaJsonString(schema, { name: "wave_close" });
     expect(firstPersistedDirective()).toBe(
       [
+        "<harness_feedback>",
         "Your previous response did not parse as JSON. Reply with a single JSON object — no prose, no Markdown fences, no leading commentary.",
         "",
         "Here is the schema your reply must match. Emit exactly one JSON object matching this schema:",
         `<response_schema>\n${schemaJson}\n</response_schema>`,
+        "</harness_feedback>",
       ].join("\n"),
     );
   });

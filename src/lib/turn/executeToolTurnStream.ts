@@ -9,6 +9,7 @@ import {
 } from "@/db/queries/contextMessages";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { SCOPING } from "@/lib/config/tuning";
+import { renderHarnessFeedback } from "@/lib/prompts/turn";
 import { toolStepRows } from "./toolStepRows";
 import { findJsonProseLeakIndex } from "./findJsonProseLeakIndex";
 import type { SeedInputs } from "@/lib/types/context";
@@ -243,8 +244,9 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
       seq: batch.length + 1,
       kind: "harness_retry_directive",
       role: "user",
-      // The gate's detail is already a model-readable directive.
-      content: gate.detail,
+      // The gate's detail is already a model-readable directive. The tag
+      // marks it as Harness text to follow, not learner text (#123).
+      content: renderHarnessFeedback(gate.detail),
     };
     return attempt(i + 1, [...batch, failedRow, directiveRow]);
   }

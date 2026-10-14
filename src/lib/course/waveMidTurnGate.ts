@@ -10,8 +10,8 @@ import type { SubmitTurnPayload } from "./buildLearnerInput";
  * (all steps' streamed text, not just the final step's).
  *
  * Failure detail strings are model-readable retry directives —
- * `executeToolTurnStream` persists each one verbatim as the
- * `harness_retry_directive` row.
+ * `executeToolTurnStream` persists each one verbatim inside
+ * `<harness_feedback>` as the `harness_retry_directive` row.
  *
  * Checks (each replaces a mega-schema invariant, in order):
  * 1. Non-empty prose — was `userMessage: z.string().min(1)`.

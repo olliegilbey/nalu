@@ -17,3 +17,15 @@
  */
 export const JSON_PARSE_RETRY_DIRECTIVE =
   "Your previous response did not parse as JSON. Reply with a single JSON object matching the schema attached to this turn.";
+
+/**
+ * Wrap a retry directive in the Harness-owned `<harness_feedback>` tag.
+ *
+ * Directives ride in user-role rows, beside learner text. Both system
+ * prompts name this tag as Harness text to follow (issue #123). Learner text
+ * is always escaped, so no learner can forge it. Both turn runners apply it
+ * to every new `harness_retry_directive` row. Older rows keep their bytes.
+ */
+export function renderHarnessFeedback(directive: string): string {
+  return `<harness_feedback>\n${directive}\n</harness_feedback>`;
+}

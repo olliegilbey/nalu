@@ -51,6 +51,13 @@ change hold a `{text, steps}` JSON envelope; they render unchanged.
   on the retired `llama3.1-8b`). The schema string is built lazily, at
   most once per Turn. `retryDirective.callSites.test.ts` in
   `src/lib/course/` pins the directive bytes.
+- Directive shape: both runners wrap every new `harness_retry_directive`
+  row in `<harness_feedback>…</harness_feedback>` via
+  `renderHarnessFeedback` (`src/lib/prompts/turn.ts`). `executeTurn` wraps
+  `buildRetryDirective`'s body; `executeToolTurnStream` wraps the gate's
+  detail. Directives ride in user-role rows beside learner text, and both
+  system prompts name this tag as Harness text to follow (issue #123).
+  Rows written before the tag keep their bytes; the Context is append-only.
 - Transport errors (timeouts, 5xx) propagate untouched; no rows are
   persisted on transport failure. In the tool loop, the SDK does not throw:
   a failed Step emits an `error` stream part and still resolves `steps`
