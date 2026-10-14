@@ -5,6 +5,7 @@ import { submitTurnInputSchema } from "@/server/routers/waveTurnInput";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
+import { waveTurnErrorText } from "@/lib/course/waveTurnErrorText";
 import type { WaveTurnUIMessage } from "@/lib/types/waveStream";
 
 // A turn can span LLM retries + Cerebras pacing; keep the function alive
@@ -58,9 +59,13 @@ export async function POST(
           writer,
         );
       }),
-    // Surfaced to useChat's onError. Keep messages generic; TRPCError codes
-    // from the guards (PRECONDITION_FAILED etc.) map to their message text.
-    onError: (error) => (error instanceof Error ? error.message : "turn failed"),
+    // Surfaced to useChat's onError. Guard messages pass through; any other
+    // error gets fixed text, since its message can quote answer keys (#169).
+    // The full error is logged here, server-side, where it is safe.
+    onError: (error) => {
+      console.error("[wave-turn] turn failed:", error);
+      return waveTurnErrorText(error);
+    },
   });
 
   return createUIMessageStreamResponse({ stream });
