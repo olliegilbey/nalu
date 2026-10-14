@@ -48,6 +48,12 @@ describe("renderTeachingSystem (dueReviewInjection: hint)", () => {
     expect(out).not.toContain("already lists them");
   });
 
+  // Issue #164: the definition is static, so it renders in hint mode too.
+  it("keeps the <turns_remaining> definition in the output contract", () => {
+    const out = renderTeachingSystem(SEED);
+    expect(out).toContain("<turns_remaining>N</turns_remaining> counts the learner turns left");
+  });
+
   it("renders no block when nothing is due", () => {
     const out = renderTeachingSystem({ ...SEED, dueConcepts: [] });
     expect(out).not.toContain("<due_for_review>");

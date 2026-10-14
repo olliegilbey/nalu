@@ -133,10 +133,30 @@ describe("renderTeachingSystem (output contract)", () => {
     expect(out).toContain("getConceptHistory");
     expect(out).toContain("Never invent or assume review history");
     // Close turns still run the blocking single-JSON path under this prompt.
-    expect(out).toContain("final turn no tools are available");
-    expect(out).toContain("single JSON object");
+    expect(out).toContain(
+      "The lesson's final turn is the one where N is 0. On it, respond with a single JSON object that matches the response schema.",
+    );
     // The retired mega-schema's field vocabulary must not come back.
     expect(out).not.toContain("the questionnaire field");
+  });
+
+  // Issue #164: undefined, the tag let the model read N = 1 as the final
+  // turn. It skipped its tools, answered in JSON, and posed no quiz.
+  it("defines <turns_remaining> and keeps tools on every turn above 0", () => {
+    const out = renderTeachingSystem(baseInputs);
+    expect(out).toContain(
+      "<turns_remaining>N</turns_remaining> counts the learner turns left in this lesson after this one. While N is above 0, teach in prose and use tool calls, even when N is 1.",
+    );
+  });
+
+  // Issue #164: one definition of the final turn. The concept-weaving rule
+  // moved out of <role> to sit beside it.
+  it("describes the final turn once, in the output contract", () => {
+    const out = renderTeachingSystem(baseInputs);
+    expect(out.match(/final turn/g)).toHaveLength(1);
+    expect(out).toContain(
+      "The harness also lists concepts due for review and fresh concepts at the current tier; weave those into the next lesson's outline and opening message.\n</output_format>",
+    );
   });
 
   // Issue #144: the grading tool may ask for a second call to grade the
