@@ -85,6 +85,28 @@ describe("clientErrorText: errors as tRPC wraps them", () => {
     expect(clientErrorText(invalid)).toContain("Too small: expected string to have >=1 characters");
   });
 
+  it("keeps a non-Zod BAD_REQUEST cause's message server-side", () => {
+    // Only tRPC's input validation wraps a ZodError; any other cause is unsafe.
+    const wrapped = new TRPCError({
+      code: "BAD_REQUEST",
+      cause: new Error("Names move semantics."),
+    });
+    expect(clientErrorText(wrapped)).toBe(FIXED);
+  });
+
+  it("keeps a thrown object's non-string message server-side", () => {
+    // tRPC copies a thrown object's fields onto a synthetic cause. Error()
+    // stringifies the array, so the wrapper's message differs from the
+    // cause's yet still carries the content.
+    const wrapped = new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      cause: { message: ["Names move semantics."] },
+    });
+
+    expect(wrapped.message).toBe("Names move semantics.");
+    expect(clientErrorText(wrapped)).toBe(FIXED);
+  });
+
   it("keeps a ZodError thrown inside a procedure server-side", () => {
     // A failed parse of an LLM reply or a DB row: tRPC wraps it as a 500.
     const issues = z.object({ correct: z.enum(["A", "B"]) }).safeParse({ correct: "E" }).error;

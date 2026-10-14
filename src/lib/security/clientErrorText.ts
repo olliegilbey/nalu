@@ -29,12 +29,19 @@ export function clientErrorText(error: unknown): string {
  *   the input value unless `reportInput` is set, and no input schema sets a
  *   custom message. A `ZodError` thrown inside a procedure is not this case:
  *   tRPC wraps it as INTERNAL_SERVER_ERROR.
+ * - A cause whose `message` is not a string is unsafe. tRPC copies a thrown
+ *   object's fields onto its cause, and `Error()` stringifies the wrapper's
+ *   copy, so the two messages differ yet carry the same content.
  */
 function isSafeToShow(error: unknown): error is Error {
   if (error instanceof NotFoundError) return true;
   if (!(error instanceof TRPCError)) return false;
   const cause = error.cause;
-  if (cause === undefined || error.message !== cause.message) return true;
+  if (cause === undefined) return true;
+  // Typed `string`, but a thrown object's fields arrive unchecked.
+  const causeMessage: unknown = cause.message;
+  if (typeof causeMessage !== "string") return false;
+  if (error.message !== causeMessage) return true;
   if (error.code === "BAD_REQUEST" && cause instanceof z.ZodError) return true;
   return isSafeToShow(cause);
 }
