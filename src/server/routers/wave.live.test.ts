@@ -287,8 +287,9 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
         );
         if (i === WAVE.turnCount - 2 && result.kind === "mid-turn" && quizTypes === "none") {
           // Did the model pose its question in prose instead of the quiz tool?
+          // Full prose, so the next sighting of issue #164 shows the whole blob.
           process.stderr.write(
-            `[wave-smoke] final mid-turn posed no quiz; prose ends ${JSON.stringify(result.assistantContent.slice(-200))}\n`,
+            `[wave-smoke] final mid-turn posed no quiz; prose ${JSON.stringify(result.assistantContent)}\n`,
           );
         }
 
