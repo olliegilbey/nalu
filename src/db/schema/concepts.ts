@@ -10,8 +10,7 @@ import {
   check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
-import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import type { InferSelectModel } from "drizzle-orm";
 import { courses } from "./courses";
 
 /**
@@ -84,25 +83,3 @@ export const concepts = pgTable(
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type Concept = InferSelectModel<typeof concepts>;
-
-/**
- * Shape for INSERT statements.
- *
- * Required (notNull, no default): `courseId`, `name`, `tier`.
- *
- * Optional with server defaults: `id` (defaultRandom), `easinessFactor`
- * (default 2.5 — SM-2 starting EF), `intervalDays` (default 0),
- * `repetitionCount` (default 0), `timesCorrect` (default 0),
- * `timesIncorrect` (default 0), `firstSeenAt` (defaultNow).
- *
- * Nullable (no default): `description`, `lastQualityScore`,
- * `lastReviewedAt`, `nextReviewAt` — null means "never reviewed yet";
- * the partial index `concepts_due_idx` deliberately excludes these rows.
- */
-export type ConceptInsert = InferInsertModel<typeof concepts>;
-
-/** Zod schema for validating insert payloads at trust boundaries (e.g. API input). */
-export const conceptsInsertSchema = createInsertSchema(concepts);
-
-/** Zod schema for validating rows read from the DB. */
-export const conceptsSelectSchema = createSelectSchema(concepts);

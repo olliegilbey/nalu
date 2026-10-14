@@ -10,8 +10,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
-import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import type { InferSelectModel } from "drizzle-orm";
 import { waves } from "./waves";
 import { concepts } from "./concepts";
 
@@ -110,26 +109,3 @@ export const assessments = pgTable(
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type Assessment = InferSelectModel<typeof assessments>;
-
-/**
- * Shape for INSERT statements.
- *
- * Required (notNull, no default): `waveId`, `conceptId`, `turnIndex`,
- * `userAnswer`, `isCorrect`, `qualityScore`, `assessmentKind`.
- *
- * Optional with server defaults: `id` (defaultRandom), `xpAwarded`
- * (default 0), `assessedAt` (defaultNow).
- *
- * Nullable (no default): `question` — required at the application layer for
- * `card_mc`/`card_freetext` rows (the CHECK
- * `assessments_question_required_for_card_kinds` enforces it at the DB level),
- * but the column is nullable to allow `inferred` rows where the correctness
- * signal comes from free-form dialogue with no posed question.
- */
-export type AssessmentInsert = InferInsertModel<typeof assessments>;
-
-/** Zod schema for validating insert payloads at trust boundaries (e.g. API input). */
-export const assessmentsInsertSchema = createInsertSchema(assessments);
-
-/** Zod schema for validating rows read from the DB. */
-export const assessmentsSelectSchema = createSelectSchema(assessments);

@@ -1,5 +1,5 @@
 /**
- * Schema barrel — re-exports every table, type, and zod schema from the
+ * Schema barrel — re-exports every table and row type from the
  * per-table files so callers can `import * as schema from "@/db/schema"`
  * (used by the Drizzle client and the integration-test harness) or pull
  * named exports directly.

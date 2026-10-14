@@ -199,6 +199,14 @@ const CLIENT_FORWARDED_TOOLS: ReadonlySet<string> = new Set<ClientForwardedToolN
 ]);
 
 /**
+ * The only `errorText` a forwarded tool's error chunk carries (#169). The
+ * SDK error message quotes the whole tool input as JSON, answer key and
+ * rubric included. The client never renders `errorText`, so the text stays
+ * short. The model still reads the full error in-loop.
+ */
+const FORWARDED_TOOL_ERROR_TEXT = "The quiz could not be shown.";
+
+/**
  * Map a `streamText` fullStream tool part to its UIMessage chunk and write it
  * — the same conversion the SDK's `toUIMessageStream` applies (verified in
  * installed ai@6.0.158), inlined because this route hand-writes its stream
@@ -216,6 +224,8 @@ const CLIENT_FORWARDED_TOOLS: ReadonlySet<string> = new Set<ClientForwardedToolN
  * - `presentQuestionnaire` inputs are redacted (grading keys stripped)
  *   before writing — the committed card gets `correctEnc` via `getState`
  *   (spec §7.8); the streamed preview must not leak more than that.
+ * - Error chunks carry `FORWARDED_TOOL_ERROR_TEXT`, never the SDK error
+ *   message, because that message quotes the tool input (#169).
  */
 function forwardToolChunk<TOOLS extends ToolSet>(
   writer: UIMessageStreamWriter<WaveTurnUIMessage>,
@@ -233,13 +243,14 @@ function forwardToolChunk<TOOLS extends ToolSet>(
     case "tool-call":
       if (part.invalid === true) {
         // Redact here too: an invalid input can still contain a plaintext
-        // `correct`; the client never needs the payload, only the error.
+        // `correct`; the client never needs the payload, only the error
+        // state. The SDK message quotes the input, so it stays server-side.
         writer.write({
           type: "tool-input-error",
           toolCallId: part.toolCallId,
           toolName: part.toolName,
           input: null,
-          errorText: String(part.error),
+          errorText: FORWARDED_TOOL_ERROR_TEXT,
         });
         return;
       }
@@ -261,10 +272,12 @@ function forwardToolChunk<TOOLS extends ToolSet>(
       });
       return;
     case "tool-error":
+      // Fixed text too: for an invalid input this is the same SDK message,
+      // and a thrown execute's message can quote the input as well.
       writer.write({
         type: "tool-output-error",
         toolCallId: part.toolCallId,
-        errorText: String(part.error),
+        errorText: FORWARDED_TOOL_ERROR_TEXT,
       });
       return;
     default:

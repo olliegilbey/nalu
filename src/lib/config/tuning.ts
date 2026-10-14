@@ -119,9 +119,7 @@ export const SCOPING = {
 /**
  * Proficiency-framework generation bounds. Consumed by
  * `src/lib/prompts/framework.ts` (prompt instructions + Zod schema) so the
- * two never drift. Tier counts are PRD-sourced; per-item character caps are
- * defence-in-depth — a runaway LLM could otherwise emit multi-kilobyte
- * tiers and exhaust the context window on the next turn.
+ * two never drift. Tier counts are PRD-sourced.
  */
 export const FRAMEWORK = {
   // PRD §2.1: "3-8 tiers generated per topic (flexible by breadth)".
@@ -132,13 +130,6 @@ export const FRAMEWORK = {
   // gives baseline enough seeds without bloating the stored framework.
   minExampleConceptsPerTier: 4,
   maxExampleConceptsPerTier: 7,
-  // Defence-in-depth character caps. The prompt asks for concise fields;
-  // the schema enforces it. Chosen to comfortably fit any reasonable
-  // tier label / one-to-two-sentence description / concept phrase while
-  // refusing pathological output.
-  tierNameMaxChars: 80,
-  tierDescriptionMaxChars: 400,
-  exampleConceptMaxChars: 120,
   // P-ON-02: baseline scope is narrow, not broad. Framework generation
   // emits `[estimate-1, estimate, estimate+1]` clamped to the produced
   // tier range, so the natural upper bound is 3. The schema enforces it
@@ -182,13 +173,6 @@ export const BASELINE = {
   // MC cards are always four options. No "Not sure"
   // button — the freetext escape is the non-engagement affordance.
   mcOptionCount: 4,
-  // Defence-in-depth character caps. Mirrors FRAMEWORK's rationale: prompt
-  // asks for concise fields, schema refuses pathological output.
-  conceptNameMaxChars: 120,
-  questionMaxChars: 500,
-  optionMaxChars: 200,
-  rubricMaxChars: 400,
-  rationaleMaxChars: 400,
   // Mechanical MC scoring. A correct click maps to q=4 ("correct
   // and clear") — reserve q=5 for free-text answers where the learner has
   // room to demonstrate teach-level depth. An incorrect click maps to q=1
