@@ -4,6 +4,12 @@ import type { WaveTurnUIMessage } from "@/lib/types/waveStream";
 /** One part of an in-flight Wave turn's assistant message. */
 type WaveTurnPart = WaveTurnUIMessage["parts"][number];
 
+/** A `presentQuestionnaire` tool part whose full (redacted) input has arrived. */
+type QuestionnairePartWithInput = Extract<
+  WaveTurnPart,
+  { type: "tool-presentQuestionnaire"; state: "input-available" | "output-available" }
+>;
+
 /** The in-flight Wave turn as the Composer renders it, before the committed turn replaces it. */
 export interface StreamingTurn {
   /**
@@ -12,8 +18,9 @@ export interface StreamingTurn {
    */
   readonly streamingText: string;
   /**
-   * Questions streamed in a `tool-presentQuestionnaire` part (generative UI).
-   * Non-null from the part's `input-available` state until the committed
+   * Questions streamed in the live attempt's last valid
+   * `tool-presentQuestionnaire` part (generative UI). Non-null from that
+   * part's `input-available` state until the committed
    * `activeQuestionnaire` takes over after the turn-result refetch. The
    * Composer renders them as a preview only; interactivity comes with
    * `activeQuestionnaire` (isPending disables the option grid until then).
@@ -44,23 +51,23 @@ export function deriveStreamingTurn(messages: readonly WaveTurnUIMessage[]): Str
     .map((p) => p.text)
     .join("");
 
-  // In-flight questionnaire: the typed `tool-presentQuestionnaire` part.
-  // Shown only from `input-available` onward: the server forwards no
-  // input-streaming deltas. The input it does forward is the redacted
-  // projection (grading keys stripped, see `streamWaveTurn`), a structural
-  // subset of the typed input, hence the StreamedToolQuestion adapter. It is
-  // the only tool part the server forwards: grading signals and lookups stay
-  // server-side (issue #59).
-  const questionnairePart = liveParts.find(
-    (p): p is Extract<WaveTurnPart, { type: "tool-presentQuestionnaire" }> =>
-      p.type === "tool-presentQuestionnaire",
+  // In-flight questionnaire: the LAST typed `tool-presentQuestionnaire` part
+  // with input. Shown only from `input-available` onward: the server forwards
+  // no input-streaming deltas. An invalid call lands as an `output-error`
+  // part, and the model may self-correct in-loop with a second call, so the
+  // last valid part wins (issue #117). The input the server forwards is the
+  // redacted projection (grading keys stripped, see `streamWaveTurn`), a
+  // structural subset of the typed input, hence the StreamedToolQuestion
+  // adapter. It is the only tool part the server forwards: grading signals
+  // and lookups stay server-side (issue #59).
+  const questionnairePart = liveParts.findLast(
+    (p): p is QuestionnairePartWithInput =>
+      p.type === "tool-presentQuestionnaire" &&
+      (p.state === "input-available" || p.state === "output-available"),
   );
-  const streamingQuestions =
-    questionnairePart &&
-    (questionnairePart.state === "input-available" ||
-      questionnairePart.state === "output-available")
-      ? questionnairePart.input.questions.map(adaptStreamedToolQuestion)
-      : null;
+  const streamingQuestions = questionnairePart
+    ? questionnairePart.input.questions.map(adaptStreamedToolQuestion)
+    : null;
 
   return { streamingText, streamingQuestions };
 }
