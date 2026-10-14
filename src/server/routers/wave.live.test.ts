@@ -18,6 +18,12 @@
  *      non-empty `conceptUpdates[]` projected via `gradedSignals`, and that the
  *      next-Wave blueprint references the fresh + due concepts the close
  *      envelope injected.
+ *   3b. Wave-close free-text grading (issue #22). The close grades only a
+ *      questionnaire still open when it runs: one posed on the final
+ *      mid-turn and answered on the close turn. The learner asks for a
+ *      short-answer quiz on that turn and answers it from its rubric. The
+ *      close must grade it q≥4 with XP. When the model poses no free-text
+ *      question there, the case is logged as skipped.
  *   4. Wave 1 → Wave 2 handoff. Wave 2 row exists, `seed_source.kind ===
  *      "prior_blueprint"`, and the turn-0 assistant message is the blueprint's
  *      `openingText`.
@@ -46,6 +52,12 @@ import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 import { WAVE } from "@/lib/config/tuning";
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
 import type { PrepareWaveTurnParams } from "@/lib/course/prepareWaveTurn";
+import { findOpenQuestionnaire } from "@/lib/course/findOpenQuestionnaire";
+import { namespaceQuestionId } from "@/lib/course/namespaceQuestionId";
+import type { OpenQuestionnaireRecord } from "@/lib/course/buildLearnerInput";
+import { getWaveChatLog } from "@/db/queries/waves";
+import { getAssessmentByWaveAndQuestionId } from "@/db/queries/assessments";
+import { getMessagesForWave } from "@/db/queries/contextMessages";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import type { WaveTurnResultData, WaveTurnUIMessage } from "@/lib/types/waveStream";
 
@@ -61,6 +73,35 @@ const LIVE_TEST_USER = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 const TOPIC = SCOPING_TOPICS[0]!;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Learner chat text for loop turn `i` (0-based). The close grades only a
+ * questionnaire still open when it runs, so the quiz must land on the final
+ * mid-turn (`i === turnCount - 2`). The teaching prompt rules out quizzes
+ * twice in a row, so the turn before asks for none.
+ */
+function chatTextForTurn(i: number): string {
+  if (i === WAVE.turnCount - 3) {
+    return "Could you walk me through the next concept with a concrete example? No quiz this turn, please.";
+  }
+  if (i === WAVE.turnCount - 2) {
+    // Same shape as the tool-loop live test's request, which usually draws the quiz tool.
+    return "Teach me one more small idea, then quiz me with one short-answer question.";
+  }
+  return "Got it — could you walk me through the next concept with a concrete example?";
+}
+
+/** Tool names the model called on the Wave's latest Turn, read from its persisted rows. */
+async function latestTurnToolNames(waveId: string): Promise<readonly string[]> {
+  const rows = await getMessagesForWave(waveId);
+  const lastTurn = Math.max(...rows.map((r) => r.turnIndex));
+  return rows
+    .filter((r) => r.turnIndex === lastTurn && r.kind === "assistant_tool_call")
+    .flatMap(
+      (r) => (JSON.parse(r.content) as { toolCalls: readonly { toolName: string }[] }).toolCalls,
+    )
+    .map((c) => c.toolName);
+}
 
 /**
  * Run one Wave turn the way the streaming route does, and return its
@@ -191,54 +232,42 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
       // outside the reducer by branching on i === turnCount - 1 (the
       // controller of the loop) and storing into closeResult.
       let closeResult: WaveTurnResultData | null = null;
+      // The questionnaire the close turn answered, if any (COVERAGE 3b).
+      let closeQuestionnaire: OpenQuestionnaireRecord | null = null;
 
       // Decision matrix per turn — read the current state, then post the
-      // matching payload. chat-text when no questionnaire is open;
-      // questionnaire-answers (pick "A" for MC, a plausible string for
-      // freetext) when one is. We don't care if the answers are correct;
-      // the close path runs regardless on the last turn.
+      // matching payload. chat-text when no questionnaire is open (see
+      // `chatTextForTurn`); questionnaire-answers when one is. MC picks
+      // "A"; free text answers correctly from the question's rubric.
       await Array.from({ length: WAVE.turnCount }).reduce<Promise<void>>(async (accP, _v, i) => {
         await accP;
 
-        // Read state to know whether a questionnaire is open and what
-        // shape the answers payload takes. Post-T11 the wire ships
-        // `chatLog` only; derive the open questionnaire client-side the
-        // same way `findOpenQuestionnaire` does server-side — find the
-        // latest `text_with_questionnaire` entry that has no later
-        // `user.answers` referencing its questionnaireId.
-        const state = await caller.wave.getState({ courseId, waveNumber: 1 });
-        const lastQEntry = state.chatLog.findLast(
-          (e) => e.role === "assistant" && e.kind === "text_with_questionnaire",
+        // Read the open questionnaire from the server-side chat_log with
+        // the Harness's own helper. The client wire drops `freetextRubric`;
+        // this read keeps it, so the learner can answer correctly (issue #22).
+        const openQuestionnaire = findOpenQuestionnaire(
+          await getWaveChatLog(closeScopingResult.wave1Id),
         );
-        const hadOpenQuestionnaireBefore =
-          lastQEntry !== undefined &&
-          !state.chatLog.some(
-            (e) =>
-              e.role === "user" &&
-              e.kind === "answers" &&
-              e.questionnaireId === lastQEntry.questionnaireId,
-          );
+        const hadOpenQuestionnaireBefore = openQuestionnaire !== null;
+        // Only a questionnaire still open at the close is graded there.
+        if (i === WAVE.turnCount - 1) closeQuestionnaire = openQuestionnaire;
 
-        const payload =
-          lastQEntry && hadOpenQuestionnaireBefore
-            ? {
-                kind: "questionnaire-answers" as const,
-                questionnaireId: lastQEntry.questionnaireId,
-                answers: lastQEntry.questions.map((q) =>
-                  q.type === "multiple_choice"
-                    ? { id: q.id, kind: "mc" as const, selected: "A" as const }
-                    : {
-                        id: q.id,
-                        kind: "freetext" as const,
-                        text: "Here is my best attempt at the concept — please correct me.",
-                        fromEscape: false,
-                      },
-                ),
-              }
-            : {
-                kind: "chat-text" as const,
-                text: "Got it — could you walk me through the next concept with a concrete example?",
-              };
+        const payload = openQuestionnaire
+          ? {
+              kind: "questionnaire-answers" as const,
+              questionnaireId: openQuestionnaire.questionnaireId,
+              answers: openQuestionnaire.questions.map((q) =>
+                q.type === "multiple_choice"
+                  ? { id: q.id, kind: "mc" as const, selected: "A" as const }
+                  : {
+                      id: q.id,
+                      kind: "freetext" as const,
+                      text: answerFromRubric(q.freetextRubric),
+                      fromEscape: false,
+                    },
+              ),
+            }
+          : { kind: "chat-text" as const, text: chatTextForTurn(i) };
 
         const result = await runWaveTurn({
           userId: LIVE_TEST_USER,
@@ -246,6 +275,22 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
           waveNumber: 1,
           payload,
         });
+
+        // Per-turn trace, so a skipped COVERAGE 3b shows where the quiz landed.
+        const quizTypes =
+          result.kind === "mid-turn" && result.newQuestionnaire !== null
+            ? result.newQuestionnaire.questions.map((q) => q.type).join("+")
+            : "none";
+        const tools = await latestTurnToolNames(closeScopingResult.wave1Id);
+        process.stderr.write(
+          `[wave-smoke] turn ${i + 1} sent=${payload.kind} tools=${tools.join("+") || "none"} quiz=${quizTypes}\n`,
+        );
+        if (i === WAVE.turnCount - 2 && result.kind === "mid-turn" && quizTypes === "none") {
+          // Did the model pose its question in prose instead of the quiz tool?
+          process.stderr.write(
+            `[wave-smoke] final mid-turn posed no quiz; prose ends ${JSON.stringify(result.assistantContent.slice(-200))}\n`,
+          );
+        }
 
         // Stats: count questionnaire drops on mid turns; on the next
         // iteration if signals come back we increment signalsReturnedCount.
@@ -304,6 +349,41 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
             `(questionnaireDropCount=${questionnaireDropCount})\n`,
         );
       }
+
+      // -----------------------------------------------------------------
+      // COVERAGE 3b: Wave-close free-text grading (issue #22). Each free-text
+      // answer at the close came from its rubric, so it is correct. Read the
+      // Harness-owned grading from its assessment row: quality ≥ 4, XP > 0.
+      // The model poses the final-mid-turn quiz only sometimes, so a close
+      // with no free-text question logs a skip instead of failing.
+      // -----------------------------------------------------------------
+      // The cast widens back from `null`: TS cannot see the reducer's assignment.
+      const answeredAtClose = closeQuestionnaire as OpenQuestionnaireRecord | null;
+      const closeFreeText = (answeredAtClose?.questions ?? []).filter(
+        (q) => q.type === "free_text",
+      );
+      if (closeFreeText.length === 0) {
+        process.stderr.write(
+          "[wave-smoke] close free-text grading SKIPPED: no free-text question open at the close\n",
+        );
+      }
+      const closeFreeTextRows = await Promise.all(
+        closeFreeText.map((q) =>
+          getAssessmentByWaveAndQuestionId(
+            closeScopingResult.wave1Id,
+            namespaceQuestionId(answeredAtClose!.questionnaireId, q.id),
+          ),
+        ),
+      );
+      closeFreeTextRows.forEach((row, idx) => {
+        const qid = closeFreeText[idx]!.id;
+        expect(row, `assessment row for close free-text ${qid}`).not.toBeNull();
+        process.stderr.write(
+          `[wave-smoke] close free-text qid=${qid} q=${row!.qualityScore} xp=${row!.xpAwarded}\n`,
+        );
+        expect(row!.qualityScore, `close grades ${qid} q≥4`).toBeGreaterThanOrEqual(4);
+        expect(row!.xpAwarded, `close awards XP for ${qid}`).toBeGreaterThan(0);
+      });
 
       // -----------------------------------------------------------------
       // COVERAGE 4: Wave 1 → Wave 2 handoff. Wave 2 exists, seeded from
