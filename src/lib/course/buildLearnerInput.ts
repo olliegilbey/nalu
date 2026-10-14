@@ -1,3 +1,4 @@
+import { MC_OPTION_KEYS, typedMcGradingRule } from "@/lib/prompts/questionnaire";
 import { escapeXmlText } from "@/lib/security/escapeXmlText";
 import { sanitiseUserInput } from "@/lib/security/sanitiseUserInput";
 
@@ -62,7 +63,8 @@ export const KEY_TO_INDEX = { A: 0, B: 1, C: 2, D: 3 } as const;
  * discriminated by answer kind. MC blocks carry the learner's selected index,
  * mechanical verdict, and the correct index (so the model sees server truth
  * without re-asking). Free-text blocks carry the learner's prose plus a
- * `fromEscape` flag.
+ * `fromEscape` flag. A typed answer to an MC question also carries an
+ * `<mc_answer_key>` block (issue #149), so the grader has the options and key.
  *
  * NOTE: `selected_index` / `correct_index` are emitted as bare integers (no
  * quotes). Tests rely on this exact shape — see `buildLearnerInput.test.ts`.
@@ -99,9 +101,12 @@ export function buildLearnerInput(
     }
     // Free-text branch (includes MC-escape free-text). `fromEscape` flags the
     // latter so the model knows the learner deliberately bypassed the buttons.
+    // A typed answer to an MC question also carries the answer key: the
+    // question type is server truth, so it gates the key, not `fromEscape`.
     return [
       `<questionnaire_answer kind="free-text" questionId="${escapeXmlText(a.id)}" fromEscape="${a.fromEscape}">`,
       sanitiseUserInput(a.text),
+      ...(q.type === "multiple_choice" ? [renderMcAnswerKey(q)] : []),
       "</questionnaire_answer>",
     ].join("\n");
   });
@@ -109,5 +114,27 @@ export function buildLearnerInput(
     `<questionnaire_answers questionnaireId="${escapeXmlText(payload.questionnaireId)}">`,
     ...blocks,
     "</questionnaire_answers>",
+  ].join("\n");
+}
+
+/**
+ * The Harness's answer key for a typed answer to an MC question (issue #149):
+ * the four options, the correct key, and the rule to grade against it. The
+ * MC rubric is unchecked, so the grader cannot rely on it. Built after submit,
+ * this block reaches only the model's Context, never `chat_log` or the client.
+ */
+function renderMcAnswerKey(q: OpenQuestionnaireRecord["questions"][number]): string {
+  // Wave MC questions always carry both (the quiz tool's schema requires
+  // them); the record type leaves them optional. Fail loud like the MC branch.
+  if (!q.options || !q.correct) {
+    throw new Error(`buildLearnerInput: MC q '${q.id}' missing options or correct key`);
+  }
+  const { options, correct } = q;
+  return [
+    `<mc_answer_key correct="${correct}">`,
+    // Options are model-authored, so they are escaped like any other text.
+    ...MC_OPTION_KEYS.map((key) => `${key}: ${escapeXmlText(options[key])}`),
+    typedMcGradingRule(correct),
+    "</mc_answer_key>",
   ].join("\n");
 }

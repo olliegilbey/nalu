@@ -125,6 +125,21 @@ export function placeholderRubricDirective(questionId: string): string {
 }
 
 /**
+ * Grader rule for a typed answer to an MC question (issue #149). An MC rubric
+ * is unchecked and often a placeholder, so the Harness attaches this rule,
+ * the options and the correct key after submit. Both close paths and the
+ * mid-Wave grader read it.
+ */
+export function typedMcGradingRule(correct: McOptionKey): string {
+  return (
+    `The learner typed this answer instead of picking an option. ` +
+    `Grade it as free text against the correct option, ${correct}. ` +
+    `It is correct when it gives the same answer as ${correct}, in any words. ` +
+    `It is incorrect when it matches another option or hedges across several.`
+  );
+}
+
+/**
  * Questionnaire wrapper. Per-stage `.refine` on the wrapping schema tightens
  * the count bounds (clarify: 2–4; baseline: derived from scope tiers).
  * Cerebras strict mode forbids `minItems`/`maxItems` on the wire side, so

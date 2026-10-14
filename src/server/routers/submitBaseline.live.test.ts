@@ -96,9 +96,17 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       ).questions as ReadonlyArray<{
         readonly id: string;
         readonly type: "multiple_choice" | "free_text";
+        readonly options?: Readonly<Record<"A" | "B" | "C" | "D", string>>;
         readonly correct?: "A" | "B" | "C" | "D";
         readonly freetextRubric: string;
       }>;
+      // Issue #149: TYPE the first MC question's correct option instead of
+      // clicking it. The sentence does not match the option verbatim, so it
+      // ships as free text and the close-turn grader must grade it against
+      // the Harness-attached answer key.
+      const typedMc = persistedQuestions.find((q) => q.type === "multiple_choice");
+      expect(typedMc, "baseline has an MC question to type").toBeDefined();
+      const typedMcText = `I think it's this one: ${typedMc!.options![typedMc!.correct!]}`;
       // questionId → correct option key (MC questions only).
       const correctById = new Map(
         persistedQuestions
@@ -113,16 +121,19 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       }>;
       // Mutable array matches the router's `z.array(...)` element type; entries
       // are still per-entry-immutable via `as const`.
-      const answers: BaselineAnswer[] = questions.map((q) =>
-        q.type === "multiple_choice"
+      const answers: BaselineAnswer[] = questions.map((q) => {
+        if (q.id === typedMc!.id) {
+          return { id: q.id, kind: "freetext", text: typedMcText, fromEscape: true } as const;
+        }
+        return q.type === "multiple_choice"
           ? ({ id: q.id, kind: "mc", selected: correctById.get(q.id)! } as const)
           : ({
               id: q.id,
               kind: "freetext",
               text: answerFromRubric(rubricById.get(q.id)!),
               fromEscape: false,
-            } as const),
-      );
+            } as const);
+      });
 
       const result = await caller.course.submitBaseline({ courseId, answers });
 
@@ -161,6 +172,12 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       for (const q of questions) {
         expect(gradedIds, `grading exists for ${q.id}`).toContain(q.id);
       }
+      // Issue #149: the typed correct option earns a correct-band grade
+      // (q4-5), so it scores XP rather than the #22 zero.
+      const typedGrading = closedBaseline.gradings.find((g) => g.questionId === typedMc!.id);
+      expect(typedGrading?.qualityScore, "typed MC answer graded correct").toBeGreaterThanOrEqual(
+        4,
+      );
 
       // Wave 1 must be open and tagged at startingTier.
       const wave1 = (await db.select().from(waves).where(eq(waves.id, result.wave1Id)))[0];

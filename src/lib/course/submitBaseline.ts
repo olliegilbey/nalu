@@ -5,7 +5,11 @@ import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { getOpenWaveByCourse } from "@/db/queries/waves";
 import { makeScopingCloseSchema, renderScopingCloseStage } from "@/lib/prompts/scopingClose";
-import { splitOne, type BaselineAnswer } from "./submitBaseline.internal";
+import {
+  buildScopingCloseLearnerInput,
+  splitOne,
+  type BaselineAnswer,
+} from "./submitBaseline.internal";
 import { mergeAndComputeXp } from "@/lib/scoring/baselineMerge";
 import { logScopingCloseGradings } from "./closeGradingDebug";
 import { persistScopingClose } from "./submitBaseline.persist";
@@ -189,8 +193,14 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
     const pass = await ensureOpenScopingPass(course.id);
 
     // Learner-input payload carries raw answers + mechanical MC gradings so the
-    // model doesn't waste tokens re-evaluating MC clicks.
-    const learnerInput = JSON.stringify({ answers: params.answers, mechanicalGradings });
+    // model doesn't waste tokens re-evaluating MC clicks. A typed MC answer
+    // also carries its answer key (issue #149). The payload reaches only the
+    // model's Context: `responses` above holds the raw answers.
+    const learnerInput = buildScopingCloseLearnerInput({
+      questions: baseline.questions,
+      answers: params.answers,
+      mechanicalGradings,
+    });
 
     const { parsed } = await executeTurn({
       parent: { kind: "scoping", id: pass.id },

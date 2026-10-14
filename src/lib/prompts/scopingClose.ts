@@ -54,7 +54,7 @@ export type ScopingCloseTurn = z.infer<ReturnType<typeof makeScopingCloseSchema>
  * only the stage label and the escaped input change per turn.
  */
 export interface RenderScopingCloseStageParams {
-  /** Already-serialised JSON of `{ items: [...] }` for the close turn. */
+  /** Already-serialised JSON from `buildScopingCloseLearnerInput`: `{ answers, mechanicalGradings }`. */
   readonly learnerInput: string;
 }
 
