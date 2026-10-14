@@ -39,13 +39,18 @@ describe("renderTeachingSystem (dueReviewInjection: hint)", () => {
     expect(out).not.toContain("Markets (tier 1)");
   });
 
-  // Issue #144: the lookup call instruction belongs to hint mode only.
+  // Issue #144, audit F4: only hint mode offers the lookup, so only its
+  // output contract names it.
+  // The lookup block keeps its pre-F4 bytes, header and order included.
   it("keeps the lookup call instruction in the output contract", () => {
     const out = renderTeachingSystem(SEED);
     expect(out).toContain(
-      "- getDueConcepts: lists the concepts currently due for spaced-repetition review. Call it before choosing review material to weave in or quiz on.",
+      [
+        "You also have read-only lookups into this learner's progress records:",
+        "- getDueConcepts: lists the concepts currently due for spaced-repetition review. Call it before choosing review material to weave in or quiz on.",
+        "- getConceptHistory: this learner's past assessment results for one named concept. Call it before re-teaching something they have struggled with.",
+      ].join("\n"),
     );
-    expect(out).not.toContain("already lists them");
   });
 
   it("renders no block when nothing is due", () => {

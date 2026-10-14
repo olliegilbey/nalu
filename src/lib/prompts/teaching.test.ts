@@ -110,26 +110,37 @@ describe("renderTeachingSystem (due-review injection, default full)", () => {
     expect(out).not.toContain("<due_for_review>");
   });
 
-  // Issue #144: the list is already in the prompt. Asking for the lookup
-  // anyway cost one Step and ~2k input tokens (2026-07-11 A/B).
-  // The line keeps its quiz cue: the provided list feeds review and quizzes.
-  it("says the due list is provided, and drops the lookup call instruction", () => {
+  // Audit F4: the list is already in the prompt, so the mid-turn agent gets
+  // no getDueConcepts tool. The prompt must never name a tool it lacks.
+  it("never names the getDueConcepts tool, with or without due concepts", () => {
+    expect(renderTeachingSystem(dueInputs)).not.toContain("getDueConcepts");
+    expect(renderTeachingSystem(baseInputs)).not.toContain("getDueConcepts");
+  });
+
+  // Issue #144 kept the review cue on purpose: the list says what it is for.
+  it("leads the due list with the review cue", () => {
     const out = renderTeachingSystem(dueInputs);
     expect(out).toContain(
-      "The due_for_review block above already lists them (no block means none are due); use that list when choosing review material to weave in or quiz on.",
+      "<due_for_review>\nConcepts from earlier lessons are due for spaced-repetition review. Use this list when choosing review material to weave in or quiz on.\n- Markets (tier 1)",
     );
-    expect(out).not.toContain("Call it before choosing review material");
+  });
+
+  // One lookup in full mode, so the header speaks of one.
+  it("introduces the single lookup in the singular", () => {
+    const out = renderTeachingSystem(baseInputs);
+    expect(out).toContain(
+      "You also have a read-only lookup into this learner's progress records:\n- getConceptHistory:",
+    );
   });
 });
 
 describe("renderTeachingSystem (output contract)", () => {
-  it("names all four tools, keeps single-JSON for the final turn, drops field vocab", () => {
+  it("names the three default-mode tools, keeps single-JSON for the final turn, drops field vocab", () => {
     const out = renderTeachingSystem(baseInputs);
     expect(out).toContain("presentQuestionnaire");
     expect(out).toContain("recordComprehensionSignals");
     // Lookup guidance (agent-loop plan Task 4): pull review state on demand,
-    // never fabricate it.
-    expect(out).toContain("getDueConcepts");
+    // never fabricate it. getDueConcepts is hint mode only (audit F4).
     expect(out).toContain("getConceptHistory");
     expect(out).toContain("Never invent or assume review history");
     // Close turns still run the blocking single-JSON path under this prompt.

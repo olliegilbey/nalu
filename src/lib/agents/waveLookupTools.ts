@@ -22,6 +22,9 @@ export interface WaveLookupScope {
  * Misses answer with a structured `notFound` instead of throwing: a thrown
  * execute surfaces as `tool-error` and burns a loop step on a situation the
  * model can recover from by itself.
+ *
+ * Builds both; `buildWaveMidTurnAgent` offers `getDueConcepts` only in
+ * `"hint"` due-review mode (audit F4).
  */
 export function buildWaveLookupTools(scope: WaveLookupScope) {
   return {

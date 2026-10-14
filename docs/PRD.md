@@ -202,7 +202,7 @@ SM-2 injection is **Wave-boundary**, not per-turn.
 - **Wave start**: the Harness freezes the SM-2-due concepts on the `waves` row. The system prompt renders them once in a `<due_for_review>` block. The block is omitted when nothing is due.
 - **Final turn**: the Harness appends `<concepts_for_next_wave>` to the user envelope. It holds two lists: `<fresh_at_current_tier>` (never-assessed concepts at the current tier) and `<review_due>` (SM-2-due concepts). An empty list renders `(none)`. The model plans the next Wave from these lists. Each planned concept in the blueprint is marked `fresh` or `review`; a `review` concept must be on the due list.
 
-Between those two points the Context is append-only and the review block is not re-injected. This keeps the Wave's prefix byte-stable and the prompt cache warm. Mid-Wave, the model can also call read-only lookup tools (`getDueConcepts`, `getConceptHistory`).
+Between those two points the Context is append-only and the review block is not re-injected. This keeps the Wave's prefix byte-stable and the prompt cache warm. Mid-Wave, the model can also call the read-only `getConceptHistory` lookup. It gets the `getDueConcepts` lookup only when `WAVE.dueReviewInjection` is `"hint"`, which swaps the list for a nudge to call it.
 
 Exact block text lives in `src/lib/prompts/teaching.ts` and `src/lib/spaced-repetition/scheduler.ts`.
 
