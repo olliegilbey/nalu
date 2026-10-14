@@ -29,6 +29,8 @@ One row is not raw model output: a failed tool-loop attempt's `failed_assistant_
 
 A `tool_result` row stores each tool call's answer as the loop sent it, in the order the loop sent them. A tool's return value replays as JSON. A tool error stores the SDK's error text as `errorText` and replays as `error-text`, the shape the loop sent (#147). Rows written before #147 hold `output: {toolError}` and keep their old JSON bytes.
 
+An `assistant_tool_call` row stores each call's input as the loop sent it. When a call is invalid and its input is not an object, such as unparseable arguments, the SDK sends `{}`, so the row stores `{}` (#163). An object, an array, or null passes through. Rows written before #163 keep the raw string.
+
 ## The system prompt is recomputed, never persisted
 
 `context_messages` stores only `user` / `assistant` / `tool` rows. The schema CHECK `context_messages_kind_role_pair` pins each row kind to its one role, and no kind maps to `system`. The system prompt is **rebuilt fresh on every LLM call** from seed columns (`courses` / `waves` rows) by the pure renderers (`renderTeachingSystem`, `renderScopingSystem`).
