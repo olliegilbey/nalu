@@ -139,24 +139,38 @@ async function runTurn(
   return vi.mocked(appendMessages).mock.calls[0]?.[0] ?? [];
 }
 
+/** A provider-level assistant message. */
+type AssistantMessage = Extract<LanguageModelV3Message, { role: "assistant" }>;
+
 /** A provider-level tool message: one Step's tool results. */
 type ToolMessage = Extract<LanguageModelV3Message, { role: "tool" }>;
 
-/** The one tool message in a provider-level prompt. */
-function toolMessageOf(prompt: readonly LanguageModelV3Message[]): ToolMessage {
-  const tools = prompt.filter((m): m is ToolMessage => m.role === "tool");
-  expect(tools).toHaveLength(1);
-  return tools[0] as ToolMessage;
+/** One Step's tool exchange: the assistant message that made the calls, then their results. */
+interface ToolExchange {
+  readonly calls: AssistantMessage;
+  readonly results: ToolMessage;
+}
+
+/** The one tool exchange in a provider-level prompt. */
+function toolExchangeOf(prompt: readonly LanguageModelV3Message[]): ToolExchange {
+  const calls = prompt.filter(
+    (m): m is AssistantMessage =>
+      m.role === "assistant" && m.content.some((p) => p.type === "tool-call"),
+  );
+  const results = prompt.filter((m): m is ToolMessage => m.role === "tool");
+  expect(calls).toHaveLength(1);
+  expect(results).toHaveLength(1);
+  return { calls: calls[0] as AssistantMessage, results: results[0] as ToolMessage };
 }
 
 /**
  * Run a Turn whose first Step makes the given tool calls, then replay its
- * rows on the next Turn. Returns the tool message from each side: the
+ * rows on the next Turn. Returns the tool exchange from each side: the
  * in-loop Step 2 prompt, and the next Turn's first prompt.
  */
 async function inLoopAndReplayed(
   toolInputs: readonly string[],
-): Promise<{ readonly inLoop: ToolMessage; readonly replayed: ToolMessage }> {
+): Promise<{ readonly inLoop: ToolExchange; readonly replayed: ToolExchange }> {
   // Turn 0: Step 1 makes the calls; Step 2 recovers in prose.
   const loopModel = scriptedModel([stepChunks({ toolInputs }), stepChunks({ text: "Recovered." })]);
   const persisted = await runTurn(loopModel, 0, []);
@@ -164,8 +178,8 @@ async function inLoopAndReplayed(
   const nextModel = scriptedModel([stepChunks({ text: "Next." })]);
   await runTurn(nextModel, 1, synthesiseRows([], persisted));
   return {
-    inLoop: toolMessageOf(loopModel.doStreamCalls[1]?.prompt ?? []),
-    replayed: toolMessageOf(nextModel.doStreamCalls[0]?.prompt ?? []),
+    inLoop: toolExchangeOf(loopModel.doStreamCalls[1]?.prompt ?? []),
+    replayed: toolExchangeOf(nextModel.doStreamCalls[0]?.prompt ?? []),
   };
 }
 
@@ -179,10 +193,19 @@ describe("tool-error replay (#147)", () => {
     // Valid input, so the tool runs and its execute throws.
     { cause: "execute throws", toolInput: JSON.stringify({ name: "missing" }) },
     // Parseable JSON that fails the input schema: InvalidToolInputError.
-    // Unparseable JSON also diverges in the assistant tool-call message (#163).
+    // The SDK keeps the parsed object as the call's input.
     { cause: "input fails validation", toolInput: JSON.stringify({ name: 7 }) },
   ])("replays a tool error ($cause) as the bytes the loop sent", async ({ toolInput }) => {
     const { inLoop, replayed } = await inLoopAndReplayed([toolInput]);
+    expect(replayed).toEqual(inLoop);
+  });
+
+  it("replays an unparseable tool-call input as the {} the loop sent (#163)", async () => {
+    // Not JSON, so the SDK marks the call invalid. In-loop it sends the
+    // call's input as {}, not the raw string.
+    const { inLoop, replayed } = await inLoopAndReplayed(['{"name": ']);
+    // Guard the fixture: the loop really sent {}.
+    expect(inLoop.calls.content.find((p) => p.type === "tool-call")?.input).toEqual({});
     expect(replayed).toEqual(inLoop);
   });
 
@@ -194,11 +217,11 @@ describe("tool-error replay (#147)", () => {
       JSON.stringify({ name: 7 }),
     ]);
     // Guard the fixture: the in-loop order really is error first.
-    expect(inLoop.content.map((p) => p.type === "tool-result" && p.toolCallId)).toEqual([
+    expect(inLoop.results.content.map((p) => p.type === "tool-result" && p.toolCallId)).toEqual([
       "call-2",
       "call-1",
     ]);
-    expect(JSON.stringify(replayed)).toBe(JSON.stringify(inLoop));
+    expect(JSON.stringify(replayed.results)).toBe(JSON.stringify(inLoop.results));
   });
 
   it("renders a tool_result row written before #147 to its old bytes", () => {

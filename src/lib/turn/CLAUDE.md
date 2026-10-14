@@ -35,6 +35,12 @@ before #147 hold `output: {toolError: String(error)}`; they still replay
 as JSON, byte-identical. The error text can quote tool input, so it
 never enters a log line.
 
+An `assistant_tool_call` row holds each call's `input` as the loop sent
+it. Unparseable arguments mark a call invalid, and the SDK sends its
+input as `{}`, not the raw string. The row stores `{}` too (#163, pinned
+by `toolErrorReplay.test.ts`). Parseable input that fails the schema
+keeps its parsed object. Rows written before #163 hold the raw string.
+
 A failed tool-loop attempt persists as that prose, cut at
 `findJsonProseLeakIndex` and trimmed, with no tool trail (#140). That
 guard and the Wave gate's envelope check share one scanner,
