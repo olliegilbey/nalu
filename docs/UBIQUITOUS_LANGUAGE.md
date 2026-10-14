@@ -16,7 +16,7 @@ The `{topic, outline, openingText, plannedConcepts}` payload the LLM emits as th
 
 ## Card answer
 
-What the User submits when the assessment-card UI replaces the chat input. A turn carries either a card answer or a chat message, never both. In a Wave, the Harness stores it as a `{role: "user", kind: "answers"}` entry in `waves.chat_log`. In `context_messages` it is a `user_message` row whose envelope carries `<questionnaire_answers>`. The server grades MC answers mechanically. The model grades free-text answers in the same turn's response, as `comprehensionSignals`. The schema CHECK still allows a `card_answer` row kind, but nothing writes it.
+What the User submits when the assessment-card UI replaces the chat input. A turn carries either a card answer or a chat message, never both. In a Wave, the Harness stores it as a `{role: "user", kind: "answers"}` entry in `waves.chat_log`. In `context_messages` it is a `user_message` row whose envelope carries `<questionnaire_answers>`. The server grades MC answers mechanically. The model grades free-text answers in the same turn: mid-Wave through the `recordComprehensionSignals` tool, and at the close turn in the `gradings` field. The schema CHECK still allows a `card_answer` row kind, but nothing writes it.
 
 ## Cumulative summary
 
@@ -71,7 +71,7 @@ Context content authored by the Harness (not the User, not the LLM). Turn-level 
 
 ## LLM-facing terminology
 
-User-facing copy, code, DB columns, and internal docs all say **Wave**. LLM prompts say **lesson** — the model has strong "lesson" priors and zero training-data signal for "Wave." Prompt prose lives in `src/lib/prompts/` and says "lesson". Some machine labels the model reads still say "wave": `<stage>close wave</stage>`, the `<concepts_for_next_wave>` block (`src/lib/spaced-repetition/scheduler.ts`), and the wire schema names `wave_mid_turn` and `wave_close`.
+User-facing copy, code, DB columns, and internal docs all say **Wave**. LLM prompts say **lesson** — the model has strong "lesson" priors and zero training-data signal for "Wave." Prompt prose lives in `src/lib/prompts/` and says "lesson". Some machine labels the model reads still say "wave": `<stage>close wave</stage>`, the `<concepts_for_next_wave>` block (`src/lib/spaced-repetition/scheduler.ts`), and the close turn's wire schema name `wave_close`.
 
 ## Framework
 
@@ -103,7 +103,7 @@ The discriminated-union JSONB on `waves.seed_source`. Either `{kind: "scoping_ha
 
 ## Step
 
-One LLM API call, the AI SDK's unit. A Turn spans one or more Steps: a tool loop runs up to `LLM.maxToolSteps`, and each validation retry adds one. See the disambiguation under **Turn**.
+One LLM API call, the AI SDK's unit. A Turn spans one or more Steps: a tool loop runs up to `LLM.maxToolSteps`. A structured-turn retry adds one Step; a tool-turn retry reruns the whole loop. See the disambiguation under **Turn**.
 
 The per-turn code that wraps those calls lives in `src/lib/course/`. Each LLM-backed function there loads DB state, applies this turn's heuristics, runs the turn through `src/lib/turn/`, and persists the result. Deterministic algorithms (XP, SM-2 math, tier advancement) live in pure modules in `src/lib/scoring/` and `src/lib/spaced-repetition/`.
 
@@ -122,7 +122,7 @@ One ping-pong: User → Router → LLM → Router → User. Each turn is a singl
 **Disambiguation — Turn vs Step vs ChatEntry.** This definition deliberately diverges from dialogue-systems literature, where a "turn" is ONE speaker's contribution. In Nalu:
 
 - **Turn** — the full exchange above (what the literature would call a round). `turn_index`, `turns_remaining`, `WAVE.turnCount`, `executeTurn` all count in this unit.
-- **Step** — one LLM API call inside a turn (the AI SDK's unit: the tool loop runs up to `LLM.maxToolSteps` steps per turn; validation retries also add calls). A turn spans 1..N steps.
+- **Step** — one LLM API call inside a turn (the AI SDK's unit: the tool loop runs up to `LLM.maxToolSteps` steps per turn; a retry reruns the call or the loop). A turn spans 1..N steps.
 - **ChatEntry** (`src/lib/types/chatEntry.ts`) — one rendered message in the chat scroll, i.e. one speaker's contribution (the literature's "turn"). One Turn typically yields two ChatEntries.
 
 Never use "turn" for a single contribution or a single API call — say ChatEntry or Step.
