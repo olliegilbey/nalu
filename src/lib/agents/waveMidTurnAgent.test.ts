@@ -6,11 +6,11 @@ import { renderTeachingSystem } from "@/lib/prompts/teaching";
 import { getRunUsageTally, resetRunUsageTally } from "@/lib/llm/runUsageTally";
 import { buildWaveMidTurnAgent } from "./waveMidTurnAgent";
 
-// The provider needs env at import time — stub it. Tests that run the
-// loop inject a MockLanguageModelV3 instead.
-vi.mock("@/lib/llm/provider", () => ({
+// The provider model needs env — stub it. Tests that run the loop inject a
+// MockLanguageModelV3 instead. llmProviderOptions stays real.
+vi.mock("@/lib/llm/provider", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/llm/provider")>()),
   getLlmModel: () => ({ modelId: "stub", specificationVersion: "v3" }),
-  llmProviderOptions: () => ({ "nalu-llm": { reasoningEffort: "high" } }),
 }));
 
 // The getConceptHistory lookup reads the DB; no concept matches in these tests.
@@ -107,7 +107,12 @@ const SEED: WaveSeedInputs = {
 const COURSE_ID = "11111111-1111-4111-8111-111111111111";
 
 /** Agent params for a chat-text turn: no questions answered. */
-const CHAT_TURN = { seed: SEED, courseId: COURSE_ID, answeredQuestionIds: [] } as const;
+const CHAT_TURN = {
+  seed: SEED,
+  courseId: COURSE_ID,
+  waveId: "22222222-2222-4222-8222-222222222222",
+  answeredQuestionIds: [],
+} as const;
 
 describe("buildWaveMidTurnAgent", () => {
   it("binds emission + lookup tools and a fresh collector", () => {
@@ -137,6 +142,23 @@ describe("buildWaveMidTurnAgent", () => {
     // or the provider cache prefix breaks (renderContext invariant).
     const { instructions } = buildWaveMidTurnAgent(CHAT_TURN);
     expect(instructions).toBe(renderTeachingSystem(SEED));
+  });
+
+  it("sends the Wave's prompt cache key on every loop Step (#146)", async () => {
+    // Each Step is one request in the Wave's Context, so each carries the
+    // key. A prepareStep that returned providerOptions would drop it.
+    const model = twoStepStreamModel();
+    const { agent } = buildWaveMidTurnAgent({ ...CHAT_TURN, model });
+
+    const result = await agent.stream({ messages: [{ role: "user", content: "hi" }] });
+    for await (const part of result.fullStream) {
+      void part; // drain, as executeToolTurnStream does
+    }
+
+    const sentKeys = model.doStreamCalls.map(
+      (call) => call.providerOptions?.["nalu-llm"]?.["prompt_cache_key"],
+    );
+    expect(sentKeys).toEqual([CHAT_TURN.waveId, CHAT_TURN.waveId]);
   });
 
   it("folds every loop Step's usage into the run tally", async () => {

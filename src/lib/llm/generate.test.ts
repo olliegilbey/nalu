@@ -6,6 +6,9 @@ import { generateChat } from "./generate";
 import { getRunUsageTally, resetRunUsageTally } from "./runUsageTally";
 import { LLM } from "@/lib/config/tuning";
 
+/** The Context id every call here sends as its prompt cache key. */
+const CACHE_KEY = "22222222-2222-4222-8222-222222222222";
+
 /**
  * A MockLanguageModelV3 that returns `text` and records every doGenerate
  * call into `.doGenerateCalls`. The assertions below inspect those recorded
@@ -35,7 +38,10 @@ describe("generateChat", () => {
   it("returns the model text and usage", async () => {
     const model = mockModel("hello");
 
-    const result = await generateChat([{ role: "user", content: "hi" }], { model });
+    const result = await generateChat([{ role: "user", content: "hi" }], {
+      model,
+      promptCacheKey: CACHE_KEY,
+    });
 
     expect(result.text).toBe("hello");
     expect(result.usage).toBeDefined();
@@ -44,20 +50,21 @@ describe("generateChat", () => {
   it("applies the tuning default temperature to the model call", async () => {
     const model = mockModel("hello");
 
-    await generateChat([{ role: "user", content: "hi" }], { model });
+    await generateChat([{ role: "user", content: "hi" }], { model, promptCacheKey: CACHE_KEY });
 
     expect(model.doGenerateCalls[0]?.temperature).toBe(LLM.defaultTemperature);
   });
 
-  it("sends reasoningEffort under the provider-name key so it reaches the wire", async () => {
+  it("sends reasoningEffort and the cache key under the provider-name key", async () => {
     const model = mockModel("hello");
 
-    await generateChat([{ role: "user", content: "hi" }], { model });
+    await generateChat([{ role: "user", content: "hi" }], { model, promptCacheKey: CACHE_KEY });
 
     // The openai-compatible adapter reads options under its own provider
-    // name ("nalu-llm") and maps reasoningEffort -> reasoning_effort.
+    // name ("nalu-llm") and maps reasoningEffort -> reasoning_effort. It
+    // passes prompt_cache_key through as is (wire test: provider.test.ts).
     expect(model.doGenerateCalls[0]?.providerOptions).toEqual({
-      "nalu-llm": { reasoningEffort: LLM.reasoningEffort },
+      "nalu-llm": { reasoningEffort: LLM.reasoningEffort, prompt_cache_key: CACHE_KEY },
     });
   });
 
@@ -66,6 +73,7 @@ describe("generateChat", () => {
 
     await generateChat([{ role: "user", content: "hi" }], {
       model,
+      promptCacheKey: CACHE_KEY,
       responseSchema: z.object({ x: z.string() }),
       responseSchemaName: "test",
     });
@@ -82,7 +90,7 @@ describe("generateChat", () => {
   it("sets no json response_format when no schema is supplied", async () => {
     const model = mockModel("plain text");
 
-    await generateChat([{ role: "user", content: "hi" }], { model });
+    await generateChat([{ role: "user", content: "hi" }], { model, promptCacheKey: CACHE_KEY });
 
     // generateText may default responseFormat to {type:"text"} or leave it
     // unset; either way it must not be a json schema payload.
@@ -94,6 +102,7 @@ describe("generateChat", () => {
 
     const result = await generateChat([{ role: "user", content: "hi" }], {
       model,
+      promptCacheKey: CACHE_KEY,
       responseSchema: z.object({ x: z.string() }),
     });
 
@@ -108,6 +117,7 @@ describe("generateChat", () => {
     await expect(
       generateChat([{ role: "user", content: "hi" }], {
         model,
+        promptCacheKey: CACHE_KEY,
         responseSchema: z.object({ x: z.string() }),
       }),
     ).rejects.toSatisfy((err: unknown) => {
@@ -117,7 +127,10 @@ describe("generateChat", () => {
   });
 
   it("folds the Step's usage into the run tally", async () => {
-    await generateChat([{ role: "user", content: "hi" }], { model: mockModel("hello") });
+    await generateChat([{ role: "user", content: "hi" }], {
+      model: mockModel("hello"),
+      promptCacheKey: CACHE_KEY,
+    });
 
     expect(getRunUsageTally()).toMatchObject({ steps: 1, inputTokens: 10, outputTokens: 20 });
   });
@@ -127,6 +140,7 @@ describe("generateChat", () => {
     await expect(
       generateChat([{ role: "user", content: "hi" }], {
         model: mockModel('{"x":42}'),
+        promptCacheKey: CACHE_KEY,
         responseSchema: z.object({ x: z.string() }),
       }),
     ).rejects.toSatisfy((err: unknown) => NoObjectGeneratedError.isInstance(err));

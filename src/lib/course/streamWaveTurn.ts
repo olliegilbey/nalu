@@ -109,6 +109,7 @@ export async function streamWaveTurn(
       const instance = buildWaveMidTurnAgent({
         seed,
         courseId: prep.dispatchCtx.course.id,
+        waveId: prep.dispatchCtx.wave.id,
         answeredQuestionIds,
       });
       attemptState.collector = instance.collector;

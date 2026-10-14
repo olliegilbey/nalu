@@ -32,6 +32,10 @@ Rules:
 - Prompt text lives in src/lib/prompts/ — agents import renderers. Agent
   instructions must stay byte-identical to `renderContext(seed,…).system`
   (tested) or the provider cache prefix breaks.
+- `providerOptions` come from `llmProviderOptions(contextId)`. It sends
+  the Context's `prompt_cache_key` on every Step: the wave id for
+  `buildWaveMidTurnAgent` (#146). The key is an opaque id, never learner
+  content.
 
 Where agency is explicitly rejected (2026-06-10 agent-loop plan): no
 model-driven stage transitions in scoping; no write-capable tools; no

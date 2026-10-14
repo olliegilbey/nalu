@@ -33,6 +33,8 @@ export interface WaveMidTurnAgentParams {
   readonly seed: WaveSeedInputs;
   /** Server-resolved course id; scopes the read-only lookup tools. */
   readonly courseId: string;
+  /** The Wave's id: its Context's `prompt_cache_key` (issue #146). */
+  readonly waveId: string;
   /** Question ids the learner answered this turn; the grading tool checks coverage against them. */
   readonly answeredQuestionIds: readonly string[];
   /** Model override (tests); default: the provider singleton. */
@@ -89,8 +91,9 @@ export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTu
     stopWhen: stepCountIs(LLM.maxToolSteps),
     temperature: LLM.defaultTemperature,
     maxRetries: LLM.maxRetries,
-    // reasoning_effort on the wire (tuning LLM.reasoningEffort).
-    providerOptions: llmProviderOptions(),
+    // reasoning_effort and the Wave's prompt_cache_key on the wire, on
+    // every loop Step.
+    providerOptions: llmProviderOptions(params.waveId),
     prepareStep: cerebrasToolLoopPrepareStep,
     // Env-gated OTel span, stage-labelled, learner content redacted
     // (src/lib/llm/telemetry.ts). One span per turn, child spans per step.

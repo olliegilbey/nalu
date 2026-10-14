@@ -20,7 +20,7 @@ A Wave close also writes `waves.summary` and `waves.blueprint_emitted`. They are
 
 `context_messages` is the LLM's view of history. Two rules:
 
-1. **Byte stability.** `context_messages.content` is never re-rendered from typed data. The bytes written on emission are the exact bytes read back on the next turn. Cerebras and OpenAI cache prefixes at the byte level; whitespace or key-ordering drift causes cache-miss-per-turn.
+1. **Byte stability.** `context_messages.content` is never re-rendered from typed data. The bytes written on emission are the exact bytes read back on the next turn. Cerebras and OpenAI cache prefixes at the byte level; whitespace or key-ordering drift causes cache-miss-per-turn. Each call also sends its Context's id as `prompt_cache_key`: the wave id, or the scoping pass id. Cerebras then routes every Turn of a Context to the cache that holds its prefix (#146).
 2. **Atomic pairing.** A `user_message` row is only ever persisted in one batch with the model output it produced. `executeTurn` and its tool-loop sibling `executeToolTurnStream` write that batch after the LLM responds. On success the batch ends in `assistant_response`. On terminal validation failure it ends in `failed_assistant_response`. A transport failure produces **no** rows. There is never a dangling user-row without its assistant-row.
 
 The atomicity rule is what makes replay trivial: walk rows in `(turn_index, seq)` order, every pair was actually seen by the LLM.
