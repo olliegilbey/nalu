@@ -8,9 +8,9 @@ import type { SubmitTurnPayload } from "./buildLearnerInput";
  * loop ends, over the staged collector + the prose the learner actually saw
  * (all steps' streamed text, not just the final step's).
  *
- * Failure detail strings are model-readable retry directives — they persist
- * as `harness_retry_directive` rows verbatim (`executeToolTurnStream`'s
- * default `retryDirective`).
+ * Failure detail strings are model-readable retry directives —
+ * `executeToolTurnStream` persists each one verbatim as the
+ * `harness_retry_directive` row.
  *
  * Checks (each replaces a mega-schema invariant, in order):
  * 1. Non-empty prose — was `userMessage: z.string().min(1)`.
@@ -55,33 +55,6 @@ export function validateWaveMidToolTurn(
     }
   }
 
-  return null;
-}
-
-/**
- * Streaming leak guard: index of the first `{` that opens a line (only
- * whitespace before it) OUTSIDE a ``` fence, or null. `streamWaveTurn` stops
- * forwarding text deltas to the client from this index for the rest of the
- * attempt — a JSON-imitation attempt dumps the would-be tool input (including
- * the plaintext `correct` answer key) into the TEXT channel, which bypasses
- * every tool-chunk redaction (observed live, 2026-07-08). Fence-aware so
- * legit fenced JSON teaching examples still stream. Unlike the post-loop
- * gate below, this runs per delta and needs no parse-to-end certainty:
- * a false positive only truncates the TRANSIENT stream (full prose still
- * reaches chat_log and renders after the turn-end refetch).
- */
-export function findJsonProseLeakIndex(prose: string): number | null {
-  let inFence = false;
-  let offset = 0;
-  for (const line of prose.split("\n")) {
-    const body = line.trimStart();
-    if (body.startsWith("```")) {
-      inFence = !inFence;
-    } else if (!inFence && body.startsWith("{")) {
-      return offset + (line.length - body.length);
-    }
-    offset += line.length + 1; // +1 for the split-away "\n"
-  }
   return null;
 }
 

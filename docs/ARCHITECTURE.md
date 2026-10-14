@@ -25,6 +25,8 @@ A Wave close also writes `waves.summary` and `waves.blueprint_emitted`. They are
 
 The atomicity rule is what makes replay trivial: walk rows in `(turn_index, seq)` order, every pair was actually seen by the LLM.
 
+One row is not raw model output: a failed tool-loop attempt's `failed_assistant_response`. It holds the prose the learner saw, cut at any JSON leak, with no tool trail (#140). The retry replays it as the model's previous reply, and a JSON reply there primes the model to answer in JSON again. `src/lib/turn/CLAUDE.md` has the details.
+
 ## The system prompt is recomputed, never persisted
 
 `context_messages` stores only `user` / `assistant` / `tool` rows. The schema CHECK `context_messages_kind_role_pair` pins each row kind to its one role, and no kind maps to `system`. The system prompt is **rebuilt fresh on every LLM call** from seed columns (`courses` / `waves` rows) by the pure renderers (`renderTeachingSystem`, `renderScopingSystem`).

@@ -9,6 +9,8 @@ import {
 } from "@/db/queries/contextMessages";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { SCOPING } from "@/lib/config/tuning";
+import { toolStepRows } from "./toolStepRows";
+import { findJsonProseLeakIndex } from "./findJsonProseLeakIndex";
 import type { SeedInputs } from "@/lib/types/context";
 import type { LlmMessage, LlmUsage } from "@/lib/types/llm";
 import { assembleLlmMessages } from "./contextAssembly";
@@ -57,8 +59,6 @@ export interface ExecuteToolTurnStreamParams<TOOLS extends ToolSet = ToolSet> {
   readonly userMessageContent: string;
   /** Build a fresh agent + validation gate per attempt (0-based). */
   readonly makeAttempt: (attempt: number) => ToolTurnAttempt<TOOLS>;
-  /** Directive text for the retry row. Default: the gate failure's detail. */
-  readonly retryDirective?: (err: ValidationGateFailure, attempt: number) => string;
   /** Called with each prose text delta as it streams (any loop step). */
   readonly onTextDelta: (delta: string, attempt: number) => void;
   /** Called before each attempt's stream starts (attempt is 0-based). */
@@ -108,17 +108,28 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
  *   holding the closing prose. The Context replays the loop faithfully.
  * - Validation is the caller's post-loop gate (`validateTurn`), not a
  *   response schema. On failure the attempt persists ONE
- *   `failed_assistant_response` row whose content is a JSON envelope of the
- *   attempt exhaust (`{text, steps:[{toolCalls, results}]}`) + the usual
- *   `harness_retry_directive` — NOT tool-kind rows. WHY: renderContext's
- *   retry filter drops failed/directive kinds from recovered turns; persisting
- *   failed-attempt exhaust under the tool kinds would leak it into the
- *   recovered turn's rendered context and break the cache-prefix invariant
- *   ("a recovered turn renders identically to a non-retry turn"). The JSON
- *   envelope keeps the audit trail and gives the retry attempt full context.
+ *   `failed_assistant_response` row + the usual `harness_retry_directive` —
+ *   NOT tool-kind rows. WHY: renderContext's retry filter drops
+ *   failed/directive kinds from recovered turns; persisting failed-attempt
+ *   exhaust under the tool kinds would leak it into the recovered turn's
+ *   rendered context and break the cache-prefix invariant ("a recovered turn
+ *   renders identically to a non-retry turn").
+ * - The failed row holds the prose the learner saw: every Step's text, cut
+ *   at `findJsonProseLeakIndex` and trimmed ("" when nothing safe showed).
+ *   No tool trail (#140). The retry replays it as the model's previous
+ *   reply, so a JSON reply there would prime the model to answer in JSON
+ *   again. Staged tool state dies with the attempt, so replaying its tool
+ *   results would also claim work the retry must redo. The directive
+ *   already says to redo the tool calls.
  * - In-loop self-corrections (schema-invalid call → tool-error fed back →
  *   corrected call) are NOT harness retries; they stay inside one attempt's
- *   step trail and persist with it.
+ *   step trail. They persist only when that attempt succeeds: a failed
+ *   attempt persists no tool trail (above).
+ * - An abnormal loop end is a transport failure, not a gate failure: any
+ *   `error` stream part rethrows its error, and no rows persist. A tool call
+ *   with neither a result nor a tool-error throws `UnpairedToolCallError`
+ *   (`toolStepRows`) rather than persist an orphan that Cerebras would
+ *   reject on replay.
  */
 export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
   params: ExecuteToolTurnStreamParams<TOOLS>,
@@ -138,53 +149,6 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
     content: params.userMessageContent,
   };
   const totalAttempts = SCOPING.maxParseRetries + 1;
-  const directiveFn = params.retryDirective ?? ((err) => err.detail);
-
-  /** Map one loop step to its persisted row pair (empty for pure-text steps). */
-  function stepRows(step: StepResult<TOOLS>, seqStart: number): readonly AppendMessageParams[] {
-    if (step.toolCalls.length === 0) return [];
-    const callRow: AppendMessageParams = {
-      parent: params.parent,
-      turnIndex,
-      seq: seqStart,
-      kind: "assistant_tool_call",
-      role: "assistant",
-      content: JSON.stringify({
-        text: step.text,
-        toolCalls: step.toolCalls.map((c) => ({
-          toolCallId: c.toolCallId,
-          toolName: c.toolName,
-          input: c.input,
-        })),
-      }),
-    };
-    // Results batch: successful executes plus tool-error feedback (invalid
-    // inputs / execute throws) — both were fed back to the model, so both
-    // must replay for context fidelity.
-    const errors = step.content.filter((p) => p.type === "tool-error");
-    const results = [
-      ...step.toolResults.map((r) => ({
-        toolCallId: r.toolCallId,
-        toolName: r.toolName,
-        output: r.output,
-      })),
-      ...errors.map((e) => ({
-        toolCallId: e.toolCallId,
-        toolName: e.toolName,
-        output: { toolError: String(e.error) },
-      })),
-    ];
-    if (results.length === 0) return [callRow];
-    const resultRow: AppendMessageParams = {
-      parent: params.parent,
-      turnIndex,
-      seq: seqStart + 1,
-      kind: "tool_result",
-      role: "tool",
-      content: JSON.stringify({ results }),
-    };
-    return [callRow, resultRow];
-  }
 
   async function attempt(
     i: number,
@@ -202,11 +166,26 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
 
     // Drain the stream: forward prose deltas and tool lifecycle events.
     // Tool-turn prose is plain text — no monotonic-prefix workaround needed.
+    // `visibleProse` accumulates every Step's deltas: the learner-visible
+    // prose, the same string the caller streams and gates. A failed attempt
+    // replays as this prose (below). `let`: built up across the loop.
+    let visibleProse = "";
     for await (const part of result.fullStream) {
       if (part.type === "text-delta") {
+        visibleProse += part.text;
         params.onTextDelta(part.text, i);
       } else if (TOOL_EVENT_TYPES.has(part.type)) {
         params.onToolEvent?.(part, i);
+      } else if (part.type === "error") {
+        // Any `error` part ends the attempt as a transport failure. The SDK
+        // does not throw for them. A failed Step (transport/API error,
+        // retries spent) emits one, closes the stream, and still RESOLVES
+        // `steps` with the earlier Steps (ai@6.0.158). A provider chunk
+        // error (openai-compatible) emits one WITHOUT closing the stream; it
+        // is non-fatal to the SDK but still corrupts the attempt. Rethrow
+        // the underlying error untouched, so the partial attempt never
+        // reaches the gate or the DB — a transport failure persists no rows.
+        throw part.error;
       }
     }
 
@@ -219,7 +198,14 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
     if (gate === null) {
       // Success: persist the loop trail + closing prose in one atomic batch.
       const stepRowsAll = steps.reduce<readonly AppendMessageParams[]>(
-        (acc, step) => [...acc, ...stepRows(step, batch.length + acc.length)],
+        (acc, step) => [
+          ...acc,
+          ...toolStepRows(step, {
+            parent: params.parent,
+            turnIndex,
+            seqStart: batch.length + acc.length,
+          }),
+        ],
         [],
       );
       const successRow: AppendMessageParams = {
@@ -234,28 +220,17 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
       return { finalText, usage };
     }
 
-    // Validation failure: persist the exhaust as a JSON envelope (see TSDoc).
+    // Validation failure: persist the attempt as the prose the learner saw,
+    // cut at any JSON leak and trimmed (see TSDoc). "" when nothing safe
+    // was shown: the row still marks the attempt in the Turn.
+    const leakAt = findJsonProseLeakIndex(visibleProse);
     const failedRow: AppendMessageParams = {
       parent: params.parent,
       turnIndex,
       seq: batch.length,
       kind: "failed_assistant_response",
       role: "assistant",
-      content: JSON.stringify({
-        text: finalText,
-        steps: steps.map((step) => ({
-          toolCalls: step.toolCalls.map((c) => ({
-            toolCallId: c.toolCallId,
-            toolName: c.toolName,
-            input: c.input,
-          })),
-          results: step.toolResults.map((r) => ({
-            toolCallId: r.toolCallId,
-            toolName: r.toolName,
-            output: r.output,
-          })),
-        })),
-      }),
+      content: (leakAt === null ? visibleProse : visibleProse.slice(0, leakAt)).trim(),
     };
     if (i + 1 >= totalAttempts) {
       // Terminal exhaust: persist failure trail without trailing directive.
@@ -268,7 +243,8 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
       seq: batch.length + 1,
       kind: "harness_retry_directive",
       role: "user",
-      content: directiveFn(gate, i + 1),
+      // The gate's detail is already a model-readable directive.
+      content: gate.detail,
     };
     return attempt(i + 1, [...batch, failedRow, directiveRow]);
   }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { executeToolTurnStream, type ToolTurnAgent } from "./executeToolTurnStream";
+import { UnpairedToolCallError } from "./unpairedToolCallError";
 
 vi.mock("@/db/queries/contextMessages.writes", () => ({
   appendMessages: vi.fn(),
@@ -185,8 +186,16 @@ describe("executeToolTurnStream", () => {
     expect(toolEvents).toEqual(["tool-input-start", "tool-call"]);
   });
 
-  it("validateTurn failure persists a JSON exhaust envelope + directive, then retries with a fresh agent", async () => {
-    const first = agentOf([], [toolStep(""), textStep("no grading happened")]);
+  it("validateTurn failure persists the attempt's prose + directive, then retries with a fresh agent", async () => {
+    // Prose streams in two Steps, around a tool call: the failed row holds
+    // ALL of it (what the learner saw), not just the final Step's text.
+    const first = agentOf(
+      [
+        { type: "text-delta", id: "t1", text: "Let me set a quiz. " },
+        { type: "text-delta", id: "t2", text: "No grading happened." },
+      ],
+      [toolStep("Let me set a quiz. "), textStep("No grading happened.")],
+    );
     const second = agentOf([], [toolStep("fixed"), textStep("Recovered prose.")]);
 
     const attempts: number[] = [];
@@ -219,12 +228,53 @@ describe("executeToolTurnStream", () => {
       ["tool_result", 4],
       ["assistant_response", 5],
     ]);
-    // Failed attempt persists as ONE JSON envelope row — never as tool-kind
-    // rows, which would leak into the recovered turn's rendered context.
-    const envelope = JSON.parse(batch?.[1]?.content ?? "") as { steps: unknown[]; text: string };
-    expect(envelope.text).toBe("no grading happened");
-    expect(envelope.steps).toHaveLength(2);
+    // Failed attempt persists as ONE prose row with no tool trail — never as
+    // tool-kind rows, which would leak into the recovered turn's rendered
+    // context, and never as JSON, which primes the retry to answer in JSON.
+    expect(batch?.[1]?.content).toBe("Let me set a quiz. No grading happened.");
     expect(batch?.[2]?.content).toBe("call the grading tool");
+  });
+
+  it("replays a failed attempt as its prose cut at a line-start JSON leak (#140)", async () => {
+    const leaked = 'Nice work!\n{"questions":[{"id":"q1","correct":"B"}]}';
+    const first = agentOf([{ type: "text-delta", id: "t", text: leaked }], [textStep(leaked)]);
+    const second = agentOf([], [textStep("Recovered.")]);
+    await executeToolTurnStream({
+      parent: { kind: "wave", id: WAVE_ID },
+      seed: WAVE_SEED,
+      userMessageContent: "u",
+      makeAttempt: (i) => ({
+        agent: i === 0 ? first.agent : second.agent,
+        validateTurn: () =>
+          i === 0 ? new ValidationGateFailure("tool_turn_gate", "raw JSON") : null,
+      }),
+      ...noopHooks,
+    });
+    const failed = vi
+      .mocked(appendMessages)
+      .mock.calls[0]?.[0]?.find((r) => r.kind === "failed_assistant_response");
+    expect(failed?.content).toBe("Nice work!");
+    expect(() => JSON.parse(failed?.content ?? "")).toThrow();
+  });
+
+  it("persists an attempt with no visible prose as an empty failed row", async () => {
+    // A leak at offset 0 (or the empty-prose gate): nothing safe reached the
+    // learner, so nothing replays. The row stays, so the Turn keeps its shape.
+    const leaked = '{"questions":[{"id":"q1","correct":"B"}]}';
+    const first = agentOf([{ type: "text-delta", id: "t", text: leaked }], [textStep(leaked)]);
+    const second = agentOf([], [textStep("Recovered.")]);
+    await executeToolTurnStream({
+      parent: { kind: "wave", id: WAVE_ID },
+      seed: WAVE_SEED,
+      userMessageContent: "u",
+      makeAttempt: (i) => ({
+        agent: i === 0 ? first.agent : second.agent,
+        validateTurn: () => (i === 0 ? new ValidationGateFailure("tool_turn_gate", "x") : null),
+      }),
+      ...noopHooks,
+    });
+    const batch = vi.mocked(appendMessages).mock.calls[0]?.[0];
+    expect(batch?.[1]).toMatchObject({ kind: "failed_assistant_response", content: "" });
   });
 
   it("terminal exhaust persists the trail without a trailing directive and throws the gate", async () => {
@@ -247,37 +297,52 @@ describe("executeToolTurnStream", () => {
     expect(batch?.[batch.length - 1]?.kind).toBe("failed_assistant_response");
   });
 
-  it("persists tool-error feedback into the tool_result row (in-loop self-correction trail)", async () => {
-    const stepWithError = {
-      text: "",
-      toolCalls: [{ toolCallId: "bad", toolName: "presentQuestionnaire", input: { x: 1 } }],
-      toolResults: [],
-      content: [
-        {
-          type: "tool-error",
-          toolCallId: "bad",
-          toolName: "presentQuestionnaire",
-          error: "Invalid input",
-        },
+  it("a mid-loop stream error rejects with that error and persists nothing", async () => {
+    // ai@6.0.158: when Step N≥2 fails, the SDK enqueues an `error` part,
+    // closes the stream, and still RESOLVES `steps` with the earlier Steps.
+    // The partial Turn must not pass the gate or reach the DB.
+    const transport = new Error("Step 2 failed: 503");
+    const { agent } = agentOf(
+      [
+        { type: "text-delta", id: "t1", text: "Let me grade that." },
+        { type: "error", error: transport },
       ],
+      [toolStep("Let me grade that.")],
+    );
+    await expect(
+      executeToolTurnStream({
+        parent: { kind: "wave", id: WAVE_ID },
+        seed: WAVE_SEED,
+        userMessageContent: "u",
+        makeAttempt: () => ({ agent, validateTurn: () => null }),
+        ...noopHooks,
+      }),
+    ).rejects.toBe(transport);
+    expect(appendMessages).not.toHaveBeenCalled();
+  });
+
+  it("refuses to persist a tool call with no result or error (Cerebras rejects it on replay)", async () => {
+    // Two calls in one Step; only c1 got a result. Persisting c2 would 400
+    // every later Turn of the Wave, so the attempt must end abnormally.
+    const orphanStep = {
+      text: "",
+      toolCalls: [
+        { toolCallId: "c1", toolName: "presentQuestionnaire", input: { questions: [] } },
+        { toolCallId: "c2", toolName: "getDueConcepts", input: {} },
+      ],
+      toolResults: [{ toolCallId: "c1", toolName: "presentQuestionnaire", output: {} }],
+      content: [],
     };
-    const { agent } = agentOf([], [stepWithError, textStep("recovered in-loop")]);
-    await executeToolTurnStream({
+    const { agent } = agentOf([], [orphanStep, textStep("Done.")]);
+    const run = executeToolTurnStream({
       parent: { kind: "wave", id: WAVE_ID },
       seed: WAVE_SEED,
       userMessageContent: "u",
       makeAttempt: () => ({ agent, validateTurn: () => null }),
       ...noopHooks,
     });
-    const batch = vi.mocked(appendMessages).mock.calls[0]?.[0];
-    expect(JSON.parse(batch?.[2]?.content ?? "")).toEqual({
-      results: [
-        {
-          toolCallId: "bad",
-          toolName: "presentQuestionnaire",
-          output: { toolError: "Invalid input" },
-        },
-      ],
-    });
+    await expect(run).rejects.toBeInstanceOf(UnpairedToolCallError);
+    await expect(run).rejects.toMatchObject({ toolCallIds: ["c2"] });
+    expect(appendMessages).not.toHaveBeenCalled();
   });
 });
