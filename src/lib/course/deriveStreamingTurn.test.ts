@@ -98,6 +98,19 @@ describe("deriveStreamingTurn", () => {
     ]);
   });
 
+  // The prompt asks for the quiz call before the message, so the tool part
+  // usually lands first. Both still derive: the layout, not the part order,
+  // puts the message above the card.
+  it("derives the preview and the text when the questionnaire part comes first", () => {
+    const messages = [
+      assistant("a1", [questionnaire("input-available", "q1"), text("Here is the idea.")]),
+    ];
+    expect(deriveStreamingTurn(messages)).toEqual({
+      streamingText: "Here is the idea.",
+      streamingQuestions: [{ id: "q1", prompt: "q1?", options: [], tier: undefined }],
+    });
+  });
+
   it("shows no preview while the tool input still streams or after the tool errors", () => {
     for (const state of ["input-streaming", "output-error"]) {
       const messages = [assistant("a1", [questionnaire(state, "q1")])];

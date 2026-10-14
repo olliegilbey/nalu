@@ -48,7 +48,7 @@ export function validateWaveMidToolTurn(
   if (containsResponseJsonBlob(visibleProse)) {
     return new ValidationGateFailure(
       "tool_turn_gate",
-      "Your message to the learner contained a raw JSON object. Your plain text output goes to the learner verbatim: write natural conversational prose only, and emit structured actions (grading, quizzes) ONLY by calling the provided tools (recordComprehensionSignals, presentQuestionnaire). Rewrite this turn: call the tools for any grading or quiz first, then write your teaching prose as plain text.",
+      "Your message to the learner contained a raw JSON object. Your plain text output goes to the learner verbatim: write natural conversational prose only, and emit structured actions (grading, quizzes) ONLY by calling the provided tools (recordComprehensionSignals, presentQuestionnaire). Rewrite this turn: call the tools for any grading or quiz first, then write your teaching prose as plain text. The learner sees the quiz card below your message, so never write the quiz questions in your message.",
     );
   }
 
