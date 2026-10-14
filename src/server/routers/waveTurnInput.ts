@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
 
 /**
  * Input schema for one learner wave-turn submission: the trust boundary of
@@ -21,7 +22,7 @@ export const submitTurnInputSchema = z.object({
             z.object({
               id: z.string().min(1),
               kind: z.literal("mc"),
-              selected: z.enum(["A", "B", "C", "D"]),
+              selected: z.enum(MC_OPTION_KEYS),
             }),
             z.object({
               id: z.string().min(1),

@@ -10,6 +10,13 @@ import { courseRouter } from "@/server/routers/course";
 import { submitTurnInputSchema } from "@/server/routers/waveTurnInput";
 import { clarificationJsonbSchema, baselineJsonbSchema } from "./jsonb";
 import { waveChatLogSchema } from "./jsonbWaveChatLog";
+import { MC_OPTION_KEYS } from "./mcOptionKey";
+
+describe("MC_OPTION_KEYS", () => {
+  it("is the canonical A/B/C/D tuple", () => {
+    expect(MC_OPTION_KEYS).toEqual(["A", "B", "C", "D"]);
+  });
+});
 
 /**
  * Wire-byte pins for every schema that carries an MC option key (issue #178).

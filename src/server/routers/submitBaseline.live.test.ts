@@ -30,6 +30,7 @@ import {
   baselineClosedJsonbSchema,
   type FrameworkJsonb,
 } from "@/lib/types/jsonb";
+import type { McOptionKey } from "@/lib/types/mcOptionKey";
 import type { BaselineAnswer } from "@/lib/course/submitBaseline";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 
@@ -96,8 +97,8 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       ).questions as ReadonlyArray<{
         readonly id: string;
         readonly type: "multiple_choice" | "free_text";
-        readonly options?: Readonly<Record<"A" | "B" | "C" | "D", string>>;
-        readonly correct?: "A" | "B" | "C" | "D";
+        readonly options?: Readonly<Record<McOptionKey, string>>;
+        readonly correct?: McOptionKey;
         readonly freetextRubric: string;
       }>;
       // Issue #149: TYPE the first MC question's correct option instead of

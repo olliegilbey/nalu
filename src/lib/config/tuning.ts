@@ -170,9 +170,6 @@ export const BASELINE = {
   // without fatiguing the learner before teaching even begins. This is the
   // per-tier minimum; small scopes ask more per tier to reach minQuestions.
   questionsPerTier: 3,
-  // MC cards are always four options. No "Not sure"
-  // button — the freetext escape is the non-engagement affordance.
-  mcOptionCount: 4,
   // Mechanical MC scoring. A correct click maps to q=4 ("correct
   // and clear") — reserve q=5 for free-text answers where the learner has
   // room to demonstrate teach-level depth. An incorrect click maps to q=1

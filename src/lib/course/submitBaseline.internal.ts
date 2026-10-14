@@ -1,5 +1,6 @@
 import { BASELINE, PROGRESSION } from "@/lib/config/tuning";
-import { typedMcGradingRule, type McOptionKey } from "@/lib/prompts/questionnaire";
+import { typedMcGradingRule } from "@/lib/prompts/questionnaire";
+import type { McOptionKey } from "@/lib/types/mcOptionKey";
 import type { z } from "zod";
 import type { baselineGradingSchema } from "@/lib/types/jsonb";
 

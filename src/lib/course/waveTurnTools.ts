@@ -3,12 +3,12 @@ import { z } from "zod/v4";
 import type { comprehensionSignalSchema } from "@/lib/prompts/waveTurn";
 import {
   GRADED_RUBRIC_RULE,
-  MC_OPTION_KEYS,
   isPlaceholderRubric,
   placeholderRubricDirective,
   type Question,
   type Questionnaire,
 } from "@/lib/prompts/questionnaire";
+import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
 import { toToolInputSchema } from "@/lib/llm/toCerebrasJsonSchema";
 import { WAVE } from "@/lib/config/tuning";
 

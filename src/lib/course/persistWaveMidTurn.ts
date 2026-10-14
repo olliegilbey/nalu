@@ -2,6 +2,7 @@ import { db } from "@/db/client";
 import { appendWaveChatLog } from "@/db/queries/waves.writes";
 import { getLatestAssistantResponseForWaveInTx } from "@/db/queries/contextMessages";
 import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
+import type { McOptionKey } from "@/lib/types/mcOptionKey";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import { type SubmitTurnPayload } from "./buildLearnerInput";
 import type { GradedSignal } from "./applyAssessmentGrading";
@@ -63,7 +64,7 @@ export async function persistWaveMidTurn(params: {
   // Question id → expected MC correct key letter (for MC questions only).
   // Free-text questions are absent. The grading helper compares each signal's
   // questionId's correct letter against the learner's `answerTextById` selection.
-  const correctLetterById: ReadonlyMap<string, "A" | "B" | "C" | "D"> = openQuestionnaire
+  const correctLetterById: ReadonlyMap<string, McOptionKey> = openQuestionnaire
     ? buildMcCorrectKeyMap(openQuestionnaire)
     : new Map();
 
