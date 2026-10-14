@@ -33,7 +33,12 @@ export function toolStepRows<TOOLS extends ToolSet>(
       toolCalls: step.toolCalls.map((c) => ({
         toolCallId: c.toolCallId,
         toolName: c.toolName,
-        input: c.input,
+        // Unparseable arguments leave the raw string as an invalid call's
+        // input. In-loop the SDK sends {} instead (`toResponseMessages`).
+        // Store what it sent, so the next Turn replays the same bytes (#163).
+        // The test is the SDK's own: a parsed object, or null, passes through.
+        // Rows written before #163 keep their string.
+        input: c.invalid === true && typeof c.input !== "object" ? {} : c.input,
       })),
     }),
   };

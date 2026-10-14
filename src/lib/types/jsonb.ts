@@ -5,8 +5,8 @@ import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
  * Trust-boundary Zod schemas for every JSONB column shape.
  *
  * Every read function in `src/db/queries/` runs these against the JSONB
- * payload before handing rows to consumers. drizzle-zod alone returns
- * `unknown` for JSONB; these schemas tighten that.
+ * payload before handing rows to consumers. Drizzle types a JSONB column
+ * as `unknown`; these schemas tighten that.
  *
  * Schemas mirror the wire shapes defined in the prompt schemas under
  * `src/lib/prompts/`. Field names are camelCase to match the JSON-everywhere

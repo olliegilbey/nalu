@@ -1,7 +1,6 @@
 import { pgTable, uuid, text, timestamp, check, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { InferSelectModel, InferInsertModel } from "drizzle-orm";
-import { createInsertSchema, createSelectSchema } from "drizzle-zod";
+import type { InferSelectModel } from "drizzle-orm";
 import { courses } from "./courses";
 
 /**
@@ -41,16 +40,3 @@ export const scopingPasses = pgTable(
 
 /** Use in query-layer return signatures so callers never import drizzle internals. */
 export type ScopingPass = InferSelectModel<typeof scopingPasses>;
-
-/**
- * Shape for INSERT statements. `courseId` is required (notNull, no default).
- * All other columns are optional: `id` defaults to a random UUID; `status`
- * defaults to 'open'; `openedAt` defaults to now(); `closedAt` is nullable.
- */
-export type ScopingPassInsert = InferInsertModel<typeof scopingPasses>;
-
-/** Zod schema for validating insert payloads at trust boundaries (e.g. API input). */
-export const scopingPassesInsertSchema = createInsertSchema(scopingPasses);
-
-/** Zod schema for validating rows read from the DB. */
-export const scopingPassesSelectSchema = createSelectSchema(scopingPasses);
