@@ -29,7 +29,7 @@ export function waveTurnErrorLogLine(error: unknown, ids: WaveTurnErrorIds): str
     ["wave", String(ids.waveNumber)],
     ["name", safeToken(readField(error, "name"))],
     ["inner", safeToken(readField(inner, "name"))],
-    ["trpcCode", error instanceof TRPCError ? error.code : undefined],
+    ["trpcCode", safeToken(error instanceof TRPCError ? error.code : undefined)],
     ["sqlstate", firstMatch([error, inner], "code", SQLSTATE)],
     ["constraint", firstMatch([error, inner], "constraint_name", SAFE_TOKEN)],
     ["status", firstStatus([error, inner])],
