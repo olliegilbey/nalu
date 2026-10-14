@@ -134,7 +134,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     },
     // Surface turn failures instead of swallowing them. The most common
     // cause is submitting into an already-closed wave (server guards throw
-    // PRECONDITION_FAILED; the route's onError forwards the message text).
+    // PRECONDITION_FAILED; the route's onError forwards guard message text).
     onError: (err) => {
       toast.error("Couldn't submit that turn", {
         description: err.message.length > 0 ? err.message : "Please try again.",

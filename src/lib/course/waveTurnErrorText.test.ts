@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { TRPCError } from "@trpc/server";
 import { DrizzleQueryError } from "drizzle-orm";
+import { NotFoundError } from "@/db/queries/errors";
 import { waveTurnErrorText } from "./waveTurnErrorText";
 
 describe("waveTurnErrorText", () => {
@@ -8,6 +9,14 @@ describe("waveTurnErrorText", () => {
     // The harness writes these; the learner can act on them.
     const guard = new TRPCError({ code: "PRECONDITION_FAILED", message: "no open questionnaire" });
     expect(waveTurnErrorText(guard)).toBe("no open questionnaire");
+  });
+
+  it("passes a not-found message through", () => {
+    // The query layer writes these, and they quote ids only.
+    const missing = new NotFoundError("course", "3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f");
+    expect(waveTurnErrorText(missing)).toBe(
+      "course not found: 3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f",
+    );
   });
 
   it("keeps a failed DB write's params server-side", () => {

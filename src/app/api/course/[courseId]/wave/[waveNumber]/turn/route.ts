@@ -6,6 +6,7 @@ import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
 import { waveTurnErrorText } from "@/lib/course/waveTurnErrorText";
+import { waveTurnErrorLogLine } from "@/lib/course/waveTurnErrorLog";
 import type { WaveTurnUIMessage } from "@/lib/types/waveStream";
 
 // A turn can span LLM retries + Cerebras pacing; keep the function alive
@@ -61,9 +62,10 @@ export async function POST(
       }),
     // Surfaced to useChat's onError. Guard messages pass through; any other
     // error gets fixed text, since its message can quote answer keys (#169).
-    // The full error is logged here, server-side, where it is safe.
+    // The log line carries ids and safe codes only, for the same reason.
     onError: (error) => {
-      console.error("[wave-turn] turn failed:", error);
+      const ids = { courseId: input.data.courseId, waveNumber: input.data.waveNumber };
+      process.stderr.write(`${waveTurnErrorLogLine(error, ids)}\n`);
       return waveTurnErrorText(error);
     },
   });

@@ -38,7 +38,7 @@ Partial info is fine — the DB fills most gaps — but a course locator and the
 | HTTP 401                                          | Auth                                                        | Either the anon-session proxy didn't mint a Supabase session, or `LLM_API_KEY` is wrong or missing → Cerebras rejects the key |
 | HTTP 500 / `INTERNAL_SERVER_ERROR`, no server log | tRPC procedure threw                                        | Nothing calls `console.error` — the failure is silent. Reconstruct from the DB, not the logs                                  |
 
-The tRPC error envelope carries `data.path` (e.g. `course.clarify`) and `data.httpStatus` — that names the failing procedure. A Wave turn has no envelope. The route's `onError` logs the full thrown error to the Vercel runtime log as `[wave-turn] turn failed:`. The "Couldn't submit that turn" toast shows only a guard (`TRPCError`) message, or the fixed text "Something went wrong. Please try again." for anything else (#169). Read the runtime log for the real error.
+The tRPC error envelope carries `data.path` (e.g. `course.clarify`) and `data.httpStatus` — that names the failing procedure. A Wave turn has no envelope. The route's `onError` writes one line to the Vercel runtime log: `[wave-turn] turn failed course=<id> wave=<n> name=… inner=… trpcCode=… sqlstate=… constraint=… status=…`, with absent fields left out. It never logs the error's message, cause, params or a response body, because those can quote answer keys and learner text (#169). The "Couldn't submit that turn" toast shows a guard (`TRPCError`) or `NotFoundError` message, or the fixed text "Something went wrong. Please try again." for anything else. Read the codes from the log line (`status=429` is the rate limit), and reconstruct the rest from the DB.
 
 ## Step 2 — Do the retry math
 
@@ -129,7 +129,7 @@ Recovery for a transport-failed close: it is **safe to retry** — `submitBaseli
 
 A third class, beyond transport and schema. The turn runner (`executeTurn` or `executeToolTurnStream`) commits its `context_messages` batch atomically and returns — but the course code does **more** afterward, in a separate transaction: `persistWaveMidTurn` / `executeWaveClose` grade answers, insert `assessments`, upsert concepts, and append the assistant entry to `waves.chat_log`. If that post-LLM work throws, the turn **fails even though `context_messages` shows a clean `assistant_response`** — so the decision tree's "succeeded" leaf is not the end of the story for a wave turn.
 
-The tell: `inspect-db.ts --course` prints WAVE CONTEXT MESSAGES plus a `chatlog_entries` count per wave. A turn with a committed `assistant_response` that is **not** reflected in `chat_log` (the count is short) is a post-persist failure — the LLM replay log and the UI log have diverged. The error is a thrown `Error` in the Vercel runtime log under `[wave-turn] turn failed:` (e.g. `insertNewQuestionnaire: questionnaire question id=q2 missing required conceptName`); the toast shows only fixed text. Read `persistWaveMidTurn` plus `persistWaveMidTurn.grade.ts` / `persistWaveMidTurn.insert.ts` for the `throw`. The LLM call itself succeeded; the bug is in deterministic post-LLM persistence.
+The tell: `inspect-db.ts --course` prints WAVE CONTEXT MESSAGES plus a `chatlog_entries` count per wave. A turn with a committed `assistant_response` that is **not** reflected in `chat_log` (the count is short) is a post-persist failure — the LLM replay log and the UI log have diverged. The error is a thrown `Error` (e.g. `insertNewQuestionnaire: questionnaire question id=q2 missing required conceptName`). Neither the toast nor the log shows its message: the `[wave-turn] turn failed` line gives only its name and any SQLSTATE or constraint. Read `persistWaveMidTurn` plus `persistWaveMidTurn.grade.ts` / `persistWaveMidTurn.insert.ts` for the `throw`. The LLM call itself succeeded; the bug is in deterministic post-LLM persistence.
 
 ## Step 5 — Cross-reference
 
@@ -140,7 +140,7 @@ The tell: `inspect-db.ts --course` prints WAVE CONTEXT MESSAGES plus a `chatlog_
 
 - **Leaking secrets.** Never pipe `.env.local` through a redaction `sed` — BSD `sed` ≠ GNU `sed`, and a wrong pattern prints the value verbatim. List variable _names_ only: `rg -o '^[A-Z_]+=' .env.local`. (A past session leaked the production DB password this way.)
 - Treating the browser error as the root cause. It's a symptom — go to the DB.
-- Expecting Vercel runtime logs to explain a silent tRPC 500. They won't — the tRPC path has no `console.error`. Wave turns differ: they log as `[wave-turn] turn failed:`.
+- Expecting Vercel runtime logs to explain a silent tRPC 500. They won't — the tRPC path has no `console.error`. Wave turns log one `[wave-turn] turn failed` line, with ids and codes only, never the message.
 - Forgetting `course.clarify` has no dedup: each call (and each user retry) creates a fresh `courses` row + a new LLM burst, multiplying load against the rate limit.
 
 ## Quick reference
