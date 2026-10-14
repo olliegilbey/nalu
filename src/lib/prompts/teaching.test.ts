@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderTeachingSystem } from "./teaching";
+import { renderWaveCloseEnvelope } from "./waveClose";
+import { renderWaveTurnEnvelope } from "./waveTurn";
 import type { WaveSeedInputs } from "@/lib/types/context";
 
 const baseInputs: WaveSeedInputs = {
@@ -123,7 +125,7 @@ describe("renderTeachingSystem (due-review injection, default full)", () => {
 });
 
 describe("renderTeachingSystem (output contract)", () => {
-  it("names all four tools, keeps single-JSON for the final turn, drops field vocab", () => {
+  it("names all four tools and drops field vocab", () => {
     const out = renderTeachingSystem(baseInputs);
     expect(out).toContain("presentQuestionnaire");
     expect(out).toContain("recordComprehensionSignals");
@@ -132,11 +134,49 @@ describe("renderTeachingSystem (output contract)", () => {
     expect(out).toContain("getDueConcepts");
     expect(out).toContain("getConceptHistory");
     expect(out).toContain("Never invent or assume review history");
-    // Close turns still run the blocking single-JSON path under this prompt.
-    expect(out).toContain("final turn no tools are available");
-    expect(out).toContain("single JSON object");
     // The retired mega-schema's field vocabulary must not come back.
     expect(out).not.toContain("the questionnaire field");
+  });
+
+  // Issue #164: keyed to the counter, the model once took the last mid-turn
+  // (N = 1) for the close. It skipped its tools and answered in JSON. The
+  // stage label is unambiguous, so it alone sets the reply format. The tags
+  // come from the envelope renderers, so a renamed label breaks this test.
+  it("keys the close to the close envelope's stage label", () => {
+    const out = renderTeachingSystem(baseInputs);
+    const closeTag = renderWaveCloseEnvelope({
+      learnerInput: "",
+      conceptsForNextWaveBlock: "",
+    }).split("\n")[0];
+    expect(closeTag).toBe("<stage>close wave</stage>");
+    expect(out).toContain(
+      `Only a ${closeTag} message is the lesson's final turn. Answer it with one JSON object that matches the response schema, and weave the due and fresh concepts it lists into the next lesson's outline and opening message.`,
+    );
+    expect(out.match(/final turn/g)).toHaveLength(1);
+  });
+
+  // Issue #164: the teaching-turn rule sits last, the most prominent spot,
+  // so the contract never ends on the JSON instruction.
+  it("ends <output_format> with the teaching-turn rule", () => {
+    const out = renderTeachingSystem(baseInputs);
+    const midTag = renderWaveTurnEnvelope({ learnerInput: "", turnsRemaining: 1 }).split("\n")[0];
+    expect(midTag).toBe("<stage>teaching turn</stage>");
+    expect(
+      out.endsWith(
+        `\nAnswer every ${midTag} message in plain conversational prose, with no JSON or XML framing: your text output IS your message to the learner. Use tool calls for structured actions, and write teaching prose every turn, even when you call tools.\n</output_format>`,
+      ),
+    ).toBe(true);
+  });
+
+  // Issue #164: <turns_remaining> paces the lesson. It never sets the format.
+  it("defines <turns_remaining> in <role> as pacing only", () => {
+    const out = renderTeachingSystem(baseInputs);
+    const role = out.slice(0, out.indexOf("</role>"));
+    expect(role).toContain(
+      "The harness tags each turn with <turns_remaining>N</turns_remaining>: the learner turns left in this lesson after this one. Use it to pace the lesson so it lands its arc.",
+    );
+    const outputFormat = out.slice(out.indexOf("<output_format>"));
+    expect(outputFormat).not.toContain("turns_remaining");
   });
 
   // Issue #144: the grading tool may ask for a second call to grade the

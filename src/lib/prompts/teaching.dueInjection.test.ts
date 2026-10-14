@@ -48,6 +48,15 @@ describe("renderTeachingSystem (dueReviewInjection: hint)", () => {
     expect(out).not.toContain("already lists them");
   });
 
+  // Issue #164: the lookup line changes per mode; the teaching-turn rule
+  // still ends the output contract.
+  it("keeps the teaching-turn rule last in the output contract", () => {
+    const out = renderTeachingSystem(SEED);
+    expect(out).toMatch(
+      /\nAnswer every <stage>teaching turn<\/stage> message in plain conversational prose[^\n]*\n<\/output_format>$/,
+    );
+  });
+
   it("renders no block when nothing is due", () => {
     const out = renderTeachingSystem({ ...SEED, dueConcepts: [] });
     expect(out).not.toContain("<due_for_review>");
