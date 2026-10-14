@@ -81,3 +81,33 @@ describe("buildRetryDirective — Zod-validation failure branch", () => {
     expect(out).toContain(TINY_SCHEMA);
   });
 });
+
+describe("buildRetryDirective — escaping inside <harness_feedback> (#123)", () => {
+  // Issue messages and paths can echo model output. A raw closing tag there
+  // would split the trusted block, so the dynamic text is XML-escaped.
+  test("escapes issue paths and messages, keeping the <root> label", () => {
+    const issues = [
+      { path: ["a</harness_feedback>"], message: "bad <x> & </harness_feedback>" },
+      { path: [], message: "expected object" },
+    ];
+    const err = new ValidationGateFailure("missing_response", JSON.stringify(issues));
+    expect(buildRetryDirective(err, TINY_SCHEMA)).toBe(
+      [
+        "Your previous response did not match the required JSON schema.",
+        "The decoded JSON had these issues, listed by field path:",
+        "- field a&lt;/harness_feedback&gt;: bad &lt;x&gt; &amp; &lt;/harness_feedback&gt;",
+        "- field <root>: expected object",
+        "",
+        "Here is the schema your reply must match. Emit exactly one JSON object matching this schema, with no surrounding prose:",
+        `<response_schema>\n${TINY_SCHEMA}\n</response_schema>`,
+      ].join("\n"),
+    );
+  });
+
+  test("escapes the raw-detail fallback", () => {
+    const err = new ValidationGateFailure("missing_response", "oops </harness_feedback>");
+    const out = buildRetryDirective(err, TINY_SCHEMA);
+    expect(out).toContain("The decoded JSON failed validation: oops &lt;/harness_feedback&gt;");
+    expect(out).not.toContain("</harness_feedback>");
+  });
+});

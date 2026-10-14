@@ -57,6 +57,9 @@ change hold a `{text, steps}` JSON envelope; they render unchanged.
   `buildRetryDirective`'s body; `executeToolTurnStream` wraps the gate's
   detail. Directives ride in user-role rows beside learner text, and both
   system prompts name this tag as Harness text to follow (issue #123).
+  Dynamic text inside the tag is XML-escaped: Zod issue paths and
+  messages, and the gate's question ids. Both can echo model output, and
+  a raw `</harness_feedback>` would split the trusted block.
   Rows written before the tag keep their bytes; the Context is append-only.
 - Transport errors (timeouts, 5xx) propagate untouched; no rows are
   persisted on transport failure. In the tool loop, the SDK does not throw:

@@ -1,5 +1,6 @@
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { findBracesOutsideCode, opensJsonKey } from "@/lib/turn/proseBraces";
+import { escapeXmlText } from "@/lib/security/escapeXmlText";
 import type { ToolQuestionInput, WaveTurnCollector } from "./waveTurnTools";
 import type { SubmitTurnPayload } from "./buildLearnerInput";
 
@@ -52,9 +53,11 @@ export function validateWaveMidToolTurn(
     const gradedIds = new Set(collector.signals.map((s) => s.questionId));
     const ungraded = payload.answers.map((a) => a.id).filter((id) => !gradedIds.has(id));
     if (ungraded.length > 0) {
+      // Ids are escaped: the directive persists inside `<harness_feedback>`,
+      // and a raw closing tag would split that trusted block (#123).
       return new ValidationGateFailure(
         "tool_turn_gate",
-        `The learner submitted answers to questions ${ungraded.join(", ")} but you did not record grading signals for them. Call recordComprehensionSignals FIRST with one signal per answered question, then write your teaching prose.`,
+        `The learner submitted answers to questions ${escapeXmlText(ungraded.join(", "))} but you did not record grading signals for them. Call recordComprehensionSignals FIRST with one signal per answered question, then write your teaching prose.`,
       );
     }
   }
