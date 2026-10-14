@@ -335,7 +335,7 @@ function buildRecordSignalsTool(collector: WaveTurnCollector, scope: WaveMidTurn
 
 function buildPresentQuestionnaireTool(collector: WaveTurnCollector) {
   return tool({
-    description: `Present a graded concept-check quiz (1-${WAVE.quizMaxQuestions} questions) to the learner. Call at most once per turn, after your teaching prose. Every question carries conceptName; every multiple-choice question carries options and correct (A, B, C, or D).`,
+    description: `Present a graded concept-check quiz (1-${WAVE.quizMaxQuestions} questions) to the learner. Call at most once per turn, before you write your message. The learner sees the quiz card below your message, so never write the questions in your message. Every question carries conceptName; every multiple-choice question carries options and correct (A, B, C, or D).`,
     inputSchema: toToolInputSchema(toolQuestionnaireSchema, {
       name: "present_questionnaire_input",
     }),

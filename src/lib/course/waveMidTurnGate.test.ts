@@ -57,6 +57,15 @@ describe("validateWaveMidToolTurn", () => {
     expect(failure?.detail).toContain("raw JSON object");
   });
 
+  // The retry states the prompt's order: tools first, then the message.
+  it("tells a JSON retry to call the tools before writing prose", () => {
+    const prose = `Try this.\n\n{ "questions": [{ "id": "q1", "type": "free_text", "prompt": "?" }] }`;
+    const failure = validateWaveMidToolTurn(emptyCollector(), prose, CHAT_PAYLOAD);
+    expect(failure?.detail).toContain(
+      "call the tools for any grading or quiz first, then write your teaching prose as plain text.",
+    );
+  });
+
   it("accepts prose that merely mentions JSON or contains an unrelated snippet", () => {
     const prose =
       'In JSON you write objects like { "name": "value" } - braces around key/value pairs.';

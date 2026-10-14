@@ -64,8 +64,9 @@ export async function streamWaveTurn(
   // - collector: tool-staged questionnaire + grading signals.
   // - prose: every text delta of this attempt, concatenated. This is the
   //   learner-visible message (chat_log / turn-result) — deliberately NOT
-  //   `finalText` (the last step's text only), because models typically
-  //   write prose BEFORE a tool call and only a short wrap-up after it.
+  //   `finalText` (the last step's text only), because prose can land in
+  //   any step. The prompt asks for tool calls first and the message after
+  //   them, but the model may still write some prose before a call.
   // - suppressedAt: leak-guard cut point (see onTextDelta). Deltas past it
   //   are withheld from the CLIENT only; prose keeps accumulating for the
   //   gate and persistence.

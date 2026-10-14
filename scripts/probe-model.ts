@@ -183,7 +183,7 @@ async function probeToolCalling(): Promise<void> {
         tools: {
           presentQuestionnaire: tool({
             description:
-              "Present a short concept-check quiz to the learner. Call at most once per turn, AFTER your teaching prose.",
+              "Present a short concept-check quiz to the learner. Call at most once per turn, BEFORE you write your message.",
             // Wire/validator split — see probeQuestionnaireSchema TSDoc.
             inputSchema: probeQuestionnaireInput,
             // Staging-only execute — the probe just acknowledges.
@@ -203,7 +203,7 @@ async function probeToolCalling(): Promise<void> {
           }),
         },
         system:
-          "You are a tutor. Teach the requested concept in under 120 words, then call presentQuestionnaire with 1-2 questions checking it.",
+          "You are a tutor. Teach the requested concept in under 120 words and check it with presentQuestionnaire (1-2 questions). Call the tool first, then write your message; the learner sees the quiz below it.",
         prompt: `Teach trial #${trial}: the difference between let and const in JavaScript.`,
       });
       recordCerebrasRateLimitHeaders(result.response.headers);
