@@ -94,6 +94,10 @@ export async function generateChat<T>(
   const common = {
     model,
     messages: [...messages],
+    // The Harness renders the leading system message from seed columns;
+    // learner text never takes the system role. Since ai 6.0.170 the SDK
+    // warns on every call that carries a system message in `messages`.
+    allowSystemInMessages: true,
     temperature: opts.temperature ?? LLM.defaultTemperature,
     maxRetries: opts.maxRetries ?? LLM.maxRetries,
     // reasoning_effort on the wire (tuning LLM.reasoningEffort).

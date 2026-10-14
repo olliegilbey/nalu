@@ -24,8 +24,11 @@ rows — so renderContext's retry filter keeps working. Learner-visible
 prose = ALL steps' streamed deltas, NOT `finalText` (last step only).
 
 A `tool_result` row holds `{results: [{toolCallId, toolName, …}]}`, in
-`step.content` order: the order the loop sent them, which follows
-arrival, not the call order. A
+the order the loop sent them: tool-call order. `step.content` holds
+them in arrival order, so `toolStepRows` sorts them as the SDK does
+(`sortToolResultContentByToolCallOrder`, ai 6.0.220+; pinned by
+`toolErrorReplay.test.ts`). Rows written before that keep the arrival
+order the older SDK sent. A
 success entry carries the tool's `output`; it replays as JSON. A tool
 error entry carries `errorText`: the text the SDK sent in-loop
 (`getErrorMessage`, wrapped by `src/lib/llm/toolErrorText.ts`). It

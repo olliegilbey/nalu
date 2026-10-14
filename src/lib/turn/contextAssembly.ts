@@ -56,7 +56,7 @@ export function assembleLlmMessages(
   // variants (tool-call / tool-result, from the persisted tool rows) map to
   // the SDK's typed content parts; part property names (`input`/`output`,
   // `output: {type:'json', value}` and `output: {type:'error-text', value}`)
-  // verified against installed ai@6.0.158 (`ToolCallPart`/`ToolResultPart`
+  // verified against installed ai@6.0.306 (`ToolCallPart`/`ToolResultPart`
   // in @ai-sdk/provider-utils).
   return [
     { role: "system", content: rendered.system } satisfies LlmMessage,

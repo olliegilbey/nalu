@@ -209,7 +209,7 @@ const FORWARDED_TOOL_ERROR_TEXT = "The quiz could not be shown.";
 /**
  * Map a `streamText` fullStream tool part to its UIMessage chunk and write it
  * — the same conversion the SDK's `toUIMessageStream` applies (verified in
- * installed ai@6.0.158), inlined because this route hand-writes its stream
+ * installed ai@6.0.306), inlined because this route hand-writes its stream
  * AND because questionnaire inputs need server-side redaction before they
  * cross the wire (below). Gives the client the tool-part lifecycle for
  * generative UI: `input-available` → `output-available` (plus the error
