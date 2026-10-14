@@ -153,6 +153,14 @@ describe("validateWaveMidToolTurn", () => {
     expectJsonDumpRejected(BLUEPRINT_DUMP);
   });
 
+  // Each close-only key fails the gate alone, so dropping one goes red.
+  it.each(["nextUnitBlueprint", "conceptUpdates", "openingText", "plannedConcepts"])(
+    "rejects an unfenced object keyed only by close-only `%s`",
+    (key) => {
+      expectJsonDumpRejected(`Next up: ${JSON.stringify({ [key]: "x" })} Ready?`);
+    },
+  );
+
   it("rejects an envelope dump after 20+ decoy braces in code and LaTeX", () => {
     // Decoys do not open a quoted key, so they do not use up the candidate cap.
     const latex = String.raw`$\frac{a}{b}$ `.repeat(12);

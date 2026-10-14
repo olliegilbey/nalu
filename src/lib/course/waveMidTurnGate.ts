@@ -22,8 +22,10 @@ import type { SubmitTurnPayload } from "./buildLearnerInput";
  *    `<response_schema>`) in their replayed context; the model imitates the
  *    history and dumps the old JSON envelope as text instead of calling
  *    tools (observed live, 2026-07-08). The directive breaks the few-shot
- *    pattern so the retry recovers. Two parts: a fence-blind secret check
- *    on the tool's field names, and an envelope check outside code. The
+ *    pattern so the retry recovers. A mid-turn can also take itself for the
+ *    close and dump the close JSON or its bare blueprint (#172). Two parts:
+ *    a fence-blind secret check on the tool's field names, and an envelope
+ *    check outside code on the old envelope, tool and close-only keys. The
  *    secret check also keeps an answer key out of chat_log: accepted prose
  *    persists whole, even past the stream guard's cut (#156).
  * 3. Grading coverage — every answered question carries a staged signal.
