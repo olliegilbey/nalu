@@ -62,7 +62,7 @@ The stack: Next.js 16.2 (App Router, Turbopack), TypeScript strict, tRPC v11, Zo
 - **Turn**: one full learner↔model exchange. One rendered message is a ChatEntry. One LLM API call is a Step; a Turn spans one or more.
 - **Wave**: a teaching unit of `WAVE.turnCount` turns, enforced by the Harness. LLM-facing prompts call it a "lesson".
 - **Context**: the message list for one phase. Scoping has one Context. Each Wave opens a fresh one, seeded from the prior Wave's final-turn blueprint; scoping seeds Wave 1.
-- **Harness**: this repo's deterministic layer around the LLM. Each turn it appends `<turns_remaining>N</turns_remaining>`. On a Wave's final turn it appends `<concepts_for_next_wave>` and requires the next Wave's blueprint. It injects SM-2 due concepts only at Wave boundaries: `<due_for_review>` in the Wave's system prompt, and the final-turn block. Mid-Wave, the model can fetch them itself with the read-only lookup tools.
+- **Harness**: this repo's deterministic layer around the LLM. Each turn it appends `<turns_remaining>N</turns_remaining>`. On a Wave's final turn it appends `<concepts_for_next_wave>` and requires the next Wave's blueprint. It injects SM-2 due concepts only at Wave boundaries: `<due_for_review>` in the Wave's system prompt, and the final-turn block. Mid-Wave, the model can look up learner history itself with the read-only lookup tools.
 
 ## Docs
 

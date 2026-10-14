@@ -102,7 +102,7 @@ const TOOL_EVENT_TYPES: ReadonlySet<string> = new Set([
  * - The assembled message list's LEADING SYSTEM MESSAGE IS DROPPED before
  *   dispatch: the agent carries the identical bytes as constructor
  *   `instructions` (ToolLoopAgent maps instructions → system and passes
- *   messages through untouched — verified in installed ai@6.0.158); sending
+ *   messages through untouched — verified in installed ai@6.0.306); sending
  *   both would double the system prompt on the wire.
  * - Persisted rows for a successful turn: `user_message`, then per tool step
  *   an `assistant_tool_call` + `tool_result` pair, then `assistant_response`
@@ -181,9 +181,12 @@ export async function executeToolTurnStream<TOOLS extends ToolSet = ToolSet>(
         // Any `error` part ends the attempt as a transport failure. The SDK
         // does not throw for them. A failed Step (transport/API error,
         // retries spent) emits one, closes the stream, and still RESOLVES
-        // `steps` with the earlier Steps (ai@6.0.158). A provider chunk
+        // `steps` with the earlier Steps (ai@6.0.306). A provider chunk
         // error (openai-compatible) emits one WITHOUT closing the stream; it
-        // is non-fatal to the SDK but still corrupts the attempt. Rethrow
+        // is non-fatal to the SDK but still corrupts the attempt. So does a
+        // provider stream that ends without a finish reason
+        // (openai-compatible@2.0.82). A Step with no output at all emits one
+        // and REJECTS `steps`; this throw comes first. Rethrow
         // the underlying error untouched, so the partial attempt never
         // reaches the gate or the DB — a transport failure persists no rows.
         throw part.error;

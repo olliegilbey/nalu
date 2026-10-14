@@ -68,7 +68,7 @@ describe.skipIf(!LIVE)("streamWaveTurn tool loop — live Cerebras", () => {
         db,
       );
       // Seed a genuinely DUE concept (SM-2 review date in the past) so the
-      // `<due_for_review>` block renders and getDueConcepts has real rows —
+      // `<due_for_review>` block renders and getDueConcepts (hint mode) has real rows —
       // the Task-5 injection A/B compares lookup usage + review coverage.
       const dueConcept = await upsertConcept({
         courseId: course.id,

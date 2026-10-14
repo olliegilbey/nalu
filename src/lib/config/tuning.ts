@@ -310,7 +310,8 @@ export const CEREBRAS_PRICING = {
 /**
  * Agent lookup-tool caps (agent-loop plan Task 3): every lookup returns a
  * bounded projection so a tool result can never blow the rendered context.
- * - `dueConceptsLimit`: max concepts per getDueConcepts call (soonest first).
+ * - `dueConceptsLimit`: max concepts per getDueConcepts call (soonest
+ *   first). Only `"hint"` due-review mode offers that tool (`WAVE`).
  * - `historyAttemptsLimit`: max attempts per getConceptHistory call
  *   (most recent first).
  */
@@ -333,7 +334,8 @@ export const AGENT_LOOKUP = {
  *   visible without dwarfing in-Wave grading.
  * - `dueReviewInjection` (agent-loop plan Task 5): how the Wave system
  *   prompt surfaces due concepts. `"full"` injects the whole
- *   `<due_for_review>` list and says the lookup is not needed for it.
+ *   `<due_for_review>` list, and the mid-turn agent gets no getDueConcepts
+ *   tool: the call would only repeat the list (audit F4).
  *   `"hint"` replaces it with a one-line nudge to call getDueConcepts,
  *   which shrinks the static prompt. Default stays
  *   "full": the 2026-07-11 live A/B (docs/status/) showed the model does

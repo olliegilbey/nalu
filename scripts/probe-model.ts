@@ -137,7 +137,7 @@ const probeQuestionnaireInput = jsonSchema<z.infer<typeof probeQuestionnaireSche
  * Scoring lives in `toolProbeScore.ts`; the per-call counts below are
  * diagnostics only.
  *
- * Note on error surfacing (verified against installed ai@6.0.158, contra
+ * Note on error surfacing (verified against installed ai@6.0.306, contra
  * the doc's generateText blurb — probe verdict finding 3): in MULTI-STEP
  * flows a schema-invalid call does NOT throw; it lands in `step.toolCalls`
  * flagged `invalid: true, dynamic: true` with a matching `tool-error` part
@@ -218,7 +218,7 @@ async function probeToolCalling(): Promise<void> {
         })),
       });
       if (calls.length === 0) tally.noCallWhenRequired++;
-      // Verified against installed ai@6.0.158: a schema-invalid call is NOT
+      // Verified against installed ai@6.0.306: a schema-invalid call is NOT
       // thrown in the multi-step flow — it lands in step.toolCalls flagged
       // `invalid: true` (dynamic) AND emits a matching `tool-error` part fed
       // back to the model for in-loop self-correction. Count each attempt

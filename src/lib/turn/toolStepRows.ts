@@ -44,15 +44,15 @@ export function toolStepRows<TOOLS extends ToolSet>(
   };
   // Results batch: successful executes plus tool-error feedback (invalid
   // inputs / execute throws) — both were fed back to the model, so both
-  // must replay for context fidelity. Content order, as the loop sent them:
-  // the SDK builds the next Step's tool message from `step.content`, where
-  // results sit in arrival order, not call order. A tool error stores the
-  // exact text the loop sent as `errorText`, so it replays as the same
-  // `error-text` bytes (#147). Rows written before that hold
-  // `output: {toolError}`, listed after the successes.
+  // must replay for context fidelity. `step.content` holds them in arrival
+  // order; the loop sends them in tool-call order, so they are stored that
+  // way (`sortByToolCallOrder`, below). A tool error stores the exact text
+  // the loop sent as `errorText`, so it replays as the same `error-text`
+  // bytes (#147). Rows written before that hold `output: {toolError}`,
+  // listed after the successes.
   // The text can quote tool input: it belongs in this row, never in a log.
   // Typed as the renderer's entry, so the writer and reader share one shape.
-  const results = step.content.flatMap((p): RenderedToolResult[] => {
+  const arrived = step.content.flatMap((p): RenderedToolResult[] => {
     if (p.type === "tool-result") {
       return [{ toolCallId: p.toolCallId, toolName: p.toolName, output: p.output }];
     }
@@ -63,6 +63,7 @@ export function toolStepRows<TOOLS extends ToolSet>(
     }
     return [];
   });
+  const results = sortByToolCallOrder(arrived, step.toolCalls);
   // Every call needs its answer: Cerebras rejects an unanswered tool call
   // on replay, which would break every later Turn of the Wave. Refuse to
   // write the orphan; end the attempt abnormally instead.
@@ -78,4 +79,34 @@ export function toolStepRows<TOOLS extends ToolSet>(
     content: JSON.stringify({ results }),
   };
   return [callRow, resultRow];
+}
+
+/**
+ * Put a Step's results in the order the loop sends them. Mirrors
+ * `sortToolResultContentByToolCallOrder` in ai@6.0.306 (added in 6.0.220).
+ * A call ranks by its first appearance among the Step's tool calls (the
+ * SDK reads the same tool-call parts of `step.content`). Equal ranks keep
+ * arrival order. A result with no matching call goes last. Rows written
+ * before this sort keep the arrival order the older SDK sent.
+ */
+function sortByToolCallOrder(
+  results: readonly RenderedToolResult[],
+  toolCalls: readonly { readonly toolCallId: string }[],
+): readonly RenderedToolResult[] {
+  // Filled in a loop because a repeated id keeps its first rank, as in the SDK.
+  const rank = new Map<string, number>();
+  for (const { toolCallId } of toolCalls) {
+    if (!rank.has(toolCallId)) rank.set(toolCallId, rank.size);
+  }
+  return results
+    .map((result, index) => ({ result, index }))
+    .sort((a, b) => {
+      const aRank = rank.get(a.result.toolCallId);
+      const bRank = rank.get(b.result.toolCallId);
+      if (aRank === undefined && bRank === undefined) return a.index - b.index;
+      if (aRank === undefined) return 1;
+      if (bRank === undefined) return -1;
+      return aRank - bRank || a.index - b.index;
+    })
+    .map(({ result }) => result);
 }
