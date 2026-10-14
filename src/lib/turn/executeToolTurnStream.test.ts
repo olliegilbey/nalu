@@ -303,7 +303,7 @@ describe("executeToolTurnStream", () => {
   });
 
   it("a mid-loop stream error rejects with that error and persists nothing", async () => {
-    // ai@6.0.158: when Step N≥2 fails, the SDK enqueues an `error` part,
+    // ai@6.0.306: when Step N≥2 fails, the SDK enqueues an `error` part,
     // closes the stream, and still RESOLVES `steps` with the earlier Steps.
     // The partial Turn must not pass the gate or reach the DB.
     const transport = new Error("Step 2 failed: 503");

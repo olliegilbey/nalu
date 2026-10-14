@@ -54,7 +54,7 @@ describe("toolStepRows", () => {
     });
   });
 
-  it("keeps results in content order, so an error before a success stays first", () => {
+  it("stores results in tool-call order, as the loop sends them, though the error arrived first", () => {
     const rows = toolStepRows(
       stepOf({
         toolCalls: [
@@ -71,7 +71,34 @@ describe("toolStepRows", () => {
     const { results } = JSON.parse(rows[1]?.content ?? "") as {
       results: { toolCallId: string }[];
     };
-    expect(results.map((r) => r.toolCallId)).toEqual(["bad", "good"]);
+    expect(results.map((r) => r.toolCallId)).toEqual(["good", "bad"]);
+  });
+
+  it("sorts as the SDK does: a repeated call keeps its first rank, results sharing a call keep arrival order, an unmatched result goes last", () => {
+    // Mirrors `sortToolResultContentByToolCallOrder` (ai@6.0.306). Ranking
+    // by last appearance would put "a" after "b".
+    const rows = toolStepRows(
+      stepOf({
+        toolCalls: [
+          { toolCallId: "a", toolName: "getDueConcepts", input: {} },
+          { toolCallId: "b", toolName: "getDueConcepts", input: {} },
+          { toolCallId: "a", toolName: "getDueConcepts", input: {} },
+        ],
+        content: [
+          { type: "tool-result", toolCallId: "x", toolName: "getDueConcepts", output: {} },
+          { type: "tool-result", toolCallId: "b", toolName: "getDueConcepts", output: {} },
+          { type: "tool-result", toolCallId: "a", toolName: "getDueConcepts", output: { n: 1 } },
+          { type: "tool-result", toolCallId: "a", toolName: "getDueConcepts", output: { n: 2 } },
+        ],
+      }),
+      AT,
+    );
+    const { results } = JSON.parse(rows[1]?.content ?? "") as {
+      results: { toolCallId: string; output: unknown }[];
+    };
+    expect(results.map((r) => r.toolCallId)).toEqual(["a", "a", "b", "x"]);
+    // The two results for "a" tie on rank, so they keep arrival order.
+    expect(results.slice(0, 2).map((r) => r.output)).toEqual([{ n: 1 }, { n: 2 }]);
   });
 
   it("throws UnpairedToolCallError naming each call with no result or tool-error", () => {

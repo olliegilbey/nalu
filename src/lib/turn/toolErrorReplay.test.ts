@@ -53,8 +53,11 @@ const STEP_USAGE = {
   outputTokens: { total: 1, text: 1, reasoning: undefined },
 } as const;
 
-/** How long a successful `lookUp` takes, so an input error lands first. */
+/** How long a successful `lookUp` takes. */
 const LOOKUP_SUCCESS_DELAY_MS = 10;
+
+/** How long `lookUp` takes for the name "slow", so a later call's result lands first. */
+const SLOW_LOOKUP_DELAY_MS = 30;
 
 /**
  * A streamed Step: optional prose, then one `lookUp` call per input
@@ -101,7 +104,8 @@ function scriptedModel(steps: readonly LanguageModelV3StreamPart[][]): MockLangu
 
 /**
  * A one-tool agent. `lookUp` throws `Error("lookup failed")` for the name
- * "missing"; any other name resolves `{found: name}` after a short delay.
+ * "missing"; any other name resolves `{found: name}` after a short delay,
+ * or a longer one for "slow".
  */
 function agentOn(model: MockLanguageModelV3) {
   return new ToolLoopAgent({
@@ -111,7 +115,8 @@ function agentOn(model: MockLanguageModelV3) {
         inputSchema: z.object({ name: z.string() }),
         execute: async ({ name }) => {
           if (name === "missing") throw new Error("lookup failed");
-          await new Promise((resolve) => setTimeout(resolve, LOOKUP_SUCCESS_DELAY_MS));
+          const delayMs = name === "slow" ? SLOW_LOOKUP_DELAY_MS : LOOKUP_SUCCESS_DELAY_MS;
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
           return { found: name };
         },
       }),
@@ -120,15 +125,20 @@ function agentOn(model: MockLanguageModelV3) {
   });
 }
 
-/** Run one Turn through the real dispatcher; return the rows it persisted. */
+/**
+ * Run one Turn through the real dispatcher. Returns the rows it persisted,
+ * and the call ids of its tool results and errors in arrival order.
+ */
 async function runTurn(
   model: MockLanguageModelV3,
   turnIndex: number,
   priorRows: readonly ContextMessage[],
-): Promise<readonly AppendMessageParams[]> {
+): Promise<{ readonly rows: readonly AppendMessageParams[]; readonly arrived: string[] }> {
   vi.mocked(getNextTurnIndex).mockResolvedValue(turnIndex);
   vi.mocked(getMessagesForWave).mockResolvedValue([...priorRows]);
   vi.mocked(appendMessages).mockClear();
+  // Filled by the stream callback, in the order the parts arrive.
+  const arrived: string[] = [];
   await executeToolTurnStream({
     parent: PARENT,
     seed: SEED,
@@ -136,8 +146,11 @@ async function runTurn(
     makeAttempt: () => ({ agent: agentOn(model), validateTurn: () => null }),
     onTextDelta: () => undefined,
     onAttemptStart: () => undefined,
+    onToolEvent: (part) => {
+      if (part.type === "tool-result" || part.type === "tool-error") arrived.push(part.toolCallId);
+    },
   });
-  return vi.mocked(appendMessages).mock.calls[0]?.[0] ?? [];
+  return { rows: vi.mocked(appendMessages).mock.calls[0]?.[0] ?? [], arrived };
 }
 
 /** A provider-level assistant message. */
@@ -167,21 +180,30 @@ function toolExchangeOf(prompt: readonly LanguageModelV3Message[]): ToolExchange
 /**
  * Run a Turn whose first Step makes the given tool calls, then replay its
  * rows on the next Turn. Returns the tool exchange from each side: the
- * in-loop Step 2 prompt, and the next Turn's first prompt.
+ * in-loop Step 2 prompt, and the next Turn's first prompt. Also returns
+ * the order the results arrived in during Turn 0.
  */
-async function inLoopAndReplayed(
-  toolInputs: readonly string[],
-): Promise<{ readonly inLoop: ToolExchange; readonly replayed: ToolExchange }> {
+async function inLoopAndReplayed(toolInputs: readonly string[]): Promise<{
+  readonly inLoop: ToolExchange;
+  readonly replayed: ToolExchange;
+  readonly arrived: readonly string[];
+}> {
   // Turn 0: Step 1 makes the calls; Step 2 recovers in prose.
   const loopModel = scriptedModel([stepChunks({ toolInputs }), stepChunks({ text: "Recovered." })]);
-  const persisted = await runTurn(loopModel, 0, []);
+  const { rows, arrived } = await runTurn(loopModel, 0, []);
   // Turn 1 loads Turn 0's rows from the DB and replays them.
   const nextModel = scriptedModel([stepChunks({ text: "Next." })]);
-  await runTurn(nextModel, 1, synthesiseRows([], persisted));
+  await runTurn(nextModel, 1, synthesiseRows([], rows));
   return {
     inLoop: toolExchangeOf(loopModel.doStreamCalls[1]?.prompt ?? []),
     replayed: toolExchangeOf(nextModel.doStreamCalls[0]?.prompt ?? []),
+    arrived,
   };
+}
+
+/** The call ids of a tool message's results, in order. */
+function resultIdsOf(results: ToolMessage): readonly (string | false)[] {
+  return results.content.map((p) => p.type === "tool-result" && p.toolCallId);
 }
 
 beforeEach(() => {
@@ -210,18 +232,29 @@ describe("tool-error replay (#147)", () => {
     expect(replayed).toEqual(inLoop);
   });
 
-  it("replays results in the order the loop sent them, error first", async () => {
-    // call-1 succeeds after a delay; call-2's input fails at once. The loop
-    // sends results in arrival order, so the error leads.
-    const { inLoop, replayed } = await inLoopAndReplayed([
+  it("replays results in the order the loop sent them: tool-call order", async () => {
+    // call-1 is slow, so call-2's result arrives first. Since ai 6.0.220 the
+    // loop sorts results into tool-call order before it sends them.
+    const { inLoop, replayed, arrived } = await inLoopAndReplayed([
+      JSON.stringify({ name: "slow" }),
+      JSON.stringify({ name: "borrowing" }),
+    ]);
+    // Guard the fixture: arrival and send order really differ.
+    expect(arrived).toEqual(["call-2", "call-1"]);
+    expect(resultIdsOf(inLoop.results)).toEqual(["call-1", "call-2"]);
+    expect(JSON.stringify(replayed.results)).toBe(JSON.stringify(inLoop.results));
+  });
+
+  it("replays an invalid call's early error in tool-call order", async () => {
+    // Since ai 6.0.260 valid calls run only after the Step's finish chunk,
+    // while an invalid input's error lands at once. call-2's error arrives
+    // before call-1's result; the loop still sends call-1 first.
+    const { inLoop, replayed, arrived } = await inLoopAndReplayed([
       JSON.stringify({ name: "borrowing" }),
       JSON.stringify({ name: 7 }),
     ]);
-    // Guard the fixture: the in-loop order really is error first.
-    expect(inLoop.results.content.map((p) => p.type === "tool-result" && p.toolCallId)).toEqual([
-      "call-2",
-      "call-1",
-    ]);
+    expect(arrived).toEqual(["call-2", "call-1"]);
+    expect(resultIdsOf(inLoop.results)).toEqual(["call-1", "call-2"]);
     expect(JSON.stringify(replayed.results)).toBe(JSON.stringify(inLoop.results));
   });
 

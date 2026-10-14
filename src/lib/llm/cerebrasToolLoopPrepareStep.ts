@@ -7,7 +7,7 @@ import type { LlmMessage } from "@/lib/types/llm";
  * per step:
  * 1. Gate through `awaitCerebrasCallSlot` — steps 2..N are additional
  *    provider calls a single pre-call gate would miss (prepareStep runs
- *    before EACH provider call, verified in installed ai@6.0.158).
+ *    before EACH provider call, verified in installed ai@6.0.306).
  * 2. Strip assistant `reasoning` parts: gpt-oss-120b emits reasoning, the
  *    openai-compatible adapter round-trips it as `reasoning_content`, and
  *    Cerebras rejects that as an input property (400 wrong_api_format) —

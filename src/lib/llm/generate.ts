@@ -60,6 +60,10 @@ export interface ChatResult<T = unknown> {
  * SDK's `NoObjectGeneratedError` (carrying `text` + `usage`); transport
  * errors propagate as before. `executeTurn` converts
  * `NoObjectGeneratedError` into its `ValidationGateFailure` retry flow.
+ * Since ai 6.0.267 that includes a truncated response: the SDK parses any
+ * non-empty text whose finish reason is not `stop` or `tool-calls`, such
+ * as `length`, so a cut-off reply spends a retry. Before, it threw
+ * `NoOutputGeneratedError` and the Turn failed with no rows.
  *
  * Docs: node_modules/ai/docs/03-ai-sdk-core/10-generating-structured-data.mdx
  *       (https://ai-sdk.dev/docs/ai-sdk-core/generating-structured-data)
@@ -94,6 +98,10 @@ export async function generateChat<T>(
   const common = {
     model,
     messages: [...messages],
+    // The Harness renders the leading system message from seed columns;
+    // learner text never takes the system role. Since ai 6.0.170 the SDK
+    // warns on every call that carries a system message in `messages`.
+    allowSystemInMessages: true,
     temperature: opts.temperature ?? LLM.defaultTemperature,
     maxRetries: opts.maxRetries ?? LLM.maxRetries,
     // reasoning_effort on the wire (tuning LLM.reasoningEffort).

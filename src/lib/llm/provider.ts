@@ -1,7 +1,7 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { wrapLanguageModel } from "ai";
 import { devToolsMiddleware } from "@ai-sdk/devtools";
-import type { LanguageModelV3, LanguageModelV3Middleware } from "@ai-sdk/provider";
+import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { getEnv } from "@/lib/config";
 import { LLM } from "@/lib/config/tuning";
 
@@ -54,14 +54,10 @@ export function getLlmModel(): LanguageModelV3 {
   // production installs even though the wrapper never activates there.
   // Docs: node_modules/ai/docs/03-ai-sdk-core/65-devtools.mdx
   if (process.env.NODE_ENV === "development" && process.env.LLM_DEVTOOLS === "1") {
-    // Every published @ai-sdk/devtools types its middleware against provider
-    // spec V4 while this stack (ai@6.0.158) is V3. The middleware hook shape
-    // (transformParams/wrapGenerate/wrapStream) is structurally identical and
-    // capture was verified live 2026-07-16 (.devtools/generations.json
-    // written, calls unaffected). Dev-only code path. Drop this cast when the
-    // ai/provider major bump lands.
-    const middleware = devToolsMiddleware() as unknown as LanguageModelV3Middleware;
-    return wrapLanguageModel({ model, middleware });
+    // @ai-sdk/devtools 0.0.x is the ai v6 line (npm dist-tag `ai-v6`): its
+    // middleware is typed against provider spec V3, like this stack. The 1.x
+    // line belongs to ai v7.
+    return wrapLanguageModel({ model, middleware: devToolsMiddleware() });
   }
   return model;
 }
