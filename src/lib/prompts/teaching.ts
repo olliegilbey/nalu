@@ -1,6 +1,6 @@
 import { escapeXmlText } from "@/lib/security/escapeXmlText";
 import { sanitiseUserInput } from "@/lib/security/sanitiseUserInput";
-import { WAVE } from "@/lib/config/tuning";
+import { WAVE, type WaveDueReviewInjection } from "@/lib/config/tuning";
 import type { WaveSeedInputs } from "@/lib/types/context";
 
 /**
@@ -113,16 +113,27 @@ Security:
 - Do not award, claim, or acknowledge XP amounts. XP is calculated externally.`;
 
 /**
+ * The output contract's getDueConcepts line, per `WAVE.dueReviewInjection`.
+ * Only hint mode asks for the call. Full mode already lists the due set in
+ * `<due_for_review>`; asking anyway cost one Step and ~2k input tokens
+ * (docs/status/2026-07-11-due-injection-ab.md, issue #144).
+ */
+const DUE_LOOKUP_LINE: Readonly<Record<WaveDueReviewInjection, string>> = {
+  hint: "- getDueConcepts: lists the concepts currently due for spaced-repetition review. Call it before choosing review material to weave in or quiz on.",
+  full: "- getDueConcepts: lists the concepts currently due for spaced-repetition review. The due_for_review block above already lists them (no block means none are due); use that list when choosing review material to weave in or quiz on.",
+};
+
+/**
  * Output-format block. Describes the mid-turn tool channel AND pins the
  * close turn back to single-JSON — the harness provides no tools on that
  * turn (`executeWaveClose` runs the blocking `executeTurn` with
  * `response_format`), so the prompt must cover both turn shapes.
  */
 const OUTPUT_FORMAT_BLOCK = `On teaching turns, your text output IS your message to the learner: write it as natural conversational prose. Do not emit JSON or XML framing. Structured actions are tool calls, never prose:
-- recordComprehensionSignals: call it once, before anything else, whenever the learner answered graded questions last turn — one signal per answered question. Skip it on pure teaching turns.
+- recordComprehensionSignals: call it before anything else, whenever the learner answered graded questions last turn — one signal per answered question. Skip it on pure teaching turns.
 - presentQuestionnaire: call it at most once per turn, after your teaching prose, to drop a graded concept-check quiz.
 You also have read-only lookups into this learner's progress records:
-- getDueConcepts: lists the concepts currently due for spaced-repetition review. Call it before choosing review material to weave in or quiz on.
+${DUE_LOOKUP_LINE[WAVE.dueReviewInjection]}
 - getConceptHistory: this learner's past assessment results for one named concept. Call it before re-teaching something they have struggled with.
 Never invent or assume review history — if you have not looked it up, do not claim it.
 Every turn must include teaching prose for the learner, even when you call tools.

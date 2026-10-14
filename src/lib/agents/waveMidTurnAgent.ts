@@ -28,6 +28,8 @@ export interface WaveMidTurnAgentParams {
   readonly seed: WaveSeedInputs;
   /** Server-resolved course id; scopes the read-only lookup tools. */
   readonly courseId: string;
+  /** Question ids the learner answered this turn; the grading tool checks coverage against them. */
+  readonly answeredQuestionIds: readonly string[];
   /** Model override (tests); default: the provider singleton. */
   readonly model?: LanguageModelV3;
 }
@@ -49,8 +51,9 @@ export interface WaveMidTurnAgentInstance {
  * The mid-Wave teaching agent (agent-loop plan Task 2): one typed unit
  * holding model, instructions, tools (emission staging + read-only lookups),
  * loop bound, and the mandatory Cerebras per-step prepareStep (pacing +
- * reasoning strip). Built FRESH per attempt — collector and lookup scope are
- * closures over this turn; a retry must not inherit staged state.
+ * reasoning strip). Built FRESH per attempt — collector, answered ids and
+ * lookup scope are closures over this turn; a retry must not inherit staged
+ * state.
  *
  * The agent NEVER sees XP and owns no stage transitions: it can look up
  * learner state and stage emissions; deterministic code does the rest
@@ -60,7 +63,7 @@ export interface WaveMidTurnAgentInstance {
  * Docs: node_modules/ai/docs/03-agents/02-building-agents.mdx
  */
 export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTurnAgentInstance {
-  const toolkit = buildWaveMidTurnTools();
+  const toolkit = buildWaveMidTurnTools({ answeredQuestionIds: params.answeredQuestionIds });
   const lookupTools = buildWaveLookupTools({ courseId: params.courseId });
   // Byte-identical to renderContext(seed).system: executeToolTurnStream drops
   // that system message, trusting the identity.

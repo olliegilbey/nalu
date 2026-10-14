@@ -30,6 +30,7 @@ import type { SubmitTurnPayload } from "./buildLearnerInput";
  *   1. Prose-only turn → assistant prose persists, no new assessments.
  *   2. Signals against an MC + free-text questionnaire → assessments updated
  *      with grading + XP + userAnswer, no SM-2 mutation.
+ *   2b. Signals for unanswered or unknown ids → skipped, rows untouched.
  *   3. New questionnaire → N placeholder assessments inserted with
  *      namespaced question_ids, concepts upserted.
  *   4. bug_004: two questionnaires reusing one raw id do not collide.
@@ -312,6 +313,51 @@ describe("persistWaveMidTurn (integration)", () => {
         kind: "text",
         content: parsed.userMessage,
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 2b. Issue #144 guard: the grading tool stages any signal, so persistence
+  //     must skip one the learner did not answer this Turn. The learner
+  //     answers only q-mc. The model also grades q-ft (a real row, left
+  //     unanswered) and q9 (no row). Only q-mc is graded.
+  // ---------------------------------------------------------------------------
+  it("signals for unanswered or unknown ids → skipped, their rows untouched", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      const { ftQuestionId } = await seedOpenQuestionnaire(courseId, waveId);
+      const ftRowOf = async () =>
+        (await db.select().from(assessments).where(eq(assessments.questionId, ftQuestionId)))[0]!;
+      const ftBefore = await ftRowOf();
+
+      const parsed: WaveMidTurn = {
+        userMessage: "Good pick.",
+        comprehensionSignals: [
+          { kind: "mc-index", questionId: "q-mc", rationale: "Right rule. Move on." },
+          {
+            kind: "free-text",
+            questionId: "q-ft",
+            verdict: "correct",
+            qualityScore: 5,
+            rationale: "Never answered. Must not land.",
+          },
+          { kind: "mc-index", questionId: "q9", rationale: "Unknown id. Must not land." },
+        ],
+      };
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const openQ = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
+      const payload: SubmitTurnPayload = {
+        kind: "questionnaire-answers",
+        questionnaireId: openQ!.questionnaireId,
+        answers: [{ id: "q-mc", kind: "mc", selected: "B" }],
+      };
+      await appendTurnRows(waveId, parsed.userMessage);
+
+      const result = await persistWaveMidTurn({ ctx, parsed, payload, turnsRemaining: 4 });
+
+      expect(result.gradedSignals.map((s) => s.questionId)).toEqual(["q-mc"]);
+      // The unanswered row keeps its placeholder state: no verdict, no XP.
+      expect(await ftRowOf()).toEqual(ftBefore);
     });
   });
 

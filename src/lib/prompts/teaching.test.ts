@@ -81,6 +81,17 @@ describe("renderTeachingSystem (due-review injection, default full)", () => {
     const out = renderTeachingSystem(baseInputs);
     expect(out).not.toContain("<due_for_review>");
   });
+
+  // Issue #144: the list is already in the prompt. Asking for the lookup
+  // anyway cost one Step and ~2k input tokens (2026-07-11 A/B).
+  // The line keeps its quiz cue: the provided list feeds review and quizzes.
+  it("says the due list is provided, and drops the lookup call instruction", () => {
+    const out = renderTeachingSystem(dueInputs);
+    expect(out).toContain(
+      "The due_for_review block above already lists them (no block means none are due); use that list when choosing review material to weave in or quiz on.",
+    );
+    expect(out).not.toContain("Call it before choosing review material");
+  });
 });
 
 describe("renderTeachingSystem (output contract)", () => {
@@ -98,5 +109,12 @@ describe("renderTeachingSystem (output contract)", () => {
     expect(out).toContain("single JSON object");
     // The retired mega-schema's field vocabulary must not come back.
     expect(out).not.toContain("the questionnaire field");
+  });
+
+  // Issue #144: the grading tool may ask for a second call to grade the
+  // answers a partial call missed, so the prompt must not say "once".
+  it("does not limit recordComprehensionSignals to one call", () => {
+    const out = renderTeachingSystem(baseInputs);
+    expect(out).toContain("- recordComprehensionSignals: call it before anything else,");
   });
 });

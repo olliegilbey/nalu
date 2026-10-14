@@ -781,7 +781,7 @@ describe("streamWaveTurn (integration)", () => {
   it("answered quiz: grades the MC correct and awards XP on the assessment row", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
-      mockAgentAttempts(
+      const agentBuildSpy = mockAgentAttempts(
         toolCallAttempt(
           "presentQuestionnaire",
           QUIZ_INPUT,
@@ -818,6 +818,10 @@ describe("streamWaveTurn (integration)", () => {
         },
         second.writer,
       );
+
+      // Issue #144: the grading tool knows which ids this turn answered.
+      // A chat turn binds none.
+      expect(agentBuildSpy.mock.calls.map(([p]) => p.answeredQuestionIds)).toEqual([[], ["q1"]]);
 
       // The result part carries the grade. It fails if grading is skipped.
       const resultPart = second.parts.at(-1)!;

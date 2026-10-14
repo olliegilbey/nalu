@@ -256,12 +256,34 @@ export interface WaveMidTurnToolkit {
   readonly collector: WaveTurnCollector;
 }
 
+/** What the Harness knows about one mid-turn before its tool loop starts. */
+export interface WaveMidTurnToolScope {
+  /** Ids of the questions the learner answered this turn; empty on a chat turn. */
+  readonly answeredQuestionIds: readonly string[];
+}
+
+/**
+ * Refusal text for a repeat signal. With nothing left ungraded it keeps its
+ * pre-#144 bytes. With answers still ungraded it drops "continue teaching",
+ * which would contradict the nudge to call again.
+ */
+const repeatSignalReason = (answersStillUngraded: boolean): string =>
+  `a grading signal for these questions was already recorded this turn. The first grading stands. Do not resend it${answersStillUngraded ? "." : "; continue teaching."}`;
+
+/**
+ * In-loop coverage nudge (issue #144). It names the answered questions that
+ * still lack a signal, so the model completes a partial call inside the
+ * loop rather than failing the post-loop gate.
+ */
+const ungradedNextStep = (ids: readonly string[]): string =>
+  `Questions ${ids.join(", ")} were answered but have no grading signal yet. Call recordComprehensionSignals again with one signal for each, before you continue teaching.`;
+
 // Tool builders are module-private; splitting them out keeps the exported
 // factory small and gives WaveMidTurnToolkit precise inferred tool types.
-function buildRecordSignalsTool(collector: WaveTurnCollector) {
+function buildRecordSignalsTool(collector: WaveTurnCollector, scope: WaveMidTurnToolScope) {
   return tool({
     description:
-      "Record your grading of answers the learner just submitted. Call once, before teaching, when the learner answered questions last turn. Omit for pure teaching turns.",
+      "Record your grading of answers the learner just submitted. Call before teaching, when the learner answered questions last turn. Omit for pure teaching turns.",
     // Wire/validator split — union-free wire bytes, null-absorbing Zod
     // validation (docs/status/2026-07-06-tool-call-probe-verdict.md).
     inputSchema: toToolInputSchema(toolSignalsInputSchema, {
@@ -275,6 +297,9 @@ function buildRecordSignalsTool(collector: WaveTurnCollector) {
       // first signal stands; later ones, in this call or an earlier one, are
       // refused. REJECT, not silent dedup: the model learns its re-grade did
       // not land, the same pattern as presentQuestionnaire's refusal.
+      // First wins, not last: the coverage nudge below invites a second
+      // call, and a model that resends the whole set must not re-grade an
+      // answer it already scored.
       const staged = new Set(collector.signals.map((s) => s.questionId));
       const isFirst = (s: (typeof signals)[number], idx: number) =>
         !staged.has(s.questionId) &&
@@ -285,17 +310,25 @@ function buildRecordSignalsTool(collector: WaveTurnCollector) {
         ...new Set(signals.filter((s, idx) => !isFirst(s, idx)).map((s) => s.questionId)),
       ];
       collector.signals.push(...accepted.map(toCanonicalSignal));
-      // The common case keeps its old result bytes; the refusal fields
-      // appear only when something was refused. The reason names the next
-      // step, so the model does not resend the ids and burn loop Steps.
-      return rejected.length === 0
-        ? { recorded: accepted.length }
-        : {
-            recorded: accepted.length,
-            rejected,
-            reason:
-              "a grading signal for these questions was already recorded this turn. The first grading stands. Do not resend it; continue teaching.",
-          };
+      // Coverage over EVERY call so far: calls merge into one collector.
+      // Partial signals stay staged; this is a nudge, not a throw. A thrown
+      // execute becomes a tool-error part, whose replay is issue #147.
+      const graded = new Set(collector.signals.map((s) => s.questionId));
+      const ungraded = scope.answeredQuestionIds.filter((id) => !graded.has(id));
+      // The common case keeps its old result bytes: `{ recorded }` alone.
+      // The refusal fields appear only when something was refused. The
+      // reason names the next step, so the model does not resend the ids
+      // and burn loop Steps. The coverage fields appear only when answered
+      // questions are still ungraded, so a chat turn never carries them.
+      return {
+        recorded: accepted.length,
+        ...(rejected.length > 0
+          ? { rejected, reason: repeatSignalReason(ungraded.length > 0) }
+          : {}),
+        ...(ungraded.length > 0
+          ? { stillUngraded: ungraded, nextStep: ungradedNextStep(ungraded) }
+          : {}),
+      };
     },
   });
 }
@@ -323,13 +356,14 @@ function buildPresentQuestionnaireTool(collector: WaveTurnCollector) {
  * STAGING ONLY — validated input maps to canonical shapes in the collector;
  * the existing post-loop transaction (`persistWaveMidTurn`) consumes it
  * exactly as it consumed the mega-schema fields. Descriptions reuse the
- * `.describe()` guidance from the old mega-schema.
+ * `.describe()` guidance from the old mega-schema. The answered ids are
+ * bound by closure, as `courseId` is for the lookup tools.
  */
-export function buildWaveMidTurnTools(): WaveMidTurnToolkit {
+export function buildWaveMidTurnTools(scope: WaveMidTurnToolScope): WaveMidTurnToolkit {
   const collector: WaveTurnCollector = { questionnaire: null, signals: [] };
   return {
     tools: {
-      recordComprehensionSignals: buildRecordSignalsTool(collector),
+      recordComprehensionSignals: buildRecordSignalsTool(collector, scope),
       presentQuestionnaire: buildPresentQuestionnaireTool(collector),
     },
     collector,
