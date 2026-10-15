@@ -65,7 +65,14 @@ export function recordUsage(usage: LlmUsage): void {
   }
 }
 
-/** Running total across every {@link recordUsage} call in this module instance. */
+/**
+ * Running total across every {@link recordUsage} call in this module instance.
+ * Test-only seam: tests and the live smoke's setup file
+ * (`smokeUsageTotal.setup.ts`) read it; production only prints the total.
+ * The tag below keeps knip's production pass, which skips tests, from flagging it.
+ *
+ * @internal
+ */
 export function getRunUsageTally(): UsageTotals {
   return runTotals;
 }
@@ -73,6 +80,9 @@ export function getRunUsageTally(): UsageTotals {
 /**
  * Clear the running total. Test-only seam (each test starts clean) and
  * available to a consumer that wants narrower boundaries than the module's.
+ * The tag below keeps knip's production pass, which skips tests, from flagging it.
+ *
+ * @internal
  */
 export function resetRunUsageTally(): void {
   runTotals = sumUsage([]);

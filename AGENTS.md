@@ -46,7 +46,7 @@ The stack: Next.js 16.2 (App Router, Turbopack), TypeScript strict, tRPC v11, Zo
 - TSDoc on every export: one terse line for the next agent, saying what the symbol is in context. Self-evident shapes skip `@param` and `@returns`. `src/lib/types/jsonb.ts` shows the style for Zod-inferred types.
 - Comment more than usual. Comments explain why; during MVP they also explain what, so Ollie can review fast.
 - Pre-commit blocks on secrets, format, lint errors, types, unit tests, and dead code. Lint warnings are recall triggers for what agents forget: missing TSDoc, magic numbers in scoring and SR code, floating promises (`void` or `await` them), `any`, and `ai` or `drizzle-orm` imports outside their homes. Fix a warning when it fires. A legitimate exception keeps its warning, so review sees it.
-- Knip blocks dead code. Delete it or wire it up. A knip ignore is narrow, per file, and names the runtime use the analyzer cannot see.
+- Knip blocks dead code. Delete it or wire it up. A knip ignore is narrow, per file, and names the runtime use the analyzer cannot see. A second pass, `knip --production`, skips tests, so it also fails an export only tests use. Move such a helper into a test or fixture file. Tag a test seam into module state `@internal`. List each test-only file in `knip.jsonc` as `!path!`, with its reason.
 - `just check` mirrors CI exactly. Green before any push. `just --list` shows every recipe.
 
 ## Style
