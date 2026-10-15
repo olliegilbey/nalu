@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
+import { OUTPUT_TRUNCATED_RETRY_DIRECTIVE, renderHarnessFeedback } from "@/lib/prompts/turn";
 import { executeToolTurnStream, type ToolTurnAgent } from "./executeToolTurnStream";
 import { UnpairedToolCallError } from "./unpairedToolCallError";
 
@@ -324,6 +325,83 @@ describe("executeToolTurnStream", () => {
       }),
     ).rejects.toBe(transport);
     expect(appendMessages).not.toHaveBeenCalled();
+  });
+
+  it("fails an attempt with a Step cut off at the output cap, and retries (#181)", async () => {
+    // Since ai 6.0.260 a Step that finishes on `length` runs none of its
+    // valid calls, so c1 has no result. The cut-off attempt must retry, not
+    // reach toolStepRows' UnpairedToolCallError, and not run the gate.
+    const cutOffStep = {
+      text: "",
+      finishReason: "length",
+      toolCalls: [{ toolCallId: "c1", toolName: "presentQuestionnaire", input: { questions: [] } }],
+      toolResults: [],
+      content: [],
+    };
+    const first = agentOf(
+      [{ type: "text-delta", id: "t1", text: "Here is a quiz." }],
+      [textStep("Here is a quiz."), cutOffStep],
+    );
+    const second = agentOf([], [textStep("Recovered.")]);
+    const gateCalls: number[] = [];
+
+    const result = await executeToolTurnStream({
+      parent: { kind: "wave", id: WAVE_ID },
+      seed: WAVE_SEED,
+      userMessageContent: "u",
+      makeAttempt: (i) => ({
+        agent: i === 0 ? first.agent : second.agent,
+        validateTurn: () => {
+          gateCalls.push(i);
+          return null;
+        },
+      }),
+      ...noopHooks,
+    });
+
+    expect(result.finalText).toBe("Recovered.");
+    expect(gateCalls).toEqual([1]);
+    const batch = vi.mocked(appendMessages).mock.calls[0]?.[0];
+    expect(batch?.map((r) => r.kind)).toEqual([
+      "user_message",
+      "failed_assistant_response",
+      "harness_retry_directive",
+      "assistant_response",
+    ]);
+    // A cut-off reply is unfinished, so none of it replays: not even the prose.
+    expect(batch?.[1]?.content).toBe("");
+    expect(batch?.[2]?.content).toBe(renderHarnessFeedback(OUTPUT_TRUNCATED_RETRY_DIRECTIVE));
+  });
+
+  it("fails a text-only cut whose gate passed, and persists empty failed rows on exhaust", async () => {
+    // No tool call: the prose itself ran to the cap. The gate would accept
+    // it, so only the truncation check can fail it. The learner saw the
+    // prose, but an unfinished reply never replays.
+    const cutOffStep = { ...textStep("Once upon a"), finishReason: "length" };
+    await expect(
+      executeToolTurnStream({
+        parent: { kind: "wave", id: WAVE_ID },
+        seed: WAVE_SEED,
+        userMessageContent: "u",
+        makeAttempt: () => ({
+          agent: agentOf([{ type: "text-delta", id: "t1", text: "Once upon a" }], [cutOffStep])
+            .agent,
+          validateTurn: () => null,
+        }),
+        ...noopHooks,
+      }),
+    ).rejects.toMatchObject({ reason: "output_truncated" });
+
+    // Three attempts (SCOPING.maxParseRetries + 1); no trailing directive.
+    const batch = vi.mocked(appendMessages).mock.calls[0]?.[0];
+    expect(batch?.map((r) => [r.kind, r.content])).toEqual([
+      ["user_message", "u"],
+      ["failed_assistant_response", ""],
+      ["harness_retry_directive", renderHarnessFeedback(OUTPUT_TRUNCATED_RETRY_DIRECTIVE)],
+      ["failed_assistant_response", ""],
+      ["harness_retry_directive", renderHarnessFeedback(OUTPUT_TRUNCATED_RETRY_DIRECTIVE)],
+      ["failed_assistant_response", ""],
+    ]);
   });
 
   it("refuses to persist a tool call with no result or error (Cerebras rejects it on replay)", async () => {

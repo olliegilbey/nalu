@@ -52,8 +52,9 @@ guard and the Wave gate's envelope check share one scanner,
 `proseBraces.ts`: the `{`s outside fences and backtick spans. The retry
 replays it as the model's previous reply, and this model imitates JSON
 replies in history. Replayed tool results would also claim staged work
-that died with the attempt. When nothing safe was shown, the row is `""`;
-Cerebras accepts an empty assistant message (live test
+that died with the attempt. When nothing safe was shown, or a Step was
+cut off at the output cap (below), the row is `""`; Cerebras accepts an
+empty assistant message (live test
 `streamWaveTurn.retryReplay.live.test.ts`). Rows written before this
 change hold a `{text, steps}` JSON envelope; they render unchanged.
 
@@ -95,9 +96,22 @@ change hold a `{text, steps}` JSON envelope; they render unchanged.
   error, so a partial loop never reaches the gate or the DB. A tool call
   with no result and no tool-error throws `UnpairedToolCallError`
   (`toolStepRows.ts`) instead of persisting: Cerebras rejects an
-  unanswered call on replay. Since ai 6.0.260 a Step that finishes on
-  `length` runs none of its valid calls, so if the gate passes, the Turn
-  fails with `UnpairedToolCallError` and no retry (issue #181).
+  unanswered call on replay.
+- Output cap (#181): each tool-loop Step is capped at
+  `LLM.maxToolStepOutputTokens`. A Step that finishes on `length` fails
+  the attempt before the gate runs: an `output_truncated`
+  `ValidationGateFailure` whose detail is
+  `OUTPUT_TRUNCATED_RETRY_DIRECTIVE` (`src/lib/prompts/turn.ts`). The
+  standard retry runs. The failed row is `""`, so nothing of the cut-off
+  attempt replays, and no tool trail persists. Why: the SDK answers a
+  cut-off INVALID call in-loop with an error that quotes the whole raw
+  input, and replay must match those bytes. Persisting it once carried
+  ~40k tokens into every later Turn of a Wave. The agent's `stopWhen` ends
+  the loop right after the cut-off Step, so no Step runs on that error
+  (`src/lib/agents/`, #187). A cut-off VALID call never runs (ai
+  6.0.260+); the check comes first, so it retries rather than throw
+  `UnpairedToolCallError`. Structured calls carry no cap: see the TSDoc on
+  `maxToolStepOutputTokens` in `tuning.ts`.
 
 Do not put per-stage logic here. If a turn-shape needs stage-specific
 behaviour, that belongs in the caller in `src/lib/course/`, not behind a flag here.

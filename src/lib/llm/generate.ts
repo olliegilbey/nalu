@@ -103,6 +103,7 @@ export async function generateChat<T>(
     // warns on every call that carries a system message in `messages`.
     allowSystemInMessages: true,
     temperature: opts.temperature ?? LLM.defaultTemperature,
+    // No maxOutputTokens, on purpose: see `LLM.maxToolStepOutputTokens`.
     maxRetries: opts.maxRetries ?? LLM.maxRetries,
     // reasoning_effort on the wire (tuning LLM.reasoningEffort).
     providerOptions: llmProviderOptions(),

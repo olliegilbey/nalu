@@ -1,4 +1,4 @@
-import { ToolLoopAgent, stepCountIs } from "ai";
+import { ToolLoopAgent, stepCountIs, type StopCondition } from "ai";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { getLlmModel, llmProviderOptions } from "@/lib/llm/provider";
 import { cerebrasToolLoopPrepareStep } from "@/lib/llm/cerebrasToolLoopPrepareStep";
@@ -16,6 +16,16 @@ import { buildWaveLookupTools } from "./waveLookupTools";
 
 /** Both read-only lookups, as `buildWaveLookupTools` builds them. */
 type WaveLookupTools = ReturnType<typeof buildWaveLookupTools>;
+
+/**
+ * Stop condition: the last Step was cut off at the output cap (#187).
+ * Without it the loop goes on after a cut-off call. That call is usually
+ * invalid, and the SDK's in-loop error, which quotes the whole raw input,
+ * counts as its answer. `executeToolTurnStream` fails the attempt anyway
+ * (#181), so the next Step would be waste.
+ */
+const lastStepHitOutputCap: StopCondition<WaveMidTurnAgentTools> = ({ steps }) =>
+  steps.at(-1)?.finishReason === "length";
 
 /**
  * The mid-turn agent's full tool map: emission staging + read-only lookups.
@@ -86,7 +96,9 @@ export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTu
     model: params.model ?? getLlmModel(),
     instructions,
     tools: { ...toolkit.tools, ...lookupTools },
-    stopWhen: stepCountIs(LLM.maxToolSteps),
+    // Per-Step output cap. A Step that hits it fails the attempt (#181).
+    maxOutputTokens: LLM.maxToolStepOutputTokens,
+    stopWhen: [stepCountIs(LLM.maxToolSteps), lastStepHitOutputCap],
     temperature: LLM.defaultTemperature,
     maxRetries: LLM.maxRetries,
     // reasoning_effort on the wire (tuning LLM.reasoningEffort).

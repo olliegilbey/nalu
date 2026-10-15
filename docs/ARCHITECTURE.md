@@ -25,7 +25,7 @@ A Wave close also writes `waves.summary` and `waves.blueprint_emitted`. They are
 
 The atomicity rule is what makes replay trivial: walk rows in `(turn_index, seq)` order, every pair was actually seen by the LLM.
 
-One row is not raw model output: a failed tool-loop attempt's `failed_assistant_response`. It holds the prose the learner saw, cut at any JSON leak, with no tool trail (#140). The retry replays it as the model's previous reply, and a JSON reply there primes the model to answer in JSON again. `src/lib/turn/CLAUDE.md` has the details.
+One row is not raw model output: a failed tool-loop attempt's `failed_assistant_response`. It holds the prose the learner saw, cut at any JSON leak, or `""` when a Step was cut off at the output cap (#181). It never holds a tool trail (#140). The retry replays it as the model's previous reply, and a JSON reply there primes the model to answer in JSON again. `src/lib/turn/CLAUDE.md` has the details.
 
 A `tool_result` row stores each tool call's answer as the loop sent it, in the order the loop sent them. The SDK sends them in tool-call order, not in the order they arrive, so the row does too. Rows written before that change keep the arrival order the older SDK sent. A tool's return value replays as JSON. A tool error stores the SDK's error text as `errorText` and replays as `error-text`, the shape the loop sent (#147). Rows written before #147 hold `output: {toolError}` and keep their old JSON bytes.
 
