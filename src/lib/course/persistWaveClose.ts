@@ -3,7 +3,7 @@ import { WAVE } from "@/lib/config/tuning";
 import { appendWaveChatLog, closeWave, openWave } from "@/db/queries/waves.writes";
 import { getConceptsByCourse, getDueConceptsByCourse } from "@/db/queries/concepts";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
-import { incrementCourseXpInTx } from "@/db/queries/courses.tx";
+import { incrementCourseXpInTx, lockCourseRowInTx } from "@/db/queries/courses.tx";
 import { dueConceptsSnapshotSchema, type FrameworkJsonb } from "@/lib/types/jsonb";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { LoadedWaveContext } from "./loadWaveContext";
@@ -45,7 +45,12 @@ export interface PersistWaveCloseResult {
  * and bumps total_xp. All-or-nothing — any failure rolls every step back.
  *
  * Ordering (top → bottom):
- *   1. Apply close `gradings[]` via `applyCloseGradings` (helpers.ts).
+ *   0. Lock the course row (`lockCourseRowInTx`) before any Wave or
+ *      assessment row. A concurrent mid-turn save takes the same first lock,
+ *      so the two queue instead of deadlocking (lock order:
+ *      `src/db/queries/CLAUDE.md`).
+ *   1. Apply close `gradings[]` via `applyCloseGradings` (helpers.ts). Each
+ *      grading also adds its XP to `courses.total_xp`.
  *   2. Apply `conceptUpdates[]` via `applySm2Update` per concept.
  *   3. `closeWave(...)` — UPDATE goes through the SAME tx (closeWave accepts
  *      optional tx, mirroring openWave) so the close rolls back if a later
@@ -73,6 +78,10 @@ export async function persistWaveClose(
   const { ctx, parsed, now } = params;
 
   return db.transaction(async (tx) => {
+    // 0. Course row first: the gradings and the completion bump below both
+    //    write `courses.total_xp`.
+    await lockCourseRowInTx(ctx.course.id, tx);
+
     // 1. Apply per-question gradings.
     const gradedSignals = await applyCloseGradings(tx, ctx, parsed);
 

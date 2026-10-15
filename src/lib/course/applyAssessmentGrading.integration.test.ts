@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { withTestDb } from "@/db/testing/withTestDb";
+import { waitForLockWaiters } from "@/db/testing/waitForLockWaiters";
 import { db, type DbOrTx } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
@@ -9,7 +10,7 @@ import { insertOpenAssessments } from "@/db/queries/assessments.open";
 import { WAVE } from "@/lib/config/tuning";
 import { calculateMcXp, calculateXP } from "@/lib/scoring/xp";
 import { applyAssessmentGrading } from "./applyAssessmentGrading";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { assessments, courses } from "@/db/schema";
 
 /**
@@ -101,23 +102,6 @@ async function courseTotalXp(courseId: string): Promise<number> {
     .where(eq(courses.id, courseId));
   if (!row) throw new Error(`courseTotalXp: no course ${courseId}`);
   return row.totalXp;
-}
-
-/**
- * Poll until a backend in this database waits on a lock. Lets a race test
- * hold one tx open until the other is blocked behind it.
- */
-async function waitForLockWaiter(attemptsLeft = 250): Promise<void> {
-  const [row] = await db.execute<{ waiting: number }>(sql`
-    SELECT count(*)::int AS waiting
-    FROM pg_stat_activity
-    WHERE datname = current_database()
-      AND wait_event_type = 'Lock'
-  `);
-  if ((row?.waiting ?? 0) > 0) return;
-  if (attemptsLeft === 0) throw new Error("waitForLockWaiter: no backend waited on a lock");
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  return waitForLockWaiter(attemptsLeft - 1);
 }
 
 describe("applyAssessmentGrading (integration)", () => {
@@ -289,7 +273,7 @@ describe("applyAssessmentGrading (integration)", () => {
         // Tab B grades the same row on its own connection. Hold tab A open
         // until tab B waits on its row lock, so the two really overlap.
         tabB = db.transaction((txB) => grade(txB));
-        await waitForLockWaiter();
+        await waitForLockWaiters(1);
       });
       await tabB;
 

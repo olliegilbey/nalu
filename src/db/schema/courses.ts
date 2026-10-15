@@ -61,7 +61,9 @@ export const courses = pgTable(
     ),
     // Every award is non-negative, and a re-grade lowers the total by at most
     // the XP that row added. So a negative `total_xp` would indicate
-    // corruption or a buggy mutator.
+    // corruption or a buggy mutator. That holds for rows graded after issue
+    // #205's fix. A pre-fix row re-graded lower takes XP the total never
+    // gained, and can trip this CHECK until the #208 backfill runs.
     check("courses_total_xp_nonneg", sql`${t.totalXp} >= 0`),
     // Most queries filter by userId; index prevents seq-scans on large tables.
     index("courses_user_id_idx").on(t.userId),

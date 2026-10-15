@@ -1,6 +1,7 @@
 import { db } from "@/db/client";
 import { appendWaveChatLog } from "@/db/queries/waves.writes";
 import { getLatestAssistantResponseForWaveInTx } from "@/db/queries/contextMessages";
+import { lockCourseRowInTx } from "@/db/queries/courses.tx";
 import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 import type { McOptionKey } from "@/lib/types/mcOptionKey";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
@@ -38,10 +39,11 @@ export interface PersistWaveMidTurnResult {
 }
 
 /**
- * Post-LLM persistence for one mid-Wave turn: grade prior answers, insert
- * the new questionnaire, dual-write the assistant chat_log entry — one
- * transaction. Runs after `streamWaveTurn`'s tool loop has committed the
- * turn's context_messages rows.
+ * Post-LLM persistence for one mid-Wave turn: lock the course row, grade
+ * prior answers (each adds its XP to `courses.total_xp`), insert the new
+ * questionnaire, dual-write the assistant chat_log entry — one transaction.
+ * Runs after `streamWaveTurn`'s tool loop has committed the turn's
+ * context_messages rows.
  */
 export async function persistWaveMidTurn(params: {
   readonly ctx: LoadedWaveContext;
@@ -69,6 +71,11 @@ export async function persistWaveMidTurn(params: {
     : new Map();
 
   const result = await db.transaction(async (tx) => {
+    // Lock the course row first: grading below bumps `courses.total_xp`, and
+    // a concurrent Wave close must queue here, not hold the Wave row we write
+    // last (lock order: `src/db/queries/CLAUDE.md`).
+    await lockCourseRowInTx(ctx.course.id, tx);
+
     // Find the assistant_response row the turn runner just persisted. We need
     // BOTH its row id (used as the canonical `questionnaireId` so the
     // mid-turn projection and the `loadWaveContext` reconstruction agree —

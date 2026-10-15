@@ -24,9 +24,9 @@ export const userProfiles = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    // XP totals are monotonic (assessments only ever award positive XP); a negative
-    // `total_xp` would indicate corruption or a buggy mutator. Mirrors the same
-    // invariant on `courses.total_xp` (`courses_total_xp_nonneg`).
+    // XP awards are never negative, so a negative `total_xp` would indicate
+    // corruption or a buggy mutator. Mirrors `courses_total_xp_nonneg` on
+    // `courses.total_xp`, which a re-grade can lower but not below zero.
     check("user_profiles_total_xp_nonneg", sql`${t.totalXp} >= 0`),
   ],
 ).enableRLS();

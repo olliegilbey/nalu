@@ -17,6 +17,12 @@ mid-turn grading tx runs one of them too: `incrementCourseXpInTx`. A
 would deadlock on the transaction's row lock. A test that needs one of these
 writes passes `db` as the handle; do not add a `db`-bound twin.
 
+Lock order: a transaction that writes course XP locks the course row first.
+`persistWaveMidTurn` and `persistWaveClose` open with `lockCourseRowInTx`.
+`persistScopingClose` opens with a `courses` UPDATE. Every such transaction
+then queues on the course row before it locks a Wave or assessment row, so
+no two of them can deadlock (`persistWaveLockOrder.integration.test.ts`).
+
 Modules: one base file per table (`userProfiles.ts`, `courses.ts`,
 `scopingPasses.ts`, `waves.ts`, `contextMessages.ts`, `concepts.ts`,
 `assessments.ts`). A base file past ~200 lines splits into dot-suffixed
@@ -24,7 +30,7 @@ siblings, one concern each:
 
 - `courses.ts`: row guard, create, reads. `courses.scoping.ts`: scoping-phase
   writes. `courses.tx.ts`: the close transactions' reads and writes:
-  activation, tier, and XP.
+  activation, tier, and XP, plus the course-row lock.
 - `waves.ts`: row guard and reads. `waves.writes.ts`: open, close, and the
   `chat_log` append.
 - `concepts.ts`: reads. `concepts.writes.ts`: upsert and SM-2 results.
@@ -33,8 +39,8 @@ siblings, one concern each:
 - `assessments.ts`: reads. `assessments.open.ts`: a questionnaire's
   placeholder rows. `assessments.grade.ts`: grades an existing row, and
   locks it first (`lockAssessmentForGradingInTx`) so the course XP bump
-  follows the row. `assessments.fixtures.ts` seeds the two integration suites; tests import
-  it, production never does.
+  follows the row. `assessments.fixtures.ts` seeds the two integration
+  suites; tests import it, production never does.
 
 Integration tests split the same way and sit beside their module
 (`courses.scoping.integration.test.ts`). The barrel `index.ts` re-exports

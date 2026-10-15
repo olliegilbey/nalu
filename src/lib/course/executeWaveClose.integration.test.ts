@@ -564,7 +564,7 @@ describe("executeWaveClose (integration)", () => {
       const afterConcept = (await db.select().from(concepts).where(eq(concepts.id, conceptId)))[0]!;
       expect(afterConcept.repetitionCount).toBe(initialConcept.repetitionCount);
       expect(afterConcept.lastQualityScore).toBe(initialConcept.lastQualityScore);
-      // XP not incremented: the grading's XP rolls back with the completion XP.
+      // XP not incremented: the grading's XP rolls back; the completion bump never runs.
       const afterCourse = (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!;
       expect(afterCourse.totalXp).toBe(0);
 

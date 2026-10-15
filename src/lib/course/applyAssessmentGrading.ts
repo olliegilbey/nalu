@@ -71,6 +71,9 @@ export interface AppliedGrading {
  * the same grading (a second tab, a replayed close) changes nothing, so it
  * adds nothing. A re-grade that changes the XP moves the total by the
  * difference, so the total always matches the rows.
+ *
+ * Callers lock the course row first (`lockCourseRowInTx`), before this locks
+ * the assessment row. See the lock order in `src/db/queries/CLAUDE.md`.
  */
 export async function applyAssessmentGrading(
   params: ApplyAssessmentGradingParams,
