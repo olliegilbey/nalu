@@ -31,7 +31,8 @@ import type { SubmitTurnPayload } from "./buildLearnerInput";
  *   2. Signals against an MC + free-text questionnaire → assessments updated
  *      with grading + XP + userAnswer, no SM-2 mutation.
  *   2b. Signals for unanswered or unknown ids → skipped, rows untouched.
- *   2c. Graded XP lands on `courses.total_xp` once, even when the same
+ *   2c. A verdict that disagrees with its score → correctness follows the score.
+ *   2d. Graded XP lands on `courses.total_xp` once, even when the same
  *       answers persist twice (issue #205).
  *   3. New questionnaire → N placeholder assessments inserted with
  *      namespaced question_ids, concepts upserted.
@@ -415,7 +416,50 @@ describe("persistWaveMidTurn (integration)", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 2c. Issue #205: graded answers add their XP to `courses.total_xp` in the
+  // 2c. Issue #198: the model's verdict disagrees with its score. The score
+  //     sets XP, so the Harness derives correctness from it too. The row and
+  //     the turn result must agree with the score, not the verdict.
+  // ---------------------------------------------------------------------------
+  it("free-text verdict that disagrees with its score → correctness follows the score", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      const { ftQuestionId } = await seedOpenQuestionnaire(courseId, waveId);
+
+      const parsed: WaveMidTurn = {
+        userMessage: "Let's revisit that.",
+        comprehensionSignals: [
+          {
+            kind: "free-text",
+            questionId: "q-ft",
+            verdict: "correct",
+            qualityScore: 0,
+            rationale: "Says correct. Scores zero.",
+          },
+        ],
+      };
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const openQ = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
+      const payload: SubmitTurnPayload = {
+        kind: "questionnaire-answers",
+        questionnaireId: openQ!.questionnaireId,
+        answers: [{ id: "q-ft", kind: "freetext", text: "no idea", fromEscape: false }],
+      };
+      await appendTurnRows(waveId, parsed.userMessage);
+
+      const result = await persistWaveMidTurn({ ctx, parsed, payload, turnsRemaining: 4 });
+
+      expect(result.gradedSignals).toEqual([
+        { kind: "free-text", questionId: "q-ft", xpAwarded: 0, correct: false, qualityScore: 0 },
+      ]);
+      const ftRow = (
+        await db.select().from(assessments).where(eq(assessments.questionId, ftQuestionId))
+      )[0]!;
+      expect(ftRow).toMatchObject({ isCorrect: false, qualityScore: 0, xpAwarded: 0 });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 2d. Issue #205: graded answers add their XP to `courses.total_xp` in the
   //     grading tx. A second persist of the same answers adds nothing. That is
   //     the second-tab race: both requests load the Wave while the
   //     questionnaire is open, and both grade its rows.

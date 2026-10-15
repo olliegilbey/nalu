@@ -23,6 +23,7 @@ vi.mock("@/lib/config/tuning", async (importOriginal) => {
 
 import { updateAssessmentGrading } from "@/db/queries/assessments.grade";
 import type { DbOrTx } from "@/db/client";
+import type { QualityScore } from "@/lib/types/spaced-repetition";
 import { applyAssessmentGrading } from "./applyAssessmentGrading";
 
 beforeEach(() => {
@@ -47,5 +48,35 @@ describe("applyAssessmentGrading (mid-Wave MC quality)", () => {
 
   it("writes BASELINE.mcIncorrectQuality for an incorrect click", async () => {
     expect(await writtenMcQuality(false)).toBe(2);
+  });
+});
+
+/** Grade one free-text answer and return the `isCorrect` written. */
+async function writtenFreeTextIsCorrect(
+  verdict: "correct" | "partial" | "incorrect",
+  qualityScore: QualityScore,
+): Promise<unknown> {
+  await applyAssessmentGrading({
+    assessmentId: "a-1",
+    conceptTier: 1,
+    signal: { kind: "free-text", questionId: "q1", verdict, qualityScore },
+    tx: {} as DbOrTx,
+  });
+  return vi.mocked(updateAssessmentGrading).mock.calls[0]![1].isCorrect;
+}
+
+// Issue #198: the score sets XP, so the score also sets correctness. Each
+// case gives a verdict that disagrees with its score; the score must win.
+describe("applyAssessmentGrading (free-text correctness from qualityScore)", () => {
+  it("stores isCorrect false for verdict 'correct' with qualityScore 0", async () => {
+    expect(await writtenFreeTextIsCorrect("correct", 0)).toBe(false);
+  });
+
+  it("stores isCorrect true for verdict 'incorrect' with qualityScore 5", async () => {
+    expect(await writtenFreeTextIsCorrect("incorrect", 5)).toBe(true);
+  });
+
+  it("stores isCorrect false for a partial-band score, whatever the verdict", async () => {
+    expect(await writtenFreeTextIsCorrect("correct", 3)).toBe(false);
   });
 });
