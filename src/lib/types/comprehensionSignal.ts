@@ -14,8 +14,8 @@ import type { QualityScore } from "@/lib/types/spaced-repetition";
  * envelope also carries the Harness's answer key: the options and the
  * correct key (issue #149).
  *
- * Nothing on this path ties `qualityScore` to the `verdict` band. The close
- * turn's schema enforces that band (`closeTurn.ts`).
+ * Nothing on this path ties `qualityScore` to the `verdict` band (issue
+ * #198). The close turn's schema enforces that band (`closeTurn.ts`).
  */
 export type ComprehensionSignal =
   | {

@@ -31,7 +31,7 @@ export interface WaveTurnCollector {
 // FLAT tool-input schemas (wire + validator).
 //
 // WHY FLAT: the canonical `questionSchema` / `ComprehensionSignal` are
-// discriminated unions, which render as `anyOf` on the wire. The Task-1 probe
+// discriminated unions; as Zod, a union renders as `anyOf` on the wire. The Task-1 probe
 // (docs/status/2026-07-06-tool-call-probe-verdict.md, finding 2) measured
 // anyOf-union tool schemas cratering gpt-oss-120b's valid-call rate from
 // ~95% to ~44%, with record→array confusion — and the live Task-7
