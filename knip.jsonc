@@ -12,9 +12,10 @@
   // `knip --production` skips tests and the dev entries above, so it reports
   // the files only they import. A `!path!` pattern drops one such file from
   // that pass only; plain `knip` still checks it. The first line is knip's
-  // default project. Keep one file per line, never a directory glob.
+  // default project plus the Tailwind plugin's `.css`; drop `css` and knip
+  // stops checking stylesheets. Keep one file per line, never a directory glob.
   "project": [
-    "**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts}!",
+    "**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts,css}!",
     // Scorer for the scripts/probe-model.ts dev CLI.
     "!scripts/toolProbeScore.ts!",
     // Localhost guard for the src/db/reset.ts dev CLI.

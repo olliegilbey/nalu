@@ -78,8 +78,7 @@ export function getRunUsageTally(): UsageTotals {
 }
 
 /**
- * Clear the running total. Test-only seam (each test starts clean) and
- * available to a consumer that wants narrower boundaries than the module's.
+ * Clear the running total. Test-only seam: each test starts clean.
  * The tag below keeps knip's production pass, which skips tests, from flagging it.
  *
  * @internal
