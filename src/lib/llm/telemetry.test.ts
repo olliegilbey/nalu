@@ -4,9 +4,11 @@ import {
   BasicTracerProvider,
   InMemorySpanExporter,
   SimpleSpanProcessor,
+  type ReadableSpan,
 } from "@opentelemetry/sdk-trace-base";
-import { APICallError, TypeValidationError } from "ai";
-import { MockLanguageModelV3 } from "ai/test";
+import { APICallError, TypeValidationError, streamText, tool } from "ai";
+import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
+import { z } from "zod/v4";
 import { generateChat } from "./generate";
 import { llmTelemetry } from "./telemetry";
 
@@ -68,6 +70,26 @@ describe("LLM spans on a failed call (#204)", () => {
     vi.unstubAllEnvs();
   });
 
+  /**
+   * A provider rejection whose message carries the provider's own text. A
+   * zero `retry-after-ms` makes a retryable one retry at once.
+   */
+  function providerError(isRetryable: boolean): APICallError {
+    return new APICallError({
+      message: `Bad Request: ${SECRET}`,
+      url: "https://llm.test/v1/chat/completions",
+      requestBodyValues: {},
+      statusCode: isRetryable ? 503 : 400,
+      responseHeaders: { "retry-after-ms": "0" },
+      isRetryable,
+    });
+  }
+
+  /** All a span exports beyond ids and timing: attributes, events, status. */
+  function exportedText(spans: readonly ReadableSpan[]): string {
+    return JSON.stringify(spans.map((s) => [s.attributes, s.events, s.status]));
+  }
+
   // Both errors the SDK can throw with model or provider text in `message`.
   it.each([
     {
@@ -75,18 +97,7 @@ describe("LLM spans on a failed call (#204)", () => {
       // A response that fails its schema: the message quotes the raw value.
       error: () => new TypeValidationError({ value: { answerKey: SECRET }, cause: "bad shape" }),
     },
-    {
-      name: "AI_APICallError",
-      // A provider rejection: the message carries the provider's own text.
-      error: () =>
-        new APICallError({
-          message: `Bad Request: ${SECRET}`,
-          url: "https://llm.test/v1/chat/completions",
-          requestBodyValues: {},
-          statusCode: 400,
-          isRetryable: false,
-        }),
-    },
+    { name: "AI_APICallError", error: () => providerError(false) },
   ])("keeps $name on the span and drops its text", async ({ name, error }) => {
     vi.stubEnv("LLM_TELEMETRY", "true");
     const model = new MockLanguageModelV3({
@@ -105,13 +116,81 @@ describe("LLM spans on a failed call (#204)", () => {
       "ai.generateText",
       "ai.generateText.doGenerate",
     ]);
-    // All a span exports beyond ids and timing: attributes, events, status.
-    const exported = JSON.stringify(spans.map((s) => [s.attributes, s.events, s.status]));
-    expect(exported).not.toContain(SECRET);
+    expect(exportedText(spans)).not.toContain(SECRET);
     // Each span still says that it failed, and with which error class.
     for (const span of spans) {
       expect(span.status).toEqual({ code: SpanStatusCode.ERROR });
       expect(span.events.map((e) => e.attributes)).toEqual([{ "exception.type": name }]);
     }
+  });
+
+  it("drops the retry wrapper's text, which quotes the last attempt", async () => {
+    vi.stubEnv("LLM_TELEMETRY", "true");
+    // Two failed attempts. The SDK then throws a RetryError whose message
+    // quotes the last attempt's message.
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => {
+        throw providerError(true);
+      },
+    });
+
+    await expect(
+      generateChat([{ role: "user", content: "hi" }], {
+        model,
+        promptCacheKey: CACHE_KEY,
+        maxRetries: 1,
+      }),
+    ).rejects.toThrow(SECRET);
+
+    const spans = exporter.getFinishedSpans();
+    const root = spans.find((s) => s.name === "ai.generateText");
+    expect(root?.events.map((e) => e.attributes)).toEqual([{ "exception.type": "AI_RetryError" }]);
+    expect(exportedText(spans)).not.toContain(SECRET);
+  });
+
+  it("drops a failed tool's text from its ai.toolCall span", async () => {
+    vi.stubEnv("LLM_TELEMETRY", "true");
+    // The Wave agent's path: a streamed Step calls a tool, and the tool
+    // throws. A failed DB query's message lists its params, learner text
+    // included. The SDK catches it and records it on the tool's own span.
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "tool-call", toolCallId: "call-1", toolName: "lookup", input: "{}" },
+            {
+              type: "finish",
+              finishReason: { unified: "tool-calls", raw: undefined },
+              usage: {
+                inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+                outputTokens: { total: 1, text: 1, reasoning: undefined },
+              },
+            },
+          ],
+        }),
+      }),
+    });
+    const lookup = tool({
+      inputSchema: z.object({}),
+      // A declared output type: an execute that only throws infers `never`,
+      // which no `tool()` overload accepts.
+      execute: async (): Promise<string> => {
+        throw new Error(`Failed query, params: ${SECRET}`);
+      },
+    });
+
+    const result = streamText({
+      model,
+      prompt: "hi",
+      tools: { lookup },
+      experimental_telemetry: llmTelemetry("test"),
+    });
+    await result.consumeStream();
+
+    const spans = exporter.getFinishedSpans();
+    const toolSpan = spans.find((s) => s.name === "ai.toolCall");
+    expect(toolSpan?.status).toEqual({ code: SpanStatusCode.ERROR });
+    expect(toolSpan?.events.map((e) => e.attributes)).toEqual([{ "exception.type": "Error" }]);
+    expect(exportedText(spans)).not.toContain(SECRET);
   });
 });

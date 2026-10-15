@@ -47,7 +47,10 @@ function contentFreeTracer(tracer: Tracer): Tracer {
     startSpan: (name, options, parent) => contentFreeSpan(tracer.startSpan(name, options, parent)),
     // The real tracer still starts the span and sets the active context, so
     // parent and child spans link as before. Only the callback's span is
-    // wrapped, and that is the span the SDK records errors on.
+    // wrapped, and that is the span the SDK records errors on. The active
+    // context holds the unwrapped span, so `trace.getActiveSpan()` inside an
+    // LLM call returns it. Code that records an error on the active span
+    // there skips this wrapper and writes the full error text.
     startActiveSpan<F extends (span: Span) => ReturnType<F>>(
       name: string,
       ...args: ActiveSpanArgs<F>
