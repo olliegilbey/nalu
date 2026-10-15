@@ -48,11 +48,14 @@ const v3Response = z
   });
 
 /**
- * Verdict ↔ qualityScore alignment table. Defence-in-depth mirror of the
- * same constant in `src/lib/prompts/closeTurn.ts`: the LLM-facing
- * schema enforces this on parse, and the persistence schema enforces it
- * again on every JSONB read so a manual DB write or a future schema drift
- * can't smuggle in `verdict: "correct"` with `qualityScore: 1`.
+ * Verdict ↔ qualityScore band table: the one source for every grading path.
+ * The close-turn schema (`src/lib/prompts/closeTurn.ts`) enforces it on
+ * parse. The baseline persistence schema below enforces it again on every
+ * JSONB read, so a manual DB write or a future schema drift can't smuggle in
+ * `verdict: "correct"` with `qualityScore: 1`. Mid-turn signals carry no band
+ * check; the Harness derives their correctness through
+ * `verdictForQualityScore` (`src/lib/scoring/verdictBand.ts`) instead
+ * (issue #198).
  */
 export const VERDICT_QUALITY_BANDS: Readonly<
   Record<"correct" | "partial" | "incorrect", readonly [number, number]>

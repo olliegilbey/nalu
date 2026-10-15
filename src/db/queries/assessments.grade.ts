@@ -20,7 +20,7 @@ import { NotFoundError } from "./errors";
  * immutable post-insert.
  */
 export interface UpdateAssessmentGradingParams {
-  /** Final correctness verdict (`verdict === "correct"` for free-text). */
+  /** Final correctness. Free-text: the score is in the "correct" band (`verdictForQualityScore`). */
   readonly isCorrect: boolean;
   /** LLM-assigned quality score 0-5; for MC use 4/1 (correct/incorrect). */
   readonly qualityScore: QualityScore;

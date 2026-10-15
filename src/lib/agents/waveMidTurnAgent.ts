@@ -1,4 +1,10 @@
-import { ToolLoopAgent, stepCountIs, type StopCondition } from "ai";
+import {
+  ToolLoopAgent,
+  stepCountIs,
+  type StopCondition,
+  type StreamTextOnErrorCallback,
+  type ToolLoopAgentSettings,
+} from "ai";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
 import { getLlmModel, llmProviderOptions } from "@/lib/llm/provider";
 import { cerebrasToolLoopPrepareStep } from "@/lib/llm/cerebrasToolLoopPrepareStep";
@@ -36,6 +42,17 @@ const lastStepHitOutputCap: StopCondition<WaveMidTurnAgentTools> = ({ steps }) =
 export type WaveMidTurnAgentTools = WaveMidTurnToolkit["tools"] &
   Pick<WaveLookupTools, "getConceptHistory"> &
   Partial<Pick<WaveLookupTools, "getDueConcepts">>;
+
+/**
+ * The agent's constructor settings, plus the stream `onError`.
+ * `ToolLoopAgentSettings` does not type `onError` (ai 6.0.306, and still
+ * not in 6.0.307). `ToolLoopAgent` spreads every constructor setting into
+ * `streamText`, so it takes effect; `waveMidTurnAgent.test.ts` pins it.
+ * Drop the intersection once `ToolLoopAgentSettings` types `onError`.
+ */
+type WaveMidTurnAgentSettings = ToolLoopAgentSettings<never, WaveMidTurnAgentTools> & {
+  readonly onError: StreamTextOnErrorCallback;
+};
 
 /** Inputs that scope one agent instance to one wave turn. */
 export interface WaveMidTurnAgentParams {
@@ -94,7 +111,7 @@ export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTu
   // Byte-identical to renderContext(seed).system: executeToolTurnStream drops
   // that system message, trusting the identity.
   const instructions = renderTeachingSystem(params.seed);
-  const agent = new ToolLoopAgent({
+  const settings: WaveMidTurnAgentSettings = {
     model: params.model ?? getLlmModel(),
     instructions,
     tools: { ...toolkit.tools, ...lookupTools },
@@ -118,6 +135,15 @@ export function buildWaveMidTurnAgent(params: WaveMidTurnAgentParams): WaveMidTu
     onStepFinish: (step) => {
       recordStepFinished(step.response.headers, step.usage);
     },
-  });
+    // Replaces the SDK default, `console.error(error)` (#173). It printed
+    // raw model output (a TypeValidationError) or the provider's response
+    // body (an APICallError) to the server log. This logs nothing on
+    // purpose: the error part still reaches `fullStream`,
+    // `executeToolTurnStream` rethrows it, and the route logs one
+    // content-free `errorLogLine` with the course id and Wave number. A
+    // line here would log each failure twice.
+    onError: () => undefined,
+  };
+  const agent = new ToolLoopAgent(settings);
   return { agent, collector: toolkit.collector, instructions };
 }

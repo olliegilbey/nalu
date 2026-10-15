@@ -1,13 +1,7 @@
 import { z } from "zod/v4";
 import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
-
-const VERDICT_QUALITY_BANDS: Readonly<
-  Record<"correct" | "partial" | "incorrect", readonly [number, number]>
-> = {
-  correct: [4, 5],
-  partial: [2, 3],
-  incorrect: [0, 1],
-};
+// One band table for every grading path; the baseline schema reads it too.
+import { VERDICT_QUALITY_BANDS } from "@/lib/types/jsonb";
 
 /**
  * Grading item — discriminated by ANSWER kind, not card kind. An MC question

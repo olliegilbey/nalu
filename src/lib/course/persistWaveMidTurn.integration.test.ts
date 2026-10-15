@@ -31,6 +31,7 @@ import type { SubmitTurnPayload } from "./buildLearnerInput";
  *   2. Signals against an MC + free-text questionnaire → assessments updated
  *      with grading + XP + userAnswer, no SM-2 mutation.
  *   2b. Signals for unanswered or unknown ids → skipped, rows untouched.
+ *   2c. A verdict that disagrees with its score → correctness follows the score.
  *   3. New questionnaire → N placeholder assessments inserted with
  *      namespaced question_ids, concepts upserted.
  *   4. bug_004: two questionnaires reusing one raw id do not collide.
@@ -358,6 +359,49 @@ describe("persistWaveMidTurn (integration)", () => {
       expect(result.gradedSignals.map((s) => s.questionId)).toEqual(["q-mc"]);
       // The unanswered row keeps its placeholder state: no verdict, no XP.
       expect(await ftRowOf()).toEqual(ftBefore);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 2c. Issue #198: the model's verdict disagrees with its score. The score
+  //     sets XP, so the Harness derives correctness from it too. The row and
+  //     the turn result must agree with the score, not the verdict.
+  // ---------------------------------------------------------------------------
+  it("free-text verdict that disagrees with its score → correctness follows the score", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      const { ftQuestionId } = await seedOpenQuestionnaire(courseId, waveId);
+
+      const parsed: WaveMidTurn = {
+        userMessage: "Let's revisit that.",
+        comprehensionSignals: [
+          {
+            kind: "free-text",
+            questionId: "q-ft",
+            verdict: "correct",
+            qualityScore: 0,
+            rationale: "Says correct. Scores zero.",
+          },
+        ],
+      };
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const openQ = findOpenQuestionnaire(ctx.wave.chatLog as WaveChatLog);
+      const payload: SubmitTurnPayload = {
+        kind: "questionnaire-answers",
+        questionnaireId: openQ!.questionnaireId,
+        answers: [{ id: "q-ft", kind: "freetext", text: "no idea", fromEscape: false }],
+      };
+      await appendTurnRows(waveId, parsed.userMessage);
+
+      const result = await persistWaveMidTurn({ ctx, parsed, payload, turnsRemaining: 4 });
+
+      expect(result.gradedSignals).toEqual([
+        { kind: "free-text", questionId: "q-ft", xpAwarded: 0, correct: false, qualityScore: 0 },
+      ]);
+      const ftRow = (
+        await db.select().from(assessments).where(eq(assessments.questionId, ftQuestionId))
+      )[0]!;
+      expect(ftRow).toMatchObject({ isCorrect: false, qualityScore: 0, xpAwarded: 0 });
     });
   });
 

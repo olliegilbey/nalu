@@ -1,6 +1,11 @@
-import { describe, it, expect, vi } from "vitest";
+import { inspect } from "node:util";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { MockLanguageModelV3, simulateReadableStream } from "ai/test";
-import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import {
+  APICallError,
+  TypeValidationError,
+  type LanguageModelV3StreamPart,
+} from "@ai-sdk/provider";
 import type { WaveSeedInputs } from "@/lib/types/context";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
 import { getRunUsageTally, resetRunUsageTally } from "@/lib/llm/runUsageTally";
@@ -114,6 +119,36 @@ function cutOffStreamModel(): MockLanguageModelV3 {
     }),
   });
   return model;
+}
+
+/** Stands in for an answer key: it must never reach a log. */
+const SECRET = "freetextRubric: the answer is 42";
+
+/**
+ * A provider chunk error mid-Step: the stream yields an `error` part, as
+ * openai-compatible does for a chunk that fails its schema. The error holds
+ * the raw chunk, model output included.
+ */
+function chunkErrorStreamModel(error: unknown): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doStream: async () => ({
+      stream: simulateReadableStream({
+        chunks: [
+          { type: "error", error },
+          { type: "finish", finishReason: { unified: "stop", raw: undefined }, usage: STEP_USAGE },
+        ] satisfies LanguageModelV3StreamPart[],
+      }),
+    }),
+  });
+}
+
+/** A failed provider call: the SDK turns the throw into an `error` part. */
+function failedCallModel(error: unknown): MockLanguageModelV3 {
+  return new MockLanguageModelV3({
+    doStream: async () => {
+      throw error;
+    },
+  });
 }
 
 const SEED: WaveSeedInputs = {
@@ -276,5 +311,68 @@ describe("buildWaveMidTurnAgent", () => {
       recorded: 1,
       stillUngraded: ["q2"],
     });
+  });
+});
+
+// Issue #173: the SDK's default stream `onError` is `console.error(error)`.
+// It printed raw model output, or the provider's response body, to the
+// server log. The error must still reach `fullStream`, where
+// executeToolTurnStream rethrows it and the route logs a content-free line.
+describe("buildWaveMidTurnAgent stream errors (#173)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Drain one stream with every log sink spied; return what it printed. */
+  async function drainWithLogSpies(model: MockLanguageModelV3) {
+    const sinks = [
+      vi.spyOn(console, "error").mockImplementation(() => undefined),
+      vi.spyOn(console, "warn").mockImplementation(() => undefined),
+      vi.spyOn(console, "log").mockImplementation(() => undefined),
+      vi.spyOn(console, "info").mockImplementation(() => undefined),
+      vi.spyOn(process.stderr, "write").mockImplementation(() => true),
+    ];
+    const { agent } = buildWaveMidTurnAgent({ ...CHAT_TURN, model });
+    const result = await agent.stream({ messages: [{ role: "user", content: "hi" }] });
+    const errors: unknown[] = [];
+    for await (const part of result.fullStream) {
+      if (part.type === "error") errors.push(part.error);
+    }
+    // As Node would print each call: message, stack and own fields.
+    const printed = sinks
+      .flatMap((sink) => sink.mock.calls)
+      .map((args) => inspect(args, { depth: null }))
+      .join("\n");
+    return { errors, printed };
+  }
+
+  it("keeps a TypeValidationError's raw model output out of the log", async () => {
+    const error = new TypeValidationError({
+      value: { choices: [{ delta: { content: SECRET } }] },
+      cause: new Error("bad chunk"),
+    });
+
+    const { errors, printed } = await drainWithLogSpies(chunkErrorStreamModel(error));
+
+    // Guard: the error still surfaces, so executeToolTurnStream rethrows it.
+    expect(errors).toEqual([error]);
+    expect(printed).not.toContain(SECRET);
+  });
+
+  it("keeps an APICallError's response body out of the log", async () => {
+    const error = new APICallError({
+      message: "Bad Request",
+      url: "https://llm.invalid/v1/chat/completions",
+      requestBodyValues: {},
+      statusCode: 400,
+      responseBody: JSON.stringify({ error: { message: `cannot parse: ${SECRET}` } }),
+      isRetryable: false,
+    });
+
+    const { errors, printed } = await drainWithLogSpies(failedCallModel(error));
+
+    // Guard: the error still surfaces, so executeToolTurnStream rethrows it.
+    expect(errors).toEqual([error]);
+    expect(printed).not.toContain(SECRET);
   });
 });
