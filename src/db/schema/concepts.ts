@@ -79,12 +79,15 @@ export const concepts = pgTable(
     // SM-2 counters — all are non-negative by definition.
     check("concepts_interval_days_nonneg", sql`${t.intervalDays} >= 0`),
     check("concepts_repetition_count_nonneg", sql`${t.repetitionCount} >= 0`),
-    // SM-2 EF floor: the same bound sm2.ts clamps to (tuning.ts). sql.raw
-    // writes the number into the SQL text. A plain `${...}` would become a
-    // bound parameter (`$1`), and DDL cannot take parameters.
+    // SM-2 EF floor: the same bound sm2.ts clamps to (tuning.ts).
+    // `::real` compares in the column's type. Without it Postgres compares
+    // in float8, where real 1.3 (1.29999995) sits below 1.3, so the floor
+    // itself failed the CHECK (issue #210).
+    // `.inlineParams()` writes the number into the SQL text. A bound
+    // parameter (`$1`) is invalid in DDL.
     check(
       "concepts_easiness_factor_min",
-      sql`${t.easinessFactor} >= ${sql.raw(String(SM2.easinessFactorFloor))}`,
+      sql`${t.easinessFactor} >= ${SM2.easinessFactorFloor}::real`.inlineParams(),
     ),
     // last_quality_score is nullable (never-reviewed concepts have NULL).
     check(

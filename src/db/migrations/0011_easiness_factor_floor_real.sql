@@ -1,0 +1,2 @@
+ALTER TABLE "concepts" DROP CONSTRAINT "concepts_easiness_factor_min";--> statement-breakpoint
+ALTER TABLE "concepts" ADD CONSTRAINT "concepts_easiness_factor_min" CHECK ("concepts"."easiness_factor" >= 1.3::real);

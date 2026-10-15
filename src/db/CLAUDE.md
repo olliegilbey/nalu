@@ -25,3 +25,7 @@ Layout:
 
 Workflow: edit schema TS → `just db-generate <name>` → review SQL diff →
 commit both. `just db-migrate` applies. CI re-runs in ephemeral Postgres.
+
+A CHECK on a `real` column casts its bound to `::real`. Postgres compares a
+bare decimal in float8, where real 1.3 (1.29999995) fails `>= 1.3` (issue
+#210).

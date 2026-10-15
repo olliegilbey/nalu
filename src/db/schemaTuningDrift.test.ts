@@ -51,7 +51,7 @@ describe("concepts SM-2 values in the latest migration snapshot", () => {
 
   it("concepts_easiness_factor_min bounds at SM2.easinessFactorFloor", () => {
     expect(concepts.checkConstraints.concepts_easiness_factor_min.value, FIX).toBe(
-      `"concepts"."easiness_factor" >= ${SM2.easinessFactorFloor}`,
+      `"concepts"."easiness_factor" >= ${SM2.easinessFactorFloor}::real`,
     );
   });
 });
