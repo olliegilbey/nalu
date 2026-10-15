@@ -48,6 +48,7 @@ export type WaveMidTurnAgentTools = WaveMidTurnToolkit["tools"] &
  * `ToolLoopAgentSettings` does not type `onError` (ai 6.0.306, and still
  * not in 6.0.307). `ToolLoopAgent` spreads every constructor setting into
  * `streamText`, so it takes effect; `waveMidTurnAgent.test.ts` pins it.
+ * Drop the intersection once `ToolLoopAgentSettings` types `onError`.
  */
 type WaveMidTurnAgentSettings = ToolLoopAgentSettings<never, WaveMidTurnAgentTools> & {
   readonly onError: StreamTextOnErrorCallback;

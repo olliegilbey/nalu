@@ -44,7 +44,8 @@ Rules:
   response body to the server log (#173). The error part still reaches
   `fullStream`; `executeToolTurnStream` rethrows it and the route logs one
   content-free `errorLogLine`. `ToolLoopAgentSettings` does not type
-  `onError`, but the agent spreads every setting into `streamText`.
+  `onError`, but `ToolLoopAgent.prepareCall` spreads every constructor
+  setting into `streamText`.
 - `providerOptions` come from `llmProviderOptions(promptCacheKey)`. It sends
   the Context's `prompt_cache_key` on every Step: the wave id for
   `buildWaveMidTurnAgent` (#146). The key is an opaque id, never learner
