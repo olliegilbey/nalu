@@ -9,6 +9,10 @@ snapshot).
 Layout:
 
 - `schema/` — one file per table; barrel re-exports in `index.ts`.
+  drizzle-kit loads every file in this folder, so tests for it live in
+  `src/db/`. `concepts.ts` reads its SM-2 default and floor from `SM2` in
+  `src/lib/config/tuning.ts`; `schemaTuningDrift.test.ts` pins the latest
+  migration snapshot to them.
 - `migrations/` — drizzle-kit output, committed.
 - `queries/` — typed query functions; the home for all SQL. See
   `queries/CLAUDE.md` for how transactions thread `tx` through them.

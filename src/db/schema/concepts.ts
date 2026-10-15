@@ -12,10 +12,20 @@ import {
 import { sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { courses } from "./courses";
+// The one `src/lib` import in `src/db/schema`. It is safe here: tuning.ts is
+// a leaf of plain constants with only a type-only import, so drizzle-kit can
+// load it. The path is relative, like the rest of this folder, so the load
+// does not depend on the `@/` alias.
+import { SM2 } from "../../lib/config/tuning";
 
 /**
  * `concepts` — per-course learning items with SM-2 spaced-repetition state
  * (spec §3.6).
+ *
+ * The `easiness_factor` default and its floor CHECK read `SM2` in tuning.ts.
+ * A retune there changes the schema, so it needs `just db-generate` and a
+ * committed migration. `src/db/schemaTuningDrift.test.ts` stays red until
+ * the migration lands.
  *
  * `tier` is set at first sighting and is immutable thereafter (spec §3
  * decisions). If the model emits a differing tier on a later Wave, the
@@ -39,8 +49,8 @@ export const concepts = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     tier: integer("tier").notNull(),
-    // SM-2 starting easiness factor; 2.5 is the canonical default from the algorithm.
-    easinessFactor: real("easiness_factor").notNull().default(2.5),
+    // SM-2 starting easiness factor for a never-reviewed concept (tuning.ts).
+    easinessFactor: real("easiness_factor").notNull().default(SM2.initialEasinessFactor),
     // Days until next review; 0 means the concept is due immediately.
     intervalDays: integer("interval_days").notNull().default(0),
     // How many successful review cycles have occurred.
@@ -69,8 +79,13 @@ export const concepts = pgTable(
     // SM-2 counters — all are non-negative by definition.
     check("concepts_interval_days_nonneg", sql`${t.intervalDays} >= 0`),
     check("concepts_repetition_count_nonneg", sql`${t.repetitionCount} >= 0`),
-    // SM-2 floor — Anki uses 1.3, all references converge on it.
-    check("concepts_easiness_factor_min", sql`${t.easinessFactor} >= 1.3`),
+    // SM-2 EF floor: the same bound sm2.ts clamps to (tuning.ts). sql.raw
+    // writes the number into the SQL text. A plain `${...}` would become a
+    // bound parameter (`$1`), and DDL cannot take parameters.
+    check(
+      "concepts_easiness_factor_min",
+      sql`${t.easinessFactor} >= ${sql.raw(String(SM2.easinessFactorFloor))}`,
+    ),
     // last_quality_score is nullable (never-reviewed concepts have NULL).
     check(
       "concepts_last_quality_score_range",
