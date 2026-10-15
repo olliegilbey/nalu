@@ -1,15 +1,21 @@
 import type { DbOrTx } from "@/db/client";
 import { calculateMcXp, calculateXP } from "@/lib/scoring/xp";
-import { updateAssessmentGrading } from "@/db/queries/assessments.grade";
+import {
+  lockAssessmentForGradingInTx,
+  updateAssessmentGrading,
+} from "@/db/queries/assessments.grade";
+import { incrementCourseXpInTx } from "@/db/queries/courses.tx";
 import { BASELINE } from "@/lib/config/tuning";
 import type { QualityScore } from "@/lib/types/spaced-repetition";
+import { verdictForQualityScore } from "@/lib/scoring/verdictBand";
 
 /**
  * Two grading signals the harness can receive per assessment row:
  *
  * - `mc-index`: mechanical correctness from comparing the learner's chosen
  *   index against the stored `correctIndex`. No LLM in the loop here.
- * - `free-text`: LLM-graded verdict + qualityScore for prose answers.
+ * - `free-text`: an LLM-graded prose answer. Its `qualityScore` drives XP
+ *   and correctness; its `verdict` is advisory (issue #198).
  *
  * Both produce one `applyAssessmentGrading` call: row updated + XP awarded.
  */
@@ -18,6 +24,8 @@ export type GradedSignal =
   | {
       readonly kind: "free-text";
       readonly questionId: string;
+      // Unread since issue #198: correctness derives from `qualityScore`.
+      // Dropping it, and its callers, is issue #213.
       readonly verdict: "correct" | "partial" | "incorrect";
       // `QualityScore` (not bare `number`): the value originates at the LLM
       // trust boundary via `qualityScoreSchema` and flows straight into the
@@ -34,7 +42,10 @@ export interface ApplyAssessmentGradingParams {
   readonly conceptTier: number;
   /** Either an MC-index correctness or a free-text LLM grading. */
   readonly signal: GradedSignal;
-  /** Caller's transaction handle so the assessment update is atomic with siblings. */
+  /**
+   * Caller's transaction handle, so the row update and the course XP bump
+   * commit with their siblings. The row lock holds until it ends.
+   */
   readonly tx: DbOrTx;
   /**
    * Optional learner answer text. When set, replaces the placeholder
@@ -57,8 +68,34 @@ export interface AppliedGrading {
  * (see `applySm2Update`). This split exists because XP awards happen
  * per-probe but SM-2 reads/writes must batch at Wave close to honour the
  * "review injection at Wave boundaries only" rule (spec §3 decisions).
+ *
+ * Awarding XP means two writes in the caller's tx: the row's `xp_awarded`,
+ * and the same change on `courses.total_xp` (issue #205). The bump follows
+ * the row, never the signal: a first grading adds the XP, and a replay of
+ * the same grading (a second tab, a replayed close) changes nothing, so it
+ * adds nothing. A re-grade that changes the XP moves the total by the
+ * difference, so the total always matches the rows.
+ *
+ * Callers lock the course row first (`lockCourseRowInTx`), before this locks
+ * the assessment row. See the lock order in `src/db/queries/CLAUDE.md`.
  */
 export async function applyAssessmentGrading(
+  params: ApplyAssessmentGradingParams,
+): Promise<AppliedGrading> {
+  // Lock the row before the write. A concurrent grading of the same row
+  // waits here until this tx ends, then reads the XP this one wrote.
+  const before = await lockAssessmentForGradingInTx(params.assessmentId, params.tx);
+  const applied = await writeAssessmentGrading(params);
+  // Add only this grading's change to the row's XP.
+  const xpChange = applied.xpAwarded - before.xpAwarded;
+  if (xpChange !== 0) {
+    await incrementCourseXpInTx(before.courseId, xpChange, params.tx);
+  }
+  return applied;
+}
+
+/** Compute one row's grading from its signal and write it to the row. */
+async function writeAssessmentGrading(
   params: ApplyAssessmentGradingParams,
 ): Promise<AppliedGrading> {
   if (params.signal.kind === "mc-index") {
@@ -85,9 +122,14 @@ export async function applyAssessmentGrading(
     );
     return { questionId: params.signal.questionId, xpAwarded: xp, kind: "mc-index" };
   }
-  // Free-text path: LLM-graded verdict + qualityScore → tiered XP.
+  // Free-text path: the LLM's qualityScore drives tiered XP and correctness.
   const xp = calculateXP(params.conceptTier, params.signal.qualityScore);
-  const isCorrect = params.signal.verdict === "correct";
+  // Correctness follows the score, not the model's verdict (issue #198). The
+  // score sets XP, so a row can no longer say "correct" and earn 0 XP. Only
+  // the "correct" band counts; a partial answer stays incorrect. The verdict
+  // is now advisory: the flat tool wire still asks for it, because changing
+  // that prompt-engineered wire needs a live A/B (`waveTurnTools.ts`).
+  const isCorrect = verdictForQualityScore(params.signal.qualityScore) === "correct";
   await updateAssessmentGrading(
     params.assessmentId,
     {

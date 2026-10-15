@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod/v4";
-import type { comprehensionSignalSchema } from "@/lib/prompts/waveTurn";
+import type { ComprehensionSignal } from "@/lib/types/comprehensionSignal";
 import {
   GRADED_RUBRIC_RULE,
   isPlaceholderRubric,
@@ -12,8 +12,8 @@ import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
 import { toToolInputSchema } from "@/lib/llm/toCerebrasJsonSchema";
 import { WAVE } from "@/lib/config/tuning";
 
-/** One staged grading signal — inferred from the shared prompt-layer schema. */
-export type StagedComprehensionSignal = z.infer<typeof comprehensionSignalSchema>;
+/** One staged grading signal: the canonical {@link ComprehensionSignal}. */
+export type StagedComprehensionSignal = ComprehensionSignal;
 
 /**
  * Mutable per-turn staging area filled by tool executes, drained by
@@ -30,8 +30,8 @@ export interface WaveTurnCollector {
 // ---------------------------------------------------------------------------
 // FLAT tool-input schemas (wire + validator).
 //
-// WHY FLAT: the canonical `questionSchema` / `comprehensionSignalSchema` are
-// discriminated unions, which render as `anyOf` on the wire. The Task-1 probe
+// WHY FLAT: the canonical `questionSchema` / `ComprehensionSignal` are
+// discriminated unions; as Zod, a union renders as `anyOf` on the wire. The Task-1 probe
 // (docs/status/2026-07-06-tool-call-probe-verdict.md, finding 2) measured
 // anyOf-union tool schemas cratering gpt-oss-120b's valid-call rate from
 // ~95% to ~44%, with record→array confusion — and the live Task-7
@@ -186,6 +186,10 @@ const toolSignalSchema = z.object({
   questionId: z
     .string()
     .describe("Verbatim question id from the prompt — match the question the learner answered."),
+  // Advisory since issue #198: the Harness derives correctness from
+  // `qualityScore` (`verdictForQualityScore`), the field that sets XP. The
+  // wire still asks for a verdict, because dropping it changes
+  // prompt-engineered bytes, and that needs a live A/B.
   verdict: z
     .enum(["correct", "partial", "incorrect"])
     .optional()

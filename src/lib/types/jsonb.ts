@@ -104,12 +104,7 @@ export {
   baselineClosedJsonbSchema,
   baselineJsonbSchema,
 } from "./jsonbBaseline";
-export type {
-  BaselineGrading,
-  BaselineQuestionsJsonb,
-  BaselineClosedJsonb,
-  BaselineJsonb,
-} from "./jsonbBaseline";
+export type { BaselineClosedJsonb, BaselineJsonb } from "./jsonbBaseline";
 
 // --- waves.due_concepts_snapshot ------------------------------------------
 

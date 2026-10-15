@@ -8,16 +8,6 @@ import {
 const MILLISECONDS_PER_DAY = 86_400_000;
 
 /**
- * Default SM-2 state for a newly introduced concept. Matches the `concepts`
- * table column defaults in the DB schema.
- */
-export const SM2_DEFAULTS: SM2CardState = {
-  easinessFactor: SM2.initialEasinessFactor,
-  interval: 0,
-  repetitionCount: 0,
-} as const;
-
-/**
  * Apply the SM-2 easiness-factor adjustment, clamped at the floor.
  * Formula and constants live in `tuning.ts`.
  */
