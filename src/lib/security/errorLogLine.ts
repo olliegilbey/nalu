@@ -1,10 +1,11 @@
 import { TRPCError } from "@trpc/server";
 
-/** The ids that place a failed Wave turn. Both are content-free. */
-export interface WaveTurnErrorIds {
-  readonly courseId: string;
-  readonly waveNumber: number;
-}
+/**
+ * The content-free fields that place a failed request, in log order: a
+ * course id and Wave number, or a tRPC procedure path. A value that is not a
+ * safe token is dropped.
+ */
+export type ErrorLogPlace = Readonly<Record<string, string | number | undefined>>;
 
 /** A value safe to log: a short identifier-like token, never prose. */
 const SAFE_TOKEN = /^[\w.-]{1,64}$/;
@@ -13,20 +14,23 @@ const SAFE_TOKEN = /^[\w.-]{1,64}$/;
 const SQLSTATE = /^[0-9A-Z]{5}$/;
 
 /**
- * One content-free stderr line for a failed Wave turn (#169). It carries
- * ids, error class names and safe codes only: the TRPC code, the Postgres
- * SQLSTATE and constraint name, and the HTTP status. It never reads a
- * message, params, or a response body. A DrizzleQueryError's message lists
- * its params, and an APICallError holds the provider's response body. Both
- * can quote learner text, model prose and answer keys.
+ * One content-free stderr line for a failed request (issues #169, #171).
+ * `event` is the caller's fixed prefix, e.g. `[wave-turn] turn failed`. The
+ * line carries the place, error class names and safe codes only: the TRPC
+ * code, the Postgres SQLSTATE and constraint name, and the HTTP status. It
+ * never reads a message, params, or a response body. A DrizzleQueryError's
+ * message lists its params, and an APICallError holds the provider's
+ * response body. Both can quote learner text, model prose and answer keys.
  */
-export function waveTurnErrorLogLine(error: unknown, ids: WaveTurnErrorIds): string {
+export function errorLogLine(event: string, place: ErrorLogPlace, error: unknown): string {
   // The inner error: a wrapped driver error (`cause`), or the SDK retry
   // wrapper's final attempt (`RetryError.lastError`).
   const inner = readField(error, "cause") ?? readField(error, "lastError");
   const fields: readonly (readonly [string, string | undefined])[] = [
-    ["course", ids.courseId],
-    ["wave", String(ids.waveNumber)],
+    ...Object.entries(place).map(
+      ([key, value]) =>
+        [key, safeToken(typeof value === "number" ? String(value) : value)] as const,
+    ),
     ["name", safeToken(readField(error, "name"))],
     ["inner", safeToken(readField(inner, "name"))],
     ["trpcCode", safeToken(error instanceof TRPCError ? error.code : undefined)],
@@ -35,7 +39,7 @@ export function waveTurnErrorLogLine(error: unknown, ids: WaveTurnErrorIds): str
     ["status", firstStatus([error, inner])],
   ];
   const logged = fields.filter(([, value]) => value !== undefined);
-  return `[wave-turn] turn failed ${logged.map(([key, value]) => `${key}=${value}`).join(" ")}`;
+  return [event, ...logged.map(([key, value]) => `${key}=${value}`)].join(" ");
 }
 
 /** Read one named field off an unknown value; undefined when absent. */

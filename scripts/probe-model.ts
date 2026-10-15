@@ -305,15 +305,22 @@ async function main(): Promise<void> {
     return;
   }
 
+  // generateChat requires a prompt_cache_key (issue #146). The probe calls
+  // share no prefix, so one key per run buys nothing and costs nothing.
+  const promptCacheKey = `probe-${crypto.randomUUID()}`;
+
   // Plain text probe: verifies the model is reachable on this key.
   const plainStarted = Date.now();
   try {
-    const result = await generateChat([
-      {
-        role: "user",
-        content: "Reply with the single word OK and nothing else.",
-      },
-    ]);
+    const result = await generateChat(
+      [
+        {
+          role: "user",
+          content: "Reply with the single word OK and nothing else.",
+        },
+      ],
+      { promptCacheKey },
+    );
     console.log(`PLAIN OK in ${Date.now() - plainStarted}ms`);
     console.log(`  response: ${result.text.slice(0, 200)}`);
     console.log(`  usage: ${JSON.stringify(result.usage)}`);
@@ -342,6 +349,7 @@ async function main(): Promise<void> {
       {
         responseSchema: PROBE_SCHEMA,
         responseSchemaName: "probe",
+        promptCacheKey,
       },
     );
     console.log(`STRICT OK in ${Date.now() - strictStarted}ms`);
@@ -379,6 +387,7 @@ async function main(): Promise<void> {
       {
         responseSchema: DESC_PROBE_SCHEMA,
         responseSchemaName: "desc_probe",
+        promptCacheKey,
       },
     );
     console.log(`DESC-FOLLOWING responded in ${Date.now() - descStarted}ms`);

@@ -4,6 +4,7 @@ import { getConceptById } from "@/db/queries/concepts";
 import { applyAssessmentGrading, type GradedSignal } from "./applyAssessmentGrading";
 import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
+import type { McOptionKey } from "@/lib/types/mcOptionKey";
 
 /**
  * Internal helper for `persistWaveMidTurn` — graded comprehensionSignals batch.
@@ -43,7 +44,7 @@ export interface GradePriorAnswersParams {
   /** Question id → learner answer text (set if learner answered this turn). */
   readonly answerTextById: ReadonlyMap<string, string>;
   /** Question id → expected MC correct key letter (MC questions only). */
-  readonly correctLetterById: ReadonlyMap<string, "A" | "B" | "C" | "D">;
+  readonly correctLetterById: ReadonlyMap<string, McOptionKey>;
 }
 
 /**

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
+import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
 
 /**
  * Trust-boundary Zod schemas for every JSONB column shape.
@@ -22,7 +23,7 @@ import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
 
 // --- courses.clarification --------------------------------------------------
 
-const v3McOption = z.enum(["A", "B", "C", "D"]);
+const v3McOption = z.enum(MC_OPTION_KEYS);
 
 export const v3Question = z.discriminatedUnion("type", [
   z.object({

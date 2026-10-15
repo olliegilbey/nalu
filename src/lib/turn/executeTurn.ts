@@ -194,6 +194,9 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
         // Stage-named OTel span (e.g. "clarify", "wave-close") — same label
         // the live-smoke banners use.
         telemetryFunctionId: label,
+        // The parent is the Context: one key per scoping pass or Wave, so a
+        // Wave's close shares its mid-turns' key (issue #146).
+        promptCacheKey: params.parent.id,
       });
       const dt = Date.now() - t0;
       if (live && !quiet) {
@@ -246,7 +249,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
           process.stderr.write(formatPromptBlock(llmMessages, liveSchemaJson));
         }
         process.stderr.write(formatResponseBlock(raw, dt, err.usage));
-        const diagnosis = diagnoseFailure(gate, raw);
+        const diagnosis = diagnoseFailure(gate, raw, label);
         process.stderr.write(formatParseFailure(label, gate, diagnosis, directive));
       }
       const failedRow: AppendMessageParams = {

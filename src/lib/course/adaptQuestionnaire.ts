@@ -1,4 +1,5 @@
-import type { Question, McOptionKey } from "@/lib/prompts/questionnaire";
+import type { Question } from "@/lib/prompts/questionnaire";
+import { KEY_TO_INDEX, MC_OPTION_KEYS, type McOptions } from "@/lib/types/mcOptionKey";
 import type { OpenQuestionForClient } from "./redactQuestionnaire";
 import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
 
@@ -30,8 +31,6 @@ export interface ActiveQuestionnaire {
   readonly persistKey: string;
 }
 
-const KEY_TO_INDEX: Record<McOptionKey, number> = { A: 0, B: 1, C: 2, D: 3 };
-
 /** Three-way MC feedback: "correct" | "wrong", or null for ungraded (no correctIndex) questions. */
 export function deriveMcFeedback(
   correctIndex: number | undefined,
@@ -44,8 +43,8 @@ export function deriveMcFeedback(
 /**
  * Adapt a Nalu `Question[]` to the Composer's `ChoiceQuestion[]`.
  *
- * - `multiple_choice` → options materialised as a 4-element string array in
- *   A,B,C,D order; `correct` letter (if present) becomes `correctIndex`.
+ * - `multiple_choice` → options materialised as a string array, one per key
+ *   in `MC_OPTION_KEYS` order; `correct` letter (if present) becomes `correctIndex`.
  * - `free_text` → `options: []`. The Composer's pure-free-text branch
  *   renders the textarea instead of the option grid for these.
  */
@@ -55,7 +54,7 @@ export function adaptQuestionnaire(qs: readonly Question[]): readonly ChoiceQues
       return {
         id: q.id,
         prompt: q.prompt,
-        options: [q.options.A, q.options.B, q.options.C, q.options.D],
+        options: MC_OPTION_KEYS.map((key) => q.options[key]),
         correctIndex: q.correct !== undefined ? KEY_TO_INDEX[q.correct] : undefined,
         // Carried through so the Composer's `calculateMcXp` can award exact XP
         // for a correct MC answer — including in the scoping baseline flow.
@@ -89,7 +88,7 @@ export function adaptOpenQuestion(q: OpenQuestionForClient): ChoiceQuestion {
     return {
       id: q.id,
       prompt: q.prompt,
-      options: [q.options.A, q.options.B, q.options.C, q.options.D],
+      options: MC_OPTION_KEYS.map((key) => q.options[key]),
       correctIndex: decoded ?? undefined,
       tier: q.tier,
     };
@@ -107,12 +106,7 @@ export interface StreamedToolQuestion {
   readonly id: string;
   readonly type: "multiple_choice" | "free_text";
   readonly prompt: string;
-  readonly options?: {
-    readonly A: string;
-    readonly B: string;
-    readonly C: string;
-    readonly D: string;
-  };
+  readonly options?: McOptions;
   readonly tier?: number;
 }
 
@@ -123,11 +117,13 @@ export interface StreamedToolQuestion {
  * (`adaptOpenQuestion`) after the turn result lands.
  */
 export function adaptStreamedToolQuestion(q: StreamedToolQuestion): ChoiceQuestion {
-  if (q.type === "multiple_choice" && q.options) {
+  // A local const keeps the narrowing inside the `map` callback.
+  const { options } = q;
+  if (q.type === "multiple_choice" && options) {
     return {
       id: q.id,
       prompt: q.prompt,
-      options: [q.options.A, q.options.B, q.options.C, q.options.D],
+      options: MC_OPTION_KEYS.map((key) => options[key]),
       tier: q.tier,
     };
   }

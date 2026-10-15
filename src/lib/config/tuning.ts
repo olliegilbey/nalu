@@ -170,9 +170,6 @@ export const BASELINE = {
   // without fatiguing the learner before teaching even begins. This is the
   // per-tier minimum; small scopes ask more per tier to reach minQuestions.
   questionsPerTier: 3,
-  // MC cards are always four options. No "Not sure"
-  // button — the freetext escape is the non-engagement affordance.
-  mcOptionCount: 4,
   // Mechanical MC scoring. A correct click maps to q=4 ("correct
   // and clear") — reserve q=5 for free-text answers where the learner has
   // room to demonstrate teach-level depth. An incorrect click maps to q=1
@@ -257,6 +254,20 @@ export const QUESTIONNAIRE = {
  * (docs/status/2026-07-06-tool-call-probe-verdict.md). Every step is one
  * rate-limiter-paced Cerebras call, so raising this raises worst-case
  * turn latency (~+13s per extra step on the slow lane).
+ *
+ * `maxToolStepOutputTokens: 16384`: output ceiling for ONE tool-loop Step,
+ * sent as `max_tokens`. Cerebras counts reasoning tokens against it. It
+ * bounds a runaway: a `presentQuestionnaire` call once ran to ~40k tokens
+ * (issue #181). Sized from 238 Steps in seven local `just smoke` logs
+ * (2026-10-13/14). Wave tool-loop Steps peaked at 4,751 output tokens (p99
+ * 4,215). The longest high-effort reasoning in any stage was 10,796 tokens,
+ * in a baseline call. 16,384 holds that reasoning plus the largest tool call
+ * and prose seen in a Step (1,557) with a third to spare. That is 3.4× the
+ * longest Wave Step. A Step that hits the cap fails its attempt, and the
+ * attempt retries (`executeToolTurnStream`), so a false cut costs one retry.
+ * Structured calls (`generateChat`) carry no cap. Their Steps run longer
+ * (11,720 max), and a cut inside reasoning leaves no text: the SDK then
+ * throws `NoOutputGeneratedError`, and the Turn fails with no retry.
  */
 export const LLM = {
   defaultTemperature: 0.3,
@@ -267,7 +278,7 @@ export const LLM = {
   // relabel-not-rethink "fix"), and questions ignored the learner's stated
   // can't-read-characters profile. Each schema retry is a full extra LLM
   // call, so high effort is partly self-funding. Sent via providerOptions
-  // by `llmProviderOptions()` (src/lib/llm/provider.ts).
+  // by `llmProviderOptions(promptCacheKey)` (src/lib/llm/provider.ts).
   reasoningEffort: "high",
   maxRetries: 6,
   slowLaneSpacingMs: 13_000,
@@ -275,6 +286,7 @@ export const LLM = {
   fastLaneCallsPerUser: 45,
   lowTokenBudgetThreshold: 10_000,
   maxToolSteps: 4,
+  maxToolStepOutputTokens: 16_384,
 } as const;
 
 /**

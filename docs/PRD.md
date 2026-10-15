@@ -89,7 +89,7 @@ Items marked **Unbuilt** are still in scope. The code does not deliver them yet.
 
 **Anonymous auth.** `src/proxy.ts` mints an anonymous Supabase account on a learner's first visit. Outside production, a dev-user header stands in. `docs/DEPLOY.md` covers setup.
 
-**Prompt caching.** Prompts put static content first and dynamic content last. Each Context is append-only, so its prefix stays byte-stable and the provider's prefix cache stays warm. `docs/ARCHITECTURE.md` explains the invariants.
+**Prompt caching.** Prompts put static content first and dynamic content last. Each Context is append-only, so its prefix stays byte-stable and the provider's prefix cache stays warm. Each call sends its Context's id as `prompt_cache_key`, so Cerebras routes a Context's Turns to the cache that holds its prefix. This buys latency, not money: Cerebras bills cached input at the full rate. `docs/ARCHITECTURE.md` explains the invariants.
 
 ### 3.3 Data Model
 

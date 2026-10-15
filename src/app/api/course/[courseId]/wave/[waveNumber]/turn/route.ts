@@ -5,8 +5,8 @@ import { submitTurnInputSchema } from "@/server/routers/waveTurnInput";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
-import { waveTurnErrorText } from "@/lib/course/waveTurnErrorText";
-import { waveTurnErrorLogLine } from "@/lib/course/waveTurnErrorLog";
+import { clientErrorText } from "@/lib/security/clientErrorText";
+import { errorLogLine } from "@/lib/security/errorLogLine";
 import type { WaveTurnUIMessage } from "@/lib/types/waveStream";
 
 // A turn can span LLM retries + Cerebras pacing; keep the function alive
@@ -64,9 +64,9 @@ export async function POST(
     // error gets fixed text, since its message can quote answer keys (#169).
     // The log line carries ids and safe codes only, for the same reason.
     onError: (error) => {
-      const ids = { courseId: input.data.courseId, waveNumber: input.data.waveNumber };
-      process.stderr.write(`${waveTurnErrorLogLine(error, ids)}\n`);
-      return waveTurnErrorText(error);
+      const place = { course: input.data.courseId, wave: input.data.waveNumber };
+      process.stderr.write(`${errorLogLine("[wave-turn] turn failed", place, error)}\n`);
+      return clientErrorText(error);
     },
   });
 

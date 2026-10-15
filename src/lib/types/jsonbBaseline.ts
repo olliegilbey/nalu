@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
+import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
 
 /**
  * Baseline JSONB shapes — split out of `jsonb.ts` to keep both files under
@@ -13,7 +14,7 @@ import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
  * back from here.
  */
 
-const v3McOption = z.enum(["A", "B", "C", "D"]);
+const v3McOption = z.enum(MC_OPTION_KEYS);
 
 const v3Question = z.discriminatedUnion("type", [
   z.object({

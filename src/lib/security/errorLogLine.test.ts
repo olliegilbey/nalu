@@ -3,9 +3,18 @@ import { TRPCError } from "@trpc/server";
 import { DrizzleQueryError } from "drizzle-orm";
 import { APICallError } from "@ai-sdk/provider";
 import { RetryError } from "ai";
-import { waveTurnErrorLogLine } from "./waveTurnErrorLog";
+import { errorLogLine } from "./errorLogLine";
 
 const IDS = { courseId: "3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f", waveNumber: 2 } as const;
+
+/** The line the Wave-turn route writes for a failed Turn. */
+function waveLine(error: unknown): string {
+  return errorLogLine(
+    "[wave-turn] turn failed",
+    { course: IDS.courseId, wave: IDS.waveNumber },
+    error,
+  );
+}
 
 /** Turn content that must never reach a production log line (#169). */
 const SECRET = '{"correct":"B","freetextRubric":"Names move semantics."}';
@@ -20,7 +29,7 @@ function postgresError(): Error {
   });
 }
 
-describe("waveTurnErrorLogLine", () => {
+describe("errorLogLine", () => {
   it("logs ids and Postgres codes for a failed DB write, never its params", () => {
     // Drizzle's message lists the query params: tool inputs, answer keys.
     const failed = new DrizzleQueryError(
@@ -29,7 +38,7 @@ describe("waveTurnErrorLogLine", () => {
       postgresError(),
     );
 
-    const line = waveTurnErrorLogLine(failed, IDS);
+    const line = waveLine(failed);
 
     expect(line).not.toContain("correct");
     expect(line).not.toContain("Names move semantics.");
@@ -53,7 +62,7 @@ describe("waveTurnErrorLogLine", () => {
       errors: [apiError],
     });
 
-    const line = waveTurnErrorLogLine(retry, IDS);
+    const line = waveLine(retry);
 
     expect(line).not.toContain("Names move semantics.");
     expect(line).toContain("name=AI_RetryError inner=AI_APICallError");
@@ -62,15 +71,19 @@ describe("waveTurnErrorLogLine", () => {
 
   it("logs a guard error's TRPC code", () => {
     const guard = new TRPCError({ code: "PRECONDITION_FAILED", message: "no open questionnaire" });
-    expect(waveTurnErrorLogLine(guard, IDS)).toContain(
-      "name=TRPCError trpcCode=PRECONDITION_FAILED",
-    );
+    expect(waveLine(guard)).toContain("name=TRPCError trpcCode=PRECONDITION_FAILED");
   });
 
   it("drops a name that is not a plain token", () => {
     const odd = Object.assign(new Error("x"), { name: `bad name ${SECRET}` });
-    expect(waveTurnErrorLogLine(odd, IDS)).toBe(
-      `[wave-turn] turn failed course=${IDS.courseId} wave=2`,
+    expect(waveLine(odd)).toBe(`[wave-turn] turn failed course=${IDS.courseId} wave=2`);
+  });
+
+  it("drops a place value that is not a plain token", () => {
+    // A tRPC path comes from the request URL, so the requester picks it.
+    const place = { path: `course.clarify ${SECRET}`, batch: undefined };
+    expect(errorLogLine("[trpc] procedure failed", place, new Error("x"))).toBe(
+      "[trpc] procedure failed name=Error",
     );
   });
 });

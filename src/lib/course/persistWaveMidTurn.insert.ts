@@ -2,7 +2,7 @@ import type { DbOrTx } from "@/db/client";
 import { insertOpenAssessments } from "@/db/queries/assessments.open";
 import { upsertConcept } from "@/db/queries/concepts.writes";
 import { encodeCorrect } from "@/lib/security/obfuscateCorrect";
-import { KEY_TO_INDEX } from "./buildLearnerInput";
+import { KEY_TO_INDEX, type McOptions } from "@/lib/types/mcOptionKey";
 import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { Questionnaire } from "@/lib/prompts/questionnaire";
 
@@ -28,12 +28,7 @@ export interface NewQuestionnaireProjection {
     readonly id: string;
     readonly type: "multiple_choice" | "free_text";
     readonly prompt: string;
-    readonly options?: {
-      readonly A: string;
-      readonly B: string;
-      readonly C: string;
-      readonly D: string;
-    };
+    readonly options?: McOptions;
     readonly correctEnc?: string;
   }[];
 }

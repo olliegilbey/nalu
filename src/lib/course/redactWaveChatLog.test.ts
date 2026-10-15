@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { redactWaveChatLog } from "./redactWaveChatLog";
 import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
-import { KEY_TO_INDEX } from "./buildLearnerInput";
+import { KEY_TO_INDEX } from "@/lib/types/mcOptionKey";
 import type { WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 
 describe("redactWaveChatLog", () => {

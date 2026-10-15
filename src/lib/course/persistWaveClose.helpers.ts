@@ -7,6 +7,7 @@ import { checkTierAdvancement } from "@/lib/scoring/progression";
 import type { ConceptState } from "@/lib/types/scoring";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
+import type { McOptionKey } from "@/lib/types/mcOptionKey";
 import { applyAssessmentGrading, type GradedSignal } from "./applyAssessmentGrading";
 import { findOpenQuestionnaire, buildMcCorrectKeyMap } from "./findOpenQuestionnaire";
 import { namespaceQuestionId } from "./namespaceQuestionId";
@@ -41,15 +42,12 @@ async function buildCloseMcChoiceMap(
   tx: DbOrTx,
   waveId: string,
   openQuestionnaireId: string,
-): Promise<ReadonlyMap<string, "A" | "B" | "C" | "D">> {
+): Promise<ReadonlyMap<string, McOptionKey>> {
   const liveLog = await getWaveChatLog(waveId, tx);
   const entries = liveLog.flatMap((e) =>
     e.role === "user" && e.kind === "answers" && e.questionnaireId === openQuestionnaireId
       ? e.responses
-          .filter(
-            (r): r is typeof r & { readonly choice: "A" | "B" | "C" | "D" } =>
-              r.choice !== undefined,
-          )
+          .filter((r): r is typeof r & { readonly choice: McOptionKey } => r.choice !== undefined)
           .map((r) => [r.questionId, r.choice] as const)
       : [],
   );
@@ -92,13 +90,13 @@ export async function applyCloseGradings(
   // open. Shared with the mid-turn grading path via `buildMcCorrectKeyMap`.
   const correctByQuestionId = openQuestionnaire
     ? buildMcCorrectKeyMap(openQuestionnaire)
-    : new Map<string, "A" | "B" | "C" | "D">();
+    : new Map<string, McOptionKey>();
   // raw id → learner's clicked key. `buildCloseMcChoiceMap` reads the live
   // `chat_log` (not the snapshot) so the close-turn answer is visible. Only
   // fetched when there is an open questionnaire to grade against.
   const clickByQuestionId = openQuestionnaire
     ? await buildCloseMcChoiceMap(tx, ctx.wave.id, openQuestionnaire.questionnaireId)
-    : new Map<string, "A" | "B" | "C" | "D">();
+    : new Map<string, McOptionKey>();
   // Reduce accumulates results without mutation; the awaited accumulator
   // threads them through.
   // Sequential by design — writes share one tx handle and grading counts at

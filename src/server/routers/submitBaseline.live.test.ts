@@ -30,6 +30,7 @@ import {
   baselineClosedJsonbSchema,
   type FrameworkJsonb,
 } from "@/lib/types/jsonb";
+import type { McOptionKey, McOptions } from "@/lib/types/mcOptionKey";
 import type { BaselineAnswer } from "@/lib/course/submitBaseline";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 
@@ -47,8 +48,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Log provider/model so live output is self-documenting (matches neighbour).
 beforeAll(() => {
   if (!LIVE) return;
-  console.log("[live] provider base URL:", process.env.LLM_BASE_URL ?? "(default)");
-  console.log("[live] model:", process.env.LLM_MODEL ?? "(default)");
+  process.stderr.write(`[live] provider base URL: ${process.env.LLM_BASE_URL ?? "(default)"}\n`);
+  process.stderr.write(`[live] model: ${process.env.LLM_MODEL ?? "(default)"}\n`);
 });
 
 describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
@@ -96,8 +97,8 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       ).questions as ReadonlyArray<{
         readonly id: string;
         readonly type: "multiple_choice" | "free_text";
-        readonly options?: Readonly<Record<"A" | "B" | "C" | "D", string>>;
-        readonly correct?: "A" | "B" | "C" | "D";
+        readonly options?: McOptions;
+        readonly correct?: McOptionKey;
         readonly freetextRubric: string;
       }>;
       // Issue #149: TYPE the first MC question's correct option instead of

@@ -6,6 +6,7 @@ import { generateFramework } from "@/lib/course/generateFramework";
 import { generateBaseline } from "@/lib/course/generateBaseline";
 import { submitBaseline } from "@/lib/course/submitBaseline";
 import { SCOPING } from "@/lib/config/tuning";
+import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
 
 /**
  * Scoping flow (spec §3.2).
@@ -72,7 +73,7 @@ export const courseRouter = router({
               z.object({
                 id: z.string().min(1),
                 kind: z.literal("mc"),
-                selected: z.enum(["A", "B", "C", "D"]),
+                selected: z.enum(MC_OPTION_KEYS),
               }),
               z.object({
                 id: z.string().min(1),
