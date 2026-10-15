@@ -31,8 +31,8 @@ export function errorLogLine(event: string, place: ErrorLogPlace, error: unknown
       ([key, value]) =>
         [key, safeToken(typeof value === "number" ? String(value) : value)] as const,
     ),
-    ["name", safeToken(readField(error, "name"))],
-    ["inner", safeToken(readField(inner, "name"))],
+    ["name", safeErrorName(error)],
+    ["inner", safeErrorName(inner)],
     ["trpcCode", safeToken(error instanceof TRPCError ? error.code : undefined)],
     ["sqlstate", firstMatch([error, inner], "code", SQLSTATE)],
     ["constraint", firstMatch([error, inner], "constraint_name", SAFE_TOKEN)],
@@ -40,6 +40,15 @@ export function errorLogLine(event: string, place: ErrorLogPlace, error: unknown
   ];
   const logged = fields.filter(([, value]) => value !== undefined);
   return [event, ...logged.map(([key, value]) => `${key}=${value}`)].join(" ");
+}
+
+/**
+ * An error's class name when it is a safe token, e.g. `AI_APICallError`;
+ * undefined otherwise. The LLM telemetry spans keep this and nothing else
+ * of an error (`src/lib/llm/telemetry.ts`).
+ */
+export function safeErrorName(error: unknown): string | undefined {
+  return safeToken(readField(error, "name"));
 }
 
 /** Read one named field off an unknown value; undefined when absent. */
