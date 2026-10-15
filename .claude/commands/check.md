@@ -5,7 +5,7 @@ Run all validation checks before committing:
 3. `just typecheck` — TypeScript compiles with no errors
 4. `just test` — All unit tests pass
 5. `just test-int` — All integration tests pass (boots a Postgres testcontainer; Docker must be running)
-6. `just deadcode` — Knip finds no dead code
+6. `just deadcode` — Knip finds no dead code, with tests and without them (`knip --production`)
 
 `just check` runs all six in this order and mirrors CI (`.github/workflows/ci.yml`). It stops at the first failure.
 

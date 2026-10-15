@@ -1,0 +1,57 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema-jsonc.json",
+  "entry": [
+    "src/db/seed.ts",
+    "src/db/reset.ts",
+    "scripts/inspect-wave.ts",
+    "scripts/probe-model.ts",
+    ".claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts",
+    ".claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts",
+    ".claude/skills/nalu-visitor-forensics/inspect-visitor.ts",
+  ],
+  // `knip --production` skips tests and the dev entries above, so it reports
+  // the files only they import. A `!path!` pattern drops one such file from
+  // that pass only; plain `knip` still checks it. The first line is knip's
+  // default project plus the Tailwind plugin's `.css`; drop `css` and knip
+  // stops checking stylesheets. Keep one file per line, never a directory glob.
+  "project": [
+    "**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts,css}!",
+    // Scorer for the scripts/probe-model.ts dev CLI.
+    "!scripts/toolProbeScore.ts!",
+    // Localhost guard for the src/db/reset.ts dev CLI.
+    "!src/db/everyHostIsLoopback.ts!",
+    // Seeds rows for the assessments integration suites.
+    "!src/db/queries/assessments.fixtures.ts!",
+    // Integration and live setup file: boots the Postgres testcontainer.
+    "!src/db/testing/setup.ts!",
+    // Test helper: a freshly truncated Drizzle client on the testcontainer.
+    "!src/db/testing/withTestDb.ts!",
+    // Seeds rows for the submitBaseline integration suites.
+    "!src/lib/course/submitBaseline.fixtures.ts!",
+    // Live smoke: restates a rubric as a known-correct answer.
+    "!src/lib/testing/answerFromRubric.ts!",
+    // Unit tests: in-memory localStorage polyfill.
+    "!src/lib/testing/memoryStorage.ts!",
+    // Live smoke: structural assertions on scoping output.
+    "!src/lib/testing/scopingInvariants.ts!",
+    // Live smoke: prints the final prompt a course sent.
+    "!src/lib/testing/smokeFinalSnapshot.ts!",
+    // Live smoke global setup: sums and prints the run's token total.
+    "!src/lib/testing/smokeUsageTotal.globalSetup.ts!",
+    // Live smoke setup file: writes each test file's token total.
+    "!src/lib/testing/smokeUsageTotal.setup.ts!",
+    // Live smoke: fixture topics and learner answers.
+    "!src/lib/testing/topicPool.ts!",
+  ],
+  "ignore": [],
+  "ignoreExportsUsedInFile": true,
+  "ignoreBinaries": [],
+  "ignoreIssues": {
+    "src/lib/prompts/questionnaire.ts": ["types"],
+    "src/lib/prompts/clarify.ts": ["types"],
+    "src/lib/prompts/baseline.ts": ["types"],
+    "src/lib/prompts/closeTurn.ts": ["types"],
+    "src/lib/prompts/scopingClose.ts": ["types"],
+    "src/components/ui/sheet.tsx": ["exports"],
+  },
+}
