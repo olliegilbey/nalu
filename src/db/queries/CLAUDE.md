@@ -47,9 +47,9 @@ Integration tests split the same way and sit beside their module
 every module; add each new sibling there. Knip follows the barrel's
 `export *` and flags an export that nothing imports. Keep query modules
 out of knip's `entry` list: knip counts every export of an entry as used.
-Knip also counts a test import as use; `bun x knip --production` skips
-tests and lists the exports only tests call. Shared `NotFoundError` lives
-in `errors.ts`.
+Knip also counts a test import as use, so `just deadcode` runs a second
+pass, `knip --production`, that skips tests and fails on an export only
+tests call. Shared `NotFoundError` lives in `errors.ts`.
 
 Conventions:
 

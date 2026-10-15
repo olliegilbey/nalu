@@ -93,8 +93,6 @@ export const baselineGradingSchema = z
       });
     }
   });
-/** Inferred from {@link baselineGradingSchema}; one persisted grading row. */
-export type BaselineGrading = z.infer<typeof baselineGradingSchema>;
 
 /**
  * What `generateBaseline` writes after questions are generated, before close.
@@ -122,8 +120,6 @@ export const baselineQuestionsJsonbSchema = z
     gradings: z.array(baselineGradingSchema),
   })
   .strict();
-/** Inferred from {@link baselineQuestionsJsonbSchema}; pre-close baseline JSONB. */
-export type BaselineQuestionsJsonb = z.infer<typeof baselineQuestionsJsonbSchema>;
 
 /**
  * What `submitBaseline` writes on close. Strict superset of the pre-close

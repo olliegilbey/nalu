@@ -16,7 +16,7 @@ import path from "node:path";
 import type { TestProject } from "vitest/node";
 import { z } from "zod/v4";
 import { formatUsageTotals } from "@/lib/llm/runUsageTally";
-import { addUsageTotals, sumUsage, type UsageTotals } from "@/lib/llm/usageCost";
+import { sumUsage, type UsageTotals } from "@/lib/llm/usageCost";
 
 declare module "vitest" {
   /** Values the live project's global setup hands to every test file. */
@@ -34,6 +34,17 @@ const usageTotalsFileSchema = z.object({
   cachedInputTokens: z.number(),
   reasoningTokens: z.number(),
 }) satisfies z.ZodType<UsageTotals>;
+
+/** Field-wise sum of two {@link UsageTotals}: folds the live files' tallies into one. */
+export function addUsageTotals(a: UsageTotals, b: UsageTotals): UsageTotals {
+  return {
+    steps: a.steps + b.steps,
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    cachedInputTokens: a.cachedInputTokens + b.cachedInputTokens,
+    reasoningTokens: a.reasoningTokens + b.reasoningTokens,
+  };
+}
 
 /** Make the totals directory; the returned teardown sums it and prints one line. */
 export default function setup(project: TestProject): () => void {

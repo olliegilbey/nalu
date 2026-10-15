@@ -156,17 +156,19 @@ printf "${GREEN}✅ Phase 4 complete: Tests passed${NC}\n"
 echo ""
 
 # ============================================
-# PHASE 5: DEAD CODE (~1-2s, if TS files changed)
+# PHASE 5: DEAD CODE (~2-4s, if TS files changed)
 # Knip catches unused exports/files/deps. Dead code is a
 # spaghettification signal — block it before it lands so
-# future agents inherit a clean tree.
+# future agents inherit a clean tree. A second pass,
+# `knip --production`, skips tests, so it also blocks an
+# export that only tests use (~1s more).
 # ============================================
 printf "${BLUE}→ Phase 5/5: Dead code${NC}\n"
 
 if [ -n "$TS_STAGED" ]; then
   if ! bun run deadcode 2>&1; then
     printf "${RED}❌ Knip found dead code${NC}\n"
-    printf "${YELLOW}Fix or narrowly justify in knip.json. Don't blanket-ignore.${NC}\n"
+    printf "${YELLOW}Fix or narrowly justify in knip.jsonc. Don't blanket-ignore.${NC}\n"
     exit 1
   fi
   printf "${GREEN}  ✓${NC} No dead code\n"

@@ -238,7 +238,10 @@ export function recordCerebrasRateLimitHeaders(
 /**
  * Reset all module state. Test-only seam — production never calls this.
  * Lets each unit test start from a clean slate (no dispatch history, no
- * token budget) regardless of execution order.
+ * token budget) regardless of execution order. The tag below keeps knip's
+ * production pass, which skips tests, from flagging it.
+ *
+ * @internal
  */
 export function __resetCerebrasRateLimitStateForTests(): void {
   lastDispatchAtMs = 0;
