@@ -186,6 +186,10 @@ const toolSignalSchema = z.object({
   questionId: z
     .string()
     .describe("Verbatim question id from the prompt — match the question the learner answered."),
+  // Advisory since issue #198: the Harness derives correctness from
+  // `qualityScore` (`verdictForQualityScore`), the field that sets XP. The
+  // wire still asks for a verdict, because dropping it changes
+  // prompt-engineered bytes, and that needs a live A/B.
   verdict: z
     .enum(["correct", "partial", "incorrect"])
     .optional()

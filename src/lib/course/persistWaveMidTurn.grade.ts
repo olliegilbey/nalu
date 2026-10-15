@@ -5,6 +5,7 @@ import { applyAssessmentGrading, type GradedSignal } from "./applyAssessmentGrad
 import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { McOptionKey } from "@/lib/types/mcOptionKey";
+import { verdictForQualityScore } from "@/lib/types/jsonb";
 
 /**
  * Internal helper for `persistWaveMidTurn` — graded comprehensionSignals batch.
@@ -96,7 +97,8 @@ export async function gradePriorAnswers(
     const concept = await getConceptById(row.conceptId, params.tx);
     // Build the GradedSignal applyAssessmentGrading expects. MC correctness
     // is mechanical: compare the learner's selected letter against the
-    // open-questionnaire's `correct` key. Free-text trusts the model's verdict.
+    // open-questionnaire's `correct` key. Free-text correctness follows the
+    // model's qualityScore; its verdict is advisory (issue #198).
     const gradedSignal: GradedSignal =
       sig.kind === "mc-index"
         ? {
@@ -129,7 +131,9 @@ export async function gradePriorAnswers(
             kind: applied.kind,
             questionId: applied.questionId,
             xpAwarded: applied.xpAwarded,
-            correct: sig.verdict === "correct",
+            // Same rule `applyAssessmentGrading` stores in `is_correct`, so
+            // the turn result and the row agree (issue #198).
+            correct: verdictForQualityScore(sig.qualityScore) === "correct",
             qualityScore: sig.qualityScore,
           };
     return [...acc, out];

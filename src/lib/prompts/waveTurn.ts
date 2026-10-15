@@ -14,9 +14,10 @@ import type { Questionnaire } from "./questionnaire";
  * envelope also carries the Harness's answer key: the options and the
  * correct key (issue #149).
  *
- * No `verdict`/`qualityScore` band `superRefine` here — mid-turn signals are
- * advisory (they shape the next turn's teaching). The XP-relevant grading
- * runs at wave-close, where the band invariant IS enforced (`closeTurn.ts`).
+ * No `verdict`/`qualityScore` band `superRefine` here, and none is needed:
+ * the Harness derives correctness from `qualityScore`, the field that sets
+ * XP, so `verdict` is advisory (issue #198). The close turn's schema
+ * enforces the band (`closeTurn.ts`).
  */
 export const comprehensionSignalSchema = z.discriminatedUnion("kind", [
   z.object({

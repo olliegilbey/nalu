@@ -283,6 +283,8 @@ Text-based assessment. No hesitation timing. The LLM judges from answer content.
 | Incorrect with significant misunderstanding | 1       | 0x            |
 | Did not engage or nonsensical response      | 0       | 0x            |
 
+A free-text answer counts as correct at quality 4 or 5 (`VERDICT_QUALITY_BANDS`). The Harness derives this from the score; the model's verdict is advisory.
+
 Multiple-choice is graded mechanically. A correct click scores 4; a wrong click scores 1.
 
 ---

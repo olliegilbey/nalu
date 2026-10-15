@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { qualityScoreSchema } from "@/lib/types/spaced-repetition";
+import { qualityScoreSchema, type QualityScore } from "@/lib/types/spaced-repetition";
 import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
 
 /**
@@ -48,11 +48,13 @@ const v3Response = z
   });
 
 /**
- * Verdict ↔ qualityScore alignment table. Defence-in-depth mirror of the
- * same constant in `src/lib/prompts/closeTurn.ts`: the LLM-facing
- * schema enforces this on parse, and the persistence schema enforces it
- * again on every JSONB read so a manual DB write or a future schema drift
- * can't smuggle in `verdict: "correct"` with `qualityScore: 1`.
+ * Verdict ↔ qualityScore band table: the one source for every grading path.
+ * The close-turn schema (`src/lib/prompts/closeTurn.ts`) enforces it on
+ * parse. The baseline persistence schema below enforces it again on every
+ * JSONB read, so a manual DB write or a future schema drift can't smuggle in
+ * `verdict: "correct"` with `qualityScore: 1`. Mid-turn signals carry no band
+ * check; the Harness derives their correctness through
+ * {@link verdictForQualityScore} instead (issue #198).
  */
 export const VERDICT_QUALITY_BANDS: Readonly<
   Record<"correct" | "partial" | "incorrect", readonly [number, number]>
@@ -61,6 +63,25 @@ export const VERDICT_QUALITY_BANDS: Readonly<
   partial: [2, 3],
   incorrect: [0, 1],
 };
+
+/** A free-text grade: one key of {@link VERDICT_QUALITY_BANDS}. */
+type Verdict = keyof typeof VERDICT_QUALITY_BANDS;
+
+/**
+ * The verdict band a quality score falls in. The Harness sets a free-text
+ * answer's correctness from it, so correctness and XP come from the one
+ * score and cannot disagree (issue #198).
+ */
+export function verdictForQualityScore(qualityScore: QualityScore): Verdict {
+  const verdicts: readonly Verdict[] = ["correct", "partial", "incorrect"];
+  const band = verdicts.find((verdict) => {
+    const [lo, hi] = VERDICT_QUALITY_BANDS[verdict];
+    return qualityScore >= lo && qualityScore <= hi;
+  });
+  // Unreachable: the bands cover 0-5 with no gaps. The throw narrows the type.
+  if (band === undefined) throw new Error(`no verdict band holds qualityScore ${qualityScore}`);
+  return band;
+}
 
 /**
  * LLM grading output for one baseline question. The wire schema

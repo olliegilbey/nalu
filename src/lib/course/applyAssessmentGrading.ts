@@ -3,6 +3,7 @@ import { calculateMcXp, calculateXP } from "@/lib/scoring/xp";
 import { updateAssessmentGrading } from "@/db/queries/assessments.grade";
 import { BASELINE } from "@/lib/config/tuning";
 import type { QualityScore } from "@/lib/types/spaced-repetition";
+import { verdictForQualityScore } from "@/lib/types/jsonb";
 
 /**
  * Two grading signals the harness can receive per assessment row:
@@ -87,7 +88,12 @@ export async function applyAssessmentGrading(
   }
   // Free-text path: LLM-graded verdict + qualityScore → tiered XP.
   const xp = calculateXP(params.conceptTier, params.signal.qualityScore);
-  const isCorrect = params.signal.verdict === "correct";
+  // Correctness follows the score, not the model's verdict (issue #198). The
+  // score sets XP, so a row can no longer say "correct" and earn 0 XP. Only
+  // the "correct" band counts; a partial answer stays incorrect. The verdict
+  // is now advisory: the flat tool wire still asks for it, because changing
+  // that prompt-engineered wire needs a live A/B (`waveTurnTools.ts`).
+  const isCorrect = verdictForQualityScore(params.signal.qualityScore) === "correct";
   await updateAssessmentGrading(
     params.assessmentId,
     {
