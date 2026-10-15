@@ -4,7 +4,6 @@ import {
   questionnaireSchema,
   responseSchema,
   responsesSchema,
-  MC_OPTION_KEYS,
   UNGRADED_RUBRIC,
   isPlaceholderRubric,
 } from "./questionnaire";
@@ -175,12 +174,6 @@ describe("questionnaireSchema + responsesSchema", () => {
     expect(() =>
       responsesSchema.parse({ responses: [{ questionId: "q1", choice: "A" }] }),
     ).not.toThrow();
-  });
-});
-
-describe("MC_OPTION_KEYS", () => {
-  it("is the canonical A/B/C/D tuple", () => {
-    expect(MC_OPTION_KEYS).toEqual(["A", "B", "C", "D"]);
   });
 });
 

@@ -1,3 +1,5 @@
+import type { McOptions } from "@/lib/types/mcOptionKey";
+
 /**
  * Client-safe projection type for a single open question.
  *
@@ -16,12 +18,7 @@ export type OpenQuestionForClient =
       readonly id: string;
       readonly type: "multiple_choice";
       readonly prompt: string;
-      readonly options: {
-        readonly A: string;
-        readonly B: string;
-        readonly C: string;
-        readonly D: string;
-      };
+      readonly options: McOptions;
       /** Base64-obfuscated correct index, bound to `id`. NOT cryptographic. */
       readonly correctEnc: string;
       /** Concept tier — drives client-side `calculateMcXp`. Optional on the source. */

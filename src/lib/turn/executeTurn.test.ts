@@ -95,6 +95,30 @@ describe("executeTurn", () => {
     expect(batch[1]!.kind).toBe("assistant_response");
   });
 
+  // Issue #146: one prompt_cache_key per Context, so every Turn of a
+  // scoping pass or a Wave routes to the same Cerebras cache.
+  it.each([
+    { kind: "scoping", id: SCOPING_ID },
+    { kind: "wave", id: "00000000-0000-0000-0000-000000000701" },
+  ] as const)("keys the prompt cache by the $kind Context's id", async (parent) => {
+    vi.mocked(generateChat).mockResolvedValueOnce({
+      text: '{"value":"OK"}',
+      parsed: { value: "OK" },
+      usage: FAKE_USAGE,
+    });
+
+    await executeTurn({
+      parent,
+      seed: SEED,
+      userMessageContent: "hello",
+      responseSchema: VALUE_SCHEMA,
+    });
+
+    expect(vi.mocked(generateChat).mock.calls[0]?.[1]).toMatchObject({
+      promptCacheKey: parent.id,
+    });
+  });
+
   it("retry-then-success: persists failed + directive + success rows in one batch", async () => {
     // First response fails a refine rule; second passes.
     const REFINE_SCHEMA = z

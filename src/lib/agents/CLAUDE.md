@@ -2,6 +2,8 @@
 
 ToolLoopAgent definitions — one file per LLM-facing stage. An agent =
 model + instructions (from src/lib/prompts/) + tools + stopWhen +
+`maxOutputTokens: LLM.maxToolStepOutputTokens` (per-Step output cap; a
+cut-off Step fails the attempt in `executeToolTurnStream`, #181) +
 `cerebrasToolLoopPrepareStep` (per-step pacing + reasoning strip — NEVER
 omit it) + an `onStepFinish` that calls `recordStepFinished` (rate-limit
 headers for pacing, usage for the cost tally), built fresh per attempt with
@@ -28,10 +30,19 @@ Rules:
   so the call only burned a loop Step (audit F4). The prompt names a tool
   only when the agent offers it. The flag is static per deploy, so the
   tool list stays cache-stable.
-- stopWhen is always stepCountIs(bounded). isLoopFinished() is banned.
+- stopWhen always includes stepCountIs(bounded). isLoopFinished() is
+  banned. `buildWaveMidTurnAgent` adds one early stop,
+  `lastStepHitOutputCap`: the loop ends right after a Step cut off on
+  `length` (#187). Without it the SDK runs another Step on the cut-off
+  call's error, which quotes the runaway input, though the attempt fails
+  anyway.
 - Prompt text lives in src/lib/prompts/ — agents import renderers. Agent
   instructions must stay byte-identical to `renderContext(seed,…).system`
   (tested) or the provider cache prefix breaks.
+- `providerOptions` come from `llmProviderOptions(promptCacheKey)`. It sends
+  the Context's `prompt_cache_key` on every Step: the wave id for
+  `buildWaveMidTurnAgent` (#146). The key is an opaque id, never learner
+  content.
 
 Where agency is explicitly rejected (2026-06-10 agent-loop plan): no
 model-driven stage transitions in scoping; no write-capable tools; no

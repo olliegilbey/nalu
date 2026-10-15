@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { t } from "@/i18n";
 import type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
+import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
 import type { UseQuestionnaireResult } from "@/hooks/useQuestionnaire";
 
 /** Props of {@link AnswerCard}. */
@@ -114,7 +115,7 @@ export function AnswerCard({ question, questionnaire: q, disabled }: AnswerCardP
                           : "text-fuji-gray group-hover:text-crystal")
                       }
                     >
-                      {String.fromCharCode(65 + i)}
+                      {MC_OPTION_KEYS[i]}
                     </span>
                     <span className="flex-1">{opt}</span>
                   </button>

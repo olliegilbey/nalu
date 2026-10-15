@@ -1,3 +1,4 @@
+import { MC_OPTION_KEYS, type McOptionKey } from "@/lib/types/mcOptionKey";
 import type { ChoiceQuestion } from "./adaptQuestionnaire";
 
 /**
@@ -6,7 +7,7 @@ import type { ChoiceQuestion } from "./adaptQuestionnaire";
  * `questionnaire-answers` branch). Same wire shape across phases.
  */
 export type ShapedQuestionnaireAnswer =
-  | { readonly id: string; readonly kind: "mc"; readonly selected: "A" | "B" | "C" | "D" }
+  | { readonly id: string; readonly kind: "mc"; readonly selected: McOptionKey }
   | {
       readonly id: string;
       readonly kind: "freetext";
@@ -20,8 +21,6 @@ export interface RawComposerAnswer {
   readonly answer: string;
 }
 
-const LETTERS = ["A", "B", "C", "D"] as const;
-
 /**
  * Index of the option an answer names verbatim, or null when it ships as free
  * text. The one MC-vs-free-text rule: the shaper below and the Composer's MC
@@ -30,10 +29,10 @@ const LETTERS = ["A", "B", "C", "D"] as const;
  */
 export function matchOptionIndex(question: ChoiceQuestion, answer: string): number | null {
   const idx = question.options.indexOf(answer);
-  // Guard idx against LETTERS.length explicitly — adaptQuestionnaire currently
-  // emits exactly 4 options for MC questions, but ChoiceQuestion.options is
+  // Guard idx against MC_OPTION_KEYS.length explicitly — adaptQuestionnaire
+  // emits one option per key for MC questions, but ChoiceQuestion.options is
   // typed as readonly string[], so a future schema change could overflow.
-  return idx >= 0 && idx < LETTERS.length ? idx : null;
+  return idx >= 0 && idx < MC_OPTION_KEYS.length ? idx : null;
 }
 
 /**
@@ -53,7 +52,7 @@ export function shapeQuestionnaireAnswers(
 ): readonly ShapedQuestionnaireAnswer[] {
   return answers.map(({ question, answer }) => {
     const idx = matchOptionIndex(question, answer);
-    const letter = idx === null ? undefined : LETTERS[idx];
+    const letter = idx === null ? undefined : MC_OPTION_KEYS[idx];
     if (letter !== undefined) {
       return { id: question.id, kind: "mc", selected: letter };
     }

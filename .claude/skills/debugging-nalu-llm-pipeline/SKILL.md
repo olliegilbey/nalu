@@ -1,6 +1,6 @@
 ---
 name: debugging-nalu-llm-pipeline
-description: Use when a Nalu LLM-backed request — course.clarify, generateFramework, generateBaseline, submitBaseline, or a wave/teaching turn — hangs, times out, or fails on the hosted/production deployment. Symptoms include the request spinning ~2 minutes then erroring, "Failed after N attempts. Last error: ...", "Too Many Requests" / HTTP 429, HTTP 401, a silent HTTP 500 / INTERNAL_SERVER_ERROR with nothing in server logs, or a course stuck in scoping. Also use to inspect production DB state after such a failure.
+description: Use when a Nalu LLM-backed request — course.clarify, generateFramework, generateBaseline, submitBaseline, or a wave/teaching turn — hangs, times out, or fails on the hosted/production deployment. Symptoms include the request spinning ~2 minutes then erroring, "Failed after N attempts. Last error: ...", "Too Many Requests" / HTTP 429, HTTP 401, an HTTP 500 / INTERNAL_SERVER_ERROR whose toast reads only "Something went wrong. Please try again.", or a course stuck in scoping. Also use to inspect production DB state after such a failure.
 ---
 
 # Debugging the Nalu LLM Pipeline
@@ -31,14 +31,14 @@ Partial info is fine — the DB fills most gaps — but a course locator and the
 
 ## Step 1 — Decode the error string
 
-| Symptom                                           | Origin                                                      | Meaning                                                                                                                       |
-| ------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `Failed after N attempts. Last error: X`          | AI SDK `retry-with-exponential-backoff` (`node_modules/ai`) | Transport retries exhausted. **N = `LLM.maxRetries` + 1.** Confirm origin: `rg "Failed after" node_modules/ai`                |
-| `Too Many Requests` / HTTP 429                    | Cerebras rate limit (key is paid tier since 2026-07-16)     | Rate-limit wall — capacity, not a code bug                                                                                    |
-| HTTP 401                                          | Auth                                                        | Either the anon-session proxy didn't mint a Supabase session, or `LLM_API_KEY` is wrong or missing → Cerebras rejects the key |
-| HTTP 500 / `INTERNAL_SERVER_ERROR`, no server log | tRPC procedure threw                                        | Nothing calls `console.error` — the failure is silent. Reconstruct from the DB, not the logs                                  |
+| Symptom                                        | Origin                                                      | Meaning                                                                                                                         |
+| ---------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `Failed after N attempts. Last error: X`       | AI SDK `retry-with-exponential-backoff` (`node_modules/ai`) | Transport retries exhausted. **N = `LLM.maxRetries` + 1.** Confirm origin: `rg "Failed after" node_modules/ai`                  |
+| `Too Many Requests` / HTTP 429                 | Cerebras rate limit (key is paid tier since 2026-07-16)     | Rate-limit wall — capacity, not a code bug                                                                                      |
+| HTTP 401                                       | Auth                                                        | Either the anon-session proxy didn't mint a Supabase session, or `LLM_API_KEY` is wrong or missing → Cerebras rejects the key   |
+| HTTP 500 / `INTERNAL_SERVER_ERROR`, fixed text | tRPC procedure threw                                        | The message is hidden by design (#171). Read the `[trpc] procedure failed` log line for codes; reconstruct the rest from the DB |
 
-The tRPC error envelope carries `data.path` (e.g. `course.clarify`) and `data.httpStatus` — that names the failing procedure. A Wave turn has no envelope. The route's `onError` writes one line to the Vercel runtime log: `[wave-turn] turn failed course=<id> wave=<n> name=… inner=… trpcCode=… sqlstate=… constraint=… status=…`, with absent fields left out. It never logs the error's message, cause, params or a response body, because those can quote answer keys and learner text (#169). The "Couldn't submit that turn" toast shows a guard (`TRPCError`) or `NotFoundError` message, or the fixed text "Something went wrong. Please try again." for anything else. Read the codes from the log line (`status=429` is the rate limit), and reconstruct the rest from the DB.
+The tRPC error envelope carries `data.path` (e.g. `course.clarify`) and `data.httpStatus` — that names the failing procedure. Its message is fixed text for any unexpected error; only guard, NOT_FOUND and input-validation messages pass. Each INTERNAL_SERVER_ERROR writes one line to the Vercel runtime log: `[trpc] procedure failed path=<procedure> name=… inner=… trpcCode=… sqlstate=… constraint=… status=…`, describing the thrown error. A Wave turn has no envelope. The route's `onError` writes one line to the Vercel runtime log: `[wave-turn] turn failed course=<id> wave=<n> name=… inner=… trpcCode=… sqlstate=… constraint=… status=…`, with absent fields left out. It never logs the error's message, cause, params or a response body, because those can quote answer keys and learner text (#169). The "Couldn't submit that turn" toast shows a guard (`TRPCError`) or `NotFoundError` message, or the fixed text "Something went wrong. Please try again." for anything else. Read the codes from the log line (`status=429` is the rate limit), and reconstruct the rest from the DB.
 
 ## Step 2 — Do the retry math
 
@@ -140,7 +140,7 @@ The tell: `inspect-db.ts --course` prints WAVE CONTEXT MESSAGES plus a `chatlog_
 
 - **Leaking secrets.** Never pipe `.env.local` through a redaction `sed` — BSD `sed` ≠ GNU `sed`, and a wrong pattern prints the value verbatim. List variable _names_ only: `rg -o '^[A-Z_]+=' .env.local`. (A past session leaked the production DB password this way.)
 - Treating the browser error as the root cause. It's a symptom — go to the DB.
-- Expecting Vercel runtime logs to explain a silent tRPC 500. They won't — the tRPC path has no `console.error`. Wave turns log one `[wave-turn] turn failed` line, with ids and codes only, never the message. A mid-turn stream error is also printed raw just before it, by the AI SDK's default `onError` (#173).
+- Expecting Vercel runtime logs to quote the error message. They won't, by design. A tRPC 500 logs one `[trpc] procedure failed` line and a Wave turn one `[wave-turn] turn failed` line, with ids and codes only, never the message. A mid-turn stream error is also printed raw just before it, by the AI SDK's default `onError` (#173).
 - Forgetting `course.clarify` has no dedup: each call (and each user retry) creates a fresh `courses` row + a new LLM burst, multiplying load against the rate limit.
 
 ## Quick reference

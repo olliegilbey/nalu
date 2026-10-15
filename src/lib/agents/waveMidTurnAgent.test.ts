@@ -4,13 +4,14 @@ import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import type { WaveSeedInputs } from "@/lib/types/context";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
 import { getRunUsageTally, resetRunUsageTally } from "@/lib/llm/runUsageTally";
+import { LLM } from "@/lib/config/tuning";
 import { buildWaveMidTurnAgent } from "./waveMidTurnAgent";
 
-// The provider needs env at import time — stub it. Tests that run the
-// loop inject a MockLanguageModelV3 instead.
-vi.mock("@/lib/llm/provider", () => ({
+// The provider model needs env — stub it. Tests that run the loop inject a
+// MockLanguageModelV3 instead. llmProviderOptions stays real.
+vi.mock("@/lib/llm/provider", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/llm/provider")>()),
   getLlmModel: () => ({ modelId: "stub", specificationVersion: "v3" }),
-  llmProviderOptions: () => ({ "nalu-llm": { reasoningEffort: "high" } }),
 }));
 
 // The getConceptHistory lookup reads the DB; no concept matches in these tests.
@@ -84,6 +85,37 @@ function twoStepStreamModel(): MockLanguageModelV3 {
   return model;
 }
 
+/**
+ * A runaway Step, then prose if asked. Step 1 is a `presentQuestionnaire`
+ * call cut off mid-JSON on `length`, so the SDK marks it invalid and
+ * answers it with a tool error at once. Step 2 exists only to be counted.
+ */
+function cutOffStreamModel(): MockLanguageModelV3 {
+  const cutOffStep: readonly LanguageModelV3StreamPart[] = [
+    {
+      type: "tool-call",
+      toolCallId: "call-1",
+      toolName: "presentQuestionnaire",
+      input: `{"questions":[{"prompt":"${"ownership ".repeat(500)}`,
+    },
+    { type: "finish", finishReason: { unified: "length", raw: "length" }, usage: STEP_USAGE },
+  ];
+  const proseStep: readonly LanguageModelV3StreamPart[] = [
+    { type: "text-start", id: "t1" },
+    { type: "text-delta", id: "t1", delta: "Recovered." },
+    { type: "text-end", id: "t1" },
+    { type: "finish", finishReason: { unified: "stop", raw: undefined }, usage: STEP_USAGE },
+  ];
+  const model: MockLanguageModelV3 = new MockLanguageModelV3({
+    doStream: async () => ({
+      stream: simulateReadableStream({
+        chunks: [...(model.doStreamCalls.length === 1 ? cutOffStep : proseStep)],
+      }),
+    }),
+  });
+  return model;
+}
+
 const SEED: WaveSeedInputs = {
   kind: "wave",
   courseTopic: "Rust",
@@ -107,7 +139,12 @@ const SEED: WaveSeedInputs = {
 const COURSE_ID = "11111111-1111-4111-8111-111111111111";
 
 /** Agent params for a chat-text turn: no questions answered. */
-const CHAT_TURN = { seed: SEED, courseId: COURSE_ID, answeredQuestionIds: [] } as const;
+const CHAT_TURN = {
+  seed: SEED,
+  courseId: COURSE_ID,
+  waveId: "22222222-2222-4222-8222-222222222222",
+  answeredQuestionIds: [],
+} as const;
 
 describe("buildWaveMidTurnAgent", () => {
   it("binds emission + lookup tools and a fresh collector", () => {
@@ -139,6 +176,23 @@ describe("buildWaveMidTurnAgent", () => {
     expect(instructions).toBe(renderTeachingSystem(SEED));
   });
 
+  it("sends the Wave's prompt cache key on every loop Step (#146)", async () => {
+    // Each Step is one request in the Wave's Context, so each carries the
+    // key. A prepareStep that returned providerOptions would drop it.
+    const model = twoStepStreamModel();
+    const { agent } = buildWaveMidTurnAgent({ ...CHAT_TURN, model });
+
+    const result = await agent.stream({ messages: [{ role: "user", content: "hi" }] });
+    for await (const part of result.fullStream) {
+      void part; // drain, as executeToolTurnStream does
+    }
+
+    const sentKeys = model.doStreamCalls.map(
+      (call) => call.providerOptions?.["nalu-llm"]?.["prompt_cache_key"],
+    );
+    expect(sentKeys).toEqual([CHAT_TURN.waveId, CHAT_TURN.waveId]);
+  });
+
   it("folds every loop Step's usage into the run tally", async () => {
     // Each Step is one billed provider call. The tool loop bypasses
     // generateChat, so the agent's onStepFinish must record usage itself.
@@ -166,6 +220,42 @@ describe("buildWaveMidTurnAgent", () => {
     // Guard the fixture: the loop really ran two Steps.
     expect(await result.steps).toHaveLength(2);
     expect(getRunUsageTally()).toMatchObject({ steps: 2, inputTokens: 200, outputTokens: 80 });
+  });
+
+  it("caps every loop Step's output at the tuning ceiling (#181)", async () => {
+    // A runaway tool call once ran to ~40k output tokens. The cap must reach
+    // each provider call, the Steps after the first included.
+    const model = twoStepStreamModel();
+    const { agent } = buildWaveMidTurnAgent({ ...CHAT_TURN, model });
+
+    const result = await agent.stream({ messages: [{ role: "user", content: "hi" }] });
+    for await (const part of result.fullStream) {
+      void part; // drain, as executeToolTurnStream does
+    }
+
+    const sent = model.doStreamCalls.map((call) => call.maxOutputTokens);
+    // Guard: a number reached the wire, not an unset option.
+    expect(sent[0]).toBeGreaterThan(0);
+    expect(sent).toEqual([LLM.maxToolStepOutputTokens, LLM.maxToolStepOutputTokens]);
+  });
+
+  it("ends the loop right after a Step cut off at the output cap (#187)", async () => {
+    // The cut-off call's tool error counts as its answer, so the SDK would
+    // run Step 2 with that error, which quotes the runaway input. The
+    // attempt fails anyway (executeToolTurnStream), so Step 2 is waste.
+    const model = cutOffStreamModel();
+    const { agent } = buildWaveMidTurnAgent({ ...CHAT_TURN, model });
+
+    const result = await agent.stream({ messages: [{ role: "user", content: "hi" }] });
+    for await (const part of result.fullStream) {
+      void part; // drain, as executeToolTurnStream does
+    }
+
+    const steps = await result.steps;
+    // Guard the fixture: the call really was invalid and answered in-loop.
+    expect(steps[0]?.content.map((p) => p.type)).toEqual(["tool-call", "tool-error"]);
+    expect(steps.map((s) => s.finishReason)).toEqual(["length"]);
+    expect(model.doStreamCalls).toHaveLength(1);
   });
 
   // Issue #144: the answered ids reach the grading tool by closure, so a

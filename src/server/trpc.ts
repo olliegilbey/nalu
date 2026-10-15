@@ -3,6 +3,7 @@ import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { NotFoundError } from "@/db/queries/errors";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
+import { clientErrorText } from "@/lib/security/clientErrorText";
 import { resolveRequestUserId } from "./requestUser";
 
 /**
@@ -14,7 +15,19 @@ export const createTRPCContext = async (opts: FetchCreateContextFnOptions) => {
   return { userId: await resolveRequestUserId(opts.req) };
 };
 
-const t = initTRPC.context<typeof createTRPCContext>().create();
+// Every tRPC error response passes through `errorFormatter`. The client gets
+// only text the server wrote on purpose (`clientErrorText`): tRPC otherwise
+// sends an unexpected error's own message, and a failed DB write's message
+// lists its params (issue #171). `data` is an allowlist, so `stack` never
+// ships. tRPC adds it outside production, and its first line repeats the
+// raw message.
+const t = initTRPC.context<typeof createTRPCContext>().create({
+  errorFormatter: ({ shape, error }) => ({
+    code: shape.code,
+    message: clientErrorText(error),
+    data: { code: shape.data.code, httpStatus: shape.data.httpStatus, path: shape.data.path },
+  }),
+});
 
 /** Define a tRPC router */
 export const router = t.router;

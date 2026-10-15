@@ -61,11 +61,13 @@ const SLOW_LOOKUP_DELAY_MS = 30;
 
 /**
  * A streamed Step: optional prose, then one `lookUp` call per input
- * (`call-1`, `call-2`, …), then finish.
+ * (`call-1`, `call-2`, …), then finish. `finishReason: "length"` plays a
+ * Step cut off at the output cap.
  */
 function stepChunks(step: {
   readonly text?: string;
   readonly toolInputs?: readonly string[];
+  readonly finishReason?: "length";
 }): LanguageModelV3StreamPart[] {
   const prose: LanguageModelV3StreamPart[] =
     step.text === undefined
@@ -83,7 +85,7 @@ function stepChunks(step: {
       input,
     }),
   );
-  const unified = calls.length === 0 ? "stop" : "tool-calls";
+  const unified = step.finishReason ?? (calls.length === 0 ? "stop" : "tool-calls");
   return [
     ...prose,
     ...calls,
@@ -275,5 +277,40 @@ describe("tool-error replay (#147)", () => {
     expect(JSON.stringify(messages[1])).toBe(
       '{"role":"tool","content":[{"type":"tool-result","toolCallId":"call-1","toolName":"lookUp","output":{"type":"json","value":{"toolError":"Error: lookup failed"}}}]}',
     );
+  });
+});
+
+describe("a Step cut off at the output cap (#181)", () => {
+  it("retries an attempt whose tool call ran away, and persists nothing from it", async () => {
+    // A runaway call stops on `length` mid-JSON, so the SDK marks it invalid.
+    // Its tool error quotes the whole raw input, and the loop goes on: the
+    // error counts as the call's answer. Persisted, that text would replay
+    // in every later Turn of the Wave.
+    const runaway = "ownership is a rule ".repeat(2_000);
+    const truncatedInput = `{"name": "${runaway}`;
+    const model = scriptedModel([
+      stepChunks({ toolInputs: [truncatedInput], finishReason: "length" }),
+      stepChunks({ text: "Recovered in-loop." }),
+      stepChunks({ text: "Retried." }),
+    ]);
+
+    const { rows } = await runTurn(model, 0, []);
+
+    // Guard the fixture: in-loop, the SDK sent the raw input back to the model.
+    expect(JSON.stringify(model.doStreamCalls[1]?.prompt)).toContain(runaway);
+    // The attempt failed, so the retry ran: three provider calls in all.
+    expect(model.doStreamCalls).toHaveLength(3);
+    expect(rows.map((r) => r.kind)).toEqual([
+      "user_message",
+      "failed_assistant_response",
+      "harness_retry_directive",
+      "assistant_response",
+    ]);
+    // Nothing from the cut-off attempt persists: no tool trail, no prose.
+    expect(rows[1]?.content).toBe("");
+    expect(rows.some((r) => r.content.includes(runaway))).toBe(false);
+    expect(rows[3]?.content).toBe("Retried.");
+    // The retry's own prompt carries none of it either.
+    expect(JSON.stringify(model.doStreamCalls[2]?.prompt)).not.toContain(runaway);
   });
 });

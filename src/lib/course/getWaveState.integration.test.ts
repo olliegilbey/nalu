@@ -7,7 +7,7 @@ import { createCourse } from "@/db/queries/courses";
 import { appendWaveChatLog, closeWave, openWave } from "@/db/queries/waves.writes";
 import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
 import { WAVE } from "@/lib/config/tuning";
-import { KEY_TO_INDEX } from "./buildLearnerInput";
+import { KEY_TO_INDEX } from "@/lib/types/mcOptionKey";
 import { getWaveState } from "./getWaveState";
 
 /**
