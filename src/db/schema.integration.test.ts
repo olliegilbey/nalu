@@ -1,7 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, expectTypeOf } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { WAVE } from "@/lib/config/tuning";
 import { withTestDb } from "@/db/testing/withTestDb";
+import type { AppendMessageParams } from "@/db/queries/contextMessages";
 import {
   userProfiles,
   courses,
@@ -311,6 +312,23 @@ describe("context_messages constraints", () => {
         cause: { code: "23514", constraint_name: "context_messages_kind_role_pair" },
       });
     });
+  });
+
+  // Type-level: tsc checks this, vitest runs it as a no-op. The query layer's
+  // AppendMessageParams admits exactly the table's pairs, so a writer cannot
+  // compile a pair the CHECK rejects (#108).
+  it("types AppendMessageParams with exactly the legal kind/role pairs", () => {
+    type LegalPair = {
+      [K in keyof typeof ROLE_BY_KIND]: {
+        readonly kind: K;
+        readonly role: (typeof ROLE_BY_KIND)[K];
+      };
+    }[keyof typeof ROLE_BY_KIND];
+    // Distributes over a union: one { kind, role } per variant.
+    type KindRoleOf<T> = T extends { readonly kind: infer K; readonly role: infer R }
+      ? { readonly kind: K; readonly role: R }
+      : never;
+    expectTypeOf<KindRoleOf<AppendMessageParams>>().toEqualTypeOf<LegalPair>();
   });
 
   it("rejects duplicate (wave_id, turn_index, seq) — partial wave-order unique", async () => {

@@ -32,39 +32,40 @@ export type ContextParent =
   | { readonly kind: "scoping"; readonly id: string };
 
 /**
+ * Each message kind with its one LLM role, as one union keyed on `kind`.
+ *
+ * Mirrors the DB CHECK `context_messages_kind_role_pair` exactly, so tsc
+ * rejects a pair the DB would reject at insert. No kind maps to 'system':
+ * system content is never persisted (P3). `kind` records how the message
+ * was produced (`context_messages_kind_check`).
+ */
+type ContextMessageKindRole =
+  | { readonly kind: "user_message"; readonly role: "user" }
+  | { readonly kind: "card_answer"; readonly role: "user" }
+  | { readonly kind: "harness_turn_counter"; readonly role: "user" }
+  | { readonly kind: "harness_review_block"; readonly role: "user" }
+  | { readonly kind: "harness_retry_directive"; readonly role: "user" }
+  | { readonly kind: "assistant_response"; readonly role: "assistant" }
+  | { readonly kind: "failed_assistant_response"; readonly role: "assistant" }
+  | { readonly kind: "assistant_tool_call"; readonly role: "assistant" }
+  | { readonly kind: "tool_result"; readonly role: "tool" };
+
+/**
  * Parameters for inserting a single context message row.
  *
- * `kind` and `role` mirror the DB CHECK constraints:
- *   - kind: 9 discriminator values tracking how the message was produced
- *     (`context_messages_kind_check`).
- *   - role: 'user' | 'assistant' | 'tool' (no 'system' — P3 principle).
- *   - each kind takes exactly one role; `context_messages_kind_role_pair`
- *     rejects a mismatch or a bad role at insert (the table lives in the
- *     schema TSDoc).
+ * `kind` and `role` come as one legal pair (`ContextMessageKindRole`);
+ * `schema.integration.test.ts` pins that union to the DB CHECK.
  */
-export interface AppendMessageParams {
+export type AppendMessageParams = ContextMessageKindRole & {
   /** Polymorphic parent — exactly one FK column will be set. */
   readonly parent: ContextParent;
   /** 0-based turn index within the parent Wave or scoping pass. */
   readonly turnIndex: number;
   /** Position within the turn (multiple rows can share a turn_index). */
   readonly seq: number;
-  /** Discriminator for how/why this message was produced. */
-  readonly kind:
-    | "user_message"
-    | "card_answer"
-    | "assistant_response"
-    | "harness_turn_counter"
-    | "harness_review_block"
-    | "failed_assistant_response"
-    | "harness_retry_directive"
-    | "assistant_tool_call"
-    | "tool_result";
-  /** LLM role — 'system' excluded; system content is never persisted (P3). */
-  readonly role: "user" | "assistant" | "tool";
   /** Raw text content of the message. */
   readonly content: string;
-}
+};
 
 // ---------------------------------------------------------------------------
 // Reads
