@@ -139,14 +139,6 @@ const eslintConfig = defineConfig([
     },
   },
 
-  // Live smoke tests: console.log is intentional — output is the manual eyeball check.
-  {
-    files: ["**/*.live.test.ts"],
-    rules: {
-      "no-console": "off",
-    },
-  },
-
   // Test files: ban committed .only — silently skips other tests.
   {
     files: ["**/*.test.ts", "**/*.test.tsx"],
