@@ -1,5 +1,5 @@
 import { encodeCorrect } from "@/lib/security/obfuscateCorrect";
-import { KEY_TO_INDEX } from "./buildLearnerInput";
+import { KEY_TO_INDEX, type McOptions } from "@/lib/types/mcOptionKey";
 import type { V3Response } from "@/lib/types/jsonb";
 import type { WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
 
@@ -27,12 +27,7 @@ export type WaveQuestionForClient =
       readonly id: string;
       readonly type: "multiple_choice";
       readonly prompt: string;
-      readonly options: {
-        readonly A: string;
-        readonly B: string;
-        readonly C: string;
-        readonly D: string;
-      };
+      readonly options: McOptions;
       /** Base64-obfuscated correct index, bound to `id`. NOT cryptographic. */
       readonly correctEnc: string;
       /** Concept tier — drives client-side `calculateMcXp`. Optional on the source. */

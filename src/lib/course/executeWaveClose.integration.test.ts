@@ -16,6 +16,7 @@ import { calculateXP } from "@/lib/scoring/xp";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
+import type { McOptionKey } from "@/lib/types/mcOptionKey";
 import { loadWaveContext } from "./loadWaveContext";
 import { executeWaveClose } from "./executeWaveClose";
 import { namespaceQuestionId } from "./namespaceQuestionId";
@@ -183,7 +184,7 @@ async function seedOpenFreeTextQuestionnaire(
 async function seedOpenMcQuestionnaire(
   courseId: string,
   waveId: string,
-  opts: { readonly correct: "A" | "B" | "C" | "D"; readonly conceptName?: string },
+  opts: { readonly correct: McOptionKey; readonly conceptName?: string },
 ): Promise<{
   readonly conceptId: string;
   readonly questionId: string;
@@ -253,7 +254,7 @@ async function seedOpenMcQuestionnaire(
 async function appendCloseMcAnswer(
   waveId: string,
   questionnaireId: string,
-  clicked: "A" | "B" | "C" | "D",
+  clicked: McOptionKey,
 ): Promise<void> {
   await appendWaveChatLog(db, waveId, {
     role: "user",

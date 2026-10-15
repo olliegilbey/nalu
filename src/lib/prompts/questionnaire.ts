@@ -1,14 +1,6 @@
 import { z } from "zod/v4";
 import { QUESTIONNAIRE } from "@/lib/config/tuning";
-
-/**
- * Canonical four-option key tuple for multiple-choice questions. Used by
- * `questionSchema` and re-exported so per-stage schemas can pin themselves
- * to the same letters without duplicating the constant.
- */
-export const MC_OPTION_KEYS = ["A", "B", "C", "D"] as const;
-/** Literal-union of valid MC option keys. Used wherever an MC choice is typed. */
-export type McOptionKey = (typeof MC_OPTION_KEYS)[number];
+import { MC_OPTION_KEYS, type McOptionKey } from "@/lib/types/mcOptionKey";
 
 /**
  * Shared question shape used identically by clarify, baseline, and (later)

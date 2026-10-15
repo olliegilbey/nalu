@@ -1,4 +1,5 @@
 import type { WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
+import type { McOptionKey } from "@/lib/types/mcOptionKey";
 import type { OpenQuestionnaireRecord } from "./buildLearnerInput";
 
 /**
@@ -74,11 +75,11 @@ export function findOpenQuestionnaire(
  */
 export function buildMcCorrectKeyMap(
   record: OpenQuestionnaireRecord,
-): ReadonlyMap<string, "A" | "B" | "C" | "D"> {
+): ReadonlyMap<string, McOptionKey> {
   return new Map(
     record.questions
       .filter(
-        (q): q is typeof q & { readonly correct: "A" | "B" | "C" | "D" } =>
+        (q): q is typeof q & { readonly correct: McOptionKey } =>
           q.type === "multiple_choice" && q.correct !== undefined,
       )
       .map((q) => [q.id, q.correct] as const),
