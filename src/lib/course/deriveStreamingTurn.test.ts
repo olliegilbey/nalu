@@ -98,6 +98,38 @@ describe("deriveStreamingTurn", () => {
     ]);
   });
 
+  // Issue #117: an invalid first call reaches the client as an `output-error`
+  // part (the SDK sets `input: undefined`). The model then self-corrects
+  // in-loop with a second, valid call under a new toolCallId.
+  it("previews the valid questionnaire call that follows an errored one", () => {
+    const errored = {
+      type: "tool-presentQuestionnaire",
+      toolCallId: "call-bad",
+      state: "output-error",
+      input: undefined,
+      errorText: "Invalid input.",
+    };
+    const messages = [assistant("a1", [errored, questionnaire("input-available", "q2")])];
+    expect(deriveStreamingTurn(messages).streamingQuestions).toEqual([
+      { id: "q2", prompt: "q2?", options: [], tier: undefined },
+    ]);
+  });
+
+  // `presentQuestionnaire` commits the first valid call and refuses later
+  // ones (`accepted: false`, waveTurnTools.ts). The preview must match the
+  // committed card, or it flips to the other quiz on refetch.
+  it("previews the first of two valid questionnaire calls, the one the tool commits", () => {
+    const messages = [
+      assistant("a1", [
+        questionnaire("output-available", "q1"),
+        questionnaire("output-available", "q2"),
+      ]),
+    ];
+    expect(deriveStreamingTurn(messages).streamingQuestions).toEqual([
+      { id: "q1", prompt: "q1?", options: [], tier: undefined },
+    ]);
+  });
+
   it("shows no preview while the tool input still streams or after the tool errors", () => {
     for (const state of ["input-streaming", "output-error"]) {
       const messages = [assistant("a1", [questionnaire(state, "q1")])];
