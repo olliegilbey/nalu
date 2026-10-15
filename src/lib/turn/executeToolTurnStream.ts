@@ -26,7 +26,8 @@ import { assembleLlmMessages } from "./contextAssembly";
  * CONTRACT: the agent carries the turn's system prompt as constructor
  * `instructions` (byte-identical to `renderContext(seed,…).system` — pinned
  * in waveMidTurnAgent.test.ts), plus model, tools, stopWhen, per-step pacing
- * (`prepareStep`) and rate-limit header recording (`onStepFinish`).
+ * (`prepareStep`), rate-limit header recording (`onStepFinish`), and a
+ * silent stream `onError`: the SDK default logs the raw error (#173).
  */
 export interface ToolTurnAgent<TOOLS extends ToolSet = ToolSet> {
   stream(options: { readonly messages: LlmMessage[] }): PromiseLike<{
