@@ -11,9 +11,10 @@ Transactions: the persist files in `src/lib/course/` open `db.transaction`
 and pass `tx` to every helper they call, so the writes commit or roll back
 together. Most helpers take an optional trailing `tx`. A helper whose
 name ends in `InTx` requires it. `courses.tx.ts` holds the `courses` reads
-and writes the close transactions run; each re-fetches nothing. A
-`courses` UPDATE on the `db` singleton inside a close transaction would
-deadlock on the transaction's row lock. A test that needs one of these
+and writes the close transactions run; each re-fetches nothing. The
+mid-turn grading tx runs one of them too: `incrementCourseXpInTx`. A
+`courses` UPDATE on the `db` singleton inside any of these transactions
+would deadlock on the transaction's row lock. A test that needs one of these
 writes passes `db` as the handle; do not add a `db`-bound twin.
 
 Modules: one base file per table (`userProfiles.ts`, `courses.ts`,
@@ -30,8 +31,9 @@ siblings, one concern each:
 - `contextMessages.ts`: shared types and reads. `contextMessages.writes.ts`:
   single and batch append.
 - `assessments.ts`: reads. `assessments.open.ts`: a questionnaire's
-  placeholder rows. `assessments.grade.ts`: grades an existing row.
-  `assessments.fixtures.ts` seeds the two integration suites; tests import
+  placeholder rows. `assessments.grade.ts`: grades an existing row, and
+  locks it first (`lockAssessmentForGradingInTx`) so the course XP bump
+  follows the row. `assessments.fixtures.ts` seeds the two integration suites; tests import
   it, production never does.
 
 Integration tests split the same way and sit beside their module

@@ -16,8 +16,13 @@ import { userProfiles } from "./userProfiles";
  * turn's `summary` field (`submitBaseline.persist.ts`). Nothing rewrites it
  * after that: the Wave-close `summary` goes to `waves.summary` (issue #93).
  *
- * `total_xp` is a cached aggregate (see §3 decisions) — reconciled from
- * `assessments.xp_awarded`.
+ * `total_xp` is a cached aggregate (see §3 decisions). Nothing recomputes it.
+ * Three writers keep it in step, each in the transaction that makes the award:
+ * - scoping close adds the baseline XP (`persistScopingClose`);
+ * - each grading adds the change it makes to `assessments.xp_awarded`
+ *   (`applyAssessmentGrading`, from mid-turn and Wave close);
+ * - Wave close adds `WAVE.completionXp` (`persistWaveClose`).
+ * Rows graded before issue #205's fix are missing from it (backfill: #208).
  */
 export const courses = pgTable(
   "courses",
@@ -54,8 +59,9 @@ export const courses = pgTable(
       "courses_starting_tier_positive_or_null",
       sql`${t.startingTier} IS NULL OR ${t.startingTier} > 0`,
     ),
-    // XP totals are monotonic (assessments only ever award positive XP); a
-    // negative `total_xp` would indicate corruption or a buggy mutator.
+    // Every award is non-negative, and a re-grade lowers the total by at most
+    // the XP that row added. So a negative `total_xp` would indicate
+    // corruption or a buggy mutator.
     check("courses_total_xp_nonneg", sql`${t.totalXp} >= 0`),
     // Most queries filter by userId; index prevents seq-scans on large tables.
     index("courses_user_id_idx").on(t.userId),

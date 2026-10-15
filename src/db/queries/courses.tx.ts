@@ -4,13 +4,14 @@ import type { BaselineClosedJsonb } from "@/lib/types/jsonb";
 
 /**
  * `courses` queries for the close transactions: `persistScopingClose` and
- * `persistWaveClose`. Each takes the caller's `tx` and runs only on it.
- * Tests pass `db` to run one outside a transaction.
+ * `persistWaveClose`. `incrementCourseXpInTx` also runs in the mid-turn
+ * grading tx, via `applyAssessmentGrading`. Each takes the caller's `tx` and
+ * runs only on it. Tests pass `db` to run one outside a transaction.
  *
- * A `courses` write on the `db` singleton inside a close transaction would
- * wait on the row lock the transaction holds, and the transaction would wait
- * on it: a deadlock. These helpers re-fetch nothing; the close transactions
- * need no row back.
+ * A `courses` write on the `db` singleton inside one of these transactions
+ * would wait on the row lock the transaction holds, and the transaction would
+ * wait on it: a deadlock. These helpers re-fetch nothing; their callers need
+ * no row back.
  *
  * All statements use raw `tx.execute(sql\`...\`)` (house style).
  */
@@ -109,7 +110,8 @@ export async function updateCourseTierInTx(
  * Add `amount` XP to `courses.total_xp` inside the caller's tx.
  *
  * `total_xp + amount` in SQL avoids a read-modify-write race. The caller
- * validates `amount`.
+ * validates `amount`. It is negative only when a re-grade lowers a row's
+ * XP (`applyAssessmentGrading`).
  */
 export async function incrementCourseXpInTx(
   courseId: string,

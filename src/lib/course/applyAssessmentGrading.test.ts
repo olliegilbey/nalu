@@ -1,9 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-// The DB write is mocked: these tests pin the patch the grading computes,
-// not the SQL underneath (the integration suite covers the write).
+// The DB writes are mocked: these tests pin the patch the grading computes,
+// not the SQL underneath (the integration suite covers the writes and the
+// course XP bump).
 vi.mock("@/db/queries/assessments.grade", () => ({
+  lockAssessmentForGradingInTx: vi.fn(async () => ({ xpAwarded: 0, courseId: "c-1" })),
   updateAssessmentGrading: vi.fn(),
+}));
+vi.mock("@/db/queries/courses.tx", () => ({
+  incrementCourseXpInTx: vi.fn(),
 }));
 
 // Off-default MC qualities, file-wide: a hardcoded 4/1 can no longer pass

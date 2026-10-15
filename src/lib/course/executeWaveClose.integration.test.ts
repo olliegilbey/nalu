@@ -33,7 +33,8 @@ import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTur
  * Coverage (plan §12 step 1):
  *   1. Happy path: one free-text grading + one conceptUpdate. Assessment row
  *      updated, concept SM-2 advanced, Wave N closed, Wave N+1 opened from the
- *      blueprint with the openingText as turn-0 message, completion XP added.
+ *      blueprint with the openingText as turn-0 message, completion XP and the
+ *      graded answer's XP added to `courses.total_xp` (issue #205).
  *   2. Consolidation Wave (empty plannedConcepts) on an odd-numbered wave →
  *      tier-advancement check runs unconditionally (the consolidation gate
  *      overrides the modulo gate). Tier doesn't actually advance (concept
@@ -426,9 +427,11 @@ describe("executeWaveClose (integration)", () => {
         seq: 0,
       });
 
-      // Completion XP applied to courses.total_xp ---------------------------
+      // courses.total_xp gains the completion XP AND the close grading's XP
+      // (issue #205). The grading's XP is the tier-1, q5 award on the row.
+      expect(assessmentRow.xpAwarded).toBe(calculateXP(1, 5));
       const afterCourse = (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!;
-      expect(afterCourse.totalXp).toBe(WAVE.completionXp);
+      expect(afterCourse.totalXp).toBe(WAVE.completionXp + assessmentRow.xpAwarded);
     });
   });
 
@@ -561,7 +564,7 @@ describe("executeWaveClose (integration)", () => {
       const afterConcept = (await db.select().from(concepts).where(eq(concepts.id, conceptId)))[0]!;
       expect(afterConcept.repetitionCount).toBe(initialConcept.repetitionCount);
       expect(afterConcept.lastQualityScore).toBe(initialConcept.lastQualityScore);
-      // XP not incremented.
+      // XP not incremented: the grading's XP rolls back with the completion XP.
       const afterCourse = (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!;
       expect(afterCourse.totalXp).toBe(0);
 
@@ -680,6 +683,9 @@ describe("executeWaveClose (integration)", () => {
       expect(assessmentRow.xpAwarded).toBeGreaterThan(0);
       // The learner's clicked key is persisted onto the row's user_answer.
       expect(assessmentRow.userAnswer).toBe("B");
+      // The MC grading's XP reaches courses.total_xp with the completion XP (issue #205).
+      const afterCourse = (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!;
+      expect(afterCourse.totalXp).toBe(WAVE.completionXp + assessmentRow.xpAwarded);
 
       // Wave N closed, Wave N+1 opened — the wave is no longer bricked.
       const closedWave = (await db.select().from(waves).where(eq(waves.id, waveId)))[0]!;
