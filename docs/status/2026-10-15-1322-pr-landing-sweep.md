@@ -5,7 +5,7 @@ You are picking up a coordination session that lands fix PRs on Nalu through sub
 ## Orientation
 
 - Main is at `d769cf3` or later. Merged on 2026-10-15: #183 #184 #185 #186 #188 #189 #190 #193 | Checked | `gh pr list --state merged --limit 15`
-- The GitHub token (fine-grained PAT in `~/.config/gh/hosts.yml`) lost write access mid-session: `gh pr create` and `gh issue create` return 403 "Resource not accessible by personal access token". Reads work. Ollie's `gh` uses the same token | Open: retry one `gh issue create` dry write only after Ollie says the token is fixed | `gh auth status`
+- The GitHub token (fine-grained PAT in `~/.config/gh/hosts.yml`) lost write access for about an hour, then got it back. On a 403 "Resource not accessible by personal access token", stop writes and give Ollie the body files | Open: may recur | `gh auth status`
 - Ollie merges with `! gh pr merge N --merge --delete-branch`. Protection is strict, and `enforce_admins` is false. Merge the up-to-date PR normally. Give `--admin` for the rest only after `just check` passes on a scratch tree of main plus all of them | Checked: `gh api repos/olliegilbey/nalu/branches/main/protection`
 - `gh pr merge --delete-branch` fails when the branch is checked out in a worktree. Before giving a merge line, `git -C <worktree> switch --detach` the clean worktree whose HEAD matches the remote | Checked
 - Build a combined tree with `git worktree add --detach /tmp/nalu-landN origin/main`, then `git merge --no-commit --no-ff <branch>...` (an octopus merge works when no pair conflicts), `bun install --frozen-lockfile`, `just check`. Run pairwise `git merge-tree --write-tree --name-only A B` in `bash <<'EOF'` first (zsh rejects the array loop) | Checked
@@ -26,35 +26,42 @@ You are picking up a coordination session that lands fix PRs on Nalu through sub
 
 ## Current State
 
-Open PRs, all reviewed and green:
+Ollie approved, verbatim: "give me the command to merge all of them. and go for all the fixes as you recommend." That covers #192's UI change (quiz card before the teaching text), #198 option (b), and #205 option (a).
 
-| PR | Closes | Merge |
+Reviewed, green, combined `just check` passed (863 unit, 190 integration). Ollie's merge command, not yet run at handoff:
+
+```
+for n in 195 194 192 200 201 202; do gh pr checks $n --watch --fail-fast >/dev/null && gh pr merge $n --merge --delete-branch --admin || { echo "stopped at #$n"; break; }; sleep 5; done
+```
+
+| PR | Fixes |
+|---|---|
+| #195 `chore/knip-production` | #177 |
+| #194 `refactor/context-message-kind-role-pair` | #108 |
+| #192 `fix/quiz-tool-before-prose` | refs #164 #145 |
+| #200 `test/provider-wire-import-cost` | #199 |
+| #201 `fix/agent-stream-onerror` | #173 |
+| #202 `refactor/comprehension-signal-type` | #119 |
+
+In flight:
+
+| PR | Fixes | State |
 |---|---|---|
-| #195 `chore/knip-production` | #177 | normal (up to date) |
-| #194 `refactor/context-message-kind-role-pair` | #108 | `--admin` after #195 |
-| #192 `fix/quiz-tool-before-prose` | refs #164 #145 | `--admin`; waits on Ollie's UI yes |
+| #206 `refactor/sm2-schema-from-tuning` | #197, #210 | reviewed SHIP WITH NITS; author folding in the #210 fix (CHECK `>= 1.3::real`, red integration test, a new migration) |
+| #209 `fix/mid-turn-correct-from-score` | #198 (b) | reviewed CHANGES NEEDED: move `verdictForQualityScore` to `src/lib/scoring/`, file the `AppliedGrading.isCorrect` follow-up; author fixing; conflicts with #202 in `waveTurn.ts` TSDoc and `comprehensionSignal.ts` (keep #202's deletion, rewrite the #198 sentence to "the Harness derives correctness from `qualityScore`") |
+| #211 `fix/telemetry-span-error-text` | #204 | reviewed SHIP WITH NITS; author adding tool-call and retry span tests, moving `sdk-trace-base` |
+| #212 `fix/course-total-xp-assessments` | #205 (a) | review running; delta rule under a row lock; conflicts with #209 in `persistWaveMidTurn.integration.test.ts` (keep both tests) |
+| #203 `docs/status-pr-landing-sweep` | this file | merge last |
 
-Pushed, reviewed, no PR yet (the token cannot open PRs). Body files are in `/tmp`:
-
-| Branch | Closes | Head | Body |
-|---|---|---|---|
-| `fix/agent-stream-onerror` | #173 | `30485d5` | `/tmp/pr-173.md` |
-| `refactor/comprehension-signal-type` | #119 | `67a54be` | `/tmp/pr-119.md` |
-| `test/provider-wire-import-cost` | #199 | `785633e` | `/tmp/pr-199.md` |
-
-Issues drafted but not filed (token): `/tmp/nalu-issue-span-leak.md` (telemetry spans record raw error messages; blocks `LLM_TELEMETRY=true` in #67), `/tmp/nalu-issue-total-xp.md` (`courses.total_xp` misses mid-turn XP).
-
-Issues filed this session: #196 (`deferred`, derive `role` from `kind`), #197 (`tech-debt`, SM-2 default and floor duplicated in the schema), #198 (`needs-decision`, mid-turn verdict and `qualityScore` not tied), #199 (`tech-debt`, the flaky `provider.test.ts` wire test).
-
-`just check` passed on main plus #195, #194, #192 and the #199 fix (858 unit, 190 integration). A six-branch check (adding #173 and #119) was running at handoff.
+Issues filed this session: #196 #197 #198 #199 #204 #205 #207 (schema change with no migration goes unnoticed) #208 (`total_xp` backfill, deferred) #210 (bug: the easiness-factor CHECK rejects 1.3 because the column is `real`; a learner who fails a concept twice gets a failing Wave close).
 
 ## Next Steps
 
-1. When Ollie restores PR and Issues write, open the three PRs from the table and file the two drafted issues. Watch CI.
-2. After each merge, merge `origin/main` into the next stale branch, or give `--admin` after a combined check.
-3. Cleanup once merged: the `.claude/worktrees/agent-*` dirs and `worktree-agent-*` branches for these branches (check clean and ancestor of main, then `git worktree unlock`, `git worktree remove` without force, `git branch -d`), and `/tmp/nalu-land*`.
-4. Open levers on #145: reasoning sent as the tool-call message's `content` reaches gpt-oss and needs its own probe; forced tool choice is untested.
-5. Possible issue: Wave prose often restates the quiz question the card already shows (both arms of #192's A/B).
+1. Send review nits back via SendMessage; self-review each fix commit; watch CI.
+2. After Ollie's command lands: merge `origin/main` into #209 (resolve the #202 conflict), then #212 (resolve the #209 conflict), run a combined check, and give one merge command for #206 #209 #211 #212, then #203.
+3. Tell Ollie: #206 adds a migration; run `just db-migrate` on prod after merge (after #107's count query).
+4. Cleanup once merged: agent worktrees and `worktree-agent-*` branches (clean and ancestor of main, `git worktree unlock`, `git worktree remove` without force, `git branch -d`), `/tmp/nalu-land*`.
+5. Unfiled observations: the close free-text grading never writes `assessments.user_answer`; `user_profiles.total_xp` has no writer (#154); `ai.response.providerMetadata` is always recorded on spans (check before #67); levers on #145 (reasoning as tool-call `content`, forced tool choice).
 
 ## Context for the Work
 
@@ -65,21 +72,18 @@ Decisions Ollie made: `feat/corti-path-a` stays parked; #99 closed, summary to #
 Security, verbatim: copy `.env.local` "without reading it". Never print it.
 
 Ollie's open asks:
-1. Restore Pull requests and Issues write on the token, or open the PRs and issues above by hand.
-2. Merge #195, then #194, then #192.
-3. Say whether the quiz card may appear before the teaching text (#192). Recommendation: yes, it works like a pretest. It changes `docs/PRD.md:267`.
-4. Decide #198. Recommendation: (b), the Harness derives `is_correct` from `qualityScore`.
-5. Run the count query in #107's PR body on prod (must return 0), then `just db-migrate`.
-6. Mark the GitGuardian incident from #127 a false positive.
-7. Decide #58, #93, #94, #116, #143, #154.
-8. Eyeball #125's UI on production.
-9. Set the OTLP env vars in Vercel (#67), with `LLM_TELEMETRY` off until the span leak is fixed.
+1. Run the merge command above.
+2. Run the count query in #107's PR body on prod (must return 0), then `just db-migrate`; again after #206 merges.
+3. Mark the GitGuardian incident from #127 a false positive.
+4. Decide #58, #93, #94, #116, #143, #154.
+5. Eyeball #125's UI on production.
+6. Set the OTLP env vars in Vercel (#67); `LLM_TELEMETRY=true` only after #211 merges.
 
 Live spend this session: about $3.4 (no live runs since the last batch).
 
 ## Restart Hint
 
-Nothing local is at risk: every branch is pushed. Resume at Next Steps 1 once the token can write.
+Nothing local is at risk: every branch is pushed. Resume at Next Steps 1.
 
 ## Suggested Skills
 
