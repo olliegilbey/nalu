@@ -32,12 +32,12 @@ export type ContextParent =
   | { readonly kind: "scoping"; readonly id: string };
 
 /**
- * Each message kind with its one LLM role, as one union keyed on `kind`.
+ * Each message `kind` (how the message was produced) with its one LLM
+ * role, as one union keyed on `kind`.
  *
  * Mirrors the DB CHECK `context_messages_kind_role_pair` exactly, so tsc
  * rejects a pair the DB would reject at insert. No kind maps to 'system':
- * system content is never persisted (P3). `kind` records how the message
- * was produced (`context_messages_kind_check`).
+ * system content is never persisted (P3).
  */
 type ContextMessageKindRole =
   | { readonly kind: "user_message"; readonly role: "user" }

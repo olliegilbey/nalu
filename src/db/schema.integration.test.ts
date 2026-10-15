@@ -256,7 +256,8 @@ describe("context_messages constraints", () => {
   });
 
   // The legal kind→role table, written out independently of the schema so
-  // the test fails if the CHECK drifts. Writers: src/lib/turn/ (every turn
+  // the test fails if the CHECK drifts. It is also the oracle that pins
+  // AppendMessageParams (the type-level test below). Writers: src/lib/turn/ (every turn
   // row) and the close transactions (turn-0 assistant_response). The three
   // unwritten kinds (card_answer, harness_turn_counter, harness_review_block)
   // are user-role per spec §6.5: learner input or Harness injections.
