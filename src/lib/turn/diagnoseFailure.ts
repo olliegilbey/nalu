@@ -6,10 +6,10 @@ import type { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
  *
  * Under JSON-everywhere all parse failures fall into a small set:
  *   1. Non-JSON response — directive starts with "Your previous response did not parse as JSON".
- *   2. Missing required field — Zod error mentions a field path.
+ *   2. Missing `userMessage` — Zod reports `invalid_type` at `["userMessage"]`.
  *   3. Refine failure — the shape parsed; only `.refine` / `.superRefine` rules broke.
- *   4. Wrong stage payload — the raw text JSON-parses but its keys belong to another stage.
- *   5. Generic Zod failure — fall through with a short gloss.
+ *   4. Wrong stage payload — the body's keys fit another stage better than this turn's.
+ *   5. Shape failure — list the Zod issues; any other detail gets a short gloss.
  */
 
 // `ZodError.message` is the issue list as JSON. The detail is our own string,
@@ -24,15 +24,27 @@ const zodIssueListSchema = z
   )
   .min(1);
 
-// Each signature is the *leaf* key name we expect to see quoted in the JSON
-// body — pre-flattened so the scoring loop is a plain `includes` check and
-// avoids chained string ops that trip typed-lint rules.
-const STAGE_KEY_SIGNATURES: Record<string, readonly string[]> = {
+// Keyed by the `label` each caller passes to `executeTurn`, so the expected
+// stage needs no mapping. Each signature is the *leaf* key name we expect to
+// see quoted in the JSON body — pre-flattened so the scoring loop is a plain
+// `includes` check and avoids chained string ops that trip typed-lint rules.
+// The two close turns share `gradings`, `summary` and `nextUnitBlueprint`;
+// their own keys break the tie.
+const STAGE_KEY_SIGNATURES = {
   clarify: ["questions", "freetextRubric"],
   framework: ["tiers", "estimatedStartingTier", "baselineScopeTiers"],
   baseline: ["questions", "conceptName", "tier", "correct"],
-  "grade-baseline": ["gradings", "verdict", "qualityScore"],
-};
+  "scoping-close": ["gradings", "summary", "nextUnitBlueprint", "immutableSummary", "startingTier"],
+  "wave-close": ["gradings", "summary", "nextUnitBlueprint", "conceptUpdates"],
+} as const satisfies Record<string, readonly string[]>;
+
+/** A Turn label with a key signature: the stages the diagnosis can tell apart. */
+type TurnStage = keyof typeof STAGE_KEY_SIGNATURES;
+
+const isTurnStage = (label: string): label is TurnStage =>
+  Object.hasOwn(STAGE_KEY_SIGNATURES, label);
+
+const TURN_STAGES: readonly TurnStage[] = Object.keys(STAGE_KEY_SIGNATURES).filter(isTurnStage);
 
 // Minimum unique signature hits before we'll commit to a stage guess.
 const STAGE_MATCH_THRESHOLD = 2;
@@ -46,25 +58,33 @@ function tryParseJson(raw: string): unknown | null {
   }
 }
 
-function detectStageFromBody(raw: string): string | null {
-  // Cheap JSON probe — if the response parses, count unique signature
-  // hits per stage. Highest score (≥ threshold) wins.
+/**
+ * The stage whose keys the body fits better than the expected stage's, or
+ * null. A right-stage body scores its own stage high even with a key missing,
+ * so a rival must beat the expected stage outright (issue #130). A tie means
+ * the body fits this turn as well as any other.
+ */
+function detectRivalStage(raw: string, expected: TurnStage): TurnStage | null {
   const parsed = tryParseJson(raw);
   if (parsed === null) return null;
   const haystack = JSON.stringify(parsed);
-  const scored = Object.entries(STAGE_KEY_SIGNATURES).map(([stage, sigs]) => {
-    const score = sigs.filter((sig) => haystack.includes(`"${sig}"`)).length;
-    return { stage, score };
-  });
-  const best = scored.reduce<{ stage: string; score: number }>(
-    (acc, cur) => (cur.score > acc.score ? cur : acc),
-    { stage: "", score: 0 },
-  );
-  return best.score >= STAGE_MATCH_THRESHOLD ? best.stage : null;
+  const score = (stage: TurnStage) =>
+    STAGE_KEY_SIGNATURES[stage].filter((sig) => haystack.includes(`"${sig}"`)).length;
+  const expectedScore = score(expected);
+  const rival = TURN_STAGES.filter((stage) => stage !== expected)
+    .map((stage) => ({ stage, score: score(stage) }))
+    .reduce<{ stage: TurnStage | null; score: number }>(
+      (acc, cur) => (cur.score > acc.score ? cur : acc),
+      { stage: null, score: 0 },
+    );
+  return rival.score >= STAGE_MATCH_THRESHOLD && rival.score > expectedScore ? rival.stage : null;
 }
 
-/** Map a {@link ValidationGateFailure} + raw model output to a one-line operator diagnosis. */
-export function diagnoseFailure(err: ValidationGateFailure, raw: string): string {
+/**
+ * Map a {@link ValidationGateFailure} + raw model output to a one-line operator
+ * diagnosis. `label` is the Turn's `executeTurn` label, the stage it expects.
+ */
+export function diagnoseFailure(err: ValidationGateFailure, raw: string, label: string): string {
   const detail = err.detail;
 
   // (1) Non-JSON.
@@ -72,32 +92,41 @@ export function diagnoseFailure(err: ValidationGateFailure, raw: string): string
     return "model returned text that is not valid JSON — check for stray prose outside the JSON envelope.";
   }
 
-  // (2) Missing userMessage — every stage requires it.
-  if (detail.includes("userMessage") && detail.toLowerCase().includes("required")) {
+  // Past the JSON check, the detail is always Zod's issue list. Anything else
+  // gets the short gloss.
+  const issues = zodIssueListSchema.safeParse(tryParseJson(detail));
+  if (!issues.success) {
+    return `gate '${err.reason}' tripped — see retry directive below.`;
+  }
+  // `<root>` matches retryDirective.ts for an issue with no path.
+  const listed = issues.data
+    .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "<root>"}: ${issue.message}`)
+    .join("; ");
+
+  // (2) Missing userMessage — every stage requires it, so it says nothing
+  // about which stage the body is.
+  const userMessageBroken = issues.data.some(
+    (issue) =>
+      issue.code === "invalid_type" && issue.path.length === 1 && issue.path[0] === "userMessage",
+  );
+  if (userMessageBroken) {
     return "response is missing the required `userMessage` field — every turn must include it.";
   }
 
   // (3) Refine failure. Zod emits `custom` issues only from refines, and a
   // type error aborts refines. An all-custom list means the body fit this
   // turn's shape, so name the rules it broke instead of guessing a stage.
-  const issues = zodIssueListSchema.safeParse(tryParseJson(detail));
-  if (issues.success && issues.data.every((issue) => issue.code === "custom")) {
-    // `<root>` matches retryDirective.ts for a refine with no path.
-    const broken = issues.data.map(
-      (issue) => `${issue.path.length > 0 ? issue.path.join(".") : "<root>"}: ${issue.message}`,
-    );
-    return `body has the right shape but broke a schema rule — ${broken.join("; ")}`;
+  if (issues.data.every((issue) => issue.code === "custom")) {
+    return `body has the right shape but broke a schema rule — ${listed}`;
   }
 
-  // (4) Wrong-stage detection.
-  const detected = detectStageFromBody(raw);
-  if (detected !== null) {
-    return `body matches the ${detected} stage schema — model appears to have answered the wrong turn.`;
+  // (4) Wrong-stage detection, against the stage this Turn expects. A label
+  // with no signature cannot be compared, so it skips straight to the list.
+  const rival = isTurnStage(label) ? detectRivalStage(raw, label) : null;
+  if (rival !== null) {
+    return `body matches the ${rival} stage schema, not ${label} — model appears to have answered the wrong turn.`;
   }
 
-  // (5) Generic Zod fallback.
-  if (detail.match(/\[\s*\{[\s\S]*?"path":\s*\[/)) {
-    return "zod schema validation failed — see retry directive below.";
-  }
-  return `gate '${err.reason}' tripped — see retry directive below.`;
+  // (5) Shape failure on a body that fits this turn: list the issues.
+  return `body failed the schema — ${listed}`;
 }
