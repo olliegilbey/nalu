@@ -33,6 +33,9 @@ const conceptsSnapshotSchema = z.object({
 /** The `concepts` table in the newest snapshot, which `generate` diffs against. */
 function readLatestConceptsSnapshot() {
   // Snapshot names carry a zero-padded index, so a text sort is a number sort.
+  // This is the same pick drizzle-kit makes for its previous snapshot.
+  // Journal order would fail on a hand-written entry with no snapshot, like
+  // 0005.
   const latest = readdirSync(META_DIR)
     .filter((file) => file.endsWith("_snapshot.json"))
     .sort()
