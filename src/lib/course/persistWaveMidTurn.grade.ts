@@ -5,7 +5,7 @@ import { applyAssessmentGrading, type GradedSignal } from "./applyAssessmentGrad
 import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { McOptionKey } from "@/lib/types/mcOptionKey";
-import { verdictForQualityScore } from "@/lib/types/jsonb";
+import { verdictForQualityScore } from "@/lib/scoring/verdictBand";
 
 /**
  * Internal helper for `persistWaveMidTurn` — graded comprehensionSignals batch.

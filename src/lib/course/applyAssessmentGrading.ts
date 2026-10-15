@@ -3,14 +3,15 @@ import { calculateMcXp, calculateXP } from "@/lib/scoring/xp";
 import { updateAssessmentGrading } from "@/db/queries/assessments.grade";
 import { BASELINE } from "@/lib/config/tuning";
 import type { QualityScore } from "@/lib/types/spaced-repetition";
-import { verdictForQualityScore } from "@/lib/types/jsonb";
+import { verdictForQualityScore } from "@/lib/scoring/verdictBand";
 
 /**
  * Two grading signals the harness can receive per assessment row:
  *
  * - `mc-index`: mechanical correctness from comparing the learner's chosen
  *   index against the stored `correctIndex`. No LLM in the loop here.
- * - `free-text`: LLM-graded verdict + qualityScore for prose answers.
+ * - `free-text`: an LLM-graded prose answer. Its `qualityScore` drives XP
+ *   and correctness; its `verdict` is advisory (issue #198).
  *
  * Both produce one `applyAssessmentGrading` call: row updated + XP awarded.
  */
@@ -19,6 +20,8 @@ export type GradedSignal =
   | {
       readonly kind: "free-text";
       readonly questionId: string;
+      // Unread since issue #198: correctness derives from `qualityScore`.
+      // Dropping it, and its callers, is issue #213.
       readonly verdict: "correct" | "partial" | "incorrect";
       // `QualityScore` (not bare `number`): the value originates at the LLM
       // trust boundary via `qualityScoreSchema` and flows straight into the
@@ -86,7 +89,7 @@ export async function applyAssessmentGrading(
     );
     return { questionId: params.signal.questionId, xpAwarded: xp, kind: "mc-index" };
   }
-  // Free-text path: LLM-graded verdict + qualityScore → tiered XP.
+  // Free-text path: the LLM's qualityScore drives tiered XP and correctness.
   const xp = calculateXP(params.conceptTier, params.signal.qualityScore);
   // Correctness follows the score, not the model's verdict (issue #198). The
   // score sets XP, so a row can no longer say "correct" and earn 0 XP. Only

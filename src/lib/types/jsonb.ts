@@ -99,7 +99,6 @@ export type FrameworkJsonb = z.infer<typeof frameworkJsonbSchema>;
  */
 export {
   VERDICT_QUALITY_BANDS,
-  verdictForQualityScore,
   baselineGradingSchema,
   baselineQuestionsJsonbSchema,
   baselineClosedJsonbSchema,
