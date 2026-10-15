@@ -24,10 +24,11 @@ import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTur
 import { streamWaveTurn } from "./streamWaveTurn";
 import { namespaceQuestionId } from "./namespaceQuestionId";
 
-// The provider needs env at build time; the stubbed agent stream never calls it.
-vi.mock("@/lib/llm/provider", () => ({
+// The provider model needs env at build time; the stubbed agent stream never
+// calls it. llmProviderOptions stays real, so the sent cache key is the true one.
+vi.mock("@/lib/llm/provider", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/llm/provider")>()),
   getLlmModel: () => ({ modelId: "stub", specificationVersion: "v3" }),
-  llmProviderOptions: () => ({ "nalu-llm": { reasoningEffort: "high" } }),
 }));
 
 /**
@@ -942,6 +943,41 @@ describe("streamWaveTurn (integration)", () => {
       // Guard the fixture: the error chunk reached the client.
       expect(parts.filter((p) => p.type === "tool-output-error")).toHaveLength(1);
       expectNoQuizSecrets(parts);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 3f. Prompt cache key (#146). The Wave is the Context, so a mid-turn
+  //     sends the wave id, not the course id or any other id.
+  // -------------------------------------------------------------------------
+  it("mid-turn: sends the wave id as the prompt cache key", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      const proseStep: LanguageModelV3StreamPart[] = [
+        { type: "text-start", id: "t1" },
+        { type: "text-delta", id: "t1", delta: "Got it." },
+        { type: "text-end", id: "t1" },
+        { type: "finish", finishReason: { unified: "stop", raw: undefined }, usage: STEP_USAGE },
+      ];
+      const model = new MockLanguageModelV3({
+        doStream: async () => ({ stream: simulateReadableStream({ chunks: proseStep }) }),
+      });
+      mockAgentModel(model);
+      const { writer } = recordingWriter();
+
+      await streamWaveTurn(
+        {
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: { kind: "chat-text", text: "tell me about ownership" },
+        },
+        writer,
+      );
+
+      expect(model.doStreamCalls).toHaveLength(1);
+      const sentKey = model.doStreamCalls[0]?.providerOptions?.["nalu-llm"]?.["prompt_cache_key"];
+      expect(sentKey).toBe(waveId);
     });
   });
 

@@ -6,13 +6,29 @@ import { getEnv } from "@/lib/config";
 import { LLM } from "@/lib/config/tuning";
 
 /**
- * Per-call `providerOptions` for every LLM call: sets `reasoning_effort` on
- * the wire (tuning `LLM.reasoningEffort`). The outer key MUST match the
- * provider `name` below — the openai-compatible adapter looks up options
- * under its own name and merges unknown keys into the request body.
+ * Per-call `providerOptions` for every LLM call: sets `reasoning_effort`
+ * (tuning `LLM.reasoningEffort`) and `prompt_cache_key` on the wire. The
+ * outer key MUST match the provider `name` below — the openai-compatible
+ * adapter looks up options under its own name and merges unknown keys into
+ * the request body.
+ *
+ * `promptCacheKey` is the id of the Context the call belongs to: a wave id
+ * or a scoping pass id. Cerebras routes calls with the same key to the same
+ * prompt cache, so each Turn of a Context finds the prefix the last one
+ * left (issue #146). It is an opaque id and holds no learner content.
+ * Cerebras says to keep one key per conversation and never share one
+ * across users' prefixes:
+ * https://inference-docs.cerebras.ai/capabilities/prompt-caching
  */
-export function llmProviderOptions(): Record<string, Record<string, string>> {
-  return { "nalu-llm": { reasoningEffort: LLM.reasoningEffort } };
+export function llmProviderOptions(promptCacheKey: string): Record<string, Record<string, string>> {
+  return {
+    "nalu-llm": {
+      reasoningEffort: LLM.reasoningEffort,
+      // snake_case on purpose: the adapter maps only the keys it knows, such
+      // as reasoningEffort. It spreads any other key into the body as is.
+      prompt_cache_key: promptCacheKey,
+    },
+  };
 }
 
 /**

@@ -41,6 +41,7 @@ const SEED: WaveSeedInputs = {
 const CHAT_TURN = {
   seed: SEED,
   courseId: "11111111-1111-4111-8111-111111111111",
+  waveId: "22222222-2222-4222-8222-222222222222",
   answeredQuestionIds: [],
 } as const;
 

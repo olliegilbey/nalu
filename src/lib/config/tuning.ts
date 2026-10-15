@@ -278,7 +278,7 @@ export const LLM = {
   // relabel-not-rethink "fix"), and questions ignored the learner's stated
   // can't-read-characters profile. Each schema retry is a full extra LLM
   // call, so high effort is partly self-funding. Sent via providerOptions
-  // by `llmProviderOptions()` (src/lib/llm/provider.ts).
+  // by `llmProviderOptions(promptCacheKey)` (src/lib/llm/provider.ts).
   reasoningEffort: "high",
   maxRetries: 6,
   slowLaneSpacingMs: 13_000,

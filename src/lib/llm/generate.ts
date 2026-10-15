@@ -35,6 +35,8 @@ export interface ChatOptions<T = unknown> extends GenerateOptions {
   readonly responseSchemaName?: string;
   /** OTel span label (pipeline stage, e.g. "wave-close"); default "generateChat". */
   readonly telemetryFunctionId?: string;
+  /** The Context's id, sent as `prompt_cache_key` (see `llmProviderOptions`). */
+  readonly promptCacheKey: string;
 }
 
 /**
@@ -84,11 +86,11 @@ export async function generateChat<T>(
 ): Promise<ChatResult<T> & { parsed: T }>;
 export async function generateChat(
   messages: readonly LlmMessage[],
-  opts?: ChatOptions,
+  opts: ChatOptions,
 ): Promise<ChatResult>;
 export async function generateChat<T>(
   messages: readonly LlmMessage[],
-  opts: ChatOptions<T> = {},
+  opts: ChatOptions<T>,
 ): Promise<ChatResult<T>> {
   // Cerebras rate-limit gate. Blocks until this call is cleared under the
   // per-minute limits. No-op in mocked test suites.
@@ -105,8 +107,8 @@ export async function generateChat<T>(
     temperature: opts.temperature ?? LLM.defaultTemperature,
     // No maxOutputTokens, on purpose: see `LLM.maxToolStepOutputTokens`.
     maxRetries: opts.maxRetries ?? LLM.maxRetries,
-    // reasoning_effort on the wire (tuning LLM.reasoningEffort).
-    providerOptions: llmProviderOptions(),
+    // reasoning_effort and the Context's prompt_cache_key on the wire.
+    providerOptions: llmProviderOptions(opts.promptCacheKey),
     // Env-gated OTel span, stage-labelled, learner content redacted.
     experimental_telemetry: llmTelemetry(opts.telemetryFunctionId ?? "generateChat"),
   };
