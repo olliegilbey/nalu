@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { expectNoPlaintextAnswerKey } from "@/lib/testing/expectNoPlaintextAnswerKey";
 
 // Mock all external dependencies before importing SUT.
 vi.mock("@/lib/turn/executeTurn", () => ({ executeTurn: vi.fn() }));
@@ -103,7 +104,7 @@ function mcQuestion(id: string, tier: number) {
 }
 
 /**
- * Minimal valid BaselineTurn returned by executeTurn.
+ * Minimal valid baseline Turn returned by executeTurn.
  * Shape: `{ userMessage, questions: { questions: [...] } }`.
  * Needs >=7 questions (BASELINE.minQuestions).
  */
@@ -176,7 +177,7 @@ describe("generateBaseline", () => {
 
     const result = await generateBaseline({ courseId: COURSE_ID, userId: USER_ID });
 
-    expect(JSON.stringify(result)).not.toMatch(/"(correct|freetextRubric)":/);
+    expectNoPlaintextAnswerKey(result);
     const [first] = result.baseline.questions.questions;
     if (first?.type !== "multiple_choice") throw new Error("expected an MC question");
     // Every fixture question's key is A.
@@ -203,7 +204,7 @@ describe("generateBaseline", () => {
     // Reconstructed via makeBaselineSchema — question count must match stored.
     expect(result.baseline.questions.questions).toHaveLength(7);
     // The replay is projected too: stored keys stay server-side.
-    expect(JSON.stringify(result)).not.toMatch(/"(correct|freetextRubric)":/);
+    expectNoPlaintextAnswerKey(result);
 
     // Must NOT hit the LLM
     expect(executeTurn).not.toHaveBeenCalled();

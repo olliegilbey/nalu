@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { deriveStrandedScopingTurn } from "./deriveStrandedScopingTurn";
-import type { CourseState, ScopingQuestionnaireForClient } from "./getState";
+import type { CourseState } from "./getState";
+import type { ScopingQuestionnaireForClient } from "./redactQuestionnaire";
 import type { FrameworkJsonb } from "@/lib/types/jsonb";
 
 const clarification: ScopingQuestionnaireForClient = {

@@ -1,5 +1,5 @@
 import { encodeCorrect } from "@/lib/security/obfuscateCorrect";
-import type { V3Question } from "@/lib/types/jsonb";
+import type { BaselineJsonb, ClarificationJsonb, V3Question, V3Response } from "@/lib/types/jsonb";
 import { KEY_TO_INDEX, type McOptions } from "@/lib/types/mcOptionKey";
 
 /**
@@ -56,6 +56,31 @@ export function redactQuestion(q: V3Question): QuestionForClient {
     };
   }
   return { id: q.id, type: "free_text", prompt: q.prompt, tier: q.tier };
+}
+
+/**
+ * Client-safe projection of a scoping questionnaire column (`clarification` or
+ * `baseline`): the model's framing, the redacted questions, and the saved answers.
+ */
+export interface ScopingQuestionnaireForClient {
+  readonly userMessage: string;
+  readonly questions: readonly QuestionForClient[];
+  readonly responses: readonly V3Response[];
+}
+
+/**
+ * Project a stored scoping questionnaire column through {@link redactQuestion}.
+ * Drops a closed baseline's gradings and summaries too: no client reads them.
+ */
+export function redactScopingQuestionnaire(
+  stored: ClarificationJsonb | BaselineJsonb | null,
+): ScopingQuestionnaireForClient | null {
+  if (stored === null) return null;
+  return {
+    userMessage: stored.userMessage,
+    questions: stored.questions.map(redactQuestion),
+    responses: stored.responses,
+  };
 }
 
 /**

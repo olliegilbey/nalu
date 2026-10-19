@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { expectNoPlaintextAnswerKey } from "@/lib/testing/expectNoPlaintextAnswerKey";
 import { getState } from "./getState";
 
 vi.mock("@/db/queries/courses", () => ({
@@ -15,9 +16,6 @@ import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
 import { KEY_TO_INDEX } from "@/lib/types/mcOptionKey";
 
 const mockedGetCourse = vi.mocked(getCourseById);
-
-/** Matches a plaintext grading key as a JSON key. `"correctEnc":` does not match. */
-const PLAINTEXT_KEY = /"(correct|freetextRubric)":/;
 
 /** Stored clarify questions: an ungraded MC (no `correct`) and a free-text question. */
 const STORED_CLARIFICATION = {
@@ -152,7 +150,7 @@ describe("getState", () => {
 
     const result = await getState({ userId: "u1", courseId: "c4" });
 
-    expect(JSON.stringify(result)).not.toMatch(PLAINTEXT_KEY);
+    expectNoPlaintextAnswerKey(result);
     // The client keeps instant MC feedback: the key arrives id-bound and encoded.
     const [mc, ft] = result.baseline?.questions ?? [];
     if (mc?.type !== "multiple_choice") throw new Error("expected an MC question");
@@ -195,7 +193,7 @@ describe("getState", () => {
 
     const result = await getState({ userId: "u1", courseId: "c5" });
 
-    expect(JSON.stringify(result)).not.toMatch(PLAINTEXT_KEY);
+    expectNoPlaintextAnswerKey(result);
     expect(result.scopingResult?.startingTier).toBe(1);
   });
 

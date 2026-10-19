@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { expectNoPlaintextAnswerKey } from "@/lib/testing/expectNoPlaintextAnswerKey";
 import { redactQuestion, redactQuestionnaireTurn } from "./redactQuestionnaire";
 import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
 import { KEY_TO_INDEX } from "@/lib/types/mcOptionKey";
@@ -39,7 +40,7 @@ describe("redactQuestion", () => {
     });
     if (q.type !== "multiple_choice") throw new Error("expected an MC question");
     expect(q.correctEnc).toBeUndefined();
-    expect(JSON.stringify(q)).not.toMatch(/"(correct|freetextRubric)":/);
+    expectNoPlaintextAnswerKey(q);
   });
 
   it("drops a free-text rubric and concept name", () => {

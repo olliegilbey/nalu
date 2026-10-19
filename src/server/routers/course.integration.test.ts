@@ -11,6 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { expectNoPlaintextAnswerKey } from "@/lib/testing/expectNoPlaintextAnswerKey";
 import { NoObjectGeneratedError } from "ai";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { appRouter } from "./index";
@@ -771,9 +772,6 @@ describe("course.submitBaseline", () => {
 // ===========================================================================
 
 describe("scoping wire", () => {
-  /** A plaintext grading key as a JSON key. `"correctEnc":` does not match. */
-  const PLAINTEXT_KEY = /"(correct|freetextRubric)":/;
-
   // Mirrors the Wave's guard (`getWaveState.integration.test.ts`): every
   // scoping payload the client receives drops rubrics, and a graded MC key
   // arrives only as the id-bound `correctEnc`.
@@ -788,7 +786,7 @@ describe("scoping wire", () => {
       const caller = appRouter.createCaller({ userId: USER });
 
       const clarifyResult = await caller.course.clarify({ topic: "Rust" });
-      expect(JSON.stringify(clarifyResult)).not.toMatch(PLAINTEXT_KEY);
+      expectNoPlaintextAnswerKey(clarifyResult);
       const { courseId } = clarifyResult;
       await caller.course.generateFramework({
         courseId,
@@ -799,11 +797,11 @@ describe("scoping wire", () => {
       });
 
       const baselineResult = await caller.course.generateBaseline({ courseId });
-      expect(JSON.stringify(baselineResult)).not.toMatch(PLAINTEXT_KEY);
+      expectNoPlaintextAnswerKey(baselineResult);
 
       // Before submit: the open baseline card's MC keys decode to the stored `A`.
       const open = await caller.course.getState({ courseId });
-      expect(JSON.stringify(open)).not.toMatch(PLAINTEXT_KEY);
+      expectNoPlaintextAnswerKey(open);
       for (const q of open.baseline?.questions ?? []) {
         if (q.type !== "multiple_choice") throw new Error(`expected MC, got ${q.type}`);
         expect(decodeCorrect(q.id, q.correctEnc ?? "")).toBe(KEY_TO_INDEX.A);
@@ -818,7 +816,7 @@ describe("scoping wire", () => {
       await caller.course.submitBaseline({ courseId, answers });
       const closed = await caller.course.getState({ courseId });
       expect(closed.status).toBe("active");
-      expect(JSON.stringify(closed)).not.toMatch(PLAINTEXT_KEY);
+      expectNoPlaintextAnswerKey(closed);
     });
   });
 });

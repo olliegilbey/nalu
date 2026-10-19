@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { deriveActiveScopingQuestionnaire } from "./deriveActiveScopingQuestionnaire";
-import type { CourseState, ScopingQuestionnaireForClient } from "./getState";
+import type { CourseState } from "./getState";
+import type { ScopingQuestionnaireForClient } from "./redactQuestionnaire";
 import type { FrameworkJsonb } from "@/lib/types/jsonb";
 import { encodeCorrect } from "@/lib/security/obfuscateCorrect";
 import { KEY_TO_INDEX } from "@/lib/types/mcOptionKey";
