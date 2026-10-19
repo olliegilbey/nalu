@@ -11,9 +11,9 @@ import { everyHostIsLoopback } from "./everyHostIsLoopback";
  * `public`. Other schemas, such as a local Supabase stack's `auth`, are left
  * alone. One transaction: a failure leaves the database as it was.
  *
- * Refuses unless every host in `DIRECT_URL` is this machine. `.env.local`
- * may hold the production Supabase URL (see `docs/DEPLOY.md`), and this is
- * destructive.
+ * Refuses unless every host in `DIRECT_URL` is this machine. This is
+ * destructive, and an exported `DIRECT_URL` or a stale `.env.local` can still
+ * name production (see `docs/DEPLOY.md`).
  */
 async function main(): Promise<void> {
   const env = getEnv();

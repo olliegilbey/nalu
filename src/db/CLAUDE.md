@@ -18,12 +18,23 @@ Layout:
 - `seed.ts` — idempotent dev-user seed.
 - `reset.ts` — `just db-reset` wipe: drops the `public` and `drizzle`
   schemas at `DIRECT_URL`. Refuses unless `everyHostIsLoopback` (`everyHostIsLoopback.ts`)
-  passes the hosts postgres-js parsed; `.env.local` may point at production.
+  passes the hosts postgres-js parsed: it is destructive.
+- `assertRemoteDirectUrl.ts` — `just db-migrate-prod` gate. Refuses a
+  missing `DIRECT_URL`, or one `everyHostIsLoopback` passes, so a production
+  migration never lands on the dev database.
 - `testing/` — testcontainers harness for integration tests.
 - `client.ts` — Drizzle singleton against `DATABASE_URL` (pooled).
 
+Dev database: `just db-up` runs `postgres:16-alpine` (the integration-test
+image) as the `nalu-dev-db` container on `127.0.0.1:54322`, with a named
+volume. `.env.local` points there and holds no production values. The
+migrations need nothing Supabase-specific: `0008_enable_rls` enables RLS with
+no policies, and the `postgres` superuser bypasses RLS.
+
 Workflow: edit schema TS → `just db-generate <name>` → review SQL diff →
-commit both. `just db-migrate` applies. CI re-runs in ephemeral Postgres.
+commit both. `just db-migrate` applies to dev. `just db-migrate-prod` applies
+to production, reading `DIRECT_URL` from the gitignored
+`.env.production.local`. CI re-runs in ephemeral Postgres.
 
 `schemaMigrationDrift.test.ts` (unit tier) diffs the schema against the
 newest committed snapshot, as `generate` does. Red prints the SQL that would

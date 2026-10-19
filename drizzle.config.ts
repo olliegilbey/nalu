@@ -11,8 +11,9 @@ import { defineConfig } from "drizzle-kit";
  * documented inline in that migration.
  *
  * Environment loading: justfile sets `dotenv-filename := ".env.local"`
- * so `just db-*` recipes auto-load .env.local before invoking
- * drizzle-kit. Run drizzle-kit only via `just db-*` recipes.
+ * so `just db-*` recipes auto-load .env.local (the dev database) before
+ * invoking drizzle-kit. `just db-migrate-prod` swaps in the gitignored
+ * .env.production.local. Run drizzle-kit only via `just db-*` recipes.
  */
 export default defineConfig({
   schema: "./src/db/schema",

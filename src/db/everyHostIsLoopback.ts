@@ -1,13 +1,13 @@
 /**
  * Hostnames that name this machine. No IPv6 `[::1]`: postgres-js reads that
- * host as `[`, so a reset could never connect to it.
+ * host as `[`, so no script could ever connect to it.
  */
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1"]);
 
 /**
  * True when every host in a postgres-js client's parsed host list names this
- * machine. Guards destructive dev scripts: `.env.local` may hold the
- * production Supabase URL.
+ * machine. Guards the DB scripts both ways: `reset.ts` refuses a remote host,
+ * and `assertRemoteDirectUrl.ts` refuses a loopback one.
  *
  * Pass `client.options.host`, never a host parsed some other way. postgres-js
  * splits the userinfo at the first `@` and reads commas as a host list, so
