@@ -17,13 +17,15 @@ import { userProfiles } from "./userProfiles";
  * Each Wave close rewrites it whole from its own `summary` field
  * (`persistWaveClose`). Every Wave turn renders it as `<progress_summary>`.
  *
- * `total_xp` is a cached aggregate (see §3 decisions). Nothing recomputes it.
- * Three writers keep it in step, each in the transaction that makes the award:
+ * `total_xp` is a cached aggregate (see §3 decisions). Three writers keep it
+ * in step, each in the transaction that makes the award:
  * - scoping close adds the baseline XP (`persistScopingClose`);
  * - each grading adds the change it makes to `assessments.xp_awarded`
  *   (`applyAssessmentGrading`, from mid-turn and Wave close);
  * - Wave close adds `WAVE.completionXp` (`persistWaveClose`).
- * Rows graded before issue #205's fix are missing from it (backfill: #208).
+ * The repair `recomputeCourseTotalXp` (`just recompute-course-xp`) sets it
+ * from those same sources. It adds the XP of rows graded before issue #205's
+ * fix, which no writer added (issue #208).
  */
 export const courses = pgTable(
   "courses",
@@ -62,9 +64,7 @@ export const courses = pgTable(
     ),
     // Every award is non-negative, and a re-grade lowers the total by at most
     // the XP that row added. So a negative `total_xp` would indicate
-    // corruption or a buggy mutator. That holds for rows graded after issue
-    // #205's fix. A pre-fix row re-graded lower takes XP the total never
-    // gained, and can trip this CHECK until the #208 backfill runs.
+    // corruption or a buggy mutator.
     check("courses_total_xp_nonneg", sql`${t.totalXp} >= 0`),
     // Most queries filter by userId; index prevents seq-scans on large tables.
     index("courses_user_id_idx").on(t.userId),

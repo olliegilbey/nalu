@@ -105,6 +105,12 @@ db-reset:
 db-seed:
     bun src/db/seed.ts
 
+# Repair courses.total_xp from its source rows (issue #208). A dry run by
+# default: it prints counts and writes nothing. Pass --apply to write. It runs
+# against DATABASE_URL in `.env.local`, which may point at production.
+recompute-course-xp *args:
+    bun scripts/recompute-course-total-xp.ts {{args}}
+
 # drizzle-kit history check: fails on an inconsistent migration chain. It does
 # not diff schema TS against the migrations, so it misses an ungenerated change.
 # `just test` catches that: see src/db/schemaMigrationDrift.test.ts.

@@ -12,6 +12,7 @@ export * from "./userProfiles";
 export * from "./courses";
 export * from "./courses.scoping";
 export * from "./courses.tx";
+export * from "./courses.repair";
 export * from "./scopingPasses";
 export * from "./waves";
 export * from "./waves.writes";

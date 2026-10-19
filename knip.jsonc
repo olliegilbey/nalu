@@ -5,6 +5,9 @@
     "src/db/reset.ts",
     "scripts/inspect-wave.ts",
     "scripts/probe-model.ts",
+    // The `!` makes it a production entry: the repair calls production code
+    // (`recomputeCourseTotalXp`, `listCourseIds`) that nothing else imports.
+    "scripts/recompute-course-total-xp.ts!",
     ".claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts",
     ".claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts",
     ".claude/skills/nalu-visitor-forensics/inspect-visitor.ts",

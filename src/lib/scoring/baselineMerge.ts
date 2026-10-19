@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { baselineGradingSchema } from "@/lib/types/jsonb";
-import { calculateXP } from "@/lib/scoring/xp";
+import { calculateBaselineXp } from "@/lib/scoring/xp";
 
 /** Persisted grading shape — matches `baselineGradingSchema` in jsonbBaseline. */
 export type StoredGrading = z.infer<typeof baselineGradingSchema>;
@@ -94,22 +94,18 @@ export function mergeAndComputeXp(params: MergeAndComputeXpParams): MergeAndComp
 
   // XP boundary: tier from placement (`startingTier`), quality from grading.
   // The LLM never sees this value — it's computed deterministically here.
-  const totalXp = merged.reduce(
-    (sum, g) => sum + calculateXP(params.parsed.startingTier, g.qualityScore),
-    0,
-  );
+  // `calculateBaselineXp` is the one home of this formula: the course XP
+  // repair recomputes the same sum from the stored gradings.
+  const totalXp = calculateBaselineXp(params.parsed.startingTier, merged);
 
   // Free-text subtotal: same XP formula, but restricted to questions with no
   // mechanical (MC-click) grading. A question is free-text iff its id is not
   // in `mechanicalGradings` — this also correctly includes a freetext-escape
   // answer on an MC question, which is LLM-graded rather than mechanical.
   const mechanicalQids = new Set(params.mechanicalGradings.map((g) => g.questionId));
-  const freeTextXp = merged.reduce(
-    (sum, g) =>
-      mechanicalQids.has(g.questionId)
-        ? sum
-        : sum + calculateXP(params.parsed.startingTier, g.qualityScore),
-    0,
+  const freeTextXp = calculateBaselineXp(
+    params.parsed.startingTier,
+    merged.filter((g) => !mechanicalQids.has(g.questionId)),
   );
 
   return { gradings: merged, totalXp, freeTextXp };

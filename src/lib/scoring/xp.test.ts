@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateXP, calculateMcXp } from "./xp";
+import { calculateBaselineXp, calculateXP, calculateMcXp } from "./xp";
 
 describe("calculateXP", () => {
   describe("standard calculations", () => {
@@ -67,5 +67,23 @@ describe("calculateMcXp", () => {
 
   it("rejects non-integer tier", () => {
     expect(() => calculateMcXp(1.5, true)).toThrow();
+  });
+});
+
+describe("calculateBaselineXp", () => {
+  // Every grading scores at the starting tier: 2×10×1.5 + 2×10×0.75 + 0.
+  it("sums each grading's XP at the starting tier", () => {
+    expect(
+      calculateBaselineXp(2, [{ qualityScore: 5 }, { qualityScore: 3 }, { qualityScore: 1 }]),
+    ).toBe(45);
+  });
+
+  // The scoping close rounds each grading, then sums: 38 + 38, not round(75).
+  it("rounds each grading before it sums", () => {
+    expect(calculateBaselineXp(5, [{ qualityScore: 3 }, { qualityScore: 3 }])).toBe(76);
+  });
+
+  it("returns 0 for no gradings", () => {
+    expect(calculateBaselineXp(3, [])).toBe(0);
   });
 });

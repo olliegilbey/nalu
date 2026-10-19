@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { courses, type Course } from "@/db/schema";
 import {
@@ -95,4 +95,16 @@ export async function getCourseById(id: string, userId?: string): Promise<Course
     throw new NotFoundError("course", id);
   }
   return courseRowGuard(row);
+}
+
+/**
+ * Every course id, oldest first. The XP repair script
+ * (`scripts/recompute-course-total-xp.ts`) loops over them.
+ */
+export async function listCourseIds(): Promise<readonly string[]> {
+  const rows = await db
+    .select({ id: courses.id })
+    .from(courses)
+    .orderBy(asc(courses.createdAt), asc(courses.id));
+  return rows.map((r) => r.id);
 }

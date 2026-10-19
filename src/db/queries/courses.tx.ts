@@ -19,8 +19,9 @@ import { NotFoundError } from "./errors";
  */
 
 /**
- * Lock a course row inside the caller's tx. The Wave save transactions call
- * it first, so every transaction that writes course XP queues on the course
+ * Lock a course row inside the caller's tx. The Wave save transactions and
+ * the XP repair (`recomputeCourseTotalXp`) call it first, so every
+ * transaction that writes course XP queues on the course
  * row before it locks a Wave or assessment row. One shared first lock means
  * no lock cycle between them.
  *

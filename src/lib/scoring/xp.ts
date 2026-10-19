@@ -50,3 +50,21 @@ export function calculateMcXp(tier: number, correct: boolean): number {
   if (!correct) return 0;
   return Math.round(validatedTier * XP.basePerTier * XP.mcCorrectMultiplier);
 }
+
+/**
+ * Deterministic XP for a closed baseline: each grading's `calculateXP` at the
+ * learner's starting tier, summed.
+ *
+ *   XP = Σ calculateXP(startingTier, grading.qualityScore)
+ *
+ * The tier is the placement (`startingTier`), never a grading's own concept
+ * tier: the LLM emits only quality. The scoping close (`mergeAndComputeXp`)
+ * and the course XP repair (`recomputeCourseTotalXp`) both call this, so the
+ * award and the repair cannot drift apart.
+ */
+export function calculateBaselineXp(
+  startingTier: number,
+  gradings: readonly { readonly qualityScore: number }[],
+): number {
+  return gradings.reduce((sum, g) => sum + calculateXP(startingTier, g.qualityScore), 0);
+}
