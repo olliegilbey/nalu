@@ -65,12 +65,15 @@ beforeEach(() => {
 });
 
 describe("WaveSession wave not found", () => {
-  it("says the course is missing and offers a new one", () => {
+  it("says the lesson is missing and offers a new course", () => {
     // A failed getState resolves nothing, so status and topic stay null.
     wave.value = waveState({ waveNotFound: true, status: null, topic: null, currentTier: null });
     render(<WaveSession courseId="c1" waveNumber={1} />);
 
-    expect(screen.getByText(/can't find this course/)).toBeTruthy();
+    // "Lesson", not "course": NOT_FOUND also covers a Wave number the
+    // learner's own course lacks (issue #230).
+    expect(screen.getByText(/can't find this lesson/)).toBeTruthy();
+    expect(screen.queryByText(/can't find this course/)).toBeNull();
     expect(composerProps.moveOn?.label).toBe("Start a new course");
     composerProps.moveOn?.onAdvance();
     expect(routerPush).toHaveBeenCalledWith("/");
@@ -79,7 +82,7 @@ describe("WaveSession wave not found", () => {
   it("shows no not-found message for a wave that loads", () => {
     wave.value = waveState({});
     render(<WaveSession courseId="c1" waveNumber={1} />);
-    expect(screen.queryByText(/can't find this course/)).toBeNull();
+    expect(screen.queryByText(/can't find this lesson/)).toBeNull();
     expect(composerProps.moveOn).toBeUndefined();
   });
 });

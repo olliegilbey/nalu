@@ -58,7 +58,7 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
 
   // getState found no course for this learner: a wrong URL, or a course
   // another browser started. Say so, rather than show an empty chat.
-  if (courseNotFound) return <CourseNotFound />;
+  if (courseNotFound) return <CourseNotFound message={t<string>("courseNotFound.message")} />;
 
   // Map ChatEntry[] → array of <MessageBubble> / structured renderers.
   // The scoping flow never emits `assistant-text-with-questionnaire` (that's a

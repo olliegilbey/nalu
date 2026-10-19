@@ -66,9 +66,10 @@ export function WaveSession({
   // Composer immediately, rather than lingering until the server round-trip.
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
-  // getState found no such Wave for this learner: a wrong URL, or a course
-  // another browser started. Say so, rather than show an empty chat.
-  if (waveNotFound) return <CourseNotFound />;
+  // getState found no such Wave for this learner: a wrong URL, a course
+  // another browser started, or a Wave number this course lacks. One NOT_FOUND
+  // covers all three, so the copy says "lesson", which is true of each (#230).
+  if (waveNotFound) return <CourseNotFound message={t<string>("waveNotFound.message")} />;
 
   // Map ChatEntry[] → scroll JSX. The switch is exhaustive over ChatEntry's
   // kinds so a future variant addition becomes a compile-time error here.
