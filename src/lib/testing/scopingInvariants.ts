@@ -91,17 +91,18 @@ export function assertFrameworkStructural(framework: FrameworkJsonb): void {
  * Assert that a baseline assessment meets the structural invariants needed for
  * the answering + grading flows.
  *
- * Accepts a `BaselineTurn` (the new wire/return shape from generateBaseline):
- * `{ userMessage, questions: { questions: [...] } }`.
+ * Accepts the persisted `courses.baseline` JSONB, `{ questions: [...] }`. The
+ * `generateBaseline` router result is the client projection: it carries no
+ * `conceptName` or `freetextRubric`, so the check reads the stored questions.
  *
- * @param baseline - The `baseline` field from the `generateBaseline` router result.
+ * @param baseline - The persisted baseline, parsed with `baselineJsonbSchema`.
  * @param framework - The framework used to generate the baseline (for tier validation).
  */
 export function assertBaselineStructural(
-  baseline: { readonly questions: { readonly questions: readonly unknown[] } },
+  baseline: { readonly questions: readonly unknown[] },
   framework: FrameworkJsonb,
 ): void {
-  const questions = baseline.questions.questions as ReadonlyArray<{
+  const questions = baseline.questions as ReadonlyArray<{
     readonly id: string;
     readonly tier?: number;
     readonly conceptName?: string;

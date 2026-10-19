@@ -268,7 +268,7 @@ The system prompt is crystallised **once per phase** (scoping, or a single Wave)
 - **Final turn**: one JSON object with the closing message, gradings for cards answered this turn, a Wave summary, the next Wave's blueprint (topic, outline, opening text, planned concepts), and per-concept SM-2 quality scores.
 - **Scoping close**: the same close-turn base, plus a durable learner profile and the starting tier.
 
-Exact schemas live in `src/lib/prompts/` (`waveTurn.ts`, `waveClose.ts`, `closeTurn.ts`, `scopingClose.ts`, `questionnaire.ts`). Tool schemas live in `src/lib/course/waveTurnTools.ts`. The Harness redacts answer keys from every Wave client payload (Section 8.2). Scoping still ships them (#58).
+Exact schemas live in `src/lib/prompts/` (`waveTurn.ts`, `waveClose.ts`, `closeTurn.ts`, `scopingClose.ts`, `questionnaire.ts`). Tool schemas live in `src/lib/course/waveTurnTools.ts`. The Harness redacts answer keys from every Wave and scoping client payload (Section 8.2).
 
 ### 5.2 Quality Score Mapping
 
@@ -355,7 +355,7 @@ Before any user text enters a prompt:
 - XP is calculated by the harness, not the model. The model returns a quality score (0-5) and the harness computes XP. The model has no concept of XP values.
 - Tier advancement requires minimum concept counts and quality thresholds. A user cannot skip tiers.
 - Assessment answers are evaluated by the LLM, but the evaluation prompt does not include the user's self-assessment. The model judges independently.
-- The client never receives a plaintext answer key before the learner submits. Wave turns hold this; scoping does not yet (issue #58).
+- The client never receives a plaintext answer key before the learner submits. Wave turns and scoping both hold this. Rubrics never cross the wire. A multiple-choice key ships only obfuscated and bound to its question id, so the client can score a click instantly. Grading reads the stored keys, never a client-sent one.
 - If the model's quality score seems inflated (e.g. consistently returning 5 for trivial answers), this is detectable in analytics and addressable by tuning the evaluation prompt. Post-MVP concern.
 
 ---
