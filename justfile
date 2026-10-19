@@ -69,9 +69,11 @@ format:
 format-check:
     bun x prettier --check .
 
-# Find unused exports, deps, files
+# Find unused exports, deps, files. The --production pass skips tests, so it
+# also fails on an export that only tests use.
 deadcode:
     bun x knip
+    bun x knip --production
 
 # Run all checks (format + lint + typecheck + unit + integration + deadcode).
 # Matches CI; green locally means green on PR.
