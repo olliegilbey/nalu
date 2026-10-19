@@ -102,7 +102,7 @@ The Drizzle schema lives in `src/db/schema/`, one file per table.
 | `scoping_passes`   | One per course. Parents the scoping Context.                                                                                                                            |
 | `waves`            | One row per Wave. Freezes the seed inputs (tier, framework, due concepts, seed blueprint). Stores the Wave's summary, the next Wave's blueprint, and the UI `chat_log`. |
 | `context_messages` | Append-only Context rows for scoping or one Wave. No system rows: the Harness re-renders the system prompt from seed columns.                                           |
-| `concepts`         | Per-course concepts with SM-2 state. The correct/incorrect counter columns have no writer today (#154).                                                                 |
+| `concepts`         | Per-course concepts with SM-2 state.                                                                                                                                    |
 | `assessments`      | In-Wave graded answers that earn XP. Baseline grades live on `courses.baseline`, not here.                                                                              |
 
 Product rules:
@@ -110,7 +110,7 @@ Product rules:
 - Scoping outputs on `courses` do not change after scoping.
 - A course has at most one open Wave.
 - Concept names are unique per course, case-insensitive.
-- `courses.total_xp` is a cached aggregate. Logic never reads it to decide anything. `user_profiles.total_xp` has no writer today (#154).
+- `courses.total_xp` is a cached aggregate. Logic never reads it to decide anything. No lifetime XP column exists; a surface that needs one sums `courses.total_xp` per user.
 
 ---
 
