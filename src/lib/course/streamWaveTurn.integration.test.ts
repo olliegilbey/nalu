@@ -1100,13 +1100,13 @@ describe("streamWaveTurn (integration)", () => {
       // A chat turn binds none.
       expect(agentBuildSpy.mock.calls.map(([p]) => p.answeredQuestionIds)).toEqual([[], ["q1"]]);
 
-      // The result part carries the grade. It fails if grading is skipped.
+      // The result part carries the grade's XP. It fails if grading is skipped.
       const resultPart = second.parts.at(-1)!;
       expect(resultPart.type).toBe("data-turn-result");
       const expectedXp = calculateMcXp(QUIZ_INPUT.questions[0]!.tier, true);
       expect(resultPart["data"]).toMatchObject({
         kind: "mid-turn",
-        gradedSignals: [{ questionId: "q1", correct: true, xpAwarded: expectedXp }],
+        gradedSignals: [{ questionId: "q1", xpAwarded: expectedXp }],
       });
       // The assessment row holds the same grade, keyed on the namespaced id.
       const row = await getAssessmentByWaveAndQuestionId(
@@ -1148,11 +1148,12 @@ describe("streamWaveTurn (integration)", () => {
       const firstData = first.parts.at(-1)!["data"] as {
         newQuestionnaire: { questionnaireId: string } | null;
       };
+      const questionnaireId = firstData.newQuestionnaire!.questionnaireId;
       const params = {
         userId: USER_ID,
         courseId,
         waveNumber: 1,
-        payload: correctAnswerPayload(firstData.newQuestionnaire!.questionnaireId),
+        payload: correctAnswerPayload(questionnaireId),
       };
 
       // Attempt 1 dies after prepareWaveTurn appended the learner's answers.
@@ -1165,8 +1166,14 @@ describe("streamWaveTurn (integration)", () => {
       await streamWaveTurn(params, retry.writer);
       expect(retry.parts.at(-1)!["data"]).toMatchObject({
         kind: "mid-turn",
-        gradedSignals: [{ questionId: "q1", correct: true }],
+        gradedSignals: [{ questionId: "q1" }],
       });
+      // The assessment row holds the grade, keyed on the namespaced id.
+      const row = await getAssessmentByWaveAndQuestionId(
+        waveId,
+        namespaceQuestionId(questionnaireId, "q1"),
+      );
+      expect(row).toMatchObject({ isCorrect: true });
       // chat_log holds exactly one learner answers entry.
       const wave = await getWaveById(waveId);
       const answers = (wave.chatLog as WaveChatLog).filter(

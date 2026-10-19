@@ -33,7 +33,6 @@ export interface PersistWaveMidTurnResult {
     readonly kind: GradedSignal["kind"];
     readonly questionId: string;
     readonly xpAwarded: number;
-    readonly correct?: boolean;
     readonly qualityScore?: number;
   }[];
 }

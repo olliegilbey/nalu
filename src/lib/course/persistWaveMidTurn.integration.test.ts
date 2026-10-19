@@ -417,8 +417,8 @@ describe("persistWaveMidTurn (integration)", () => {
 
   // ---------------------------------------------------------------------------
   // 2c. Issue #198: the model's verdict disagrees with its score. The score
-  //     sets XP, so the Harness derives correctness from it too. The row and
-  //     the turn result must agree with the score, not the verdict.
+  //     sets XP, so the Harness derives correctness from it too. The row's
+  //     `is_correct` and the turn result's XP follow the score, not the verdict.
   // ---------------------------------------------------------------------------
   it("free-text verdict that disagrees with its score → correctness follows the score", async () => {
     await withTestDb(async () => {
@@ -449,7 +449,7 @@ describe("persistWaveMidTurn (integration)", () => {
       const result = await persistWaveMidTurn({ ctx, parsed, payload, turnsRemaining: 4 });
 
       expect(result.gradedSignals).toEqual([
-        { kind: "free-text", questionId: "q-ft", xpAwarded: 0, correct: false, qualityScore: 0 },
+        { kind: "free-text", questionId: "q-ft", xpAwarded: 0, qualityScore: 0 },
       ]);
       const ftRow = (
         await db.select().from(assessments).where(eq(assessments.questionId, ftQuestionId))
