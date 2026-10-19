@@ -1,9 +1,8 @@
 import type { DbOrTx } from "@/db/client";
 import { insertOpenAssessments } from "@/db/queries/assessments.open";
 import { upsertConcept } from "@/db/queries/concepts.writes";
-import { encodeCorrect } from "@/lib/security/obfuscateCorrect";
-import { KEY_TO_INDEX, type McOptions } from "@/lib/types/mcOptionKey";
 import { namespaceQuestionId } from "./namespaceQuestionId";
+import { redactQuestion, type QuestionForClient } from "./redactQuestionnaire";
 import type { Questionnaire } from "@/lib/prompts/questionnaire";
 
 /**
@@ -24,13 +23,7 @@ import type { Questionnaire } from "@/lib/prompts/questionnaire";
  */
 export interface NewQuestionnaireProjection {
   readonly questionnaireId: string;
-  readonly questions: readonly {
-    readonly id: string;
-    readonly type: "multiple_choice" | "free_text";
-    readonly prompt: string;
-    readonly options?: McOptions;
-    readonly correctEnc?: string;
-  }[];
+  readonly questions: readonly QuestionForClient[];
 }
 
 /** Inputs to `insertNewQuestionnaire`. */
@@ -133,34 +126,19 @@ export async function insertNewQuestionnaire(
   );
 
   // --- Project to client-safe shape ----------------------------------------
-  // MC: compute correctEnc from the question's `correct` letter (must be
-  // present on graded MC). Free-text: no `options`/`correctEnc` emitted.
-  // The discriminated-union narrowing inside .map preserves per-branch
-  // invariants without a uniform widening cast.
+  // `redactQuestion` is the one projection every persisted question takes on
+  // its way to the client: MC `correct` → `correctEnc`, rubric dropped.
   const questions = params.questionnaire.questions.map((q) => {
-    if (q.type === "multiple_choice") {
-      if (q.correct === undefined) {
-        // Defensive backstop: the `presentQuestionnaire` tool's superRefine
-        // already requires `correct` on every MC question; this throw only
-        // fires if that guard regresses. Fail loud rather than emit a useless
-        // projection.
-        throw new Error(
-          `insertNewQuestionnaire: MC question id=${q.id} missing required correct key`,
-        );
-      }
-      return {
-        id: q.id,
-        type: "multiple_choice" as const,
-        prompt: q.prompt,
-        options: q.options,
-        correctEnc: encodeCorrect(q.id, KEY_TO_INDEX[q.correct]),
-      };
+    if (q.type === "multiple_choice" && q.correct === undefined) {
+      // Defensive backstop: the `presentQuestionnaire` tool's superRefine
+      // already requires `correct` on every MC question; this throw only
+      // fires if that guard regresses. Fail loud rather than emit an
+      // ungraded card.
+      throw new Error(
+        `insertNewQuestionnaire: MC question id=${q.id} missing required correct key`,
+      );
     }
-    return {
-      id: q.id,
-      type: "free_text" as const,
-      prompt: q.prompt,
-    };
+    return redactQuestion(q);
   });
 
   return {

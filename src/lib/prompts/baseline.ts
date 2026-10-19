@@ -140,6 +140,3 @@ export function makeBaselineSchema(params: MakeBaselineSchemaParams) {
       }
     });
 }
-
-/** Inferred per-call Baseline payload — `z.infer` over the factory return. */
-export type BaselineTurn = z.infer<ReturnType<typeof makeBaselineSchema>>;

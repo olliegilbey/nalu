@@ -74,5 +74,8 @@
     "message": "I can't find this course. It may belong to another browser, or the link may be wrong.",
     "action": "Start a new course"
   },
+  "waveNotFound": {
+    "message": "I can't find this lesson. It may belong to another browser, or the link may be wrong."
+  },
   "xp": { "gained": "10 XP Gained" }
 }
