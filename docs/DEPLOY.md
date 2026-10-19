@@ -82,7 +82,10 @@ Preview anyway.
   Set it to any UUID — a known wart, not a functional dependency.
 - **Migrations do not run on deploy.** A schema change requires
   `drizzle-kit migrate` against the cloud `DIRECT_URL` before the deploy that
-  depends on it.
+  depends on it. A migration that drops a column reverses the order. The app
+  selects every schema column by name, so the deployed code fails once its
+  column is gone. Merge, let Vercel deploy the code that no longer names the
+  column, then migrate.
 - **`getBaseUrl()`** (`src/lib/trpc.ts`) has a `localhost` fallback for
   server-side tRPC calls. Harmless today — every page fetches client-side, so
   the fallback is never reached — but revisit if SSR/RSC tRPC prefetching is

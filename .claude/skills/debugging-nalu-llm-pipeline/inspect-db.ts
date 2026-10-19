@@ -188,7 +188,7 @@ if (courseId) {
   console.table(passes);
 
   const users = await sql`
-    SELECT id, display_name, total_xp, created_at
+    SELECT id, display_name, created_at
     FROM user_profiles
     WHERE created_at > ${cutoff}
     ORDER BY created_at DESC`;
