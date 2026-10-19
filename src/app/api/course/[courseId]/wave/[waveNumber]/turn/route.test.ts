@@ -20,14 +20,37 @@ import { POST } from "./route";
 const USER_ID = "55555555-5555-5555-5555-555555555555";
 const COURSE_ID = "3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f";
 
-/** POST one raw body to the route for Wave `waveNumber`. */
-function post(waveNumber: string, body: unknown): Promise<Response> {
+/** POST one raw body string to the route for Wave `waveNumber`. */
+function postRaw(waveNumber: string, rawBody: string): Promise<Response> {
   const req = new Request(`http://localhost/api/course/${COURSE_ID}/wave/${waveNumber}/turn`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: rawBody,
   });
   return POST(req, { params: Promise.resolve({ courseId: COURSE_ID, waveNumber }) });
 }
+
+/** POST one body, serialised as JSON, to the route for Wave `waveNumber`. */
+function post(waveNumber: string, body: unknown): Promise<Response> {
+  return postRaw(waveNumber, JSON.stringify(body));
+}
+
+/** Every line the route wrote to stderr, through either channel. */
+const logged: string[] = [];
+
+beforeEach(() => {
+  logged.length = 0;
+  vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+    logged.push(String(chunk));
+    return true;
+  });
+  vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+    logged.push(
+      args
+        .map((a) => (a instanceof Error ? `${a.stack} ${JSON.stringify(a)}` : String(a)))
+        .join(" "),
+    );
+  });
+});
 
 describe("POST wave turn: the input boundary", () => {
   beforeEach(() => {
@@ -99,6 +122,22 @@ describe("POST wave turn: the input boundary", () => {
     for (const value of unquoted) expect(text).not.toContain(value);
   });
 
+  // A body that is not a JSON object gets one fixed 400. V8's SyntaxError
+  // quotes the start of the body (learner text), so nothing may log it.
+  it.each([
+    { name: "a body that is not JSON", rawBody: "hello world, my answer is move semantics" },
+    { name: "a JSON null body", rawBody: "null" },
+    { name: "a JSON array body", rawBody: '[{"kind":"chat-text","text":"hi"}]' },
+  ])("rejects $name with a fixed 400 and logs nothing", async ({ rawBody }) => {
+    const res = await postRaw("1", rawBody);
+
+    expect(res.status).toBe(400);
+    // Exact equality: the body carries the fixed text and no echo of the input.
+    expect(await res.json()).toEqual({ error: "Body must be a JSON object." });
+    expect(streamWaveTurn).not.toHaveBeenCalled();
+    expect(logged).toEqual([]);
+  });
+
   it("parses exactly the payload type streamWaveTurn takes", () => {
     // Type-level pin (issue #124): `tsc --noEmit` fails if the route's
     // schema and the payload type drift apart. Nothing runs here.
@@ -111,9 +150,6 @@ describe("POST wave turn: the input boundary", () => {
 /** Turn content that must reach neither the client nor the log (#169). */
 const SECRET = '{"correct":"B","freetextRubric":"Names move semantics."}';
 
-/** Every line the route wrote to stderr, through either channel. */
-const logged: string[] = [];
-
 /** POST one chat-text turn and return the streamed SSE body. */
 async function postTurn(): Promise<string> {
   const res = await post("1", { payload: { kind: "chat-text", text: "hi" } });
@@ -121,21 +157,6 @@ async function postTurn(): Promise<string> {
 }
 
 describe("POST wave turn: a failed Turn", () => {
-  beforeEach(() => {
-    logged.length = 0;
-    vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
-      logged.push(String(chunk));
-      return true;
-    });
-    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
-      logged.push(
-        args
-          .map((a) => (a instanceof Error ? `${a.stack} ${JSON.stringify(a)}` : String(a)))
-          .join(" "),
-      );
-    });
-  });
-
   it("keeps a failed DB write's params off the wire and out of the log", async () => {
     vi.mocked(streamWaveTurn).mockRejectedValue(
       new DrizzleQueryError(

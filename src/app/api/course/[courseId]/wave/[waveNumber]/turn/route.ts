@@ -33,11 +33,21 @@ export async function POST(
   const { courseId, waveNumber } = await params;
   // The body carries ONLY the payload — context is rebuilt from the DB
   // (LLM-stateless principle; client messages are never trusted/needed).
-  const body: unknown = await req.json();
+  // Text that is not JSON maps to null, so it gets the fixed 400 below.
+  // V8's SyntaxError quotes the body's start (learner text), so it is never
+  // thrown on to a log. Any other read error is a server fault: rethrow.
+  const body: unknown = await req.json().catch((error: unknown) => {
+    if (error instanceof SyntaxError) return null;
+    throw error;
+  });
+  // JSON null, an array or a scalar carries no `payload` field either.
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return Response.json({ error: "Body must be a JSON object." }, { status: 400 });
+  }
   const input = submitTurnInputSchema.safeParse({
     courseId,
     waveNumber: Number(waveNumber),
-    payload: (body as { payload?: unknown }).payload,
+    payload: "payload" in body ? body.payload : undefined,
   });
   if (!input.success) {
     return Response.json({ error: z.treeifyError(input.error) }, { status: 400 });
