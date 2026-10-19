@@ -7,7 +7,7 @@ Next.js deploy — no `vercel.json` needed.
 ## Already done (one-time, external)
 
 - Supabase → **Allow anonymous sign-ins** enabled.
-- Cloud Postgres schema migrated (`drizzle-kit migrate` against `DIRECT_URL`).
+- Cloud Postgres schema migrated (`just db-migrate-prod`).
 - Anonymous auth is server-side only, so **no Supabase Site/Redirect URL
   config is required**.
 
@@ -28,21 +28,25 @@ Set every variable below in **Settings → Environment Variables**, scoped to
 set on first access. `src/proxy.ts` calls it on every page request, so a
 missing or malformed var 500s the whole app.
 
-The values match your local `.env.local`. It holds plain values, with no
-`op://` references (see `justfile`).
+Production values live here, in Vercel. `.env.local` holds dev values only
+(`.env.local.example`): its database is the local container from `just db-up`.
+The two production database URLs also live in your gitignored
+`.env.production.local`, for `just db-migrate-prod` and the read-only
+inspectors in `.claude/skills/`. All files hold plain values, with no `op://`
+references (see `justfile`).
 
-| Variable                               | Value                 | Notes                                                                    |
-| -------------------------------------- | --------------------- | ------------------------------------------------------------------------ |
-| `NEXT_PUBLIC_SUPABASE_URL`             | from `.env.local`     | public — inlined into the client bundle                                  |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | from `.env.local`     | `sb_publishable_…`; public                                               |
-| `SUPABASE_SECRET_KEY`                  | from `.env.local`     | `sb_secret_…`; secret                                                    |
-| `LLM_BASE_URL`                         | from `.env.local`     | `https://api.cerebras.ai/v1`                                             |
-| `LLM_API_KEY`                          | from `.env.local`     | Cerebras key; secret                                                     |
-| `LLM_MODEL`                            | from `.env.local`     | `gpt-oss-120b`; vet a replacement with `just probe-model`                |
-| `DATABASE_URL`                         | from `.env.local`     | **pooled** connection (`?pgbouncer=true`) — required for serverless      |
-| `DIRECT_URL`                           | from `.env.local`     | direct connection; used only by `drizzle-kit migrate`                    |
-| `DEV_USER_ID`                          | any valid UUID        | schema-required even in prod; unused by the prod auth path (see Gotchas) |
-| `POSTHOG_KEY`                          | `phc_…` ingestion key | optional — absent disables analytics; read by `src/proxy.ts`             |
+| Variable                               | Value                        | Notes                                                                    |
+| -------------------------------------- | ---------------------------- | ------------------------------------------------------------------------ |
+| `NEXT_PUBLIC_SUPABASE_URL`             | Supabase project             | public — inlined into the client bundle                                  |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase project             | `sb_publishable_…`; public                                               |
+| `SUPABASE_SECRET_KEY`                  | Supabase project             | `sb_secret_…`; secret                                                    |
+| `LLM_BASE_URL`                         | same as dev                  | `https://api.cerebras.ai/v1`                                             |
+| `LLM_API_KEY`                          | Cerebras                     | Cerebras key; secret                                                     |
+| `LLM_MODEL`                            | same as dev                  | `gpt-oss-120b`; vet a replacement with `just probe-model`                |
+| `DATABASE_URL`                         | also `.env.production.local` | **pooled** connection (`?pgbouncer=true`) — required for serverless      |
+| `DIRECT_URL`                           | also `.env.production.local` | direct connection; used only by `just db-migrate-prod`                   |
+| `DEV_USER_ID`                          | any valid UUID               | schema-required even in prod; unused by the prod auth path (see Gotchas) |
+| `POSTHOG_KEY`                          | `phc_…` ingestion key        | optional — absent disables analytics; read by `src/proxy.ts`             |
 
 `NEXT_PUBLIC_DEV_USER_ID` is **not** needed in production (dev-stub only).
 `POSTHOG_PERSONAL_API_KEY` is not needed either. Only the local
@@ -81,8 +85,15 @@ Preview anyway.
   production auth path (production identity comes from the Supabase session).
   Set it to any UUID — a known wart, not a functional dependency.
 - **Migrations do not run on deploy.** A schema change requires
-  `drizzle-kit migrate` against the cloud `DIRECT_URL` before the deploy that
-  depends on it.
+  `just db-migrate-prod` before the deploy that depends on it. The recipe
+  reads `DIRECT_URL` from `.env.production.local`, ignores the dev value in
+  `.env.local`, and refuses a loopback host
+  (`src/db/assertRemoteDirectUrl.ts`).
+- **Next.js and Bun read `.env.production.local` whenever
+  `NODE_ENV=production`**, ahead of `.env.local`. `just build` and
+  `just start` export `.env.local` first, and an exported value wins, so they
+  stay on the dev database. A bare `bun run start` or `next start` reads the
+  production URLs.
 - **`getBaseUrl()`** (`src/lib/trpc.ts`) has a `localhost` fallback for
   server-side tRPC calls. Harmless today — every page fetches client-side, so
   the fallback is never reached — but revisit if SSR/RSC tRPC prefetching is
