@@ -1,6 +1,10 @@
 import type { DbOrTx } from "@/db/client";
 import { calculateMcXp, calculateXP } from "@/lib/scoring/xp";
-import { updateAssessmentGrading } from "@/db/queries/assessments.grade";
+import {
+  lockAssessmentForGradingInTx,
+  updateAssessmentGrading,
+} from "@/db/queries/assessments.grade";
+import { incrementCourseXpInTx } from "@/db/queries/courses.tx";
 import { BASELINE } from "@/lib/config/tuning";
 import type { QualityScore } from "@/lib/types/spaced-repetition";
 import { verdictForQualityScore } from "@/lib/scoring/verdictBand";
@@ -38,7 +42,10 @@ export interface ApplyAssessmentGradingParams {
   readonly conceptTier: number;
   /** Either an MC-index correctness or a free-text LLM grading. */
   readonly signal: GradedSignal;
-  /** Caller's transaction handle so the assessment update is atomic with siblings. */
+  /**
+   * Caller's transaction handle, so the row update and the course XP bump
+   * commit with their siblings. The row lock holds until it ends.
+   */
   readonly tx: DbOrTx;
   /**
    * Optional learner answer text. When set, replaces the placeholder
@@ -61,8 +68,34 @@ export interface AppliedGrading {
  * (see `applySm2Update`). This split exists because XP awards happen
  * per-probe but SM-2 reads/writes must batch at Wave close to honour the
  * "review injection at Wave boundaries only" rule (spec §3 decisions).
+ *
+ * Awarding XP means two writes in the caller's tx: the row's `xp_awarded`,
+ * and the same change on `courses.total_xp` (issue #205). The bump follows
+ * the row, never the signal: a first grading adds the XP, and a replay of
+ * the same grading (a second tab, a replayed close) changes nothing, so it
+ * adds nothing. A re-grade that changes the XP moves the total by the
+ * difference, so the total always matches the rows.
+ *
+ * Callers lock the course row first (`lockCourseRowInTx`), before this locks
+ * the assessment row. See the lock order in `src/db/queries/CLAUDE.md`.
  */
 export async function applyAssessmentGrading(
+  params: ApplyAssessmentGradingParams,
+): Promise<AppliedGrading> {
+  // Lock the row before the write. A concurrent grading of the same row
+  // waits here until this tx ends, then reads the XP this one wrote.
+  const before = await lockAssessmentForGradingInTx(params.assessmentId, params.tx);
+  const applied = await writeAssessmentGrading(params);
+  // Add only this grading's change to the row's XP.
+  const xpChange = applied.xpAwarded - before.xpAwarded;
+  if (xpChange !== 0) {
+    await incrementCourseXpInTx(before.courseId, xpChange, params.tx);
+  }
+  return applied;
+}
+
+/** Compute one row's grading from its signal and write it to the row. */
+async function writeAssessmentGrading(
   params: ApplyAssessmentGradingParams,
 ): Promise<AppliedGrading> {
   if (params.signal.kind === "mc-index") {

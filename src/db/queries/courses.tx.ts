@@ -1,19 +1,41 @@
 import { sql } from "drizzle-orm";
 import type { DbOrTx } from "@/db/client";
 import type { BaselineClosedJsonb } from "@/lib/types/jsonb";
+import { NotFoundError } from "./errors";
 
 /**
- * `courses` queries for the close transactions: `persistScopingClose` and
- * `persistWaveClose`. Each takes the caller's `tx` and runs only on it.
- * Tests pass `db` to run one outside a transaction.
+ * `courses` queries for the transactions that write course state:
+ * `persistScopingClose`, `persistWaveClose` and `persistWaveMidTurn` (the
+ * mid-turn grading tx bumps XP through `applyAssessmentGrading`). Each takes
+ * the caller's `tx` and runs only on it. Tests pass `db` to run one outside a
+ * transaction.
  *
- * A `courses` write on the `db` singleton inside a close transaction would
- * wait on the row lock the transaction holds, and the transaction would wait
- * on it: a deadlock. These helpers re-fetch nothing; the close transactions
- * need no row back.
+ * A `courses` write on the `db` singleton inside one of these transactions
+ * would wait on the row lock the transaction holds, and the transaction would
+ * wait on it: a deadlock. These helpers re-fetch nothing; their callers need
+ * no row back.
  *
  * All statements use raw `tx.execute(sql\`...\`)` (house style).
  */
+
+/**
+ * Lock a course row inside the caller's tx. The Wave save transactions call
+ * it first, so every transaction that writes course XP queues on the course
+ * row before it locks a Wave or assessment row. One shared first lock means
+ * no lock cycle between them.
+ *
+ * `FOR NO KEY UPDATE` is the lock a `total_xp` UPDATE takes anyway. It
+ * blocks the other writers of this row, but not inserts that only reference
+ * the course (a concept or Wave insert's foreign-key check).
+ *
+ * @throws {NotFoundError} if `courseId` does not match any row.
+ */
+export async function lockCourseRowInTx(courseId: string, tx: DbOrTx): Promise<void> {
+  const rows = await tx.execute(
+    sql`SELECT id FROM courses WHERE id = ${courseId} FOR NO KEY UPDATE`,
+  );
+  if (rows.length === 0) throw new NotFoundError("course", courseId);
+}
 
 /**
  * A course's raw `baseline` and `framework` JSONB, unparsed. The caller
@@ -109,7 +131,8 @@ export async function updateCourseTierInTx(
  * Add `amount` XP to `courses.total_xp` inside the caller's tx.
  *
  * `total_xp + amount` in SQL avoids a read-modify-write race. The caller
- * validates `amount`.
+ * validates `amount`. It is negative only when a re-grade lowers a row's
+ * XP (`applyAssessmentGrading`).
  */
 export async function incrementCourseXpInTx(
   courseId: string,

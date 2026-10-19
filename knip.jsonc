@@ -24,6 +24,8 @@
     "!src/db/queries/assessments.fixtures.ts!",
     // Integration and live setup file: boots the Postgres testcontainer.
     "!src/db/testing/setup.ts!",
+    // Race tests: polls until backends block on a row lock.
+    "!src/db/testing/waitForLockWaiters.ts!",
     // Test helper: a freshly truncated Drizzle client on the testcontainer.
     "!src/db/testing/withTestDb.ts!",
     // Seeds rows for the submitBaseline integration suites.

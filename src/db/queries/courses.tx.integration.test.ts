@@ -11,7 +11,9 @@ import {
   setCourseStartingStateInTx,
   updateCourseTierInTx,
   incrementCourseXpInTx,
+  lockCourseRowInTx,
 } from "./courses.tx";
+import { NotFoundError } from "./errors";
 
 /** Fixed UUID for the test user — avoids generating UUIDs at runtime. */
 const USER = "22222222-2222-2222-2222-222222222222";
@@ -127,6 +129,17 @@ describe("courses close-transaction queries", () => {
       const after = await getCourseById(courseId);
       expect(after.status).toBe("scoping");
       expect(after.totalXp).toBe(0);
+    });
+  });
+
+  it("lockCourseRowInTx locks an existing course and throws NotFoundError for an unknown id", async () => {
+    await seedCourseAndRun(async (db, courseId) => {
+      await db.transaction(async (tx) => {
+        await expect(lockCourseRowInTx(courseId, tx)).resolves.toBeUndefined();
+        await expect(
+          lockCourseRowInTx("00000000-0000-0000-0000-000000000000", tx),
+        ).rejects.toBeInstanceOf(NotFoundError);
+      });
     });
   });
 });

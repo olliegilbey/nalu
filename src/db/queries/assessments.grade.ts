@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { assessments, type Assessment } from "@/db/schema";
+import { assessments, waves, type Assessment } from "@/db/schema";
 import type { QualityScore } from "@/lib/types/spaced-repetition";
 import { NotFoundError } from "./errors";
 
@@ -8,7 +8,9 @@ import { NotFoundError } from "./errors";
  * `assessments` grading write: scores an existing row in place.
  *
  * `insertOpenAssessments` writes rows with placeholder grading fields; the
- * mid-turn and close grading paths fill them in here.
+ * mid-turn and close grading paths fill them in here. They lock the row
+ * first (`lockAssessmentForGradingInTx`), so the course XP bump can follow
+ * the row's change.
  */
 
 /**
@@ -83,6 +85,41 @@ export async function updateAssessmentGrading(
   // Re-fetch on the same executor for camelCase mapping and to surface
   // a missing id as NotFoundError (Postgres UPDATE silently affects 0 rows).
   const [row] = await exec.select().from(assessments).where(eq(assessments.id, id));
+  if (!row) throw new NotFoundError("assessment", id);
+  return row;
+}
+
+/** An assessment row's XP before a grading, and the course that XP counts toward. */
+export interface AssessmentXpBeforeGrading {
+  /** XP on the row now: 0 on a placeholder, the earlier award on a re-grade. */
+  readonly xpAwarded: number;
+  /** The row's course, reached through its Wave. */
+  readonly courseId: string;
+}
+
+/**
+ * Lock an assessment row for grading, inside the caller's tx. Returns its
+ * current XP and its course.
+ *
+ * `FOR UPDATE OF assessments` holds the row lock until the caller's tx ends.
+ * A second grading of the same row (a second tab, a replayed close) waits
+ * here, then reads the XP the first grading wrote. So each grading sees the
+ * XP already counted on `courses.total_xp`, and adds only its own change.
+ *
+ * @throws {NotFoundError} if `id` does not match any row.
+ */
+export async function lockAssessmentForGradingInTx(
+  id: string,
+  tx: DbOrTx,
+): Promise<AssessmentXpBeforeGrading> {
+  // Typed select (not raw SQL) so Drizzle maps the columns to camelCase.
+  const [row] = await tx
+    .select({ xpAwarded: assessments.xpAwarded, courseId: waves.courseId })
+    .from(assessments)
+    .innerJoin(waves, eq(waves.id, assessments.waveId))
+    .where(eq(assessments.id, id))
+    // Lock only the assessment row. The joined Wave row stays unlocked.
+    .for("update", { of: assessments });
   if (!row) throw new NotFoundError("assessment", id);
   return row;
 }

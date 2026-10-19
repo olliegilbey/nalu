@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { eq } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
-import { userProfiles, assessments, concepts } from "@/db/schema";
+import { userProfiles, assessments, concepts, courses } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
 import { appendWaveChatLog, openWave } from "@/db/queries/waves.writes";
 import { getWaveById } from "@/db/queries/waves";
@@ -32,6 +32,8 @@ import type { SubmitTurnPayload } from "./buildLearnerInput";
  *      with grading + XP + userAnswer, no SM-2 mutation.
  *   2b. Signals for unanswered or unknown ids → skipped, rows untouched.
  *   2c. A verdict that disagrees with its score → correctness follows the score.
+ *   2d. Graded XP lands on `courses.total_xp` once, even when the same
+ *       answers persist twice (issue #205).
  *   3. New questionnaire → N placeholder assessments inserted with
  *      namespaced question_ids, concepts upserted.
  *   4. bug_004: two questionnaires reusing one raw id do not collide.
@@ -197,6 +199,57 @@ async function seedOpenQuestionnaire(
     ],
   });
   return { mcConceptId: conceptMc.id, ftConceptId: conceptFt.id, mcQuestionId, ftQuestionId };
+}
+
+/**
+ * The learner answers both `seedOpenQuestionnaire` questions correctly, and the
+ * model grades both as correct, so each row earns XP.
+ */
+function answerBothCorrectly(chatLog: WaveChatLog): {
+  readonly parsed: WaveMidTurn;
+  readonly payload: SubmitTurnPayload;
+} {
+  const openQ = findOpenQuestionnaire(chatLog);
+  if (!openQ) throw new Error("answerBothCorrectly: no open questionnaire");
+  return {
+    parsed: {
+      userMessage: "Both right.",
+      comprehensionSignals: [
+        { kind: "mc-index", questionId: "q-mc", rationale: "Right rule. Move on." },
+        {
+          kind: "free-text",
+          questionId: "q-ft",
+          verdict: "correct",
+          qualityScore: 5,
+          rationale: "Full grasp. Move on.",
+        },
+      ],
+    },
+    payload: {
+      kind: "questionnaire-answers",
+      questionnaireId: openQ.questionnaireId,
+      answers: [
+        { id: "q-mc", kind: "mc", selected: "B" }, // matches `correct: "B"`
+        { id: "q-ft", kind: "freetext", text: "a borrow is a loan", fromEscape: false },
+      ],
+    },
+  };
+}
+
+/** Read `courses.total_xp` for one course. */
+async function courseTotalXp(courseId: string): Promise<number> {
+  const [row] = await db
+    .select({ totalXp: courses.totalXp })
+    .from(courses)
+    .where(eq(courses.id, courseId));
+  if (!row) throw new Error(`courseTotalXp: no course ${courseId}`);
+  return row.totalXp;
+}
+
+/** Sum `assessments.xp_awarded` over one Wave's rows. */
+async function waveRowsXp(waveId: string): Promise<number> {
+  const rows = await db.select().from(assessments).where(eq(assessments.waveId, waveId));
+  return rows.reduce((sum, r) => sum + r.xpAwarded, 0);
 }
 
 describe("persistWaveMidTurn (integration)", () => {
@@ -402,6 +455,52 @@ describe("persistWaveMidTurn (integration)", () => {
         await db.select().from(assessments).where(eq(assessments.questionId, ftQuestionId))
       )[0]!;
       expect(ftRow).toMatchObject({ isCorrect: false, qualityScore: 0, xpAwarded: 0 });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 2d. Issue #205: graded answers add their XP to `courses.total_xp` in the
+  //     grading tx. A second persist of the same answers adds nothing. That is
+  //     the second-tab race: both requests load the Wave while the
+  //     questionnaire is open, and both grade its rows.
+  // ---------------------------------------------------------------------------
+  it("graded answers raise courses.total_xp by exactly the awarded XP", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      await seedOpenQuestionnaire(courseId, waveId);
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const { parsed, payload } = answerBothCorrectly(ctx.wave.chatLog as WaveChatLog);
+      await appendTurnRows(waveId, parsed.userMessage);
+
+      const result = await persistWaveMidTurn({ ctx, parsed, payload, turnsRemaining: 4 });
+
+      const awarded = result.gradedSignals.reduce((sum, s) => sum + s.xpAwarded, 0);
+      // Sanity: a zero award would prove nothing about the bump.
+      expect(awarded).toBeGreaterThan(0);
+      expect(await courseTotalXp(courseId)).toBe(awarded);
+      expect(await waveRowsXp(waveId)).toBe(awarded);
+    });
+  });
+
+  it("a second persist of the same answers adds no XP", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      await seedOpenQuestionnaire(courseId, waveId);
+      // One snapshot for both requests: the second tab loaded the Wave
+      // before the first tab's grading committed.
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const { parsed, payload } = answerBothCorrectly(ctx.wave.chatLog as WaveChatLog);
+
+      await appendTurnRows(waveId, parsed.userMessage);
+      const first = await persistWaveMidTurn({ ctx, parsed, payload, turnsRemaining: 4 });
+      await appendTurnRows(waveId, parsed.userMessage);
+      const second = await persistWaveMidTurn({ ctx, parsed, payload, turnsRemaining: 4 });
+
+      // The replay did grade the rows again; it must not count them again.
+      expect(second.gradedSignals).toHaveLength(2);
+      const awarded = first.gradedSignals.reduce((sum, s) => sum + s.xpAwarded, 0);
+      expect(await courseTotalXp(courseId)).toBe(awarded);
+      expect(await waveRowsXp(waveId)).toBe(awarded);
     });
   });
 
