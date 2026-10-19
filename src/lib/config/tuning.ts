@@ -123,6 +123,20 @@ export const SCOPING = {
 } as const;
 
 /**
+ * Learner profile tunables.
+ *
+ * `maxCustomInstructionsLength` caps the learner's custom instructions, counted
+ * after trim. 1,000 characters leaves room for several preferences at about
+ * 250 tokens. The text rides once in each Wave's system prompt and stays
+ * cached across that Wave's Turns, so the cost is paid once per Wave.
+ * `SCOPING.maxTopicLength` (500) is the prior art. The settings sheet's text
+ * area reads the same cap, so the client and server never disagree.
+ */
+export const PROFILE = {
+  maxCustomInstructionsLength: 1000,
+} as const;
+
+/**
  * Proficiency-framework generation bounds. Consumed by
  * `src/lib/prompts/framework.ts` (prompt instructions + Zod schema) so the
  * two never drift. Tier counts are PRD-sourced.
