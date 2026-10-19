@@ -13,12 +13,11 @@ import type { McOptionKey } from "@/lib/types/mcOptionKey";
  * ceiling. Not re-exported via the barrel; only `persistWaveMidTurn` calls it.
  */
 
-/** One row of the graded-signals output. Matches `PersistWaveMidTurnResult.gradedSignals[]`. */
+/** One graded answer in the turn result's `PersistWaveMidTurnResult.gradedSignals`. */
 export interface GradedRow {
   readonly kind: GradedSignal["kind"];
   readonly questionId: string;
   readonly xpAwarded: number;
-  readonly correct?: boolean;
   readonly qualityScore?: number;
 }
 
@@ -122,9 +121,7 @@ export async function gradePriorAnswers(
       kind: applied.kind,
       questionId: applied.questionId,
       xpAwarded: applied.xpAwarded,
-      // The `is_correct` the row stored, so the turn result and the row
-      // agree (issue #213). Only free-text carries a model quality score.
-      correct: applied.isCorrect,
+      // Only free-text carries a model quality score.
       ...(sig.kind === "free-text" ? { qualityScore: sig.qualityScore } : {}),
     };
     return [...acc, out];

@@ -22,8 +22,8 @@ import type { LoadedWaveContext } from "./loadWaveContext";
 /**
  * Per-question grading projection surfaced back to the orchestrator: kind,
  * question id and XP. A subset of the mid-turn `gradedSignals[]` shape, with
- * no `correct` or `qualityScore`. The shared fields keep the
- * `WaveTurnResultData` union uniform.
+ * no `qualityScore`. The shared fields keep the `WaveTurnResultData` union
+ * uniform.
  */
 export interface PersistedGradedSignal {
   readonly kind: GradedSignal["kind"];
