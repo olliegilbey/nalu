@@ -11,8 +11,7 @@ Layout:
 - `schema/` — one file per table; barrel re-exports in `index.ts`.
   drizzle-kit loads every file in this folder, so tests for it live in
   `src/db/`. `concepts.ts` reads its SM-2 default and floor from `SM2` in
-  `src/lib/config/tuning.ts`; `schemaTuningDrift.test.ts` pins the latest
-  migration snapshot to them.
+  `src/lib/config/tuning.ts`, so a retune is a schema change too.
 - `migrations/` — drizzle-kit output, committed.
 - `queries/` — typed query functions; the home for all SQL. See
   `queries/CLAUDE.md` for how transactions thread `tx` through them.
@@ -25,6 +24,12 @@ Layout:
 
 Workflow: edit schema TS → `just db-generate <name>` → review SQL diff →
 commit both. `just db-migrate` applies. CI re-runs in ephemeral Postgres.
+
+`schemaMigrationDrift.test.ts` (unit tier) diffs the schema against the
+newest committed snapshot, as `generate` does. Red means a schema or tuning
+edit has no migration: run `just db-generate <name>` and commit the SQL. Its
+failure prints the missing statements. A rename fails with "Interactive
+prompts require a TTY"; `just db-generate` asks rename-or-recreate instead.
 
 A CHECK on a `real` column casts its bound to `::real`. Postgres compares a
 bare decimal in float8, where real 1.3 (1.29999995) fails `>= 1.3` (issue
