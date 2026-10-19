@@ -1,24 +1,22 @@
 import type { DbOrTx } from "@/db/client";
 import { getAssessmentByWaveAndQuestionId } from "@/db/queries/assessments";
 import { getConceptById } from "@/db/queries/concepts";
-import { getWaveChatLog } from "@/db/queries/waves";
 import { updateCourseTierInTx } from "@/db/queries/courses.tx";
 import { checkTierAdvancement } from "@/lib/scoring/progression";
 import type { ConceptState } from "@/lib/types/scoring";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
-import type { V3Response } from "@/lib/types/jsonb";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import type { McOptionKey } from "@/lib/types/mcOptionKey";
 import { applyAssessmentGrading, type GradedSignal } from "./applyAssessmentGrading";
 import { findOpenQuestionnaire, buildMcCorrectKeyMap } from "./findOpenQuestionnaire";
+import { loadCloseResponses } from "./loadCloseResponses";
 import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { LoadedWaveContext } from "./loadWaveContext";
 
 /**
  * Internal helpers for `persistWaveClose` — split out to keep both files under
  * the ~200-line ceiling. Mirrors the `persistWaveMidTurn.{ts,grade.ts,insert.ts}`
- * pattern. Not re-exported via the barrel; only `persistWaveClose` calls these,
- * plus `closeGradingDebug.ts`, which reads `loadCloseResponses`.
+ * pattern. Not re-exported via the barrel; only `persistWaveClose` calls these.
  */
 
 /**
@@ -31,29 +29,6 @@ export interface PersistedGradedSignal {
   readonly kind: GradedSignal["kind"];
   readonly questionId: string;
   readonly xpAwarded: number;
-}
-
-/**
- * The learner's close-turn Responses: the `user.answers` entry in the live
- * `chat_log` that targets the open questionnaire. Empty when none is open.
- *
- * Reads the LIVE column — not `ctx.wave.chatLog`, which `loadWaveContext`
- * snapshots before `prepareWaveTurn` appends the close-turn answer. The append
- * committed before the close ran, so it is visible here. The close passes its
- * tx; the issue #22 debug log (`closeGradingDebug.ts`) reads without one.
- */
-export async function loadCloseResponses(
-  waveId: string,
-  openQuestionnaireId: string | undefined,
-  tx?: DbOrTx,
-): Promise<readonly V3Response[]> {
-  if (openQuestionnaireId === undefined) return [];
-  const liveLog = await getWaveChatLog(waveId, tx);
-  return liveLog.flatMap((e) =>
-    e.role === "user" && e.kind === "answers" && e.questionnaireId === openQuestionnaireId
-      ? e.responses
-      : [],
-  );
 }
 
 /**
@@ -106,7 +81,7 @@ export async function applyCloseGradings(
   // raw id → the learner's answer for `user_answer`: the MC key, or the typed
   // text (issue #214). Same rule as the mid-turn's `buildAnswerTextMap`, which
   // reads the payload `prepareWaveTurn` stored as these Responses.
-  const answerTextById = new Map(
+  const answerTextByQuestionId = new Map(
     responses.map((r) => [r.questionId, r.choice ?? r.freetext] as const),
   );
   // Reduce accumulates results without mutation; the awaited accumulator
@@ -168,7 +143,7 @@ export async function applyCloseGradings(
       conceptTier: concept.tier,
       signal: { kind: "free-text", questionId: g.questionId, qualityScore: g.qualityScore },
       tx,
-      userAnswer: answerTextById.get(g.questionId),
+      userAnswer: answerTextByQuestionId.get(g.questionId),
     });
     return [
       ...acc,

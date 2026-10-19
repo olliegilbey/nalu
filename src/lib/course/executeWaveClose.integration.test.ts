@@ -16,7 +16,7 @@ import { WAVE } from "@/lib/config/tuning";
 import { calculateXP } from "@/lib/scoring/xp";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
-import type { V3Response } from "@/lib/types/jsonb";
+import type { V3Question, V3Response } from "@/lib/types/jsonb";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import type { McOptionKey } from "@/lib/types/mcOptionKey";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
@@ -105,92 +105,118 @@ async function seedCourseWithOpenWave(
   return { courseId: course.id, waveId: wave.id };
 }
 
+/** A stored question that names its concept, so the seed can upsert it. */
+type SeedQuestion = V3Question & { readonly conceptName: string };
+
+/** The close tests' MC question, `q-mc`, with the given correct key. */
+function mcQuestion(correct: McOptionKey, conceptName = "ownership"): SeedQuestion {
+  return {
+    id: "q-mc",
+    type: "multiple_choice",
+    prompt: "Which keyword transfers ownership?",
+    options: { A: "let", B: "move", C: "ref", D: "copy" },
+    correct,
+    freetextRubric: "rubric",
+    conceptName,
+    tier: 1,
+  };
+}
+
+/** The close tests' free-text question, `q-close`, on its concept and tier. */
+function freeTextQuestion(conceptName = "ownership", tier = 1): SeedQuestion {
+  return {
+    id: "q-close",
+    type: "free_text",
+    prompt: `Explain ${conceptName} in one sentence`,
+    freetextRubric: "rubric",
+    conceptName,
+    tier,
+  };
+}
+
 /**
- * Seed an open questionnaire on the wave AND its placeholder assessment row.
- * Returns the concept id (for SM-2 assertions) and the namespaced
- * `question_id` so tests can query the row back directly.
+ * Seed an OPEN questionnaire on the wave plus one placeholder assessment row
+ * per question. Each question's concept is upserted at the question's tier.
  *
- * Mirrors `seedOpenQuestionnaire` in `persistWaveMidTurn.integration.test.ts` but
- * close-turn focused: only one free-text question is needed. Writes BOTH the
- * `context_messages` assistant_response AND the `chat_log`
- * `text_with_questionnaire` entry — `findOpenQuestionnaire` (used by
- * `executeWaveClose` and now `applyCloseGradings`) derives the open
- * questionnaire from `chat_log`, and its `questionnaireId` namespaces the
- * stored `question_id` (`namespaceQuestionId`).
+ * Writes BOTH the `context_messages` assistant_response AND the `chat_log`
+ * `text_with_questionnaire` entry. `findOpenQuestionnaire` (used by
+ * `executeWaveClose` and `applyCloseGradings`) derives the open questionnaire
+ * from `chat_log`, and its `questionnaireId` namespaces each stored
+ * `question_id` (`namespaceQuestionId`), as `insertNewQuestionnaire` does in
+ * production. Does NOT write the learner's answers: those must land AFTER
+ * `loadWaveContext` snapshots `ctx.wave.chatLog` (see `appendCloseAnswers`),
+ * because in production `prepareWaveTurn` appends them post-snapshot.
+ *
+ * Returns the `questionnaireId`, and per raw question id its concept id (for
+ * SM-2 assertions) and namespaced `question_id` (to query the row back).
  */
-async function seedOpenFreeTextQuestionnaire(
+async function seedOpenQuestionnaire(
   courseId: string,
   waveId: string,
-  conceptName = "ownership",
-  conceptTier = 1,
-): Promise<{ readonly conceptId: string; readonly questionId: string }> {
-  const concept = await upsertConcept({ courseId, name: conceptName, tier: conceptTier });
-  // Seed the assistant_response so loadWaveContext reconstructs `openQuestionnaire`.
-  const assistantPayload = {
-    userMessage: "Final question:",
-    questionnaire: {
-      questions: [
-        {
-          id: "q-close",
-          type: "free_text" as const,
-          prompt: "Explain ownership in one sentence",
-          freetextRubric: "rubric",
-          conceptName,
-          tier: 1,
-        },
-      ],
-    },
-  };
+  questions: readonly SeedQuestion[],
+): Promise<{
+  readonly questionnaireId: string;
+  readonly rows: ReadonlyMap<string, { readonly conceptId: string; readonly questionId: string }>;
+}> {
+  const userMessage = "Final questions:";
   const assistantRow = await appendMessage({
     parent: { kind: "wave", id: waveId },
     turnIndex: 1,
     seq: 0,
     kind: "assistant_response",
     role: "assistant",
-    content: JSON.stringify(assistantPayload),
+    content: JSON.stringify({ userMessage, questionnaire: { questions } }),
   });
-  // Mirror the production dual-write: chat_log carries a `text_with_questionnaire`
-  // entry whose `questionnaireId` matches the assistant_response row id.
-  // `findOpenQuestionnaire` reads chat_log; `applyCloseGradings` re-derives the
-  // namespaced `question_id` from this id.
   await appendWaveChatLog(db, waveId, {
     role: "assistant",
     kind: "text_with_questionnaire",
     questionnaireId: assistantRow.id,
-    content: assistantPayload.userMessage,
-    questions: assistantPayload.questionnaire.questions,
+    content: userMessage,
+    questions: [...questions],
   });
-  // Insert the placeholder assessment row the mid-turn flow would have written.
-  // The stored `question_id` is namespaced by the questionnaire id — matching
-  // `insertNewQuestionnaire` in production. The close transaction updates it
-  // via applyAssessmentGrading.
-  const questionId = namespaceQuestionId(assistantRow.id, "q-close");
+  const seeded = await Promise.all(
+    questions.map(async (q) => {
+      const concept = await upsertConcept({ courseId, name: q.conceptName, tier: q.tier ?? 1 });
+      return { q, conceptId: concept.id, questionId: namespaceQuestionId(assistantRow.id, q.id) };
+    }),
+  );
   await insertOpenAssessments({
     waveId,
     turnIndex: 1,
-    rows: [
-      {
-        conceptId: concept.id,
-        questionId,
-        question: "Explain ownership in one sentence",
-        assessmentKind: "card_freetext",
-      },
-    ],
+    rows: seeded.map((s) => ({
+      conceptId: s.conceptId,
+      questionId: s.questionId,
+      question: s.q.prompt,
+      assessmentKind: s.q.type === "multiple_choice" ? "card_mc" : "card_freetext",
+    })),
   });
-  return { conceptId: concept.id, questionId };
+  return {
+    questionnaireId: assistantRow.id,
+    rows: new Map(
+      seeded.map((s) => [s.q.id, { conceptId: s.conceptId, questionId: s.questionId }] as const),
+    ),
+  };
+}
+
+/** Seed an open questionnaire with one free-text question, `q-close`. */
+async function seedOpenFreeTextQuestionnaire(
+  courseId: string,
+  waveId: string,
+  conceptName = "ownership",
+  conceptTier = 1,
+): Promise<{ readonly conceptId: string; readonly questionId: string }> {
+  const { rows } = await seedOpenQuestionnaire(courseId, waveId, [
+    freeTextQuestion(conceptName, conceptTier),
+  ]);
+  return rows.get("q-close")!;
 }
 
 /**
- * Seed an OPEN MC questionnaire on the wave plus its placeholder `card_mc`
- * assessment row. Does NOT write the learner's answer — that must land AFTER
- * `loadWaveContext` snapshots `ctx.wave.chatLog` (see `appendCloseAnswers`),
- * because in production `prepareWaveTurn` appends it post-snapshot.
+ * Seed an open questionnaire with one MC question, `q-mc`.
  *
  * bug_003: a questionnaire posed on the FINAL mid-turn has no later mid-turn,
- * so its MC question is answered — and graded — at close.
- *
- * Returns the `questionnaireId` (so the test can append the matching answer),
- * the concept id, and the namespaced stored `question_id`.
+ * so its MC question is answered — and graded — at close. Returns the
+ * `questionnaireId` too, so the test can append the matching answer.
  */
 async function seedOpenMcQuestionnaire(
   courseId: string,
@@ -201,140 +227,10 @@ async function seedOpenMcQuestionnaire(
   readonly questionId: string;
   readonly questionnaireId: string;
 }> {
-  const conceptName = opts.conceptName ?? "ownership";
-  const concept = await upsertConcept({ courseId, name: conceptName, tier: 1 });
-  const assistantPayload = {
-    userMessage: "Final question:",
-    questionnaire: {
-      questions: [
-        {
-          id: "q-mc",
-          type: "multiple_choice" as const,
-          prompt: "Which keyword transfers ownership?",
-          options: { A: "let", B: "move", C: "ref", D: "copy" },
-          correct: opts.correct,
-          freetextRubric: "rubric",
-          conceptName,
-          tier: 1,
-        },
-      ],
-    },
-  };
-  const assistantRow = await appendMessage({
-    parent: { kind: "wave", id: waveId },
-    turnIndex: 1,
-    seq: 0,
-    kind: "assistant_response",
-    role: "assistant",
-    content: JSON.stringify(assistantPayload),
-  });
-  // chat_log carries the assistant's `text_with_questionnaire` entry —
-  // `findOpenQuestionnaire` reads it for the server-side `correct` key.
-  await appendWaveChatLog(db, waveId, {
-    role: "assistant",
-    kind: "text_with_questionnaire",
-    questionnaireId: assistantRow.id,
-    content: assistantPayload.userMessage,
-    questions: assistantPayload.questionnaire.questions,
-  });
-  // Placeholder `card_mc` row the mid-turn flow would have inserted.
-  const questionId = namespaceQuestionId(assistantRow.id, "q-mc");
-  await insertOpenAssessments({
-    waveId,
-    turnIndex: 1,
-    rows: [
-      {
-        conceptId: concept.id,
-        questionId,
-        question: assistantPayload.questionnaire.questions[0]!.prompt,
-        assessmentKind: "card_mc",
-      },
-    ],
-  });
-  return { conceptId: concept.id, questionId, questionnaireId: assistantRow.id };
-}
-
-/**
- * Seed an OPEN questionnaire with one MC question (`q-mc`, correct `B`, concept
- * `ownership`) and one free-text question (`q-close`, concept `borrowing`),
- * plus both placeholder assessment rows. Like `seedOpenMcQuestionnaire`, it
- * does NOT write the learner's answers; `appendCloseAnswers` does that after
- * the `loadWaveContext` snapshot.
- *
- * Issue #214: a questionnaire posed on the final mid-turn is graded at the
- * close, both kinds from the same `answers` entry.
- */
-async function seedOpenMixedQuestionnaire(
-  courseId: string,
-  waveId: string,
-): Promise<{
-  readonly mcQuestionId: string;
-  readonly ftQuestionId: string;
-  readonly questionnaireId: string;
-}> {
-  const conceptMc = await upsertConcept({ courseId, name: "ownership", tier: 1 });
-  const conceptFt = await upsertConcept({ courseId, name: "borrowing", tier: 1 });
-  const assistantPayload = {
-    userMessage: "Final questions:",
-    questionnaire: {
-      questions: [
-        {
-          id: "q-mc",
-          type: "multiple_choice" as const,
-          prompt: "Which keyword transfers ownership?",
-          options: { A: "let", B: "move", C: "ref", D: "copy" },
-          correct: "B" as const,
-          freetextRubric: "rubric",
-          conceptName: "ownership",
-          tier: 1,
-        },
-        {
-          id: "q-close",
-          type: "free_text" as const,
-          prompt: "Explain borrowing in one sentence",
-          freetextRubric: "rubric",
-          conceptName: "borrowing",
-          tier: 1,
-        },
-      ],
-    },
-  };
-  const assistantRow = await appendMessage({
-    parent: { kind: "wave", id: waveId },
-    turnIndex: 1,
-    seq: 0,
-    kind: "assistant_response",
-    role: "assistant",
-    content: JSON.stringify(assistantPayload),
-  });
-  await appendWaveChatLog(db, waveId, {
-    role: "assistant",
-    kind: "text_with_questionnaire",
-    questionnaireId: assistantRow.id,
-    content: assistantPayload.userMessage,
-    questions: assistantPayload.questionnaire.questions,
-  });
-  const mcQuestionId = namespaceQuestionId(assistantRow.id, "q-mc");
-  const ftQuestionId = namespaceQuestionId(assistantRow.id, "q-close");
-  await insertOpenAssessments({
-    waveId,
-    turnIndex: 1,
-    rows: [
-      {
-        conceptId: conceptMc.id,
-        questionId: mcQuestionId,
-        question: "Which keyword transfers ownership?",
-        assessmentKind: "card_mc",
-      },
-      {
-        conceptId: conceptFt.id,
-        questionId: ftQuestionId,
-        question: "Explain borrowing in one sentence",
-        assessmentKind: "card_freetext",
-      },
-    ],
-  });
-  return { mcQuestionId, ftQuestionId, questionnaireId: assistantRow.id };
+  const { questionnaireId, rows } = await seedOpenQuestionnaire(courseId, waveId, [
+    mcQuestion(opts.correct, opts.conceptName),
+  ]);
+  return { ...rows.get("q-mc")!, questionnaireId };
 }
 
 /**
@@ -989,10 +885,10 @@ describe("executeWaveClose (integration)", () => {
   it("stores the learner's close-turn answers on user_answer: typed text and MC click", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave(2);
-      const { mcQuestionId, ftQuestionId, questionnaireId } = await seedOpenMixedQuestionnaire(
-        courseId,
-        waveId,
-      );
+      const { questionnaireId, rows } = await seedOpenQuestionnaire(courseId, waveId, [
+        mcQuestion("B"),
+        freeTextQuestion("borrowing"),
+      ]);
 
       const typed = "A borrow lends a value without moving ownership.";
       const parsed = makeParsedClose({
@@ -1022,12 +918,18 @@ describe("executeWaveClose (integration)", () => {
       await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
 
       const ftRow = (
-        await db.select().from(assessments).where(eq(assessments.questionId, ftQuestionId))
+        await db
+          .select()
+          .from(assessments)
+          .where(eq(assessments.questionId, rows.get("q-close")!.questionId))
       )[0]!;
       expect(ftRow.qualityScore).toBe(5);
       expect(ftRow.userAnswer).toBe(typed);
       const mcRow = (
-        await db.select().from(assessments).where(eq(assessments.questionId, mcQuestionId))
+        await db
+          .select()
+          .from(assessments)
+          .where(eq(assessments.questionId, rows.get("q-mc")!.questionId))
       )[0]!;
       expect(mcRow.isCorrect).toBe(true);
       expect(mcRow.userAnswer).toBe("B");

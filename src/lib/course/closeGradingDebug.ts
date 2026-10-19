@@ -12,7 +12,7 @@ import {
 } from "@/lib/observability/gradingDebug";
 import type { CloseTurnBase } from "@/lib/prompts/closeTurn";
 import type { V3Response } from "@/lib/types/jsonb";
-import { loadCloseResponses } from "./persistWaveClose.helpers";
+import { loadCloseResponses } from "./loadCloseResponses";
 
 type CloseGradings = CloseTurnBase["gradings"];
 
