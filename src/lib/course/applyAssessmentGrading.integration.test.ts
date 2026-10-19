@@ -299,7 +299,8 @@ describe("applyAssessmentGrading (integration)", () => {
 
       await grade(3);
 
-      // The total matches the XP the last grading left on the row.
+      // The row holds the last grading's correctness and XP. The total
+      // matches that XP.
       const [row] = await db.select().from(assessments).where(eq(assessments.id, assessmentId));
       expect(row?.isCorrect).toBe(false);
       expect(row?.xpAwarded).toBe(calculateXP(2, 3));
