@@ -6,6 +6,7 @@ import { useWaveState } from "@/hooks/useWaveState";
 import { shapeQuestionnaireAnswers } from "@/lib/course/shapeQuestionnaireAnswers";
 import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
+import { CourseNotFound } from "./CourseNotFound";
 import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
 import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
@@ -44,6 +45,7 @@ export function WaveSession({
     xpGainAmount,
     awardMcXp,
     isPending,
+    waveNotFound,
     streamingText,
     streamingQuestions,
     submitChatText,
@@ -63,6 +65,10 @@ export function WaveSession({
   // The questionnaire key just submitted — its question card is hidden from the
   // Composer immediately, rather than lingering until the server round-trip.
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+
+  // getState found no such Wave for this learner: a wrong URL, or a course
+  // another browser started. Say so, rather than show an empty chat.
+  if (waveNotFound) return <CourseNotFound />;
 
   // Map ChatEntry[] → scroll JSX. The switch is exhaustive over ChatEntry's
   // kinds so a future variant addition becomes a compile-time error here.
