@@ -15,7 +15,7 @@ import { createCourse } from "@/db/queries/courses";
 import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import type { CloseTurnBase } from "@/lib/prompts/closeTurn";
-import type { MergeAndComputeXpResult } from "@/lib/scoring/baselineMerge";
+import type { ScoreBaselineResult } from "@/lib/scoring/scoreBaseline";
 
 /** Fixed UUID for the test user — avoids runtime UUID generation. */
 export const USER_ID = "55555555-5555-5555-5555-555555555555";
@@ -85,10 +85,10 @@ export const PARSED: CloseTurnBase = {
 
 /**
  * Canonical-ordered gradings, starting tier + deterministic XP from
- * `mergeAndComputeXp`. `startingTier` matches what placement computes for
+ * `scoreBaseline`. `startingTier` matches what placement computes for
  * `PARSED` on `BASELINE_PRECLOSE`.
  */
-export const MERGED: MergeAndComputeXpResult = {
+export const MERGED: ScoreBaselineResult = {
   gradings: [
     {
       questionId: "b1",

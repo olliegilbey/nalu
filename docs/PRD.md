@@ -270,9 +270,9 @@ The system prompt is crystallised **once per phase** (scoping, or a single Wave)
 
 - **Mid-Wave turn**: teaching prose; optional comprehension signals that grade the cards the learner just answered; an optional questionnaire of 1-N questions. Each question names one concept. Each multiple-choice question carries its correct key. Each free-text question carries a rubric that states what a correct answer contains; baseline questions follow the same rule. The model sends the rest as tool calls (`recordComprehensionSignals`, `presentQuestionnaire`) first, then streams its prose as text. The learner sees the prose above the quiz card.
 - **Final turn**: one JSON object with the closing message, gradings for cards answered this turn, a Wave summary, the next Wave's blueprint (topic, outline, opening text, planned concepts), and per-concept SM-2 quality scores.
-- **Scoping close**: the same close-turn base and nothing more. Its summary seeds `courses.summary`. The Harness computes the starting tier (Section 4.1).
+- **Scoping close**: the same close-turn base and nothing more. Its summary seeds `courses.summary`. The Harness computes the starting tier (Section 4.1). The close envelope states the placement rule, so the model pitches Wave 1's opening and planned concepts at the level the learner will be placed.
 
-Exact schemas live in `src/lib/prompts/` (`waveTurn.ts`, `waveClose.ts`, `closeTurn.ts`, `scopingClose.ts`, `questionnaire.ts`). Tool schemas live in `src/lib/course/waveTurnTools.ts`. The Harness redacts answer keys from every Wave client payload (Section 8.2). Scoping still ships them (#58).
+Exact schemas live in `src/lib/prompts/` (`waveTurn.ts`, `waveClose.ts`, `closeTurn.ts`, `questionnaire.ts`). Tool schemas live in `src/lib/course/waveTurnTools.ts`. The Harness redacts answer keys from every Wave client payload (Section 8.2). Scoping still ships them (#58).
 
 ### 5.2 Quality Score Mapping
 

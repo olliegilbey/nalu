@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { typedMcGradingRule } from "@/lib/prompts/questionnaire";
 import { renderScopingCloseStage } from "@/lib/prompts/scopingClose";
-import { buildScopingCloseLearnerInput, gradeMc } from "./submitBaseline.internal";
+import {
+  buildScopingCloseLearnerInput,
+  gradeMc,
+  requireQuestionTier,
+} from "./submitBaseline.internal";
 
 // Issue #149: a typed answer to a baseline MC question goes to the close-turn
 // grader as free text. Its rubric is unchecked, so the Harness attaches the
@@ -78,6 +82,7 @@ describe("buildScopingCloseLearnerInput", () => {
         answers: [{ id: "b1", kind: "freetext", text: "<b>heap</b>", fromEscape: true }],
         mechanicalGradings: [],
       }),
+      scopeTiers: [1],
     });
     expect(envelope).toContain("Heap &lt;alloc&gt;");
     expect(envelope).toContain("&lt;b&gt;heap&lt;/b&gt;");
@@ -97,5 +102,18 @@ describe("buildScopingCloseLearnerInput", () => {
       mechanicalGradings,
     });
     expect(learnerInput).toBe(JSON.stringify({ answers, mechanicalGradings }));
+  });
+});
+
+// One guard for the tier that placement, XP and the grader all read.
+describe("requireQuestionTier", () => {
+  it("returns the question's tier", () => {
+    expect(requireQuestionTier({ id: "b1", tier: 2 })).toBe(2);
+  });
+
+  it("throws, naming the question, when the tier is missing", () => {
+    expect(() => requireQuestionTier({ id: "b7" })).toThrow(
+      "baseline question b7 missing required tier",
+    );
   });
 });

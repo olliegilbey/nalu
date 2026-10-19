@@ -6,8 +6,8 @@ import { determineStartingTier } from "@/lib/scoring/startingTier";
 /** Persisted grading shape — matches `baselineGradingSchema` in jsonbBaseline. */
 export type StoredGrading = z.infer<typeof baselineGradingSchema>;
 
-/** Inputs to the pure merge / XP step. All readonly to keep callers honest. */
-export interface MergeAndComputeXpParams {
+/** Inputs to {@link scoreBaseline}. All readonly to keep callers honest. */
+export interface ScoreBaselineParams {
   /** LLM-side parsed close-turn payload. `gradings` may be in any order. */
   readonly parsed: {
     readonly gradings: readonly StoredGrading[];
@@ -24,7 +24,7 @@ export interface MergeAndComputeXpParams {
 }
 
 /** Pure output: ordered gradings, the starting tier, and deterministic XP. */
-export interface MergeAndComputeXpResult {
+export interface ScoreBaselineResult {
   readonly gradings: readonly StoredGrading[];
   /** Tier Wave 1 starts at, from `determineStartingTier`. Baseline XP is scored at it. */
   readonly startingTier: number;
@@ -40,10 +40,11 @@ export interface MergeAndComputeXpResult {
 }
 
 /**
- * Merge LLM and mechanical gradings into one canonically-ordered list, place
- * the learner with `determineStartingTier`, and compute total XP for the
- * baseline at that tier. Also returns a free-text-only XP subtotal the
- * client uses to avoid double-counting instantly-scored MC answers.
+ * Score a graded baseline in three steps. Merge LLM and mechanical gradings
+ * into one canonically-ordered list. Place the learner with
+ * `determineStartingTier`. Compute total XP for the baseline at that tier.
+ * Also returns a free-text-only XP subtotal the client uses to avoid
+ * double-counting instantly-scored MC answers.
  *
  * Lives under `src/lib/scoring/` because it is a pure scoring/aggregation
  * function — no IO, no DB. The orchestrator (`src/lib/course/submitBaseline`)
@@ -62,7 +63,7 @@ export interface MergeAndComputeXpResult {
  * @throws if any merged grading's `conceptTier` is outside `scopeTiers`,
  *   or any `baselineQuestions` entry has no matching grading.
  */
-export function mergeAndComputeXp(params: MergeAndComputeXpParams): MergeAndComputeXpResult {
+export function scoreBaseline(params: ScoreBaselineParams): ScoreBaselineResult {
   // `Set` for O(1) scope lookups. The cast to `number` is safe — `scopeTiers`
   // is `readonly number[]` and `Set` widens to `Set<number>` cleanly.
   const scope = new Set<number>(params.scopeTiers);
@@ -82,11 +83,11 @@ export function mergeAndComputeXp(params: MergeAndComputeXpParams): MergeAndComp
   const placed = params.baselineQuestions.map((q) => {
     const g = byId.get(q.id);
     if (!g) {
-      throw new Error(`mergeAndComputeXp: no grading for questionId ${q.id}`);
+      throw new Error(`scoreBaseline: no grading for questionId ${q.id}`);
     }
     if (!scope.has(g.conceptTier)) {
       throw new Error(
-        `mergeAndComputeXp: grading for ${q.id} has conceptTier ${g.conceptTier} outside scopeTiers`,
+        `scoreBaseline: grading for ${q.id} has conceptTier ${g.conceptTier} outside scopeTiers`,
       );
     }
     return { grading: g, questionTier: q.tier };

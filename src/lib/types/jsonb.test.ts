@@ -276,11 +276,11 @@ describe("jsonb trust-boundary schemas", () => {
     ).toThrow(); // strict mode on the questions arm makes startingTier an unknown key
   });
 
-  // Issue #93: rows closed before the change still hold `immutableSummary`.
+  // Issue #94: rows closed before the change still hold `immutableSummary`.
   // No code reads it, and no migration removes it, so the row guard must
-  // still accept those rows. It drops the key on read.
-  it("reads a closed row that still holds the retired immutableSummary key, and drops it", () => {
-    const parsed = baselineJsonbSchema.parse({
+  // still accept those rows. The closed arm lists it as an optional legacy key.
+  it("reads a closed row that still holds the legacy immutableSummary key", () => {
+    const legacy = {
       userMessage: "x",
       questions: [],
       responses: [],
@@ -288,15 +288,24 @@ describe("jsonb trust-boundary schemas", () => {
       immutableSummary: "durable",
       summarySeed: "v0",
       startingTier: 2,
-    });
-    expect(parsed).toEqual({
-      userMessage: "x",
-      questions: [],
-      responses: [],
-      gradings: [],
-      summarySeed: "v0",
-      startingTier: 2,
-    });
+    };
+    expect(baselineJsonbSchema.parse(legacy)).toEqual(legacy);
+  });
+
+  // The closed arm stays strict: `updateCourseScopingState` stores the raw
+  // patch after parsing it, so an unknown key must fail the parse.
+  it("rejects a closed payload with an unknown key", () => {
+    expect(() =>
+      baselineJsonbSchema.parse({
+        userMessage: "x",
+        questions: [],
+        responses: [],
+        gradings: [],
+        summarySeed: "v0",
+        startingTier: 2,
+        junk: "y",
+      }),
+    ).toThrow();
   });
 
   // Parallel guard: a well-formed closed payload must surface its close-turn

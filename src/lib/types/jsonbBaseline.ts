@@ -72,7 +72,7 @@ export const VERDICT_QUALITY_BANDS: Readonly<
  * entries the server uses the stored `question.tier` (authoritative,
  * per the LLM-XP boundary). For free-text entries the LLM's `conceptTier`
  * is what gets stored, validated server-side against the framework's
- * `baselineScopeTiers` via `mergeAndComputeXp`'s defence-in-depth check.
+ * `baselineScopeTiers` via `scoreBaseline`'s defence-in-depth check.
  */
 export const baselineGradingSchema = z
   .object({
@@ -122,24 +122,27 @@ export const baselineQuestionsJsonbSchema = z
   .strict();
 
 /**
- * What `submitBaseline` writes on close. Superset of the pre-close shape,
- * with the close-turn outputs added: the summary seed and the `startingTier`
- * that `determineStartingTier` computed.
+ * What `submitBaseline` writes on close. Strict superset of the pre-close
+ * shape, with the close-turn outputs added: the summary seed and the
+ * `startingTier` that `determineStartingTier` computed.
  *
- * Not `.strict()`, unlike the pre-close arm: unknown keys are stripped.
- * Rows closed before issue #93 still hold `immutableSummary`, which nothing
- * reads now. Stripping lets those rows parse with no data migration. The
- * union below still discriminates: this arm needs both close-turn keys, and
- * the strict pre-close arm rejects any payload that carries one.
- *
- * Built from the pre-close `.shape`, not `.extend()`: `.extend()` would
- * inherit the pre-close arm's strict mode.
+ * `.strict()` here is symmetric with the pre-close arm — both arms reject
+ * unknown keys so the union below has unambiguous discrimination. It also
+ * guards writes: `updateCourseScopingState` parses a patch, then stores the
+ * raw patch, so a stripping schema would let an unknown key reach the row.
  */
-export const baselineClosedJsonbSchema = z.object({
-  ...baselineQuestionsJsonbSchema.shape,
-  summarySeed: z.string(),
-  startingTier: z.number().int().positive(),
-});
+export const baselineClosedJsonbSchema = baselineQuestionsJsonbSchema
+  .extend({
+    /**
+     * Legacy key: never written since issue #94; old rows hold it. Nothing
+     * reads it. Listed only so those rows still parse under `.strict()`,
+     * with no data migration.
+     */
+    immutableSummary: z.string().optional(),
+    summarySeed: z.string(),
+    startingTier: z.number().int().positive(),
+  })
+  .strict();
 /** Inferred from {@link baselineClosedJsonbSchema}; post-close baseline JSONB. */
 export type BaselineClosedJsonb = z.infer<typeof baselineClosedJsonbSchema>;
 
@@ -148,12 +151,12 @@ export type BaselineClosedJsonb = z.infer<typeof baselineClosedJsonbSchema>;
  * superset of the pre-close shape, so consumers discriminate by checking
  * `"startingTier" in baseline`.
  *
- * The closed arm is listed first so well-formed close payloads match without
- * first attempting (and failing) the pre-close arm. A malformed close payload
- * (mixing close-turn fields incompletely) rejects on both arms: the closed
- * arm fails on the missing field, and the pre-close arm fails because
- * `.strict()` rejects the unknown close-turn keys — so the corruption
- * surfaces instead of silently degrading.
+ * Both arms are `.strict()`; the closed arm is listed first so well-formed
+ * close payloads match without first attempting (and failing) the pre-close
+ * arm. A malformed close payload (mixing close-turn fields incompletely)
+ * rejects on both arms: the closed arm fails on the missing field, and the
+ * pre-close arm fails because `.strict()` rejects the unknown close-turn
+ * keys — so the corruption surfaces instead of silently degrading.
  */
 export const baselineJsonbSchema = z.union([
   baselineClosedJsonbSchema,

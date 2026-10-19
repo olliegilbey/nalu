@@ -50,7 +50,7 @@ export function logScopingCloseGradings(params: {
   if (!isGradingDebugEnabled()) return;
   try {
     // Baseline XP scores every question at `startingTier` (see
-    // `mergeAndComputeXp`), so that is the tier the line shows.
+    // `scoreBaseline`), so that is the tier the line shows.
     writeGradingLines("scoping-close", params.gradings, params.responses, params.startingTier);
   } catch (err) {
     writeDebugFailure("scoping-close", err);

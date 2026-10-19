@@ -63,6 +63,21 @@ interface StoredQuestion {
 }
 
 /**
+ * A baseline question's tier, or a loud throw. baseline.ts's superRefine
+ * requires every question to carry one, and placement, XP and the grader
+ * all read it. A silent default (tier 0) would corrupt all three.
+ */
+export function requireQuestionTier(question: {
+  readonly id: string;
+  readonly tier?: number | undefined;
+}): number {
+  if (question.tier === undefined) {
+    throw new Error(`baseline question ${question.id} missing required tier`);
+  }
+  return question.tier;
+}
+
+/**
  * One question's split decision: either mechanical MC grading (no LLM
  * needed) or an LLM-batch item. `qid` keeps the subsequent merge loop
  * from having to narrow the union at every access.
@@ -83,14 +98,12 @@ export function gradeMc(question: StoredQuestion, selected: McOptionKey): Gradin
     throw new Error(`gradeMc called with free_text question ${question.id}`);
   }
   // Baseline questions are required to carry `conceptName` AND `tier` (see
-  // baseline.ts superRefine). Silent defaults would corrupt SM-2 scheduling
-  // (synthetic concept) and starting-tier placement (tier=0). Fail loud.
+  // baseline.ts superRefine). A silent default concept would corrupt SM-2
+  // scheduling (synthetic concept). Fail loud.
   if (question.conceptName === undefined) {
     throw new Error(`gradeMc: baseline question ${question.id} missing required conceptName`);
   }
-  if (question.tier === undefined) {
-    throw new Error(`gradeMc: baseline question ${question.id} missing required tier`);
-  }
+  const tier = requireQuestionTier(question);
   const isCorrect = selected === question.correct;
   const qualityScore = isCorrect ? MC_CORRECT_QUALITY : MC_INCORRECT_QUALITY;
   const verdict: GradingEntry["verdict"] =
@@ -102,8 +115,8 @@ export function gradeMc(question: StoredQuestion, selected: McOptionKey): Gradin
     // LLM-XP boundary, the server uses the stored `question.tier` as the
     // authoritative source. (The wire schema does emit `conceptTier` for
     // free-text entries; that path is validated server-side in
-    // `mergeAndComputeXp` against the framework's `baselineScopeTiers`.)
-    conceptTier: question.tier,
+    // `scoreBaseline` against the framework's `baselineScopeTiers`.)
+    conceptTier: tier,
     verdict,
     qualityScore,
     rationale: isCorrect
@@ -119,21 +132,18 @@ export function toEvaluationItem(
   viaEscape: boolean,
 ): BaselineEvaluationItem {
   // Baseline questions are required to carry `conceptName` and `tier`
-  // (see baseline.ts superRefine). Silent defaults of `question.id` / `0`
-  // would mask an upstream contract violation as a degraded grading run
-  // (mis-attributed concept; tier=0 confusing the grader prompt). Fail loud.
+  // (see baseline.ts superRefine). A silent default of `question.id` would
+  // mask an upstream contract violation as a degraded grading run
+  // (mis-attributed concept). Fail loud.
   if (question.conceptName === undefined) {
     throw new Error(
       `toEvaluationItem: baseline question ${question.id} missing required conceptName`,
     );
   }
-  if (question.tier === undefined) {
-    throw new Error(`toEvaluationItem: baseline question ${question.id} missing required tier`);
-  }
   return {
     questionId: question.id,
     conceptName: question.conceptName,
-    tier: question.tier,
+    tier: requireQuestionTier(question),
     question: question.prompt,
     rubric: question.freetextRubric,
     learnerProse: text,

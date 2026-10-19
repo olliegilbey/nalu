@@ -17,21 +17,21 @@ import {
   type FrameworkJsonb,
 } from "@/lib/types/jsonb";
 import type { CloseTurnBase } from "@/lib/prompts/closeTurn";
-import type { MergeAndComputeXpResult } from "@/lib/scoring/baselineMerge";
+import type { ScoreBaselineResult } from "@/lib/scoring/scoreBaseline";
 
 /**
  * Inputs for {@link persistScopingClose}.
  *
  * `parsed` is the validated LLM close-turn payload (post-Zod).
  * `merged` is the canonical-order gradings, the starting tier, and the
- * deterministic total XP produced by `mergeAndComputeXp`.
+ * deterministic total XP produced by `scoreBaseline`.
  */
 export interface PersistScopingCloseParams {
   readonly courseId: string;
   /** The course's open scoping pass. It closes in this transaction. */
   readonly scopingPassId: string;
   readonly parsed: CloseTurnBase;
-  readonly merged: MergeAndComputeXpResult;
+  readonly merged: ScoreBaselineResult;
 }
 
 /** Result handle — Wave 1 id is useful for callers that need to refer to it next. */
