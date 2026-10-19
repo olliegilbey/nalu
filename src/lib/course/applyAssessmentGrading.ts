@@ -15,7 +15,8 @@ import { verdictForQualityScore } from "@/lib/scoring/verdictBand";
  * - `mc-index`: mechanical correctness from comparing the learner's chosen
  *   index against the stored `correctIndex`. No LLM in the loop here.
  * - `free-text`: an LLM-graded prose answer. Its `qualityScore` drives XP
- *   and correctness; its `verdict` is advisory (issue #198).
+ *   and correctness. The model's `verdict` stops at the caller: it is
+ *   advisory (issue #198), so this type does not carry it (issue #213).
  *
  * Both produce one `applyAssessmentGrading` call: row updated + XP awarded.
  */
@@ -24,9 +25,6 @@ export type GradedSignal =
   | {
       readonly kind: "free-text";
       readonly questionId: string;
-      // Unread since issue #198: correctness derives from `qualityScore`.
-      // Dropping it, and its callers, is issue #213.
-      readonly verdict: "correct" | "partial" | "incorrect";
       // `QualityScore` (not bare `number`): the value originates at the LLM
       // trust boundary via `qualityScoreSchema` and flows straight into the
       // `QualityScore`-typed `updateAssessmentGrading` patch — keep the domain
@@ -60,6 +58,11 @@ export interface AppliedGrading {
   readonly questionId: string;
   readonly xpAwarded: number;
   readonly kind: GradedSignal["kind"];
+  /**
+   * The `is_correct` written to the row. Callers read it here and never
+   * re-derive it, so the turn result and the row agree (issue #213).
+   */
+  readonly isCorrect: boolean;
 }
 
 /**
@@ -120,14 +123,20 @@ async function writeAssessmentGrading(
       },
       params.tx,
     );
-    return { questionId: params.signal.questionId, xpAwarded: xp, kind: "mc-index" };
+    return {
+      questionId: params.signal.questionId,
+      xpAwarded: xp,
+      kind: "mc-index",
+      isCorrect: params.signal.correct,
+    };
   }
   // Free-text path: the LLM's qualityScore drives tiered XP and correctness.
   const xp = calculateXP(params.conceptTier, params.signal.qualityScore);
   // Correctness follows the score, not the model's verdict (issue #198). The
   // score sets XP, so a row can no longer say "correct" and earn 0 XP. Only
-  // the "correct" band counts; a partial answer stays incorrect. The verdict
-  // is now advisory: the flat tool wire still asks for it, because changing
+  // the "correct" band counts; a partial answer stays incorrect. This is the
+  // one place the Harness applies that rule; callers read `isCorrect` from
+  // the result. The flat tool wire still asks for a verdict, because changing
   // that prompt-engineered wire needs a live A/B (`waveTurnTools.ts`).
   const isCorrect = verdictForQualityScore(params.signal.qualityScore) === "correct";
   await updateAssessmentGrading(
@@ -140,5 +149,5 @@ async function writeAssessmentGrading(
     },
     params.tx,
   );
-  return { questionId: params.signal.questionId, xpAwarded: xp, kind: "free-text" };
+  return { questionId: params.signal.questionId, xpAwarded: xp, kind: "free-text", isCorrect };
 }
