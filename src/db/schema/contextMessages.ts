@@ -39,6 +39,8 @@ import { scopingPasses } from "./scopingPasses";
  *   - assistant: assistant_response, failed_assistant_response,
  *     assistant_tool_call.
  *   - tool: tool_result.
+ * `AppendMessageParams` (`src/db/queries/contextMessages.ts`) types the same
+ * pairs, so tsc rejects a mismatch first. Change both together.
  *
  * `kind` is the discriminator driving parsing/rendering; full
  * row→tag mapping is in spec §6.5:
