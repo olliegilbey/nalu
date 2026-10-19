@@ -182,18 +182,19 @@ Mid-Wave turn
 Final turn (turns_remaining == 0)
   -> Harness appends <concepts_for_next_wave> to the user envelope (Section 4.3)
   -> Model emits one JSON response: closing message, grades for cards answered
-     this turn, a Wave summary, the next Wave's blueprint, and one SM-2 quality
-     score per concept the learner worked with
+     this turn, the rewritten course summary, the next Wave's blueprint, and
+     one SM-2 quality score per concept the learner worked with
   -> Harness, in one transaction:
        awards XP for graded cards plus a flat Wave-completion bonus
        runs SM-2 for each scored concept
        closes the Wave with its summary and blueprint
+       rewrites courses.summary with the same summary
        checks tier advancement (Section 7.2)
        opens the next Wave from the blueprint
   -> The closed Wave's Context stays in the DB for UI history. It is never replayed.
 ```
 
-**Course summary.** On Wave close, the Harness rewrites `courses.summary` end-to-end from the model's summary. It does not append; the model compresses earlier-Wave material. The next Wave's `<progress_summary>` block carries it. The code does not rewrite it yet; see issue #93.
+**Course summary.** On Wave close, the Harness rewrites `courses.summary` end-to-end from the model's summary. It does not append; the model compresses earlier-Wave material. The next Wave's `<progress_summary>` block carries it. The closed Wave keeps the same text on `waves.summary` as its snapshot. The rewrite lands at close, so an open Wave's system prompt never changes.
 
 ### 4.3 Spaced Repetition Injection
 
@@ -265,7 +266,7 @@ The system prompt is crystallised **once per phase** (scoping, or a single Wave)
 **Output contract.** The model emits JSON or tool calls, never free-form tagged blocks.
 
 - **Mid-Wave turn**: teaching prose; optional comprehension signals that grade the cards the learner just answered; an optional questionnaire of 1-N questions. Each question names one concept. Each multiple-choice question carries its correct key. Each free-text question carries a rubric that states what a correct answer contains; baseline questions follow the same rule. The model sends the rest as tool calls (`recordComprehensionSignals`, `presentQuestionnaire`) first, then streams its prose as text. The learner sees the prose above the quiz card.
-- **Final turn**: one JSON object with the closing message, gradings for cards answered this turn, a Wave summary, the next Wave's blueprint (topic, outline, opening text, planned concepts), and per-concept SM-2 quality scores.
+- **Final turn**: one JSON object with the closing message, gradings for cards answered this turn, the rewritten course summary, the next Wave's blueprint (topic, outline, opening text, planned concepts), and per-concept SM-2 quality scores.
 - **Scoping close**: the same close-turn base, plus a durable learner profile and the starting tier.
 
 Exact schemas live in `src/lib/prompts/` (`waveTurn.ts`, `waveClose.ts`, `closeTurn.ts`, `scopingClose.ts`, `questionnaire.ts`). Tool schemas live in `src/lib/course/waveTurnTools.ts`. The Harness redacts answer keys from every Wave client payload (Section 8.2). Scoping still ships them (#58).

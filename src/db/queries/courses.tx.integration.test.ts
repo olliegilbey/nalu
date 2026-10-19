@@ -9,6 +9,7 @@ import {
   getCourseBaselineAndFrameworkInTx,
   setCourseBaselineInTx,
   setCourseStartingStateInTx,
+  setCourseSummaryInTx,
   updateCourseTierInTx,
   incrementCourseXpInTx,
   lockCourseRowInTx,
@@ -129,6 +130,24 @@ describe("courses close-transaction queries", () => {
       const after = await getCourseById(courseId);
       expect(after.status).toBe("scoping");
       expect(after.totalXp).toBe(0);
+    });
+  });
+
+  it("setCourseSummaryInTx overwrites the summary and stamps summary_updated_at", async () => {
+    await seedCourseAndRun(async (db, courseId) => {
+      await setCourseStartingStateInTx(courseId, { summary: "seed", startingTier: 1 }, db);
+      const before = await getCourseById(courseId);
+      await db.transaction(async (tx) => {
+        await setCourseSummaryInTx(courseId, "rewritten after lesson 1", tx);
+      });
+
+      const after = await getCourseById(courseId);
+      // Overwritten whole, never appended.
+      expect(after.summary).toBe("rewritten after lesson 1");
+      expect(after.summaryUpdatedAt).not.toBeNull();
+      expect(after.summaryUpdatedAt!.getTime()).toBeGreaterThanOrEqual(
+        before.summaryUpdatedAt!.getTime(),
+      );
     });
   });
 

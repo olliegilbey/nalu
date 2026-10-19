@@ -17,6 +17,8 @@ import * as executeTurnModule from "@/lib/turn/executeTurn";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import type { McOptionKey } from "@/lib/types/mcOptionKey";
+import { renderTeachingSystem } from "@/lib/prompts/teaching";
+import { buildWaveSeed } from "./buildWaveSeed";
 import { loadWaveContext } from "./loadWaveContext";
 import { executeWaveClose } from "./executeWaveClose";
 import { namespaceQuestionId } from "./namespaceQuestionId";
@@ -45,6 +47,8 @@ import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTur
  *   4. Concurrent close attempt: a pre-existing `wave_number = N+1` row trips
  *      the `(course_id, wave_number)` unique index when openWave runs inside
  *      the tx — the whole transaction rolls back, no orphan state.
+ *   9. Course summary (issue #93): the close rewrites `courses.summary`, and
+ *      Wave N+1's system prompt renders it in `<progress_summary>`.
  */
 
 const USER_ID = "99999999-9999-9999-9999-999999999999";
@@ -567,6 +571,8 @@ describe("executeWaveClose (integration)", () => {
       // XP not incremented: the grading's XP rolls back; the completion bump never runs.
       const afterCourse = (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!;
       expect(afterCourse.totalXp).toBe(0);
+      // The course summary rewrite rolls back too: it keeps the scoping seed.
+      expect(afterCourse.summary).toBe("seed");
 
       // Fix 5: executeTurn's user_message + assistant_response rows sit OUTSIDE
       // `persistWaveClose`'s tx and must survive its rollback. The orchestrator
@@ -796,6 +802,40 @@ describe("executeWaveClose (integration)", () => {
         await db.select().from(assessments).where(eq(assessments.questionId, questionId))
       )[0]!;
       expect(assessmentRow.xpAwarded).toBe(dbTierXp);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 9. Course summary (issue #93). The close's summary is the whole course
+  //    summary, rewritten. It replaces the scoping seed in `courses.summary`,
+  //    and the next Wave's system prompt renders it in `<progress_summary>`.
+  //    `waves.summary` keeps the same text as the closed Wave's snapshot.
+  // ---------------------------------------------------------------------------
+  it("rewrites courses.summary from the close summary and renders it in Wave N+1's <progress_summary>", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave(2);
+      await seedOpenFreeTextQuestionnaire(courseId, waveId);
+
+      const summary = "Learner explains ownership and moves in their own words. Borrowing is next.";
+      const parsed = { ...makeParsedClose(), summary };
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
+      );
+
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const result = await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
+
+      // The scoping seed is gone; the close's summary replaces it whole.
+      const afterCourse = (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!;
+      expect(afterCourse.summary).toBe(summary);
+      // The closed Wave keeps the same text as its per-Wave snapshot.
+      const closedWave = (await db.select().from(waves).where(eq(waves.id, waveId)))[0]!;
+      expect(closedWave.summary).toBe(summary);
+
+      // Wave N+1's system prompt, built the way every turn builds it.
+      const next = await loadWaveContext({ userId: USER_ID, courseId, waveId: result.nextWaveId });
+      const system = renderTeachingSystem(buildWaveSeed(next.course, next.wave));
+      expect(system).toContain(`<progress_summary>\n${summary}\n</progress_summary>`);
     });
   });
 });

@@ -20,7 +20,7 @@ What the User submits when the assessment-card UI replaces the chat input. A tur
 
 ## Cumulative summary
 
-The text on `courses.summary`. The scoping close turn writes it once, from its `summary` field. Every Wave's system prompt renders it as `<progress_summary>`. A Wave close writes its own `summary` to `waves.summary`, not here. Nothing rewrites `courses.summary` after scoping today (issue #93).
+The text on `courses.summary`. The scoping close turn writes the first one, from its `summary` field. Each Wave close rewrites it whole from its own `summary` field: the model compresses the prior summary and folds in the lesson. Every Wave's system prompt renders it as `<progress_summary>`. A Wave close also keeps the same text on `waves.summary`, a per-Wave snapshot that no code reads back.
 
 ## Baseline
 

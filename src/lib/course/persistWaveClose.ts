@@ -3,7 +3,11 @@ import { WAVE } from "@/lib/config/tuning";
 import { appendWaveChatLog, closeWave, openWave } from "@/db/queries/waves.writes";
 import { getConceptsByCourse, getDueConceptsByCourse } from "@/db/queries/concepts";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
-import { incrementCourseXpInTx, lockCourseRowInTx } from "@/db/queries/courses.tx";
+import {
+  incrementCourseXpInTx,
+  lockCourseRowInTx,
+  setCourseSummaryInTx,
+} from "@/db/queries/courses.tx";
 import { dueConceptsSnapshotSchema, type FrameworkJsonb } from "@/lib/types/jsonb";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { LoadedWaveContext } from "./loadWaveContext";
@@ -56,6 +60,8 @@ export interface PersistWaveCloseResult {
  *      optional tx, mirroring openWave) so the close rolls back if a later
  *      step throws. Without the tx thread, the UPDATE would commit even when
  *      the orchestrator's openWave(N+1) hits a unique-violation.
+ *   3a. Rewrite `courses.summary` with the close's summary
+ *      (`setCourseSummaryInTx`). Wave N+1's `<progress_summary>` renders it.
  *   4. Tier-advancement check — gated by
  *        (waveNumber % WAVE.tierCheckInterval === 0)
  *        || (plannedConcepts.length === 0)
@@ -105,6 +111,15 @@ export async function persistWaveClose(
       { summary: parsed.summary, blueprintEmitted: parsed.nextUnitBlueprint },
       tx,
     );
+
+    // 3a. Rewrite the course summary. The close schema asks the model for the
+    //     whole course summary, so this overwrites; it never appends. Wave N
+    //     keeps the same text in `waves.summary` (step 3) as its snapshot.
+    //     Byte stability: every Wave turn renders `courses.summary` into its
+    //     system prompt, read once per turn. That is safe only because this
+    //     write runs at close. Wave N takes no more turns, so only Wave N+1's
+    //     prompt ever sees the new value.
+    await setCourseSummaryInTx(ctx.course.id, parsed.summary, tx);
 
     // 3b. Closing assistant entry on Wave N's chat_log — paired with the
     //     close-turn assistant_response that was persisted by executeTurn in
