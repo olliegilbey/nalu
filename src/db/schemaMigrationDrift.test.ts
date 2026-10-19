@@ -23,7 +23,13 @@ import * as schema from "./schema";
 
 const META_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "migrations/meta");
 
-const FIX = "Schema changed without a migration? Run `just db-generate <name>` and commit it.";
+// The diff runs both ways. A schema edit with no migration prints the SQL to
+// add it. A committed migration whose schema edit was reverted prints the SQL
+// to undo it; generating that would undo the migration.
+const FIX =
+  "Schema and migrations disagree. If the SQL adds your schema edit, run " +
+  "`just db-generate <name>` and commit it. If it undoes a committed " +
+  "migration, restore the schema edit instead.";
 
 /** The slice of drizzle-kit's `_journal.json` this test reads. */
 const journalSchema = z.object({
@@ -62,7 +68,13 @@ describe("schema vs the committed migrations", () => {
     const current = generateDrizzleJson(schema);
     // A renamed table or column makes drizzle-kit ask "rename or recreate?".
     // A test has no TTY, so that throws "Interactive prompts require a TTY
-    // terminal". The fix is the same: `just db-generate` asks you instead.
-    expect(await generateMigration(committed, current), FIX).toEqual([]);
+    // terminal". Rethrow it with FIX, so the fix still prints.
+    // `just db-generate` asks you the question instead.
+    const sql = await generateMigration(committed, current).catch((error: unknown) => {
+      throw new Error(`${FIX} drizzle-kit could not diff; a rename needs its prompt.`, {
+        cause: error,
+      });
+    });
+    expect(sql, FIX).toEqual([]);
   });
 });

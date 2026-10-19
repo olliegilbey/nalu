@@ -26,10 +26,14 @@ Workflow: edit schema TS → `just db-generate <name>` → review SQL diff →
 commit both. `just db-migrate` applies. CI re-runs in ephemeral Postgres.
 
 `schemaMigrationDrift.test.ts` (unit tier) diffs the schema against the
-newest committed snapshot, as `generate` does. Red means a schema or tuning
-edit has no migration: run `just db-generate <name>` and commit the SQL. Its
-failure prints the missing statements. A rename fails with "Interactive
-prompts require a TTY"; `just db-generate` asks rename-or-recreate instead.
+newest committed snapshot, as `generate` does. Red prints the SQL that would
+close the gap. If that SQL adds your schema or tuning edit, run
+`just db-generate <name>` and commit it. If it undoes a committed migration,
+restore the schema edit instead. A rename fails with "Interactive prompts
+require a TTY"; `just db-generate` asks rename-or-recreate instead. The test
+reads snapshots, never `.sql`: hand-written SQL (a journal entry with no
+snapshot, like 0005, or `drizzle-kit generate --custom`) can disagree with
+the schema and still pass.
 
 A CHECK on a `real` column casts its bound to `::real`. Postgres compares a
 bare decimal in float8, where real 1.3 (1.29999995) fails `>= 1.3` (issue
