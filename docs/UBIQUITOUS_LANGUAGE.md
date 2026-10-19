@@ -24,7 +24,7 @@ The text on `courses.summary`. The scoping close turn writes it once, from its `
 
 ## Baseline
 
-The 7-9 assessment questions generated after the framework is confirmed. Mix of multiple choice (graded mechanically by `submitBaseline`, no LLM) and free-text (graded by a single batched LLM call inside `submitBaseline`). Determines the learner's starting tier.
+The 7-9 assessment questions generated after the framework is confirmed. Mix of multiple choice (graded mechanically by `submitBaseline`, no LLM) and free-text (graded by a single batched LLM call inside `submitBaseline`). Its per-tier results set the learner's starting tier: `determineStartingTier` in `src/lib/scoring/startingTier.ts`, with the threshold `BASELINE.tierMasteryRatio`. The model grades answers; it never picks the tier.
 
 ## Concept
 

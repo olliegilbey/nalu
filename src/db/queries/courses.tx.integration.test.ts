@@ -32,7 +32,6 @@ const CLOSED_BASELINE: BaselineClosedJsonb = {
   questions: [],
   responses: [],
   gradings: [],
-  immutableSummary: "profile",
   summarySeed: "seed",
   startingTier: 2,
 };
@@ -81,6 +80,19 @@ describe("courses close-transaction queries", () => {
       expect(after.startingTier).toBe(2);
       expect(after.currentTier).toBe(3);
       expect(after.totalXp).toBe(15);
+    });
+  });
+
+  // Issue #93: courses closed before the change hold `immutableSummary` in
+  // their baseline. The row guard must still load them; it drops the key.
+  it("reads a closed baseline that still holds the retired immutableSummary key", async () => {
+    await seedCourseAndRun(async (db, courseId) => {
+      // Written raw, as an old close left it: the helpers no longer accept the key.
+      const legacy = { ...CLOSED_BASELINE, immutableSummary: "profile" };
+      await db.update(courses).set({ baseline: legacy }).where(eq(courses.id, courseId));
+
+      const after = await getCourseById(courseId);
+      expect(after.baseline).toEqual(CLOSED_BASELINE);
     });
   });
 

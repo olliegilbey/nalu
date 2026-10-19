@@ -1,51 +1,11 @@
-import { z } from "zod/v4";
-import { makeCloseTurnBaseSchema, type MakeCloseTurnBaseSchemaParams } from "./closeTurn";
 import { renderStageEnvelope } from "./scoping";
 
-/**
- * Scoping-only extensions on the shared close-turn base. The model emits two
- * one-shot fields exclusive to scoping close:
- *   - `immutableSummary`: durable learner profile, written once.
- *   - `startingTier`: the level lesson 1 starts at.
- *
- * Both are clamped to the framework's `scopeTiers` via a superRefine layered
- * on top of the base schema's grading-tier refine. Refine failures route back
- * into `executeTurn`'s ValidationGateFailure retry as teacher-style messages.
- */
-export function makeScopingCloseSchema(params: MakeCloseTurnBaseSchemaParams) {
-  const scope = new Set(params.scopeTiers);
-  const base = makeCloseTurnBaseSchema(params);
-
-  return base.and(
-    z
-      .object({
-        immutableSummary: z
-          .string()
-          .min(1)
-          .describe(
-            "Capture the durable facts about this learner that should ground every future lesson: their background, what they're trying to achieve, what they already know, what motivates them. 3-5 sentences. Write what you'd want to be reminded of at the start of every lesson you teach them.",
-          ),
-        startingTier: z
-          .number()
-          .int()
-          .describe(
-            "Choose the framework level where lesson 1 begins teaching. Base it strictly on what the learner demonstrated in their baseline answers — not on their stated background or ambitions. When their performance is mixed, partial, or uncertain, choose the lower level: starting a little too easy costs only a few brisk turns and builds momentum, whereas starting too hard loses the learner. Only choose a higher level when they showed clear, consistent competence at the level below it. Stay inside the framework's level range.",
-          ),
-      })
-      .superRefine((val, ctx) => {
-        if (!scope.has(val.startingTier)) {
-          ctx.addIssue({
-            code: "custom",
-            path: ["startingTier"],
-            message: `startingTier ${val.startingTier} is outside the framework's level range [${[...scope].join(", ")}]. Choose one of the levels in that range.`,
-          });
-        }
-      }),
-  );
-}
-
-/** Inferred from {@link makeScopingCloseSchema}; full close-scoping turn payload. */
-export type ScopingCloseTurn = z.infer<ReturnType<typeof makeScopingCloseSchema>>;
+// The scoping close answers with the shared close-turn base,
+// `makeCloseTurnBaseSchema` in `closeTurn.ts`, and nothing more. The model
+// does not pick the starting tier: `determineStartingTier`
+// (`src/lib/scoring/startingTier.ts`) computes it from the graded answers
+// (issue #94). Nor does it write a second, "immutable" summary: its one
+// summary becomes `courses.summary` (issue #93).
 
 /**
  * Stage envelope for the close-scoping turn. The learner-input payload carries

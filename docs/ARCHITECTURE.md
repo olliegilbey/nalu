@@ -79,7 +79,7 @@ Scoping and wave share the **primitives** but pick different **column shapes** b
 ```text
 courses.clarification = { userMessage, questions, responses }
 courses.framework     = { userMessage, tiers, estimatedStartingTier, baselineScopeTiers }
-courses.baseline      = { userMessage, questions, responses, gradings[, immutableSummary, summarySeed, startingTier] }
+courses.baseline      = { userMessage, questions, responses, gradings[, summarySeed, startingTier] }
 ```
 
 **Wave** — variable-cardinality turns (up to `WAVE.turnCount` per wave). One JSONB array column on `waves`:

@@ -141,7 +141,11 @@ User types a topic
        (becomes courses.summary and Wave 1's <progress_summary>),
        and drafts Wave 1's blueprint
     -> Deterministic code sets the starting tier from per-tier baseline results
-       Today the LLM emits the starting tier within a validated range; see issue #94.
+       (determineStartingTier): walk the in-scope tiers from lowest to highest;
+       start at the first tier whose share of correct answers (quality 4-5)
+       falls below BASELINE.tierMasteryRatio, or at the highest if every tier
+       meets it.
+       A tier with no answers counts as not mastered. The LLM never picks the tier.
     -> Upsert baseline concepts at default SM-2 state; award XP
     -> UPDATE courses SET current_tier, starting_tier, baseline, summary, total_xp, status = 'active'
     -> Open Wave 1 from the blueprint; seed its opening text
@@ -266,7 +270,7 @@ The system prompt is crystallised **once per phase** (scoping, or a single Wave)
 
 - **Mid-Wave turn**: teaching prose; optional comprehension signals that grade the cards the learner just answered; an optional questionnaire of 1-N questions. Each question names one concept. Each multiple-choice question carries its correct key. Each free-text question carries a rubric that states what a correct answer contains; baseline questions follow the same rule. The model sends the rest as tool calls (`recordComprehensionSignals`, `presentQuestionnaire`) first, then streams its prose as text. The learner sees the prose above the quiz card.
 - **Final turn**: one JSON object with the closing message, gradings for cards answered this turn, a Wave summary, the next Wave's blueprint (topic, outline, opening text, planned concepts), and per-concept SM-2 quality scores.
-- **Scoping close**: the same close-turn base, plus a durable learner profile and the starting tier.
+- **Scoping close**: the same close-turn base and nothing more. Its summary seeds `courses.summary`. The Harness computes the starting tier (Section 4.1).
 
 Exact schemas live in `src/lib/prompts/` (`waveTurn.ts`, `waveClose.ts`, `closeTurn.ts`, `scopingClose.ts`, `questionnaire.ts`). Tool schemas live in `src/lib/course/waveTurnTools.ts`. The Harness redacts answer keys from every Wave client payload (Section 8.2). Scoping still ships them (#58).
 

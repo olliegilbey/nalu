@@ -9,8 +9,10 @@ import {
 import { clarifySchema } from "@/lib/prompts/clarify";
 import { frameworkSchema } from "@/lib/prompts/framework";
 import { makeWaveCloseSchema } from "@/lib/prompts/waveClose";
-import { makeScopingCloseSchema } from "@/lib/prompts/scopingClose";
-import type { MakeCloseTurnBaseSchemaParams } from "@/lib/prompts/closeTurn";
+import {
+  makeCloseTurnBaseSchema,
+  type MakeCloseTurnBaseSchemaParams,
+} from "@/lib/prompts/closeTurn";
 
 describe("toCerebrasJsonSchema", () => {
   it("strips minItems/maxItems on arrays", () => {
@@ -266,10 +268,11 @@ describe("toCerebrasJsonSchema", () => {
   it.each<[string, z.ZodType<unknown>]>([
     ["clarify", clarifySchema],
     ["framework", frameworkSchema],
-    // Close-turn schemas are `base.and(extra)` intersections — the exact
-    // shape that emits `allOf`. They are the regression target here.
+    // The Wave close is a `base.and(extra)` intersection — the exact shape
+    // that emits `allOf`. It is the regression target here. The scoping
+    // close sends the base alone.
     ["wave_close", makeWaveCloseSchema(closeParams)],
-    ["scoping_close", makeScopingCloseSchema(closeParams)],
+    ["scoping_close", makeCloseTurnBaseSchema(closeParams)],
   ])("produces a Cerebras-strict-valid schema for %s", (name, schema) => {
     const out = toCerebrasJsonSchema(schema, { name });
     // Cerebras strict mode requires an object at the root.

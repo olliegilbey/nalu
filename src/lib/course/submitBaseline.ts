@@ -4,7 +4,8 @@ import { getCourseById } from "@/db/queries/courses";
 import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { getOpenWaveByCourse } from "@/db/queries/waves";
-import { makeScopingCloseSchema, renderScopingCloseStage } from "@/lib/prompts/scopingClose";
+import { makeCloseTurnBaseSchema } from "@/lib/prompts/closeTurn";
+import { renderScopingCloseStage } from "@/lib/prompts/scopingClose";
 import {
   buildScopingCloseLearnerInput,
   splitOne,
@@ -43,7 +44,8 @@ export interface SubmitBaselineResult {
 
 /**
  * Closing turn of scoping. Drives one append-only LLM call against the
- * existing scoping Context, validates against `makeScopingCloseSchema`, and
+ * existing scoping Context, validates against `makeCloseTurnBaseSchema`,
+ * places the learner (`mergeAndComputeXp` → `determineStartingTier`), and
  * persists everything atomically via {@link persistScopingClose}. After this
  * resolves, `course.status === 'active'` and Wave 1 is open with its
  * assistant `openingText` already in `context_messages` — no further LLM
@@ -138,16 +140,24 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
     return splitOne(q, answer);
   });
   const mechanicalGradings = splits.flatMap((s) => (s.kind === "mechanical" ? [s.grading] : []));
+  // Each question's id and tier, for placement. `splitOne` above already
+  // threw on a question with no tier, so this check only narrows the type.
+  const baselineQuestions = baseline.questions.map((q) => {
+    if (q.tier === undefined) throw new Error(`submitBaseline: question ${q.id} has no tier`);
+    return { id: q.id, tier: q.tier };
+  });
 
   // Schema closed over runtime scope + question ids so refine messages name
-  // the specific values that triggered any violation.
+  // the specific values that triggered any violation. The scoping close emits
+  // the shared close-turn base and nothing more: deterministic code computes
+  // the starting tier below (issue #94).
   //
   // freshConceptNames: all example concepts from the framework tiers (the
   // model may pick from these or introduce novel ones — validated loosely).
   // reviewDueNames / existingConceptNames: both empty at scoping close since
   // no concepts exist yet and SM-2 has no due entries pre-teaching.
   const freshConceptNames = framework.tiers.flatMap((t) => t.exampleConcepts);
-  const schema = makeScopingCloseSchema({
+  const schema = makeCloseTurnBaseSchema({
     scopeTiers,
     questionIds,
     freshConceptNames,
@@ -211,21 +221,14 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
       responseSchema: schema,
       responseSchemaName: "scoping_close",
       label: "scoping-close",
-      successSummary: (p) => `gradings=${p.gradings.length} startingTier=${p.startingTier}`,
-    });
-
-    // Issue #22 diagnosis: no-op unless LLM_DEBUG_GRADINGS is on, and never
-    // throws. Same lines as `executeWaveClose`: grading kind beside Response
-    // kind, plus verdict, quality and XP for free-text gradings.
-    logScopingCloseGradings({
-      gradings: parsed.gradings,
-      responses,
-      startingTier: parsed.startingTier,
+      successSummary: (p) => `gradings=${p.gradings.length}`,
     });
 
     // Defence-in-depth: the schema already enforced tier scope + id coverage,
     // but mergeAndComputeXp re-checks at the orchestration layer so a future
     // schema regression surfaces as a thrown Error rather than corrupt XP.
+    // It also places the learner: the starting tier comes from the graded
+    // answers, never from the model (issue #94).
     //
     // Filter to free-text gradings only: mc-index gradings lack the full
     // StoredGrading shape (no conceptName/conceptTier/verdict/qualityScore).
@@ -234,10 +237,20 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
     // mergeAndComputeXp boundary.
     const freeTextGradings = parsed.gradings.filter((g) => g.kind === "free-text");
     const merged = mergeAndComputeXp({
-      parsed: { gradings: freeTextGradings, startingTier: parsed.startingTier },
+      parsed: { gradings: freeTextGradings },
       mechanicalGradings,
-      baselineQuestionIds: questionIds,
+      baselineQuestions,
       scopeTiers,
+    });
+
+    // Issue #22 diagnosis: no-op unless LLM_DEBUG_GRADINGS is on, and never
+    // throws. Same lines as `executeWaveClose`: grading kind beside Response
+    // kind, plus verdict, quality and XP for free-text gradings. It runs after
+    // the merge because XP is scored at the computed starting tier.
+    logScopingCloseGradings({
+      gradings: parsed.gradings,
+      responses,
+      startingTier: merged.startingTier,
     });
 
     // persistScopingClose: widens baseline JSONB (overwriting userMessage with

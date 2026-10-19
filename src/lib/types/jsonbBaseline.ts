@@ -99,7 +99,7 @@ export const baselineGradingSchema = z
  * `gradings` is initialised empty here and populated by `submitBaseline`.
  *
  * `.strict()` is required for union discrimination in `baselineJsonbSchema`:
- * without it, a malformed closed payload (with `immutableSummary` but missing
+ * without it, a malformed closed payload (with `startingTier` but missing
  * `summarySeed`) would silently fall through to this arm and have its
  * close-turn fields stripped, masking a corruption bug.
  */
@@ -122,20 +122,24 @@ export const baselineQuestionsJsonbSchema = z
   .strict();
 
 /**
- * What `submitBaseline` writes on close. Strict superset of the pre-close
- * shape, with the close-turn outputs added: dual summaries (immutable
- * profile + evolving seed) and the chosen `startingTier`.
+ * What `submitBaseline` writes on close. Superset of the pre-close shape,
+ * with the close-turn outputs added: the summary seed and the `startingTier`
+ * that `determineStartingTier` computed.
  *
- * `.strict()` here is symmetric with the pre-close arm — both arms reject
- * unknown keys so the union below has unambiguous discrimination.
+ * Not `.strict()`, unlike the pre-close arm: unknown keys are stripped.
+ * Rows closed before issue #93 still hold `immutableSummary`, which nothing
+ * reads now. Stripping lets those rows parse with no data migration. The
+ * union below still discriminates: this arm needs both close-turn keys, and
+ * the strict pre-close arm rejects any payload that carries one.
+ *
+ * Built from the pre-close `.shape`, not `.extend()`: `.extend()` would
+ * inherit the pre-close arm's strict mode.
  */
-export const baselineClosedJsonbSchema = baselineQuestionsJsonbSchema
-  .extend({
-    immutableSummary: z.string(),
-    summarySeed: z.string(),
-    startingTier: z.number().int().positive(),
-  })
-  .strict();
+export const baselineClosedJsonbSchema = z.object({
+  ...baselineQuestionsJsonbSchema.shape,
+  summarySeed: z.string(),
+  startingTier: z.number().int().positive(),
+});
 /** Inferred from {@link baselineClosedJsonbSchema}; post-close baseline JSONB. */
 export type BaselineClosedJsonb = z.infer<typeof baselineClosedJsonbSchema>;
 
@@ -144,12 +148,12 @@ export type BaselineClosedJsonb = z.infer<typeof baselineClosedJsonbSchema>;
  * superset of the pre-close shape, so consumers discriminate by checking
  * `"startingTier" in baseline`.
  *
- * Both arms are `.strict()`; the closed arm is listed first so well-formed
- * close payloads match without first attempting (and failing) the pre-close
- * arm. A malformed close payload (mixing close-turn fields incompletely)
- * rejects on both arms: the closed arm fails on the missing field, and the
- * pre-close arm fails because `.strict()` rejects the unknown close-turn
- * keys — so the corruption surfaces instead of silently degrading.
+ * The closed arm is listed first so well-formed close payloads match without
+ * first attempting (and failing) the pre-close arm. A malformed close payload
+ * (mixing close-turn fields incompletely) rejects on both arms: the closed
+ * arm fails on the missing field, and the pre-close arm fails because
+ * `.strict()` rejects the unknown close-turn keys — so the corruption
+ * surfaces instead of silently degrading.
  */
 export const baselineJsonbSchema = z.union([
   baselineClosedJsonbSchema,

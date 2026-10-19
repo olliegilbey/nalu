@@ -14,7 +14,7 @@ import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
 import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
-import type { ScopingCloseTurn } from "@/lib/prompts/scopingClose";
+import type { CloseTurnBase } from "@/lib/prompts/closeTurn";
 import type { MergeAndComputeXpResult } from "@/lib/scoring/baselineMerge";
 
 /** Fixed UUID for the test user — avoids runtime UUID generation. */
@@ -31,7 +31,11 @@ export const FRAMEWORK = {
   ],
 } as const;
 
-/** Minimal valid baseline (pre-close shape) with one free-text question. */
+/**
+ * Minimal valid baseline (pre-close shape) with one free-text question at
+ * tier 1. Answered correctly, it masters tier 1, and tier 2 has no
+ * questions, so placement starts the learner at tier 2 (`MERGED`).
+ */
 export const BASELINE_PRECLOSE = {
   userMessage: "baseline framing",
   questions: [
@@ -41,7 +45,7 @@ export const BASELINE_PRECLOSE = {
       prompt: "What is ownership?",
       freetextRubric: "rubric",
       conceptName: "ownership",
-      tier: 2,
+      tier: 1,
     },
   ],
   responses: [{ questionId: "b1", freetext: "the rule about owning values" }],
@@ -52,22 +56,20 @@ export const BASELINE_PRECLOSE = {
  * Minimal valid parsed close-turn payload (post-Zod).
  *
  * Plain (non-`as const`) object so `gradings` is a mutable array — matches
- * the inferred `ScopingCloseTurn` shape from `makeScopingCloseSchema`.
+ * the inferred `CloseTurnBase` shape. The scoping close emits the shared
+ * close-turn base and nothing more: placement is the Harness's (issue #94).
  */
-export const PARSED: ScopingCloseTurn = {
+export const PARSED: CloseTurnBase = {
   userMessage: "closing chat message",
-  immutableSummary: "durable profile",
   summary: "evolving seed",
-  startingTier: 2,
-  // The base schema also requires `gradings` on the parsed payload, but
   // persistScopingClose only consumes `merged.gradings`, not parsed.gradings.
-  // Keep this here as a typed value to match `ScopingCloseTurn`.
+  // `submitBaseline` merges these into `merged`.
   gradings: [
     {
       kind: "free-text",
       questionId: "b1",
       conceptName: "ownership",
-      conceptTier: 2,
+      conceptTier: 1,
       verdict: "correct",
       qualityScore: 5,
       rationale: "good",
@@ -81,18 +83,23 @@ export const PARSED: ScopingCloseTurn = {
   },
 };
 
-/** Canonical-ordered gradings + deterministic XP from `mergeAndComputeXp`. */
+/**
+ * Canonical-ordered gradings, starting tier + deterministic XP from
+ * `mergeAndComputeXp`. `startingTier` matches what placement computes for
+ * `PARSED` on `BASELINE_PRECLOSE`.
+ */
 export const MERGED: MergeAndComputeXpResult = {
   gradings: [
     {
       questionId: "b1",
       conceptName: "ownership",
-      conceptTier: 2,
+      conceptTier: 1,
       verdict: "correct",
       qualityScore: 5,
       rationale: "good",
     },
   ],
+  startingTier: 2,
   totalXp: 50,
   // This fixture's only grading is free-text (no mechanical MC), so the
   // free-text subtotal equals the total.

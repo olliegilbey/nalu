@@ -101,7 +101,6 @@ describe("deriveStrandedScopingTurn", () => {
     const closed: BaselineJsonb = {
       ...baseline,
       responses: [{ questionId: "b1", choice: "A" }],
-      immutableSummary: "s",
       summarySeed: "s",
       startingTier: 1,
     };

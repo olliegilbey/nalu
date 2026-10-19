@@ -26,53 +26,81 @@ const mcGrading = (id: string, conceptName: string, conceptTier: number): Stored
   rationale: "Selected the correct option.",
 });
 
+const mcWrongGrading = (id: string, conceptName: string, conceptTier: number): StoredGrading => ({
+  questionId: id,
+  conceptName,
+  conceptTier,
+  verdict: "incorrect",
+  qualityScore: BASELINE.mcIncorrectQuality,
+  rationale: "Selected B; correct option was A.",
+});
+
 describe("mergeAndComputeXp", () => {
   // Canonical order = baseline.questions order. The LLM may return gradings
   // in any order; mechanical gradings arrive separately. The merge must
-  // produce a single ordered list keyed by baselineQuestionIds.
+  // produce a single ordered list keyed by the baseline question ids.
   it("merges LLM and mechanical gradings in canonical question order", () => {
     const merged = mergeAndComputeXp({
-      parsed: {
-        gradings: [llmGrading("b2", "borrows", 3)],
-        startingTier: 2,
-      },
+      parsed: { gradings: [llmGrading("b2", "borrows", 3)] },
       mechanicalGradings: [mcGrading("b1", "ownership", 2)],
-      baselineQuestionIds: ["b1", "b2"],
+      baselineQuestions: [
+        { id: "b1", tier: 2 },
+        { id: "b2", tier: 3 },
+      ],
       scopeTiers: [1, 2, 3],
     });
     expect(merged.gradings.map((g) => g.questionId)).toEqual(["b1", "b2"]);
   });
 
-  // XP uses `startingTier` (the learner's placement) — NOT each grading's
-  // own `conceptTier`. This matches the LLM-XP boundary: tier comes from
-  // placement, quality from per-question grading.
-  it("computes totalXp as the sum of calculateXP(startingTier, qualityScore)", () => {
+  // Issue #94: deterministic code places the learner. Tier 1 is right and
+  // tier 2 is wrong, so the learner starts at tier 2.
+  it("computes the starting tier from the merged gradings", () => {
     const merged = mergeAndComputeXp({
-      parsed: {
-        gradings: [llmGrading("b2", "borrows", 3)],
-        startingTier: 2,
-      },
-      mechanicalGradings: [mcGrading("b1", "ownership", 2)],
-      baselineQuestionIds: ["b1", "b2"],
-      scopeTiers: [1, 2, 3],
+      parsed: { gradings: [llmGrading("b1", "ownership", 1)] },
+      mechanicalGradings: [mcWrongGrading("b2", "borrows", 2)],
+      baselineQuestions: [
+        { id: "b1", tier: 1 },
+        { id: "b2", tier: 2 },
+      ],
+      scopeTiers: [1, 2],
     });
-    const expected = calculateXP(2, BASELINE.mcCorrectQuality) + calculateXP(2, 5);
-    expect(merged.totalXp).toBe(expected);
+    expect(merged.startingTier).toBe(2);
   });
 
-  // Defence-in-depth: the LLM schema's superRefine should reject this
-  // upstream, but a second assertion here makes a schema regression
-  // fail loud at the orchestration boundary rather than corrupting
-  // tier-advancement state.
-  it("throws on startingTier outside scopeTiers (defence-in-depth)", () => {
-    expect(() =>
-      mergeAndComputeXp({
-        parsed: { gradings: [], startingTier: 99 },
-        mechanicalGradings: [],
-        baselineQuestionIds: [],
-        scopeTiers: [1, 2, 3],
-      }),
-    ).toThrow(/startingTier/);
+  // The model emits a free-text grading's `conceptTier` after it reads the
+  // answer. Placement files each answer under its question's tier, which
+  // was fixed before the learner answered. Here the model relabels b1 as
+  // tier 2. By conceptTier the learner would start at tier 1; by question
+  // tier they mastered tier 1 and start at tier 2.
+  it("places by each question's tier, not the model's conceptTier", () => {
+    const merged = mergeAndComputeXp({
+      parsed: { gradings: [llmGrading("b1", "ownership", 2)] },
+      mechanicalGradings: [mcWrongGrading("b2", "borrows", 2)],
+      baselineQuestions: [
+        { id: "b1", tier: 1 },
+        { id: "b2", tier: 2 },
+      ],
+      scopeTiers: [1, 2],
+    });
+    expect(merged.startingTier).toBe(2);
+  });
+
+  // XP uses the starting tier (the learner's placement), NOT each grading's
+  // own `conceptTier`. Both tiers are mastered here, so placement is the top
+  // of scope, tier 3.
+  it("computes totalXp as the sum of calculateXP(startingTier, qualityScore)", () => {
+    const merged = mergeAndComputeXp({
+      parsed: { gradings: [llmGrading("b2", "borrows", 3)] },
+      mechanicalGradings: [mcGrading("b1", "ownership", 2)],
+      baselineQuestions: [
+        { id: "b1", tier: 2 },
+        { id: "b2", tier: 3 },
+      ],
+      scopeTiers: [2, 3],
+    });
+    expect(merged.startingTier).toBe(3);
+    const expected = calculateXP(3, BASELINE.mcCorrectQuality) + calculateXP(3, 5);
+    expect(merged.totalXp).toBe(expected);
   });
 
   // Mechanical MC grading is authoritative: the close-turn wire schema
@@ -92,10 +120,10 @@ describe("mergeAndComputeXp", () => {
       rationale: "model thought wrong",
     };
     const merged = mergeAndComputeXp({
-      parsed: { gradings: [llmConflict], startingTier: 2 },
+      parsed: { gradings: [llmConflict] },
       mechanicalGradings: [mechanical],
-      baselineQuestionIds: ["b1"],
-      scopeTiers: [1, 2, 3],
+      baselineQuestions: [{ id: "b1", tier: 2 }],
+      scopeTiers: [2],
     });
     expect(merged.gradings).toEqual([mechanical]);
     // XP follows the mechanical quality, not the LLM's qualityScore=0.
@@ -113,20 +141,26 @@ describe("mergeAndComputeXp", () => {
   // question (LLM-graded, not mechanical).
   it("computes freeTextXp over LLM-graded questions only, excluding mechanical MC", () => {
     const merged = mergeAndComputeXp({
-      parsed: { gradings: [llmGrading("b2", "borrows", 3)], startingTier: 2 },
+      parsed: { gradings: [llmGrading("b2", "borrows", 3)] },
       mechanicalGradings: [mcGrading("b1", "ownership", 2)],
-      baselineQuestionIds: ["b1", "b2"],
-      scopeTiers: [1, 2, 3],
+      baselineQuestions: [
+        { id: "b1", tier: 2 },
+        { id: "b2", tier: 3 },
+      ],
+      scopeTiers: [2, 3],
     });
     // Only b2 (free-text) contributes; b1 (mechanical MC) is excluded.
-    expect(merged.freeTextXp).toBe(calculateXP(2, 5));
+    expect(merged.freeTextXp).toBe(calculateXP(merged.startingTier, 5));
   });
 
   it("returns freeTextXp 0 when every baseline question is mechanical MC", () => {
     const merged = mergeAndComputeXp({
-      parsed: { gradings: [], startingTier: 2 },
+      parsed: { gradings: [] },
       mechanicalGradings: [mcGrading("b1", "ownership", 2), mcGrading("b2", "borrows", 3)],
-      baselineQuestionIds: ["b1", "b2"],
+      baselineQuestions: [
+        { id: "b1", tier: 2 },
+        { id: "b2", tier: 3 },
+      ],
       scopeTiers: [1, 2, 3],
     });
     expect(merged.freeTextXp).toBe(0);
@@ -135,14 +169,22 @@ describe("mergeAndComputeXp", () => {
   it("throws on conceptTier outside scopeTiers", () => {
     expect(() =>
       mergeAndComputeXp({
-        parsed: {
-          gradings: [llmGrading("b1", "x", 99)],
-          startingTier: 2,
-        },
+        parsed: { gradings: [llmGrading("b1", "x", 99)] },
         mechanicalGradings: [],
-        baselineQuestionIds: ["b1"],
+        baselineQuestions: [{ id: "b1", tier: 1 }],
         scopeTiers: [1, 2, 3],
       }),
     ).toThrow(/conceptTier/);
+  });
+
+  it("throws when a baseline question has no grading", () => {
+    expect(() =>
+      mergeAndComputeXp({
+        parsed: { gradings: [] },
+        mechanicalGradings: [],
+        baselineQuestions: [{ id: "b1", tier: 1 }],
+        scopeTiers: [1],
+      }),
+    ).toThrow(/no grading for questionId b1/);
   });
 });

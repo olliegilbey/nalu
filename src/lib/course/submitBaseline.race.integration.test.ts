@@ -54,7 +54,7 @@ describe("submitBaseline racing the original close (integration)", () => {
       const state = await getState({ userId: USER_ID, courseId });
       expect(state.scopingResult).toEqual({
         closingMessage: PARSED.userMessage,
-        startingTier: PARSED.startingTier,
+        startingTier: MERGED.startingTier,
       });
     });
   });

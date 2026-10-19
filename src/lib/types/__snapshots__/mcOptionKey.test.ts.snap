@@ -590,9 +590,6 @@ exports[`schemas carrying an MC option key keep their bytes > courses.baseline j
             "additionalProperties": false
           }
         },
-        "immutableSummary": {
-          "type": "string"
-        },
         "summarySeed": {
           "type": "string"
         },
@@ -607,7 +604,6 @@ exports[`schemas carrying an MC option key keep their bytes > courses.baseline j
         "questions",
         "responses",
         "gradings",
-        "immutableSummary",
         "summarySeed",
         "startingTier"
       ],

@@ -149,17 +149,14 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       expect(courseRow!.status, "status flipped to active").toBe("active");
       expect(courseRow!.totalXp, "totalXp > 0").toBeGreaterThan(0);
 
-      // Re-parse via the close-shape schema — asserts all four required
-      // close-turn fields are present and well-shaped in one pass.
+      // Re-parse via the close-shape schema — asserts the close-turn fields
+      // are present and well-shaped in one pass.
       const closedBaseline = baselineClosedJsonbSchema.parse(courseRow!.baseline);
-      expect(closedBaseline.immutableSummary.length, "immutableSummary non-empty").toBeGreaterThan(
-        0,
-      );
       expect(closedBaseline.summarySeed.length, "summarySeed non-empty").toBeGreaterThan(0);
       expect(typeof closedBaseline.startingTier, "startingTier is number").toBe("number");
 
-      // startingTier ∈ framework.baselineScopeTiers — defence-in-depth; the
-      // close-turn schema already enforces this on parse.
+      // startingTier ∈ framework.baselineScopeTiers — defence-in-depth;
+      // `determineStartingTier` only ever returns an in-scope tier.
       const scopeTiers = (framework as FrameworkJsonb).baselineScopeTiers;
       expect(scopeTiers, "startingTier ∈ baselineScopeTiers").toContain(
         closedBaseline.startingTier,
