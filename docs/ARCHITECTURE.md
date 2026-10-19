@@ -93,6 +93,7 @@ waves.chat_log = WaveChatLogEntry[]
 
 - `v3Question`, `v3Response` Zod schemas — `src/lib/types/jsonb.ts`
 - `ChatEntry` union (the rendered chat-row type) — `src/lib/types/chatEntry.ts`
+- `redactQuestion` client projection (`QuestionForClient`: no rubric, MC key as `correctEnc`) — `src/lib/course/redactQuestionnaire.ts`
 - `formatAnswers(questions, responses)` formatter — `src/lib/course/deriveChatEntries.ts`
 - `executeTurn` + envelope renderers — `src/lib/turn/`, `src/lib/prompts/`
 

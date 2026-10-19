@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   for (const c of courseConcepts) {
     console.log(
       `- ${c.name}  tier=${c.tier}  reps=${c.repetitionCount}  lastQ=${c.lastQualityScore ?? "—"}  ` +
-        `correct/incorrect=${c.timesCorrect}/${c.timesIncorrect}  nextReview=${c.nextReviewAt?.toISOString() ?? "—"}`,
+        `nextReview=${c.nextReviewAt?.toISOString() ?? "—"}`,
     );
   }
 

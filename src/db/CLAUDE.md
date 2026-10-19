@@ -43,6 +43,12 @@ commit both. `just db-migrate` applies to dev. `just db-migrate-prod` applies
 to production, reading `DIRECT_URL` from the gitignored
 `.env.production.local`. CI re-runs in ephemeral Postgres.
 
+A column drop ships code first. The app selects every schema column by name,
+so production migrates only after the deploy that stops naming the column
+(`docs/DEPLOY.md`). A column with no writer holds its default forever, so
+drop it rather than read it: `0012` dropped `user_profiles.total_xp` and the
+`concepts` correct/incorrect counters (issue #154).
+
 `schemaMigrationDrift.test.ts` (unit tier) diffs the schema against the
 newest committed snapshot, as `generate` does. Red prints the SQL that would
 close the gap. If that SQL adds your schema or tuning edit, run

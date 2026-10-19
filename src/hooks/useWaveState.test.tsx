@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  focusManager,
+  onlineManager,
+} from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { installMemoryStorage } from "@/lib/testing/memoryStorage";
 
@@ -62,12 +67,20 @@ const defaultStateData = {
 // Mutable test-fixture cell so individual tests can swap in a different
 // wire payload before rendering. Mirrors the `latestChatOptions` pattern above.
 let currentState: unknown = defaultStateData;
+// When set, `wave.getState` rejects with it. `getStateCalls` counts fetches,
+// so a test can assert the hook did not retry or refetch.
+let stateError: unknown = null;
+let getStateCalls = 0;
 
 vi.mock("@/lib/trpc", () => {
   const stateOpts = {
     queryKey: ["wave.getState", { courseId: "c1", waveNumber: 1 }] as const,
     // Read `currentState` lazily so per-test re-assignments are picked up.
-    queryFn: async () => currentState,
+    queryFn: async () => {
+      getStateCalls += 1;
+      if (stateError) throw stateError;
+      return currentState;
+    },
   };
   return {
     useTRPC: () => ({
@@ -82,6 +95,7 @@ vi.mock("@/lib/trpc", () => {
   };
 });
 
+import { createQueryClient } from "@/lib/queryClient";
 import { useWaveState } from "./useWaveState";
 import { toast } from "sonner";
 
@@ -95,6 +109,8 @@ beforeEach(() => {
   latestChatOptions = undefined;
   setMessagesMock.mockReset();
   currentState = defaultStateData;
+  stateError = null;
+  getStateCalls = 0;
   chatMessages = [];
   // Fresh in-memory localStorage per test — useWaveState depends on
   // useCourseXp, and tests sharing courseId "c1" must not leak XP totals.
@@ -298,5 +314,58 @@ describe("useWaveState", () => {
     );
     // The transient streaming bubble is dropped alongside the toast.
     expect(setMessagesMock).toHaveBeenCalled();
+  });
+});
+
+describe("useWaveState wave not found", () => {
+  afterEach(() => {
+    // Hand focus and network state back to the browser defaults.
+    focusManager.setFocused(undefined);
+    onlineManager.setOnline(true);
+  });
+
+  /** Render the hook against a NOT_FOUND getState, on the app's QueryClient. */
+  async function renderNotFound() {
+    // getState is ownership-scoped: another browser's course is NOT_FOUND too.
+    stateError = Object.assign(new Error("wave 1 not found for course c1"), {
+      data: { code: "NOT_FOUND", httpStatus: 404 },
+    });
+    // The app's QueryClient, unlike the shared wrapper (`retry: false`). Its
+    // defaults must stop refetching a wave that will not appear.
+    const qc = createQueryClient();
+    const { result } = renderHook(() => useWaveState("c1", 1), {
+      wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
+    });
+    await waitFor(() => expect(result.current.waveNotFound).toBe(true));
+    return result;
+  }
+
+  it("flags a NOT_FOUND wave at once, without retrying", async () => {
+    const result = await renderNotFound();
+    expect(getStateCalls).toBe(1);
+    expect(result.current.isPending).toBe(false);
+  });
+
+  it("keeps the flag and does not refetch on tab focus or reconnect", async () => {
+    const result = await renderNotFound();
+
+    // Async act: the QueryClient's focus handler awaits before it refetches.
+    await act(async () => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await act(async () => {
+      onlineManager.setOnline(false);
+      onlineManager.setOnline(true);
+    });
+
+    expect(result.current.waveNotFound).toBe(true);
+    expect(getStateCalls).toBe(1);
+  });
+
+  it("does not flag a wave that loads", async () => {
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("active"));
+    expect(result.current.waveNotFound).toBe(false);
   });
 });

@@ -6,6 +6,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { toast } from "sonner";
 import { useTRPC, devUserHeaders } from "@/lib/trpc";
+import { isNotFoundError } from "@/lib/errors";
 import { deriveWaveChatEntries } from "@/lib/course/deriveWaveChatEntries";
 import { deriveActiveQuestionnaire } from "@/lib/course/deriveActiveQuestionnaire";
 import {
@@ -50,6 +51,8 @@ export interface UseWaveStateResult extends StreamingTurn {
   /** Records exact MC XP from a correct answer. Wired to the Composer. */
   readonly awardMcXp: (amount: number) => void;
   readonly isPending: boolean;
+  /** True when `wave.getState` found no such Wave for this learner: a wrong URL, or another browser's course. */
+  readonly waveNotFound: boolean;
   readonly submitChatText: (text: string) => void;
   readonly submitQuestionnaireAnswers: (
     answers: readonly ShapedQuestionnaireAnswer[],
@@ -72,6 +75,9 @@ export interface UseWaveStateResult extends StreamingTurn {
  * - `close-turn` → store `closeResult` so the page can render the move-on CTA;
  *   add completion XP + final-turn free-text XP to the badge, fire the tier-up
  *   toast if a tier advanced.
+ *
+ * A `getState` NOT_FOUND sets `waveNotFound`. The app's QueryClient
+ * (`src/lib/queryClient.ts`) never retries it.
  */
 export function useWaveState(courseId: string, waveNumber: number): UseWaveStateResult {
   const trpc = useTRPC();
@@ -209,6 +215,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     xpGainAmount: courseXp.gainAmount,
     awardMcXp: courseXp.addXp,
     isPending,
+    waveNotFound: isNotFoundError(state.error),
     streamingText,
     streamingQuestions,
     submitChatText,

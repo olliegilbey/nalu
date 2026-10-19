@@ -34,6 +34,8 @@
     "!src/lib/course/submitBaseline.fixtures.ts!",
     // Live smoke: restates a rubric as a known-correct answer.
     "!src/lib/testing/answerFromRubric.ts!",
+    // Unit and integration tests: asserts a client payload carries no plaintext answer key.
+    "!src/lib/testing/expectNoPlaintextAnswerKey.ts!",
     // Unit tests: in-memory localStorage polyfill.
     "!src/lib/testing/memoryStorage.ts!",
     // Live smoke: structural assertions on scoping output.
@@ -52,8 +54,6 @@
   "ignoreBinaries": [],
   "ignoreIssues": {
     "src/lib/prompts/questionnaire.ts": ["types"],
-    "src/lib/prompts/clarify.ts": ["types"],
-    "src/lib/prompts/baseline.ts": ["types"],
     "src/lib/prompts/closeTurn.ts": ["types"],
     "src/lib/prompts/scopingClose.ts": ["types"],
     "src/components/ui/sheet.tsx": ["exports"],

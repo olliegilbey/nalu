@@ -85,6 +85,13 @@
       "when": 1792081093741,
       "tag": "0011_easiness_factor_floor_real",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792423389515,
+      "tag": "0012_drop_unwritten_counters",
+      "breakpoints": true
     }
   ]
 }

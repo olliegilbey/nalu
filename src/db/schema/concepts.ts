@@ -61,8 +61,6 @@ export const concepts = pgTable(
     lastReviewedAt: timestamp("last_reviewed_at", { withTimezone: true }),
     // When this concept is next due for review, null when never reviewed.
     nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
-    timesCorrect: integer("times_correct").notNull().default(0),
-    timesIncorrect: integer("times_incorrect").notNull().default(0),
     firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -94,8 +92,6 @@ export const concepts = pgTable(
       "concepts_last_quality_score_range",
       sql`${t.lastQualityScore} IS NULL OR (${t.lastQualityScore} >= 0 AND ${t.lastQualityScore} <= 5)`,
     ),
-    check("concepts_times_correct_nonneg", sql`${t.timesCorrect} >= 0`),
-    check("concepts_times_incorrect_nonneg", sql`${t.timesIncorrect} >= 0`),
   ],
 ).enableRLS();
 

@@ -48,6 +48,3 @@ export const clarifySchema = z
 // values regardless (seen on the retired llama3.1-8b). Failing the turn over a stray optional
 // field would be worse than persisting a benign hallucination — the UI ignores
 // these fields and downstream stages aren't materially affected.
-
-/** Inferred from {@link clarifySchema}; wire shape for the clarify turn. */
-export type ClarifyTurn = z.infer<typeof clarifySchema>;

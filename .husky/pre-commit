@@ -180,15 +180,26 @@ printf "${GREEN}✅ Phase 5 complete: Dead code clean${NC}\n"
 echo ""
 
 # ============================================
-# TIMING
+# TIMING (warning only, #143)
+# Wall-clock time also measures machine load, so parallel agent
+# work can push a green run past the budget. The budget warns, so
+# a check that has got slow still gets noticed. It never fails a
+# commit: every phase above already blocks on its own failure.
 # ============================================
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
 
 if [ "$DURATION" -gt "$PRECOMMIT_MAX_DURATION" ]; then
-  printf "${RED}❌ Pre-commit exceeded ${PRECOMMIT_MAX_DURATION}s (took ${DURATION}s)${NC}\n"
-  printf "${YELLOW}Investigate what's slow and fix it.${NC}\n"
-  exit 1
+  printf "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+  printf "${YELLOW}⚠ Pre-commit took ${DURATION}s, over its ${PRECOMMIT_MAX_DURATION}s budget (warning only)${NC}\n"
+  # /proc/loadavg exists on Linux only; elsewhere the load line is skipped.
+  if [ -r /proc/loadavg ]; then
+    read -r LOAD_1MIN _ < /proc/loadavg
+    printf "${YELLOW}  1-minute load average: ${LOAD_1MIN}${NC}\n"
+  fi
+  printf "${YELLOW}  A check may have got slow; compare with an idle run.${NC}\n"
+  printf "${YELLOW}  Investigate what's slow and fix it.${NC}\n"
+  printf "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 fi
 
 printf "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"

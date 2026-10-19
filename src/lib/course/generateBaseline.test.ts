@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { expectNoPlaintextAnswerKey } from "@/lib/testing/expectNoPlaintextAnswerKey";
 
 // Mock all external dependencies before importing SUT.
 vi.mock("@/lib/turn/executeTurn", () => ({ executeTurn: vi.fn() }));
@@ -24,6 +25,8 @@ import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import type { Course } from "@/db/schema";
 import type { FrameworkJsonb, BaselineJsonb } from "@/lib/types/jsonb";
+import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
+import { KEY_TO_INDEX } from "@/lib/types/mcOptionKey";
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -101,7 +104,7 @@ function mcQuestion(id: string, tier: number) {
 }
 
 /**
- * Minimal valid BaselineTurn returned by executeTurn.
+ * Minimal valid baseline Turn returned by executeTurn.
  * Shape: `{ userMessage, questions: { questions: [...] } }`.
  * Needs >=7 questions (BASELINE.minQuestions).
  */
@@ -144,7 +147,7 @@ describe("generateBaseline", () => {
 
     // nextStage advances to answering
     expect(result.nextStage).toBe("answering");
-    // Result is a BaselineTurn: { userMessage, questions: { questions: [...] } }
+    // Result is the client projection: { userMessage, questions: { questions: [...] } }
     expect(result.baseline.questions.questions).toHaveLength(7);
 
     // Persistence called with BaselineJsonb (responses and gradings initialised to []).
@@ -160,6 +163,25 @@ describe("generateBaseline", () => {
     );
 
     expect(executeTurn).toHaveBeenCalledTimes(1);
+  });
+
+  // Case 1b: the payload carries no plaintext key; MC keys arrive encoded.
+  it("returns no plaintext answer key: rubric dropped, MC correct sent as correctEnc", async () => {
+    vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
+    vi.mocked(ensureOpenScopingPass).mockResolvedValue({ id: "p1" } as never);
+    vi.mocked(executeTurn).mockResolvedValue({
+      parsed: VALID_BASELINE_PARSED,
+      usage: MOCK_USAGE,
+    });
+    vi.mocked(updateCourseScopingState).mockResolvedValue(SCOPING_COURSE);
+
+    const result = await generateBaseline({ courseId: COURSE_ID, userId: USER_ID });
+
+    expectNoPlaintextAnswerKey(result);
+    const [first] = result.baseline.questions.questions;
+    if (first?.type !== "multiple_choice") throw new Error("expected an MC question");
+    // Every fixture question's key is A.
+    expect(decodeCorrect("b1", first.correctEnc ?? "")).toBe(KEY_TO_INDEX.A);
   });
 
   // Case 2: idempotency — if baseline already stored, return it without calling LLM.
@@ -181,6 +203,8 @@ describe("generateBaseline", () => {
     expect(result.nextStage).toBe("answering");
     // Reconstructed via makeBaselineSchema — question count must match stored.
     expect(result.baseline.questions.questions).toHaveLength(7);
+    // The replay is projected too: stored keys stay server-side.
+    expectNoPlaintextAnswerKey(result);
 
     // Must NOT hit the LLM
     expect(executeTurn).not.toHaveBeenCalled();

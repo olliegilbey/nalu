@@ -108,7 +108,7 @@ describe("getWaveState (integration)", () => {
       // Plaintext `correct` MUST NOT appear on the wire shape.
       expect("correct" in mc).toBe(false);
       // Round-trip: questionId-bound `correctEnc` decodes back to KEY_TO_INDEX.C.
-      expect(decodeCorrect("q1", mc.correctEnc)).toBe(KEY_TO_INDEX.C);
+      expect(decodeCorrect("q1", mc.correctEnc ?? "")).toBe(KEY_TO_INDEX.C);
     });
   });
 

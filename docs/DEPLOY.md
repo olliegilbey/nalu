@@ -115,9 +115,12 @@ different: `next start` sets `NODE_ENV=production`, so `src/proxy.ts` and
   production auth path (production identity comes from the Supabase session).
   Set it to any UUID — a known wart, not a functional dependency.
 - **Migrations do not run on deploy.** A schema change requires
-  `just db-migrate-prod` before the deploy that depends on it. The recipe
-  reads `DIRECT_URL` from `.env.production.local`, ignores the dev value in
-  `.env.local`, and refuses a missing, empty or loopback host
+  `just db-migrate-prod` before the deploy that depends on it. A migration
+  that drops a column reverses the order. The app selects every schema column
+  by name, so the deployed code fails once its column is gone. Merge, let
+  Vercel deploy the code that no longer names the column, then migrate. The
+  recipe reads `DIRECT_URL` from `.env.production.local`, ignores the dev
+  value in `.env.local`, and refuses a missing, empty or loopback host
   (`src/db/assertRemoteDirectUrl.ts`).
 - **Next.js and Bun read `.env.production.local` whenever
   `NODE_ENV=production`**, ahead of `.env.local`. `just build` and
