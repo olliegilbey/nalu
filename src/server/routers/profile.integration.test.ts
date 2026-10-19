@@ -62,16 +62,35 @@ describe("profile custom instructions", () => {
     });
   });
 
-  it("keeps one learner's preference from another learner", async () => {
+  // Each isolation test gives learner B a profile row before A saves. A
+  // write that missed its `WHERE id =` would then reach B's row too.
+  it("leaves learner B reading null after learner A saves", async () => {
     await withTestDb(async () => {
-      await appRouter
-        .createCaller({ userId: LEARNER_A })
-        .profile.setCustomInstructions({ customInstructions: PREFERENCE });
+      const learnerA = appRouter.createCaller({ userId: LEARNER_A });
+      const learnerB = appRouter.createCaller({ userId: LEARNER_B });
+      expect(await learnerB.profile.getCustomInstructions()).toEqual({ customInstructions: null });
 
-      const read = await appRouter
-        .createCaller({ userId: LEARNER_B })
-        .profile.getCustomInstructions();
-      expect(read).toEqual({ customInstructions: null });
+      await learnerA.profile.setCustomInstructions({ customInstructions: PREFERENCE });
+
+      expect(await learnerB.profile.getCustomInstructions()).toEqual({ customInstructions: null });
+    });
+  });
+
+  it("leaves learner B's own preference unchanged after learner A saves", async () => {
+    await withTestDb(async () => {
+      const learnerA = appRouter.createCaller({ userId: LEARNER_A });
+      const learnerB = appRouter.createCaller({ userId: LEARNER_B });
+      const preferenceB = "Keep sessions short and varied.";
+      await learnerB.profile.setCustomInstructions({ customInstructions: preferenceB });
+
+      await learnerA.profile.setCustomInstructions({ customInstructions: PREFERENCE });
+
+      expect(await learnerB.profile.getCustomInstructions()).toEqual({
+        customInstructions: preferenceB,
+      });
+      expect(await learnerA.profile.getCustomInstructions()).toEqual({
+        customInstructions: PREFERENCE,
+      });
     });
   });
 });

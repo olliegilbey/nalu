@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useCustomInstructions } from "@/hooks/useCustomInstructions";
 import { PROFILE } from "@/lib/config/tuning";
-import { t } from "@/i18n";
+import { t, tFill } from "@/i18n";
 
 /**
  * Slide-out right panel for learner settings: custom instructions only, for
@@ -91,7 +91,7 @@ function CustomInstructionsForm({
         className="resize-none rounded-2xl bg-sumi-3 border border-sumi-4 px-3 py-2.5 text-[14px] leading-[1.45] outline-none transition-colors focus:border-crystal/50 placeholder:text-fuji-gray"
       />
       <p className="self-end font-mono text-[11px] text-fuji-gray">
-        {t<string>("settings.remaining").replace("{n}", String(remaining))}
+        {tFill("settings.remaining", { n: remaining })}
       </p>
       <p className="text-[12px] text-fuji-gray">{t<string>("settings.nextWaveHelp")}</p>
       <button

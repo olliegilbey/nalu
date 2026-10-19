@@ -98,6 +98,15 @@ describe("SettingsSheet", () => {
     expect(box.value).toBe("");
   });
 
+  it("shows a loading line, and offers no form, until the saved value lands", () => {
+    hook.value = { ...hook.value, saved: undefined, loadFailed: false };
+    openSettingsFromSideMenu();
+
+    expect(screen.getByText("Loading…")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Custom instructions" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  });
+
   it("says so when the saved value fails to load, and offers no form", () => {
     hook.value = { ...hook.value, saved: undefined, loadFailed: true };
     openSettingsFromSideMenu();
