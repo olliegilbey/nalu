@@ -58,11 +58,6 @@ export interface AppliedGrading {
   readonly questionId: string;
   readonly xpAwarded: number;
   readonly kind: GradedSignal["kind"];
-  /**
-   * The `is_correct` written to the row. Callers read it here and never
-   * re-derive it, so the turn result and the row agree (issue #213).
-   */
-  readonly isCorrect: boolean;
 }
 
 /**
@@ -123,21 +118,16 @@ async function writeAssessmentGrading(
       },
       params.tx,
     );
-    return {
-      questionId: params.signal.questionId,
-      xpAwarded: xp,
-      kind: "mc-index",
-      isCorrect: params.signal.correct,
-    };
+    return { questionId: params.signal.questionId, xpAwarded: xp, kind: "mc-index" };
   }
   // Free-text path: the LLM's qualityScore drives tiered XP and correctness.
   const xp = calculateXP(params.conceptTier, params.signal.qualityScore);
   // Correctness follows the score, not the model's verdict (issue #198). The
   // score sets XP, so a row can no longer say "correct" and earn 0 XP. Only
   // the "correct" band counts; a partial answer stays incorrect. This is the
-  // one place the Harness applies that rule; callers read `isCorrect` from
-  // the result. The flat tool wire still asks for a verdict, because changing
-  // that prompt-engineered wire needs a live A/B (`waveTurnTools.ts`).
+  // one place the Harness applies that rule. The flat tool wire still asks
+  // for a verdict, because changing that prompt-engineered wire needs a live
+  // A/B (`waveTurnTools.ts`).
   const isCorrect = verdictForQualityScore(params.signal.qualityScore) === "correct";
   await updateAssessmentGrading(
     params.assessmentId,
@@ -149,5 +139,5 @@ async function writeAssessmentGrading(
     },
     params.tx,
   );
-  return { questionId: params.signal.questionId, xpAwarded: xp, kind: "free-text", isCorrect };
+  return { questionId: params.signal.questionId, xpAwarded: xp, kind: "free-text" };
 }

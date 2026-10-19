@@ -17,7 +17,11 @@ export interface WaveSeedInputs {
   /** = waves.tier — the tier this Wave is teaching at. */
   readonly currentTier: number;
   readonly customInstructions: string | null;
-  /** Live `courses.summary`, read each turn. Set at scoping close, so non-null in practice. */
+  /**
+   * Live `courses.summary`, read each turn, not frozen on the Wave. Scoping
+   * close sets it, so non-null in practice. Only a Wave close rewrites it,
+   * after that Wave's last turn, so an open Wave's prefix stays byte-stable.
+   */
   readonly courseSummary: string | null;
   /** Used to render the static <due_for_review> block at Wave start. */
   readonly dueConcepts: DueConceptsSnapshot;
