@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { ChatHeader } from "./ChatHeader";
 import { SideMenu } from "./SideMenu";
+import { SettingsSheet } from "./SettingsSheet";
 
 /**
  * Layout shell shared by the empty home page and the in-course chat view.
@@ -13,7 +14,8 @@ import { SideMenu } from "./SideMenu";
  *
  * Course title (when present) is shown in the header. The side-menu nav is
  * inert for MVP (it always opens a fresh empty `/` per parity with whispers'
- * demo behavior — clicking a course just resets).
+ * demo behavior — clicking a course just resets). The side menu's Settings
+ * button opens the settings sheet, so every page offers it.
  */
 export function ChatShell({
   title,
@@ -35,6 +37,7 @@ export function ChatShell({
   readonly showXp?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   // Last-observed scroll content height. `children` is a fresh array on every
   // parent render — including on every Composer keystroke — so this effect runs
@@ -76,7 +79,14 @@ export function ChatShell({
           setMenuOpen(false);
           onNew();
         }}
+        // Close the menu first, so only one sheet is open at a time.
+        onOpenSettings={() => {
+          setMenuOpen(false);
+          setSettingsOpen(true);
+        }}
       />
+
+      <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} />
 
       <main ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 space-y-5 no-scrollbar">
         {children}
