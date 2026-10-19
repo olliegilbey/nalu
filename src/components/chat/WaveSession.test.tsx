@@ -22,7 +22,12 @@ vi.mock("./ChatShell", () => ({
     </div>
   ),
 }));
-vi.mock("./MessageBubble", () => ({ MessageBubble: () => null, TypingBubble: () => null }));
+// A bubble renders only its id, so a test can count user bubbles without
+// their text colliding with the answer card's option labels.
+vi.mock("./MessageBubble", () => ({
+  MessageBubble: ({ message }: { message: { id: string } }) => <div data-testid={message.id} />,
+  TypingBubble: () => null,
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 // Confirming an MC plays a sound; WebAudio is absent in jsdom.
 vi.mock("@/lib/sound", () => ({ playWrong: vi.fn(), playCorrect: vi.fn() }));
@@ -64,6 +69,7 @@ function waveState(overrides: Partial<UseWaveStateResult>): UseWaveStateResult {
     xpGainAmount: 0,
     awardMcXp: vi.fn(),
     isPending: false,
+    failedTurn: null,
     streamingText: "",
     streamingQuestions: null,
     submitChatText: vi.fn(),
@@ -181,5 +187,74 @@ describe("WaveSession questionnaire swap (issue #118)", () => {
       ],
       expect.anything(),
     );
+    // The same picks re-send the identical payload, so the server's resume
+    // path reuses a saved entry instead of spending a Turn (issue #231).
+    expect(submit.mock.calls[1]![0]).toEqual(submit.mock.calls[0]![0]);
+  });
+});
+
+/*
+ * Issue #231. A failed chat-text Turn whose entry the server saved counts as a
+ * spent Turn. Only the identical text reuses that entry, so the learner must
+ * never have to retype it.
+ */
+describe("WaveSession failed chat-text Turn (issue #231)", () => {
+  const textbox = () => screen.getByRole("textbox") as HTMLTextAreaElement;
+
+  /** Type `text` into the Composer and send it; returns the send's per-call error hook. */
+  function sendText(submitChatText: ReturnType<typeof vi.fn>, text: string): () => void {
+    fireEvent.change(textbox(), { target: { value: text } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    const opts = submitChatText.mock.calls.at(-1)![1] as { readonly onError: () => void };
+    return opts.onError;
+  }
+
+  it("puts the sent text back in the Composer when the Turn fails", () => {
+    const submitChatText = vi.fn();
+    wave.value = waveState({ submitChatText });
+    render(<WaveSession courseId="c1" waveNumber={1} />);
+
+    const fail = sendText(submitChatText, "why?");
+    expect(submitChatText).toHaveBeenCalledWith("why?", expect.anything());
+    expect(textbox().value).toBe("");
+    act(() => fail());
+    expect(textbox().value).toBe("why?");
+  });
+
+  it("re-sends the failed Turn on Retry and lets go of its restored text", () => {
+    const submitChatText = vi.fn();
+    wave.value = waveState({ submitChatText });
+    const { rerender } = render(<WaveSession courseId="c1" waveNumber={1} />);
+    const fail = sendText(submitChatText, "why?");
+    act(() => fail());
+
+    // The refetch shows the saved entry, so the hook offers its Retry.
+    const retry = vi.fn();
+    wave.value = waveState({
+      submitChatText,
+      chatEntries: [{ kind: "user-text", content: "why?" }],
+      failedTurn: { payload: { kind: "chat-text", text: "why?" }, retry },
+    });
+    rerender(<WaveSession courseId="c1" waveNumber={1} />);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(retry).toHaveBeenCalledTimes(1);
+    // Left in place, a second send of it would be a new entry and spend a Turn.
+    expect(textbox().value).toBe("");
+  });
+
+  it("shows the saved entry once when the Composer re-sends the failed text", () => {
+    const submitChatText = vi.fn();
+    wave.value = waveState({
+      submitChatText,
+      chatEntries: [{ kind: "user-text", content: "why?" }],
+      failedTurn: { payload: { kind: "chat-text", text: "why?" }, retry: vi.fn() },
+    });
+    render(<WaveSession courseId="c1" waveNumber={1} />);
+
+    sendText(submitChatText, "why?");
+    // The same text takes the resume path; the server already shows its entry.
+    expect(submitChatText).toHaveBeenCalledWith("why?", expect.anything());
+    expect(screen.queryByTestId("pending")).toBeNull();
   });
 });

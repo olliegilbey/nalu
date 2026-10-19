@@ -13,12 +13,24 @@ import {
   type WaveCloseResult,
 } from "@/lib/course/deriveTurnResultEffects";
 import { deriveStreamingTurn, type StreamingTurn } from "@/lib/course/deriveStreamingTurn";
+import { deriveRetryableWaveTurn } from "@/lib/course/deriveRetryableWaveTurn";
 import type { ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
 import { useCourseXp } from "./useCourseXp";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
 import type { WaveState } from "@/lib/course/getWaveState";
 import type { WaveTurnResultData, WaveTurnUIMessage } from "@/lib/types/waveStream";
+import type { SubmitTurnPayload } from "@/lib/types/waveTurnInput";
+
+/**
+ * A failed Wave Turn whose learner entry the server saved (issue #231).
+ * `retry` re-sends `payload` unchanged, so the server reuses that entry
+ * instead of spending a second Turn.
+ */
+export interface FailedWaveTurn {
+  readonly payload: SubmitTurnPayload;
+  readonly retry: () => void;
+}
 
 /**
  * Return shape of {@link useWaveState}; chat entries, active questionnaire, XP
@@ -50,7 +62,9 @@ export interface UseWaveStateResult extends StreamingTurn {
   /** Records exact MC XP from a correct answer. Wired to the Composer. */
   readonly awardMcXp: (amount: number) => void;
   readonly isPending: boolean;
-  readonly submitChatText: (text: string) => void;
+  /** Non-null while a failed Turn's saved entry awaits a learner Retry. */
+  readonly failedTurn: FailedWaveTurn | null;
+  readonly submitChatText: (text: string, opts?: { readonly onError?: () => void }) => void;
   readonly submitQuestionnaireAnswers: (
     answers: readonly ShapedQuestionnaireAnswer[],
     opts?: { readonly onError?: () => void },
@@ -72,6 +86,10 @@ export interface UseWaveStateResult extends StreamingTurn {
  * - `close-turn` → store `closeResult` so the page can render the move-on CTA;
  *   add completion XP + final-turn free-text XP to the badge, fire the tier-up
  *   toast if a tier advanced.
+ *
+ * A failed Turn whose learner entry the server saved lands in `failedTurn`
+ * (`deriveRetryableWaveTurn`). Its Retry re-sends the same payload, so the
+ * server reuses the entry rather than spending a second Turn (issue #231).
  */
 export function useWaveState(courseId: string, waveNumber: number): UseWaveStateResult {
   const trpc = useTRPC();
@@ -86,11 +104,17 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
   // from the turn-result data part and surface it to the page.
   const [closeResult, setCloseResult] = useState<WaveCloseResult | null>(null);
 
-  // Per-call error hook for questionnaire submissions: WaveSession re-shows
-  // the question card + clears its optimistic bubble on failure. `useChat`'s
-  // onError is chat-level, so the per-call callback is carried in a ref set
-  // just before sendMessage and consumed (once) by onError / cleared on finish.
-  const questionnaireErrorRef = useRef<(() => void) | null>(null);
+  // The Turn in flight: its payload and the caller's per-call error hook.
+  // WaveSession uses the hook to restore its input on failure. `useChat`'s
+  // onError is chat-level and gets only the error, so `sendTurn` sets this ref
+  // just before sendMessage. onError consumes it once; onFinish clears it.
+  const inFlightTurnRef = useRef<{
+    readonly payload: SubmitTurnPayload;
+    readonly onError: (() => void) | undefined;
+  } | null>(null);
+  // This tab's last failed payload. A new send clears it.
+  // `deriveRetryableWaveTurn` decides whether a Retry may re-send it.
+  const [failedPayload, setFailedPayload] = useState<SubmitTurnPayload | null>(null);
 
   // Decisions live in `deriveTurnResultEffects` (pure); the hook applies the
   // side-effects in a fixed order: capture the close result, fold XP into the
@@ -124,8 +148,9 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
         handleTurnResult(part.data);
       }
     },
+    // The AI SDK runs onFinish after every request, a failed one included.
     onFinish: () => {
-      questionnaireErrorRef.current = null;
+      inFlightTurnRef.current = null;
       // Committed state is server-derived; refetch then drop the transient
       // streaming messages so the bubble is replaced by the canonical turn.
       void qc.invalidateQueries({ queryKey: stateOpts.queryKey }).then(() => {
@@ -139,8 +164,10 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
       toast.error("Couldn't submit that turn", {
         description: err.message.length > 0 ? err.message : "Please try again.",
       });
-      questionnaireErrorRef.current?.();
-      questionnaireErrorRef.current = null;
+      const turn = inFlightTurnRef.current;
+      inFlightTurnRef.current = null;
+      turn?.onError?.();
+      setFailedPayload(turn?.payload ?? null);
       chat.setMessages([]);
     },
   });
@@ -168,8 +195,23 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
   // `data-turn-reset` marker). Recomputed each render, like the stream itself.
   const { streamingText, streamingQuestions } = deriveStreamingTurn(chat.messages);
 
-  const submitChatText: UseWaveStateResult["submitChatText"] = (text) => {
-    void chat.sendMessage({ text }, { body: { payload: { kind: "chat-text", text } } });
+  // Every send goes through here, a Retry included. The server reads only
+  // `payload`. The message text is useChat's transient copy, never rendered.
+  const sendTurn = (payload: SubmitTurnPayload, onError?: () => void) => {
+    setFailedPayload(null);
+    inFlightTurnRef.current = { payload, onError };
+    const text = payload.kind === "chat-text" ? payload.text : "Answers submitted";
+    void chat.sendMessage({ text }, { body: { payload } });
+  };
+
+  // A failed Turn's saved entry, offered for Retry. `deriveRetryableWaveTurn`
+  // holds the rule; re-sending the same payload takes the server's resume path.
+  const retryable = state.data ? deriveRetryableWaveTurn(failedPayload, state.data.chatLog) : null;
+  const failedTurn: FailedWaveTurn | null =
+    retryable === null ? null : { payload: retryable, retry: () => sendTurn(retryable) };
+
+  const submitChatText: UseWaveStateResult["submitChatText"] = (text, opts) => {
+    sendTurn({ kind: "chat-text", text }, opts?.onError);
   };
 
   const submitQuestionnaireAnswers: UseWaveStateResult["submitQuestionnaireAnswers"] = (
@@ -183,16 +225,10 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     // reuse it rather than re-scanning chat_log.
     const questionnaireId = activeQuestionnaire?.questionsKey;
     if (!questionnaireId) return;
-    questionnaireErrorRef.current = opts?.onError ?? null;
-    void chat.sendMessage(
-      // The optimistic user bubble stays WaveSession-owned; this text is the
-      // transient user message inside useChat's list (never rendered).
-      { text: "Answers submitted" },
-      {
-        body: {
-          payload: { kind: "questionnaire-answers", questionnaireId, answers },
-        },
-      },
+    // The optimistic user bubble stays WaveSession-owned.
+    sendTurn(
+      { kind: "questionnaire-answers", questionnaireId, answers: [...answers] },
+      opts?.onError,
     );
   };
 
@@ -209,6 +245,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     xpGainAmount: courseXp.gainAmount,
     awardMcXp: courseXp.addXp,
     isPending,
+    failedTurn,
     streamingText,
     streamingQuestions,
     submitChatText,
