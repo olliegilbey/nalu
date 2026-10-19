@@ -141,10 +141,11 @@ describe("waves writes", () => {
       });
 
       // Close Wave 1.
-      const closed = await closeWave(wave1.id, {
+      const { wave: closed, closedNow } = await closeWave(wave1.id, {
         summary: "Wave 1 done",
         blueprintEmitted: BLUEPRINT,
       });
+      expect(closedNow).toBe(true);
       expect(closed.status).toBe("closed");
       expect(closed.summary).toBe("Wave 1 done");
       expect(closed.blueprintEmitted).toMatchObject({ topic: "Rust borrowing" });
@@ -207,9 +208,20 @@ describe("waves writes", () => {
         turnBudget: WAVE.turnCount,
       });
 
-      const first = await closeWave(wave.id, { summary: "first", blueprintEmitted: BLUEPRINT });
-      const second = await closeWave(wave.id, { summary: "second", blueprintEmitted: BLUEPRINT });
+      const firstResult = await closeWave(wave.id, {
+        summary: "first",
+        blueprintEmitted: BLUEPRINT,
+      });
+      const secondResult = await closeWave(wave.id, {
+        summary: "second",
+        blueprintEmitted: BLUEPRINT,
+      });
+      const first = firstResult.wave;
+      const second = secondResult.wave;
 
+      // Only the first call closed the row; the second changed nothing.
+      expect(firstResult.closedNow).toBe(true);
+      expect(secondResult.closedNow).toBe(false);
       // COALESCE keeps closed_at sticky — second call must not re-stamp.
       expect(first.closedAt).toEqual(second.closedAt);
       // Status is 'closed' on both returns.

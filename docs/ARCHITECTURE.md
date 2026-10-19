@@ -14,7 +14,7 @@ Every LLM turn produces writes to up to three stores. They are not redundant: ea
 
 At write time, one model response drives **one** fan-out: its raw text → `context_messages.content`, beside the user envelope that prompted it; its parsed payload → typed JSONB; its signals → business-logic stores. Single source of truth, three projections.
 
-A Wave close also writes `waves.summary` and `waves.blueprint_emitted`. They are a record of the close turn. No code reads them back; the next Wave reads its blueprint from its own `waves.seed_source`.
+A Wave close rewrites `courses.summary` whole from the close turn's `summary`; the next Wave renders it as `<progress_summary>`. The close also writes the same text to `waves.summary`, and the blueprint to `waves.blueprint_emitted`. Those two are a record of the close turn. No code reads them back; the next Wave reads its blueprint from its own `waves.seed_source`.
 
 ## The replay-log invariant
 
@@ -36,6 +36,8 @@ An `assistant_tool_call` row stores each call's input as the loop sent it. When 
 `context_messages` stores only `user` / `assistant` / `tool` rows. The schema CHECK `context_messages_kind_role_pair` pins each row kind to its one role, and no kind maps to `system`. The system prompt is **rebuilt fresh on every LLM call** from seed columns (`courses` / `waves` rows) by the pure renderers (`renderTeachingSystem`, `renderScopingSystem`).
 
 It is byte-stable across a session's turns not because it is stored, but because the renderer is pure: identical seed in → identical bytes out. The conversation is byte-stable by _persistence_ (the same rows replayed); the system prompt is byte-stable by _purity_.
+
+Purity needs the seed to hold still. Wave inputs are frozen on the `waves` row at open, or are `courses` columns that never change after scoping. One is not: `<progress_summary>` reads `courses.summary` live each turn. It holds still because only a Wave close rewrites it. The closing Wave takes no more turns, so only the next Wave's prompt sees the new value. A writer that changed it mid-Wave would break the open Wave's cache prefix.
 
 **What this means when you edit a prompt:**
 

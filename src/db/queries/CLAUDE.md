@@ -30,7 +30,7 @@ siblings, one concern each:
 
 - `courses.ts`: row guard, create, reads. `courses.scoping.ts`: scoping-phase
   writes. `courses.tx.ts`: the close transactions' reads and writes:
-  activation, tier, and XP, plus the course-row lock.
+  activation, summary, tier, and XP, plus the course-row lock.
 - `waves.ts`: row guard and reads. `waves.writes.ts`: open, close, and the
   `chat_log` append.
 - `concepts.ts`: reads. `concepts.writes.ts`: upsert and SM-2 results.

@@ -138,7 +138,16 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
             "Grade only questions the learner answered in THIS closing turn; earlier turns are already graded. Emit an empty array if they answered none this turn.",
           ),
       ),
-      summary: z.string().min(1).describe("2-3 sentences capturing where the learner stands now."),
+      // The Harness overwrites `courses.summary` with this field at every close
+      // (issue #93), so it must carry the whole course, not just this lesson.
+      // "any": scoping close has no <progress_summary> yet; it writes the first.
+      // Keep it terse: the wave_close wire sits near Cerebras's 5000-char cap.
+      summary: z
+        .string()
+        .min(1)
+        .describe(
+          "Whole-course summary: compress any <progress_summary>, add this lesson. 3-5 sentences.",
+        ),
       nextUnitBlueprint: blueprintSchema,
     })
     .superRefine((val, ctx) => {

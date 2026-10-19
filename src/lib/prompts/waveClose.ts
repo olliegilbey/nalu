@@ -4,10 +4,7 @@ import { makeCloseTurnBaseSchema, type MakeCloseTurnBaseSchemaParams } from "./c
 
 /** Per-concept SM-2 update emitted in the wave-close batch. */
 const conceptUpdateSchema = z.object({
-  name: z
-    .string()
-    .min(1)
-    .describe("Exact concept name (matches an existing concept on the course)."),
+  name: z.string().min(1).describe("Exact name of an existing course concept."),
   qualityScore: qualityScoreSchema.describe(
     "0-5. How well the LEARNER demonstrated they understand this concept this lesson — judged from their own answers and explanations, not from how well you taught it. Score high only when they actively showed mastery: a correct answer reasoned in their own words. If they got a related question wrong, said nothing about it, or only had it explained to them, score low. This score drives the spaced-repetition schedule — inflating it makes the system believe they know something they have not shown.",
   ),
