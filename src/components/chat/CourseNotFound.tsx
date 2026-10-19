@@ -13,6 +13,8 @@ const noop = () => {};
  * The chat shown when `getState` finds no course for this learner: a wrong URL,
  * or a course another browser started. A Nalu message says so, and the move-on
  * slot offers a fresh start at `/`. Onboarding and WaveSession both render it.
+ * WaveSession also shows it for a Wave ordinal missing from the learner's own
+ * course: the server returns the same NOT_FOUND for both (issue #230).
  */
 export function CourseNotFound() {
   const router = useRouter();
