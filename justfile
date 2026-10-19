@@ -86,12 +86,14 @@ start:
 # === DB ===
 
 # The dev database is a postgres:16-alpine container (the integration-test
-# image) named nalu-dev-db, with user, password and database `postgres`, as
-# `.env.local.example` expects. It binds to loopback only, so the LAN never
-# sees its default password. The nalu-dev-db volume keeps data across
-# restarts. A rerun is a no-op: `docker start` on a running container does
-# nothing. Plain Postgres is enough: dev auth is the `x-dev-user-id` stub
-# (src/server/requestUser.ts), and the migrations use no Supabase objects.
+# image) named nalu-dev-db, with user and database `postgres` and no
+# password: postgresql://postgres@127.0.0.1:54322/postgres, as
+# `.env.local.example` expects. Trust auth is safe here: the port is
+# published on loopback only, and the data is throwaway. The nalu-dev-db
+# volume keeps data across restarts. A rerun is a no-op: `docker start` on a
+# running container does nothing. Plain Postgres is enough: `just dev` auth is
+# the `x-dev-user-id` stub (src/server/requestUser.ts), and the migrations use
+# no Supabase objects.
 # Start (or reuse) the dev database on 127.0.0.1:54322.
 db-up:
     #!/usr/bin/env bash
@@ -101,7 +103,7 @@ db-up:
     else
       docker run --detach --name nalu-dev-db \
         --publish 127.0.0.1:54322:5432 \
-        --env POSTGRES_PASSWORD=postgres \
+        --env POSTGRES_HOST_AUTH_METHOD=trust \
         --volume nalu-dev-db:/var/lib/postgresql/data \
         postgres:16-alpine >/dev/null
     fi
@@ -126,8 +128,11 @@ db-down:
 db-generate name:
     bunx drizzle-kit generate --name {{name}}
 
-# Apply pending migrations to the database at DIRECT_URL (dev: `.env.local`).
+# The gate refuses unless every DIRECT_URL host is this machine, so
+# `just db-migrate-prod` is the only path to a remote database.
+# Apply pending migrations to the dev database (DIRECT_URL in `.env.local`).
 db-migrate:
+    bun src/db/assertLocalDirectUrl.ts
     bunx drizzle-kit migrate
 
 # Production URLs live in the gitignored `.env.production.local`, never in
@@ -146,15 +151,17 @@ db-migrate-prod:
     bun --env-file=.env.production.local run drizzle-kit migrate
 
 # Wipe the local DB, then re-migrate and re-seed. src/db/reset.ts drops the
-# app schemas at DIRECT_URL, and refuses unless DIRECT_URL is localhost: an
-# exported DIRECT_URL or a stale `.env.local` can still name production.
+# app schemas at DIRECT_URL, and refuses unless every host is this machine:
+# an exported DIRECT_URL or a stale `.env.local` can still name production.
 db-reset:
     bun src/db/reset.ts
     just db-migrate
     just db-seed
 
+# The gate refuses unless every DIRECT_URL host is this machine.
 # Insert dev user idempotently
 db-seed:
+    bun src/db/assertLocalDirectUrl.ts
     bun src/db/seed.ts
 
 # drizzle-kit history check: fails on an inconsistent migration chain. It does
