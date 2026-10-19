@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { makeCloseTurnBaseSchema } from "./closeTurn";
 
 const validPayload = {
@@ -191,5 +192,51 @@ describe("makeCloseTurnBaseSchema — extended params", () => {
       gradings: [{ kind: "mc-index" as const, questionId: "q1", rationale: "Right click." }],
     };
     expect(schema.safeParse(mcOnly).success).toBe(true);
+  });
+});
+
+// The model reads the role description and the refine message. It never sees
+// the `reviewDueNames` param; it sees the due list as `<review_due>`, and the
+// scoping close shows no due list at all (issue #151).
+describe("makeCloseTurnBaseSchema — review-role wording the model reads", () => {
+  /** Payload planning one review-role concept; the due list varies per test. */
+  const reviewPlan = {
+    ...validPayload,
+    nextUnitBlueprint: {
+      ...validPayload.nextUnitBlueprint,
+      plannedConcepts: [{ name: "borrowing_rules", tier: 1, role: "review" as const }],
+    },
+  };
+
+  it("names <review_due> in the wire role description, not the code param", () => {
+    const wire = toSchemaJsonString(makeCloseTurnBaseSchema(baseParams), { name: "close_turn" });
+    expect(wire).toContain("<review_due>");
+    expect(wire).not.toContain("reviewDueNames");
+  });
+
+  it("directs the model to 'fresh' when nothing is due yet", () => {
+    // Scoping close: the due list is always empty.
+    const result = makeCloseTurnBaseSchema(baseParams).safeParse(reviewPlan);
+    expect(result.success).toBe(false);
+    const message = result.error?.issues[0]?.message ?? "";
+    expect(message).toContain("borrowing_rules");
+    expect(message).toContain("nothing is due");
+    expect(message).toContain("'fresh'");
+    expect(message).not.toContain("reviewDueNames");
+  });
+
+  it("names the review_due list when the concept is not on it", () => {
+    const result = makeCloseTurnBaseSchema({
+      ...baseParams,
+      reviewDueNames: ["Price elasticity basics"],
+    }).safeParse(reviewPlan);
+    expect(result.success).toBe(false);
+    const message = result.error?.issues[0]?.message ?? "";
+    expect(message).toContain("review_due");
+    expect(message).toContain("Price elasticity basics");
+    expect(message).toContain("'fresh'");
+    expect(message).not.toContain("reviewDueNames");
+    // buildRetryDirective escapes messages, so a literal tag would reach the model as &lt;…&gt;.
+    expect(message).not.toMatch(/[<>]/);
   });
 });
