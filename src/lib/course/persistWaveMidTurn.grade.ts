@@ -13,7 +13,7 @@ import type { McOptionKey } from "@/lib/types/mcOptionKey";
  * ceiling. Not re-exported via the barrel; only `persistWaveMidTurn` calls it.
  */
 
-/** One row of the graded-signals output. Matches `PersistWaveMidTurnResult.gradedSignals[]`. */
+/** One graded answer in the turn result's `PersistWaveMidTurnResult.gradedSignals`. */
 export interface GradedRow {
   readonly kind: GradedSignal["kind"];
   readonly questionId: string;
