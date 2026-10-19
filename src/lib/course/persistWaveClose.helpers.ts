@@ -6,6 +6,7 @@ import { updateCourseTierInTx } from "@/db/queries/courses.tx";
 import { checkTierAdvancement } from "@/lib/scoring/progression";
 import type { ConceptState } from "@/lib/types/scoring";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
+import type { V3Response } from "@/lib/types/jsonb";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import type { McOptionKey } from "@/lib/types/mcOptionKey";
 import { applyAssessmentGrading, type GradedSignal } from "./applyAssessmentGrading";
@@ -16,7 +17,8 @@ import type { LoadedWaveContext } from "./loadWaveContext";
 /**
  * Internal helpers for `persistWaveClose` — split out to keep both files under
  * the ~200-line ceiling. Mirrors the `persistWaveMidTurn.{ts,grade.ts,insert.ts}`
- * pattern. Not re-exported via the barrel; only `persistWaveClose` calls these.
+ * pattern. Not re-exported via the barrel; only `persistWaveClose` calls these,
+ * plus `closeGradingDebug.ts`, which reads `loadCloseResponses`.
  */
 
 /**
@@ -32,28 +34,26 @@ export interface PersistedGradedSignal {
 }
 
 /**
- * Build the learner's MC-click map from the live `chat_log`: raw question id →
- * selected key letter (only `user.answers` responses with a `choice` targeting
- * the open questionnaire).
+ * The learner's close-turn Responses: the `user.answers` entry in the live
+ * `chat_log` that targets the open questionnaire. Empty when none is open.
  *
- * Reads the LIVE column via the tx — not `ctx.wave.chatLog`, which
- * `loadWaveContext` snapshots before `prepareWaveTurn` appends the close-turn
- * answer. The append committed before this tx opened, so it is visible here.
+ * Reads the LIVE column — not `ctx.wave.chatLog`, which `loadWaveContext`
+ * snapshots before `prepareWaveTurn` appends the close-turn answer. The append
+ * committed before the close ran, so it is visible here. The close passes its
+ * tx; the issue #22 debug log (`closeGradingDebug.ts`) reads without one.
  */
-async function buildCloseMcChoiceMap(
-  tx: DbOrTx,
+export async function loadCloseResponses(
   waveId: string,
-  openQuestionnaireId: string,
-): Promise<ReadonlyMap<string, McOptionKey>> {
+  openQuestionnaireId: string | undefined,
+  tx?: DbOrTx,
+): Promise<readonly V3Response[]> {
+  if (openQuestionnaireId === undefined) return [];
   const liveLog = await getWaveChatLog(waveId, tx);
-  const entries = liveLog.flatMap((e) =>
+  return liveLog.flatMap((e) =>
     e.role === "user" && e.kind === "answers" && e.questionnaireId === openQuestionnaireId
       ? e.responses
-          .filter((r): r is typeof r & { readonly choice: McOptionKey } => r.choice !== undefined)
-          .map((r) => [r.questionId, r.choice] as const)
       : [],
   );
-  return new Map(entries);
 }
 
 /**
@@ -63,7 +63,8 @@ async function buildCloseMcChoiceMap(
  * payload's qualityScore; its verdict is advisory (issue #198). `conceptTier`
  * is read from the persisted concept row — NOT the LLM-emitted
  * `g.conceptTier` — so the model cannot influence XP (core design
- * principle). Mirrors the MC path's tier lookup.
+ * principle). Mirrors the MC path's tier lookup. The row's `user_answer` gets
+ * the learner's answer from the same live `chat_log` entry (issue #214).
  *
  * MC path (bug_003): a questionnaire posed on the final mid-turn has no later
  * mid-turn, so its MC questions are answered — and graded — at close. The model
@@ -94,12 +95,20 @@ export async function applyCloseGradings(
   const correctByQuestionId = openQuestionnaire
     ? buildMcCorrectKeyMap(openQuestionnaire)
     : new Map<string, McOptionKey>();
-  // raw id → learner's clicked key. `buildCloseMcChoiceMap` reads the live
-  // `chat_log` (not the snapshot) so the close-turn answer is visible. Only
-  // fetched when there is an open questionnaire to grade against.
-  const clickByQuestionId = openQuestionnaire
-    ? await buildCloseMcChoiceMap(tx, ctx.wave.id, openQuestionnaire.questionnaireId)
-    : new Map<string, McOptionKey>();
+  // The learner's close-turn Responses, read from the live `chat_log` (not the
+  // snapshot) so the close-turn answer is visible.
+  const responses = await loadCloseResponses(ctx.wave.id, openQuestionnaire?.questionnaireId, tx);
+  // raw id → learner's clicked key, from MC Responses only. A typed answer to
+  // an MC question has no click, so an `mc-index` grading of it is skipped.
+  const clickByQuestionId = new Map(
+    responses.flatMap((r) => (r.choice === undefined ? [] : [[r.questionId, r.choice] as const])),
+  );
+  // raw id → the learner's answer for `user_answer`: the MC key, or the typed
+  // text (issue #214). Same rule as the mid-turn's `buildAnswerTextMap`, which
+  // reads the payload `prepareWaveTurn` stored as these Responses.
+  const answerTextById = new Map(
+    responses.map((r) => [r.questionId, r.choice ?? r.freetext] as const),
+  );
   // Reduce accumulates results without mutation; the awaited accumulator
   // threads them through.
   // Sequential by design — writes share one tx handle and grading counts at
@@ -159,6 +168,7 @@ export async function applyCloseGradings(
       conceptTier: concept.tier,
       signal: { kind: "free-text", questionId: g.questionId, qualityScore: g.qualityScore },
       tx,
+      userAnswer: answerTextById.get(g.questionId),
     });
     return [
       ...acc,

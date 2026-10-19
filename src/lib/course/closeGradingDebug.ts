@@ -5,7 +5,6 @@
  * saved, so a debug failure must not abort the close.
  */
 import { getMessagesForWave } from "@/db/queries/contextMessages";
-import { getWaveChatLog } from "@/db/queries/waves";
 import {
   formatGradingDebugLine,
   isGradingDebugEnabled,
@@ -13,6 +12,7 @@ import {
 } from "@/lib/observability/gradingDebug";
 import type { CloseTurnBase } from "@/lib/prompts/closeTurn";
 import type { V3Response } from "@/lib/types/jsonb";
+import { loadCloseResponses } from "./persistWaveClose.helpers";
 
 type CloseGradings = CloseTurnBase["gradings"];
 
@@ -69,25 +69,6 @@ function writeGradingLines(
     const response = responseById.get(grading.questionId);
     process.stderr.write(`${formatGradingDebugLine({ context, grading, response, xpTier })}\n`);
   }
-}
-
-/**
- * The learner's Responses to the open questionnaire, read from the LIVE
- * `chat_log`. The close-turn answer was committed before the close ran, so
- * `ctx.wave.chatLog`'s snapshot lacks it — same reasoning as
- * `buildCloseMcChoiceMap`.
- */
-async function loadCloseResponses(
-  waveId: string,
-  openQuestionnaireId: string | undefined,
-): Promise<readonly V3Response[]> {
-  if (openQuestionnaireId === undefined) return [];
-  const liveLog = await getWaveChatLog(waveId);
-  return liveLog.flatMap((e) =>
-    e.role === "user" && e.kind === "answers" && e.questionnaireId === openQuestionnaireId
-      ? e.responses
-      : [],
-  );
 }
 
 /** Strip-path summary from the Wave's latest raw response; undefined when nothing was discarded. */
