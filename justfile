@@ -107,5 +107,6 @@ db-seed:
 
 # drizzle-kit history check: fails on an inconsistent migration chain. It does
 # not diff schema TS against the migrations, so it misses an ungenerated change.
+# `just test` catches that: see src/db/schemaMigrationDrift.test.ts.
 db-check:
     bunx drizzle-kit check

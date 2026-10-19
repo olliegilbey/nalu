@@ -24,7 +24,7 @@ import { SM2 } from "../../lib/config/tuning";
  *
  * The `easiness_factor` default and its floor CHECK read `SM2` in tuning.ts.
  * A retune there changes the schema, so it needs `just db-generate` and a
- * committed migration. `src/db/schemaTuningDrift.test.ts` stays red until
+ * committed migration. `src/db/schemaMigrationDrift.test.ts` stays red until
  * the migration lands.
  *
  * `tier` is set at first sighting and is immutable thereafter (spec §3
