@@ -105,6 +105,7 @@ db-reset:
 db-seed:
     bun src/db/seed.ts
 
-# drizzle-kit drift check — fails if schema TS and migrations are out of sync
+# drizzle-kit history check: fails on an inconsistent migration chain. It does
+# not diff schema TS against the migrations, so it misses an ungenerated change.
 db-check:
     bunx drizzle-kit check
