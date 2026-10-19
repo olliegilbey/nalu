@@ -9,7 +9,8 @@ import { resolveRequestUserId } from "./requestUser";
 /**
  * Build the tRPC request context. Resolves `userId` (possibly undefined)
  * via `resolveRequestUserId` — the auth story shared with the streaming
- * wave-turn route handler.
+ * wave-turn route handler. A cookieless request mints its anonymous learner
+ * here, once per HTTP request, so a batch of calls shares one mint.
  */
 export const createTRPCContext = async (opts: FetchCreateContextFnOptions) => {
   return { userId: await resolveRequestUserId(opts.req) };

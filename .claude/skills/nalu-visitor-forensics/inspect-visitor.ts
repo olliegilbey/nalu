@@ -211,7 +211,8 @@ const refDomain = (referrer: string | null): string => {
 // --- DB join ---------------------------------------------------------------
 // distinct_id IS the anon Supabase user id (src/proxy.ts sets it), so it joins
 // straight to courses.user_id — that's what turns "someone visited" into "someone
-// visited AND here is the course they started".
+// visited AND here is the course they started". A pageview from before the
+// visitor's first API request carries a random id instead, which joins nothing.
 type CourseRow = { user_id: string; id: string; topic: string; status: string };
 const ids = [...new Set(events.map((e) => e.distinctId).filter(Boolean))];
 const courses =
