@@ -120,7 +120,12 @@ describe("applyAssessmentGrading (integration)", () => {
       });
 
       const expectedXp = calculateMcXp(2, true);
-      expect(result).toEqual({ questionId: "q1", xpAwarded: expectedXp, kind: "mc-index" });
+      expect(result).toEqual({
+        questionId: "q1",
+        xpAwarded: expectedXp,
+        kind: "mc-index",
+        isCorrect: true,
+      });
 
       const [row] = await db.select().from(assessments).where(eq(assessments.id, assessmentId));
       expect(row).toMatchObject({
@@ -151,7 +156,7 @@ describe("applyAssessmentGrading (integration)", () => {
     });
   });
 
-  it("free-text path: awards calculateXP(tier, qualityScore) and reflects verdict", async () => {
+  it("free-text path: awards calculateXP(tier, qualityScore) and stores isCorrect", async () => {
     await withTestDb(async () => {
       const { assessmentId } = await seedAssessment({
         assessmentKind: "card_freetext",
@@ -161,17 +166,17 @@ describe("applyAssessmentGrading (integration)", () => {
       const result = await applyAssessmentGrading({
         assessmentId,
         conceptTier: 2,
-        signal: {
-          kind: "free-text",
-          questionId: "q3",
-          verdict: "correct",
-          qualityScore: 5,
-        },
+        signal: { kind: "free-text", questionId: "q3", qualityScore: 5 },
         tx: db,
       });
 
       const expectedXp = calculateXP(2, 5);
-      expect(result).toEqual({ questionId: "q3", xpAwarded: expectedXp, kind: "free-text" });
+      expect(result).toEqual({
+        questionId: "q3",
+        xpAwarded: expectedXp,
+        kind: "free-text",
+        isCorrect: true,
+      });
       const [row] = await db.select().from(assessments).where(eq(assessments.id, assessmentId));
       expect(row).toMatchObject({
         isCorrect: true,
@@ -181,7 +186,7 @@ describe("applyAssessmentGrading (integration)", () => {
     });
   });
 
-  it("free-text path (partial verdict): isCorrect=false despite non-zero quality", async () => {
+  it("free-text path (partial-band score): isCorrect=false despite non-zero quality", async () => {
     await withTestDb(async () => {
       const { assessmentId } = await seedAssessment({
         assessmentKind: "card_freetext",
@@ -191,12 +196,7 @@ describe("applyAssessmentGrading (integration)", () => {
       await applyAssessmentGrading({
         assessmentId,
         conceptTier: 1,
-        signal: {
-          kind: "free-text",
-          questionId: "q4",
-          verdict: "partial",
-          qualityScore: 3,
-        },
+        signal: { kind: "free-text", questionId: "q4", qualityScore: 3 },
         tx: db,
       });
 
@@ -205,6 +205,59 @@ describe("applyAssessmentGrading (integration)", () => {
       expect(row?.qualityScore).toBe(3);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Issue #213: the result carries the `is_correct` it stored, so no caller
+  // re-derives the band rule.
+  // ---------------------------------------------------------------------------
+  it.each([
+    { qualityScore: 3, isCorrect: false },
+    { qualityScore: 5, isCorrect: true },
+  ] as const)(
+    "free-text path: returns isCorrect $isCorrect for qualityScore $qualityScore, as stored",
+    async ({ qualityScore, isCorrect }) => {
+      await withTestDb(async () => {
+        const { assessmentId } = await seedAssessment({
+          assessmentKind: "card_freetext",
+          conceptTier: 1,
+        });
+
+        const result = await applyAssessmentGrading({
+          assessmentId,
+          conceptTier: 1,
+          signal: { kind: "free-text", questionId: "q1", qualityScore },
+          tx: db,
+        });
+
+        expect(result.isCorrect).toBe(isCorrect);
+        const [row] = await db.select().from(assessments).where(eq(assessments.id, assessmentId));
+        expect(row?.isCorrect).toBe(isCorrect);
+      });
+    },
+  );
+
+  it.each([true, false])(
+    "MC-index path: returns isCorrect %s from the click, as stored",
+    async (correct) => {
+      await withTestDb(async () => {
+        const { assessmentId } = await seedAssessment({
+          assessmentKind: "card_mc",
+          conceptTier: 1,
+        });
+
+        const result = await applyAssessmentGrading({
+          assessmentId,
+          conceptTier: 1,
+          signal: { kind: "mc-index", questionId: "q1", correct },
+          tx: db,
+        });
+
+        expect(result.isCorrect).toBe(correct);
+        const [row] = await db.select().from(assessments).where(eq(assessments.id, assessmentId));
+        expect(row?.isCorrect).toBe(correct);
+      });
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // Issue #205: `courses.total_xp` caches the XP on the course's assessment
@@ -292,7 +345,7 @@ describe("applyAssessmentGrading (integration)", () => {
         applyAssessmentGrading({
           assessmentId,
           conceptTier: 2,
-          signal: { kind: "free-text", questionId: "q1", verdict: "partial", qualityScore },
+          signal: { kind: "free-text", questionId: "q1", qualityScore },
           tx: db,
         });
       // Sanity: the two grades must award different XP, else the test proves nothing.

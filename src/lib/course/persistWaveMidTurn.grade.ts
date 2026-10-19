@@ -5,7 +5,6 @@ import { applyAssessmentGrading, type GradedSignal } from "./applyAssessmentGrad
 import { namespaceQuestionId } from "./namespaceQuestionId";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { McOptionKey } from "@/lib/types/mcOptionKey";
-import { verdictForQualityScore } from "@/lib/scoring/verdictBand";
 
 /**
  * Internal helper for `persistWaveMidTurn` — graded comprehensionSignals batch.
@@ -98,7 +97,8 @@ export async function gradePriorAnswers(
     // Build the GradedSignal applyAssessmentGrading expects. MC correctness
     // is mechanical: compare the learner's selected letter against the
     // open-questionnaire's `correct` key. Free-text correctness follows the
-    // model's qualityScore; its verdict is advisory (issue #198).
+    // model's qualityScore. Its verdict is advisory (issue #198), so the
+    // signal drops it.
     const gradedSignal: GradedSignal =
       sig.kind === "mc-index"
         ? {
@@ -109,7 +109,6 @@ export async function gradePriorAnswers(
         : {
             kind: "free-text",
             questionId: sig.questionId,
-            verdict: sig.verdict,
             qualityScore: sig.qualityScore,
           };
     const applied = await applyAssessmentGrading({
@@ -119,23 +118,15 @@ export async function gradePriorAnswers(
       tx: params.tx,
       userAnswer,
     });
-    const out: GradedRow =
-      sig.kind === "mc-index"
-        ? {
-            kind: applied.kind,
-            questionId: applied.questionId,
-            xpAwarded: applied.xpAwarded,
-            correct: params.correctLetterById.get(sig.questionId) === userAnswer,
-          }
-        : {
-            kind: applied.kind,
-            questionId: applied.questionId,
-            xpAwarded: applied.xpAwarded,
-            // Same rule `applyAssessmentGrading` stores in `is_correct`, so
-            // the turn result and the row agree (issue #198).
-            correct: verdictForQualityScore(sig.qualityScore) === "correct",
-            qualityScore: sig.qualityScore,
-          };
+    const out: GradedRow = {
+      kind: applied.kind,
+      questionId: applied.questionId,
+      xpAwarded: applied.xpAwarded,
+      // The `is_correct` the row stored, so the turn result and the row
+      // agree (issue #213). Only free-text carries a model quality score.
+      correct: applied.isCorrect,
+      ...(sig.kind === "free-text" ? { qualityScore: sig.qualityScore } : {}),
+    };
     return [...acc, out];
   }, Promise.resolve([]));
   return accumulated;

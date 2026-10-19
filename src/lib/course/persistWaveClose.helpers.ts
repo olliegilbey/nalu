@@ -58,9 +58,10 @@ async function buildCloseMcChoiceMap(
  * Apply each close-grading to the corresponding assessment row.
  *
  * Free-text path: route through `applyAssessmentGrading` with the parsed
- * payload's verdict + qualityScore. `conceptTier` is read from the persisted
- * concept row — NOT the LLM-emitted `g.conceptTier` — so the model cannot
- * influence XP (core design principle). Mirrors the MC path's tier lookup.
+ * payload's qualityScore; its verdict is advisory (issue #198). `conceptTier`
+ * is read from the persisted concept row — NOT the LLM-emitted
+ * `g.conceptTier` — so the model cannot influence XP (core design
+ * principle). Mirrors the MC path's tier lookup.
  *
  * MC path (bug_003): a questionnaire posed on the final mid-turn has no later
  * mid-turn, so its MC questions are answered — and graded — at close. The model
@@ -154,12 +155,7 @@ export async function applyCloseGradings(
     const applied = await applyAssessmentGrading({
       assessmentId: row.id,
       conceptTier: concept.tier,
-      signal: {
-        kind: "free-text",
-        questionId: g.questionId,
-        verdict: g.verdict,
-        qualityScore: g.qualityScore,
-      },
+      signal: { kind: "free-text", questionId: g.questionId, qualityScore: g.qualityScore },
       tx,
     });
     return [
