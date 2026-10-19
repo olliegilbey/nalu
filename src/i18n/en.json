@@ -100,6 +100,11 @@
     "baseline": { "indicator": "Baseline check" }
   },
   "moveOn": { "toWave": "Move on to Wave {n}" },
+  "waveProgress": {
+    "label": "Wave progress",
+    "turn": "Turn {current} of {total}",
+    "complete": "Wave complete"
+  },
   "retry": { "message": "That step failed.", "action": "Retry" },
   "courseNotFound": {
     "message": "I can't find this course. It may belong to another browser, or the link may be wrong.",

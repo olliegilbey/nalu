@@ -11,7 +11,9 @@ import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
 import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
 import { selectComposerQuestionnaire } from "@/lib/course/selectComposerQuestionnaire";
-import { t } from "@/i18n";
+import { deriveWaveProgress } from "@/lib/course/deriveWaveProgress";
+import { WaveProgressBar } from "./WaveProgressBar";
+import { interpolate, t } from "@/i18n";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 
 /**
@@ -40,6 +42,8 @@ export function WaveSession({
     status,
     topic,
     currentTier,
+    turnsRemaining,
+    turnBudget,
     xp,
     xpPulseKey,
     xpGainAmount,
@@ -93,10 +97,18 @@ export function WaveSession({
   const isClosed = closeResult !== null || status === "closed";
   const moveOn = isClosed
     ? {
-        label: t<string>("moveOn.toWave").replace("{n}", String(nextWaveNumber)),
+        label: interpolate(t<string>("moveOn.toWave"), { n: nextWaveNumber }),
         onAdvance: () => router.push(`/course/${courseId}/wave/${nextWaveNumber}`),
       }
     : undefined;
+
+  // Progress strip: the server's turn counts, refetched after each landed
+  // Turn. It flips to complete with the move-on CTA, on the same `isClosed`.
+  // None until the state query resolves.
+  const progress =
+    turnsRemaining === null || turnBudget === null
+      ? null
+      : deriveWaveProgress({ turnsRemaining, turnBudget, isClosed });
 
   return (
     <ChatShell
@@ -106,6 +118,7 @@ export function WaveSession({
       xpPulseKey={xpPulseKey}
       xpGainAmount={xpGainAmount}
       showXp
+      subheader={progress && <WaveProgressBar progress={progress} />}
       composer={
         <Composer
           value={composerValue}

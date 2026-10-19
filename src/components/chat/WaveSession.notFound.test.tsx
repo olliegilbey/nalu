@@ -34,29 +34,7 @@ const wave = vi.hoisted(() => ({ value: {} as UseWaveStateResult }));
 vi.mock("@/hooks/useWaveState", () => ({ useWaveState: () => wave.value }));
 
 import { WaveSession } from "./WaveSession";
-
-/** A `useWaveState` result for an open Wave; tests override single fields. */
-function waveState(overrides: Partial<UseWaveStateResult>): UseWaveStateResult {
-  return {
-    chatEntries: [],
-    activeQuestionnaire: null,
-    closeResult: null,
-    status: "active",
-    topic: "T",
-    currentTier: 1,
-    xp: 0,
-    xpPulseKey: 0,
-    xpGainAmount: 0,
-    awardMcXp: vi.fn(),
-    isPending: false,
-    waveNotFound: false,
-    streamingText: "",
-    streamingQuestions: null,
-    submitChatText: vi.fn(),
-    submitQuestionnaireAnswers: vi.fn(),
-    ...overrides,
-  };
-}
+import { waveStateFixture } from "./WaveSession.fixtures";
 
 beforeEach(() => {
   cleanup();
@@ -66,8 +44,15 @@ beforeEach(() => {
 
 describe("WaveSession wave not found", () => {
   it("says the lesson is missing and offers a new course", () => {
-    // A failed getState resolves nothing, so status and topic stay null.
-    wave.value = waveState({ waveNotFound: true, status: null, topic: null, currentTier: null });
+    // A failed getState resolves nothing, so its fields stay null.
+    wave.value = waveStateFixture({
+      waveNotFound: true,
+      status: null,
+      topic: null,
+      currentTier: null,
+      turnsRemaining: null,
+      turnBudget: null,
+    });
     render(<WaveSession courseId="c1" waveNumber={1} />);
 
     // "Lesson", not "course": NOT_FOUND also covers a Wave number the
@@ -80,7 +65,7 @@ describe("WaveSession wave not found", () => {
   });
 
   it("shows no not-found message for a wave that loads", () => {
-    wave.value = waveState({});
+    wave.value = waveStateFixture({});
     render(<WaveSession courseId="c1" waveNumber={1} />);
     expect(screen.queryByText(/can't find this lesson/)).toBeNull();
     expect(composerProps.moveOn).toBeUndefined();

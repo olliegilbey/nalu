@@ -18,6 +18,8 @@
     "**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts,css}!",
     // Scorer for the scripts/probe-model.ts dev CLI.
     "!scripts/toolProbeScore.ts!",
+    // Unit tests: the mocked useWaveState result the WaveSession tests share.
+    "!src/components/chat/WaveSession.fixtures.ts!",
     // Localhost guard for the src/db/reset.ts dev CLI.
     "!src/db/everyHostIsLoopback.ts!",
     // Seeds rows for the assessments integration suites.

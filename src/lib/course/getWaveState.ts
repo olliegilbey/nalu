@@ -25,9 +25,12 @@ import { redactWaveChatLog, type WaveChatLogEntryForClient } from "./redactWaveC
  *     entry is `WaveChatLogEntryForClient`; MC `correct` keys are replaced
  *     by questionId-bound `correctEnc` blobs. The client folds these into
  *     its `ChatEntry[]` via `deriveWaveChatEntries`.
- *   - `turnsRemaining`: count of user-role entries subtracted from
- *     `WAVE.turnCount`. The chat_log is the single source of truth for
- *     "what has the learner submitted" so the count is a one-line filter.
+ *   - `turnsRemaining`: count of landed Turns subtracted from
+ *     `WAVE.turnCount`. A Turn lands when its reply is saved, so this counts
+ *     user-role entries, minus a trailing one that has no reply yet.
+ *   - `turnBudget`: `WAVE.turnCount`, the budget `prepareWaveTurn` enforces.
+ *     It rides beside `turnsRemaining` so the progress strip reads both from
+ *     the server and derives no turn count from the chat log (issue #80).
  *   - `closeResult`: always `null` here. The close result streams once, as
  *     the turn's `data-turn-result` part (spec §7.2); it is not a re-readable
  *     wave property. The field exists on the wire shape for client-side union
@@ -47,6 +50,8 @@ export interface WaveState {
   readonly currentTier: number;
   readonly status: "active" | "closed";
   readonly turnsRemaining: number;
+  /** Turns in this Wave: `WAVE.turnCount`, the budget the Harness enforces. */
+  readonly turnBudget: number;
   readonly chatLog: readonly WaveChatLogEntryForClient[];
   /**
    * Always `null` on `getWaveState` — the close result streams once, as the
@@ -82,7 +87,7 @@ export interface GetWaveStateParams {
  *      whether the resource exists under another user).
  *   3. Project `wave.chatLog` (validated by `waveRowGuard` on read) through
  *      `redactWaveChatLog`.
- *   4. `turnsRemaining` = `WAVE.turnCount - (user-role entry count)`.
+ *   4. `turnsRemaining` = `WAVE.turnCount - (landed Turn count)`.
  *
  * NOTE on `turnsRemaining`: post-rewrite this is now derived from chat_log
  * exclusively. The chat_log is dual-written everywhere a user submission
@@ -127,12 +132,20 @@ export async function getWaveState(params: GetWaveStateParams): Promise<WaveStat
   const entries = wave.chatLog as WaveChatLog;
   const chatLog = redactWaveChatLog(entries);
 
-  // (4) Turns-remaining: count user-role entries. Both `kind: "text"` and
-  // `kind: "answers"` mark a learner submission landing; assistant entries
-  // don't decrement the budget. Mirrors `prepareWaveTurn`'s `consumed` count
-  // by construction (chat_log is dual-written on every learner submit).
-  const consumed = entries.filter((e) => e.role === "user").length;
-  const turnsRemaining = Math.max(0, WAVE.turnCount - consumed);
+  // (4) Turns-remaining: count landed Turns. Both `kind: "text"` and
+  // `kind: "answers"` mark a learner submission; assistant entries don't
+  // decrement the budget. A Turn lands when its reply is saved: every mid and
+  // close turn appends an assistant entry after the learner's. But
+  // `prepareWaveTurn` saves the learner entry before the LLM call, so a
+  // trailing user entry is a Turn still streaming, or one that failed and
+  // waits for a retry (bug_001). It has not landed, so it does not count.
+  // Otherwise a refetch would move the progress strip early (issue #80).
+  // This matches `prepareWaveTurn`'s `consumed` on a retry, which strips
+  // that entry before counting.
+  const submitted = entries.filter((e) => e.role === "user").length;
+  const replyPending = entries.at(-1)?.role === "user";
+  const landed = replyPending ? submitted - 1 : submitted;
+  const turnsRemaining = Math.max(0, WAVE.turnCount - landed);
 
   // Map DB status → wire status: DB column uses "open" for an in-progress
   // wave; the wire shape (plan §7.2) calls this "active". Closed stays closed.
@@ -146,6 +159,7 @@ export async function getWaveState(params: GetWaveStateParams): Promise<WaveStat
     currentTier: wave.tier,
     status: wireStatus,
     turnsRemaining,
+    turnBudget: WAVE.turnCount,
     chatLog,
     // closeResult is always null on getWaveState — see WaveState TSDoc.
     closeResult: null,

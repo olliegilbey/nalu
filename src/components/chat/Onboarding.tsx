@@ -13,7 +13,7 @@ import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
 import { RetryRow } from "./RetryRow";
 import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
-import { t } from "@/i18n";
+import { interpolate, t } from "@/i18n";
 
 /**
  * Drives the chat scroll + Composer mode for a given courseId.
@@ -93,7 +93,7 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
   // Compute composer mode.
   const moveOn = scopingResult
     ? {
-        label: t<string>("moveOn.toWave").replace("{n}", "1"),
+        label: interpolate(t<string>("moveOn.toWave"), { n: 1 }),
         onAdvance: () => router.push(`/course/${courseId}/wave/1`),
       }
     : undefined;

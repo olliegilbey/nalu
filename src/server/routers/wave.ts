@@ -12,7 +12,7 @@ import { getWaveState } from "@/lib/course/getWaveState";
  * no LLM calls, no persistence.
  */
 export const waveRouter = router({
-  /** Restore wave state by ordinal (spec §7.1) — chatLog, turnsRemaining, closeResult. */
+  /** Restore wave state by ordinal (spec §7.1) — chatLog, turnsRemaining, turnBudget, closeResult. */
   getState: protectedProcedure
     .input(z.object({ courseId: z.uuid(), waveNumber: z.number().int().min(1) }))
     .query(({ ctx, input }) =>

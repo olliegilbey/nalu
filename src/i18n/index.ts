@@ -18,6 +18,20 @@ export function t<T = string>(path: string): T {
     ) as T;
 }
 
+/**
+ * Fill the `{name}` slots in a copy string.
+ * e.g. interpolate(t("moveOn.toWave"), { n: 2 }) → "Move on to Wave 2"
+ */
+export function interpolate(
+  template: string,
+  values: Readonly<Record<string, string | number>>,
+): string {
+  return Object.entries(values).reduce(
+    (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+    template,
+  );
+}
+
 /** Bilingual greeting payload — `key` identifies the time-of-day bucket. */
 export type Greeting = {
   ja: string;
