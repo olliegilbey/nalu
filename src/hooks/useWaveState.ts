@@ -64,11 +64,16 @@ export interface UseWaveStateResult extends StreamingTurn {
   readonly isPending: boolean;
   /** Non-null while a failed Turn's saved entry awaits a learner Retry. */
   readonly failedTurn: FailedWaveTurn | null;
-  readonly submitChatText: (text: string, opts?: { readonly onError?: () => void }) => void;
+  readonly submitChatText: (text: string, opts?: SubmitTurnOptions) => void;
   readonly submitQuestionnaireAnswers: (
     answers: readonly ShapedQuestionnaireAnswer[],
-    opts?: { readonly onError?: () => void },
+    opts?: SubmitTurnOptions,
   ) => void;
+}
+
+/** Per-call options for one Wave send. `onError` lets the caller restore its input. */
+interface SubmitTurnOptions {
+  readonly onError?: () => void;
 }
 
 /**
@@ -108,10 +113,9 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
   // WaveSession uses the hook to restore its input on failure. `useChat`'s
   // onError is chat-level and gets only the error, so `sendTurn` sets this ref
   // just before sendMessage. onError consumes it once; onFinish clears it.
-  const inFlightTurnRef = useRef<{
-    readonly payload: SubmitTurnPayload;
-    readonly onError: (() => void) | undefined;
-  } | null>(null);
+  const inFlightTurnRef = useRef<
+    (SubmitTurnOptions & { readonly payload: SubmitTurnPayload }) | null
+  >(null);
   // This tab's last failed payload. A new send clears it.
   // `deriveRetryableWaveTurn` decides whether a Retry may re-send it.
   const [failedPayload, setFailedPayload] = useState<SubmitTurnPayload | null>(null);
@@ -197,9 +201,9 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
 
   // Every send goes through here, a Retry included. The server reads only
   // `payload`. The message text is useChat's transient copy, never rendered.
-  const sendTurn = (payload: SubmitTurnPayload, onError?: () => void) => {
+  const sendTurn = (payload: SubmitTurnPayload, opts?: SubmitTurnOptions) => {
     setFailedPayload(null);
-    inFlightTurnRef.current = { payload, onError };
+    inFlightTurnRef.current = { payload, onError: opts?.onError };
     const text = payload.kind === "chat-text" ? payload.text : "Answers submitted";
     void chat.sendMessage({ text }, { body: { payload } });
   };
@@ -211,7 +215,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     retryable === null ? null : { payload: retryable, retry: () => sendTurn(retryable) };
 
   const submitChatText: UseWaveStateResult["submitChatText"] = (text, opts) => {
-    sendTurn({ kind: "chat-text", text }, opts?.onError);
+    sendTurn({ kind: "chat-text", text }, opts);
   };
 
   const submitQuestionnaireAnswers: UseWaveStateResult["submitQuestionnaireAnswers"] = (
@@ -226,10 +230,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     const questionnaireId = activeQuestionnaire?.questionsKey;
     if (!questionnaireId) return;
     // The optimistic user bubble stays WaveSession-owned.
-    sendTurn(
-      { kind: "questionnaire-answers", questionnaireId, answers: [...answers] },
-      opts?.onError,
-    );
+    sendTurn({ kind: "questionnaire-answers", questionnaireId, answers: [...answers] }, opts);
   };
 
   return {

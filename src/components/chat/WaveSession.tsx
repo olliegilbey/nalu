@@ -122,12 +122,12 @@ export function WaveSession({
             if (!resendsFailedTurn(failedTurn?.payload ?? null, text)) {
               setOptimistic({ content: text, entryCountAtSubmit: chatEntries.length });
             }
+            setComposerValue("");
             // On failure, hand the text back: retyped text would spend a
             // second Turn (issue #231).
             submitChatText(text, {
               onError: () => setComposerValue((value) => composerTextAfterFailure(value, text)),
             });
-            setComposerValue("");
           }}
           disabled={isPending}
           // Committed questionnaire (server-derived, interactive) wins;

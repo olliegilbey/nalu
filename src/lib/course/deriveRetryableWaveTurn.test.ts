@@ -52,4 +52,35 @@ describe("deriveRetryableWaveTurn", () => {
   it("offers nothing for an empty log", () => {
     expect(deriveRetryableWaveTurn(chatText, [])).toBeNull();
   });
+
+  it("offers nothing when another learner entry trails the log", () => {
+    // This tab's send failed before the save; the trailing entry came from a
+    // second tab or an older stranded Turn. The server would not reuse it, so
+    // a re-send is a fresh entry, not a Retry.
+    const other: WaveChatLogEntryForClient = { role: "user", kind: "text", content: "how?" };
+    expect(deriveRetryableWaveTurn(chatText, [opener, other])).toBeNull();
+    const otherAnswers: WaveChatLogEntryForClient = {
+      role: "user",
+      kind: "answers",
+      questionnaireId: "q-0",
+      responses: [{ questionId: "q1", choice: "A" }],
+    };
+    expect(deriveRetryableWaveTurn(chatText, [opener, otherAnswers])).toBeNull();
+  });
+
+  it("offers nothing when the trailing answers belong to another questionnaire", () => {
+    const answers: SubmitTurnPayload = {
+      kind: "questionnaire-answers",
+      questionnaireId: "q-1",
+      answers: [{ id: "q1", kind: "mc", selected: "B" }],
+    };
+    const otherAnswers: WaveChatLogEntryForClient = {
+      role: "user",
+      kind: "answers",
+      questionnaireId: "q-0",
+      responses: [{ questionId: "q1", choice: "B" }],
+    };
+    expect(deriveRetryableWaveTurn(answers, [opener, otherAnswers])).toBeNull();
+    expect(deriveRetryableWaveTurn(answers, [opener, orphan])).toBeNull();
+  });
 });

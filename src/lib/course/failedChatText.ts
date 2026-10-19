@@ -15,12 +15,15 @@ export function composerTextAfterFailure(composerValue: string, sentText: string
 }
 
 /** True when sending `text` re-sends the failed Turn, whose entry the server already shows. */
-export function resendsFailedTurn(failed: SubmitTurnPayload | null, text: string): boolean {
-  return failed?.kind === "chat-text" && failed.text === text;
+export function resendsFailedTurn(failedPayload: SubmitTurnPayload | null, text: string): boolean {
+  return failedPayload?.kind === "chat-text" && failedPayload.text === text;
 }
 
-/** The Composer text once Retry re-sends `failed`: its restored text goes with it; other text stays. */
-export function composerTextAfterRetry(composerValue: string, failed: SubmitTurnPayload): string {
+/** The Composer text once Retry re-sends `failedPayload`: its restored text goes with it; other text stays. */
+export function composerTextAfterRetry(
+  composerValue: string,
+  failedPayload: SubmitTurnPayload,
+): string {
   // Left in place, the restored text invites a second send: a new entry.
-  return resendsFailedTurn(failed, composerValue.trim()) ? "" : composerValue;
+  return resendsFailedTurn(failedPayload, composerValue.trim()) ? "" : composerValue;
 }
