@@ -24,6 +24,8 @@ import {
   frameworkJsonbSchema,
   baselineJsonbSchema,
 } from "@/lib/types/jsonb";
+import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
+import { KEY_TO_INDEX } from "@/lib/types/mcOptionKey";
 
 // Mock ONLY the LLM boundary — never executeTurn. Real persistence lets us
 // assert on context_messages row trails end-to-end.
@@ -581,7 +583,7 @@ describe("course.generateBaseline", () => {
       const caller = appRouter.createCaller({ userId: USER });
       const result = await caller.course.generateBaseline({ courseId });
 
-      // Router return value — baseline is BaselineTurn: { userMessage, questions: { questions: [...] } }.
+      // Router return value — the client projection: { userMessage, questions: { questions: [...] } }.
       expect(result.nextStage).toBe("answering");
       expect(result.baseline.questions.questions.length).toBeGreaterThanOrEqual(7);
 
@@ -626,7 +628,7 @@ describe("course.generateBaseline", () => {
       const result = await caller.course.generateBaseline({ courseId });
 
       expect(result.nextStage).toBe("answering");
-      // baseline is BaselineTurn: { userMessage, questions: { questions: [...] } }
+      // baseline is the client projection: { userMessage, questions: { questions: [...] } }
       expect(result.baseline.questions.questions).toHaveLength(7);
       // LLM must NOT be called.
       expect(generateChat).not.toHaveBeenCalled();
@@ -760,6 +762,63 @@ describe("course.submitBaseline", () => {
       // Course flipped to active.
       const course = await getCourseById(courseId);
       expect(course.status).toBe("active");
+    });
+  });
+});
+
+// ===========================================================================
+// Scoping wire: no plaintext answer key
+// ===========================================================================
+
+describe("scoping wire", () => {
+  /** A plaintext grading key as a JSON key. `"correctEnc":` does not match. */
+  const PLAINTEXT_KEY = /"(correct|freetextRubric)":/;
+
+  // Mirrors the Wave's guard (`getWaveState.integration.test.ts`): every
+  // scoping payload the client receives drops rubrics, and a graded MC key
+  // arrives only as the id-bound `correctEnc`.
+  it("clarify, generateBaseline and getState ship no plaintext answer key", async () => {
+    await withTestDb(async (db) => {
+      await seedUser(db);
+      vi.mocked(generateChat)
+        .mockResolvedValueOnce(llmSuccess(validClarifyText()))
+        .mockResolvedValueOnce(llmSuccess(validFrameworkText()))
+        .mockResolvedValueOnce(llmSuccess(validBaselineText()))
+        .mockResolvedValueOnce(llmSuccess(validScopingCloseText()));
+      const caller = appRouter.createCaller({ userId: USER });
+
+      const clarifyResult = await caller.course.clarify({ topic: "Rust" });
+      expect(JSON.stringify(clarifyResult)).not.toMatch(PLAINTEXT_KEY);
+      const { courseId } = clarifyResult;
+      await caller.course.generateFramework({
+        courseId,
+        responses: [
+          { questionId: "q1", freetext: CLARIFY_ANSWERS[0]! },
+          { questionId: "q2", freetext: CLARIFY_ANSWERS[1]! },
+        ],
+      });
+
+      const baselineResult = await caller.course.generateBaseline({ courseId });
+      expect(JSON.stringify(baselineResult)).not.toMatch(PLAINTEXT_KEY);
+
+      // Before submit: the open baseline card's MC keys decode to the stored `A`.
+      const open = await caller.course.getState({ courseId });
+      expect(JSON.stringify(open)).not.toMatch(PLAINTEXT_KEY);
+      for (const q of open.baseline?.questions ?? []) {
+        if (q.type !== "multiple_choice") throw new Error(`expected MC, got ${q.type}`);
+        expect(decodeCorrect(q.id, q.correctEnc ?? "")).toBe(KEY_TO_INDEX.A);
+      }
+
+      // After close: the reload wire stays redacted.
+      const answers = baselineResult.baseline.questions.questions.map((q) => ({
+        id: q.id,
+        kind: "mc" as const,
+        selected: "A" as const,
+      }));
+      await caller.course.submitBaseline({ courseId, answers });
+      const closed = await caller.course.getState({ courseId });
+      expect(closed.status).toBe("active");
+      expect(JSON.stringify(closed)).not.toMatch(PLAINTEXT_KEY);
     });
   });
 });

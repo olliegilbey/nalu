@@ -1,6 +1,7 @@
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { CourseState } from "./getState";
-import type { V3Question, V3Response } from "@/lib/types/jsonb";
+import type { V3Response } from "@/lib/types/jsonb";
+import type { QuestionForClient } from "./redactQuestionnaire";
 
 /**
  * Project a `CourseState` to the chat scroll `ChatEntry[]`.
@@ -72,7 +73,7 @@ export function deriveChatEntries(state: CourseState): readonly ChatEntry[] {
  * so the baseline-shaped formatter handles them identically.
  */
 export function formatAnswers(
-  questions: readonly V3Question[],
+  questions: readonly QuestionForClient[],
   responses: readonly V3Response[],
 ): string {
   const byId = new Map(questions.map((q) => [q.id, q]));

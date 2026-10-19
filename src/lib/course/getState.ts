@@ -4,7 +4,9 @@ import type {
   FrameworkJsonb,
   BaselineJsonb,
   BaselineClosedJsonb,
+  V3Response,
 } from "@/lib/types/jsonb";
+import { redactQuestion, type QuestionForClient } from "./redactQuestionnaire";
 
 /** Input to {@link getState}. `userId` enforces row-level ownership. */
 export interface GetStateParams {
@@ -22,24 +24,39 @@ export interface ScopingResult {
 }
 
 /**
- * Client-facing projection of a `courses` row. Each JSONB column is exposed
- * directly so `deriveChatEntries` can render the chat scroll from a single object.
- * `scopingResult` is the post-close summary; null while scoping is in progress.
+ * Client-safe projection of a scoping questionnaire column (`clarification` or
+ * `baseline`): the model's framing, the redacted questions, and the saved answers.
+ */
+export interface ScopingQuestionnaireForClient {
+  readonly userMessage: string;
+  readonly questions: readonly QuestionForClient[];
+  readonly responses: readonly V3Response[];
+}
+
+/**
+ * Client-facing projection of a `courses` row, so `deriveChatEntries` can
+ * render the chat scroll from a single object. `framework` ships as stored.
+ * `clarification` and `baseline` ship redacted: no rubric, and MC keys only as
+ * `correctEnc`. `scopingResult` is the post-close summary; null while scoping
+ * is in progress.
  */
 export interface CourseState {
   readonly courseId: string;
   readonly status: "scoping" | "active" | "archived";
   readonly topic: string;
-  readonly clarification: ClarificationJsonb | null;
+  readonly clarification: ScopingQuestionnaireForClient | null;
   readonly framework: FrameworkJsonb | null;
-  /** The pre-close baseline JSONB (questions only). Null when not yet generated. */
-  readonly baseline: BaselineJsonb | null;
+  /** The baseline questions and saved answers. Null when not yet generated. */
+  readonly baseline: ScopingQuestionnaireForClient | null;
   /** Populated only when `status === 'active'`. Drives the Move-on CTA. */
   readonly scopingResult: ScopingResult | null;
 }
 
 /**
  * Read a course and project to the client-facing state shape.
+ *
+ * Grading keys stay server-side: `submitBaseline` grades against the stored
+ * questions, never against anything the client sends back.
  *
  * Trust boundary: `getCourseById` runs `courseRowGuard` which Zod-validates
  * every JSONB column. Ownership is enforced by passing `userId`; rows owned
@@ -75,9 +92,24 @@ export async function getState(params: GetStateParams): Promise<CourseState> {
     courseId: course.id,
     status: course.status as CourseState["status"],
     topic: course.topic,
-    clarification: (course.clarification as ClarificationJsonb | null) ?? null,
+    clarification: redactScopingQuestionnaire(course.clarification as ClarificationJsonb | null),
     framework: (course.framework as FrameworkJsonb | null) ?? null,
-    baseline,
+    baseline: redactScopingQuestionnaire(baseline),
     scopingResult,
+  };
+}
+
+/**
+ * Project a stored scoping questionnaire column through `redactQuestion`.
+ * Drops a closed baseline's gradings and summaries too: no client reads them.
+ */
+function redactScopingQuestionnaire(
+  stored: ClarificationJsonb | BaselineJsonb | null,
+): ScopingQuestionnaireForClient | null {
+  if (stored === null) return null;
+  return {
+    userMessage: stored.userMessage,
+    questions: stored.questions.map(redactQuestion),
+    responses: stored.responses,
   };
 }

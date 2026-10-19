@@ -2,10 +2,11 @@ import { executeTurn } from "@/lib/turn/executeTurn";
 import { createCourse } from "@/db/queries/courses";
 import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
-import { clarifySchema, type ClarifyTurn } from "@/lib/prompts/clarify";
+import { clarifySchema } from "@/lib/prompts/clarify";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
 import { notifyEvent } from "@/lib/notify/ntfy";
 import type { ClarificationJsonb } from "@/lib/types/jsonb";
+import { redactQuestionnaireTurn, type QuestionnaireTurnForClient } from "./redactQuestionnaire";
 
 /** Parameters for {@link clarify}. */
 export interface ClarifyParams {
@@ -16,8 +17,8 @@ export interface ClarifyParams {
 /** Result of {@link clarify}; carries the freshly-created course id + clarify payload. */
 export interface ClarifyResult {
   readonly courseId: string;
-  /** Full Questionnaire payload — the UI renders cards from this. */
-  readonly clarification: ClarifyTurn;
+  /** The clarify Turn, projected: rubrics stay server-side. */
+  readonly clarification: QuestionnaireTurnForClient;
   readonly nextStage: "framework";
 }
 
@@ -25,7 +26,7 @@ export interface ClarifyResult {
  * Drive the clarify turn.
  *
  * Flow: createCourse → ensureOpenScopingPass → executeTurn(responseSchema=clarifySchema)
- *   → persist wire shape directly (no translator) → return.
+ *   → persist wire shape directly (no translator) → return the client projection.
  *
  * The persisted JSONB shape is `{ questions, responses: [] }` — responses
  * are populated after the learner submits answers via the next router call.
@@ -45,15 +46,15 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
   });
 
   if (course.clarification !== null) {
-    // Idempotency: rebuild ClarifyTurn from stored JSONB. `courseRowGuard`
+    // Idempotency: rebuild the Turn from stored JSONB. `courseRowGuard`
     // already validated the row against `clarificationJsonbSchema`.
     const stored = course.clarification as ClarificationJsonb;
     return {
       courseId: course.id,
-      clarification: {
+      clarification: redactQuestionnaireTurn({
         userMessage: stored.userMessage,
         questions: { questions: stored.questions },
-      },
+      }),
       nextStage: "framework",
     };
   }
@@ -86,5 +87,9 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
     },
   });
 
-  return { courseId: course.id, clarification: parsed, nextStage: "framework" };
+  return {
+    courseId: course.id,
+    clarification: redactQuestionnaireTurn(parsed),
+    nextStage: "framework",
+  };
 }

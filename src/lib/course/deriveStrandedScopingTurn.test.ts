@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { deriveStrandedScopingTurn } from "./deriveStrandedScopingTurn";
-import type { CourseState } from "./getState";
-import type { BaselineJsonb, ClarificationJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
+import type { CourseState, ScopingQuestionnaireForClient } from "./getState";
+import type { FrameworkJsonb } from "@/lib/types/jsonb";
 
-const clarification: ClarificationJsonb = {
+const clarification: ScopingQuestionnaireForClient = {
   userMessage: "Let's narrow this down.",
-  questions: [{ id: "q1", type: "free_text", prompt: "Why?", freetextRubric: "n/a" }],
+  questions: [{ id: "q1", type: "free_text", prompt: "Why?" }],
   responses: [],
 };
 
@@ -16,7 +16,7 @@ const framework: FrameworkJsonb = {
   baselineScopeTiers: [1],
 };
 
-const baseline: BaselineJsonb = {
+const baseline: ScopingQuestionnaireForClient = {
   userMessage: "Quick check.",
   questions: [
     {
@@ -24,21 +24,18 @@ const baseline: BaselineJsonb = {
       type: "multiple_choice",
       prompt: "Pick one",
       options: { A: "a", B: "b", C: "c", D: "d" },
-      correct: "A",
-      freetextRubric: "n/a",
+      correctEnc: "unused",
     },
-    { id: "b2", type: "free_text", prompt: "Explain", freetextRubric: "n/a" },
+    { id: "b2", type: "free_text", prompt: "Explain" },
     {
       id: "b3",
       type: "multiple_choice",
       prompt: "Pick another",
       options: { A: "a", B: "b", C: "c", D: "d" },
-      correct: "B",
-      freetextRubric: "n/a",
+      correctEnc: "unused",
     },
   ],
   responses: [],
-  gradings: [],
 };
 
 function state(overrides: Partial<CourseState>): CourseState {
@@ -78,7 +75,7 @@ describe("deriveStrandedScopingTurn", () => {
   });
 
   it("returns the scoping-close Turn with the saved answers in the submitBaseline wire shape", () => {
-    const saved: BaselineJsonb = {
+    const saved: ScopingQuestionnaireForClient = {
       ...baseline,
       responses: [
         { questionId: "b1", choice: "C" },
@@ -98,12 +95,9 @@ describe("deriveStrandedScopingTurn", () => {
   });
 
   it("returns null once scoping has closed", () => {
-    const closed: BaselineJsonb = {
+    const closed: ScopingQuestionnaireForClient = {
       ...baseline,
       responses: [{ questionId: "b1", choice: "A" }],
-      immutableSummary: "s",
-      summarySeed: "s",
-      startingTier: 1,
     };
     expect(
       deriveStrandedScopingTurn(

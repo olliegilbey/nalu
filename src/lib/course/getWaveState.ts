@@ -13,9 +13,9 @@ import { redactWaveChatLog, type WaveChatLogEntryForClient } from "./redactWaveC
  * `messages` + `openQuestionnaire` envelope-style projection is GONE — there
  * is no more `loadWaveContext` reconstruction, no `context_messages` read,
  * and no per-row trimming. The chat scroll in the client renders from
- * `chatLog` directly. This mirrors scoping's `getState`, which has long
- * shipped the typed JSONB store (`courses.clarification`, `courses.baseline`)
- * straight to the UI.
+ * `chatLog` directly. This mirrors scoping's `getState`, which ships the typed
+ * JSONB store (`courses.clarification`, `courses.baseline`) through the same
+ * per-question redaction (`redactQuestion`).
  *
  * Carries:
  *   - `status`: active vs closed — the UI gates the composer on this. DB

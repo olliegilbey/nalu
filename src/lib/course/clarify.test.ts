@@ -71,7 +71,7 @@ describe("clarify", () => {
 
     const out = await clarify({ userId: USER, topic: "Rust" });
     expect(out.courseId).toBe(COURSE.id);
-    // New shape: clarification is the full ClarifyTurn wire payload.
+    // clarification is the client projection of the ClarifyTurn.
     expect(out.clarification.questions.questions).toHaveLength(2);
     expect(out.clarification.questions.questions[0]?.prompt).toBe("What is your goal?");
     expect(out.nextStage).toBe("framework");
@@ -86,6 +86,31 @@ describe("clarify", () => {
         }),
       }),
     );
+  });
+
+  it("returns no grading rubric: the payload is the client projection", async () => {
+    vi.mocked(createCourse).mockResolvedValue(COURSE);
+    vi.mocked(ensureOpenScopingPass).mockResolvedValue({ id: "p1" } as never);
+    vi.mocked(executeTurn).mockResolvedValue({
+      parsed: MOCK_CLARIFY_PARSED,
+      usage: MOCK_USAGE,
+    });
+    vi.mocked(updateCourseScopingState).mockResolvedValue(COURSE);
+
+    const out = await clarify({ userId: USER, topic: "Rust" });
+
+    expect(JSON.stringify(out)).not.toMatch(/"(correct|freetextRubric)":/);
+    expect(out.clarification.questions.questions[0]).toEqual({
+      id: "q1",
+      type: "free_text",
+      prompt: "What is your goal?",
+    });
+    // The DB keeps the rubric: the scoping close reads it from there.
+    expect(updateCourseScopingState).toHaveBeenCalledWith(COURSE.id, {
+      clarification: expect.objectContaining({
+        questions: MOCK_CLARIFY_PARSED.questions.questions,
+      }),
+    });
   });
 
   it("is idempotent: returns cached clarification when already populated", async () => {
@@ -114,9 +139,11 @@ describe("clarify", () => {
     } as unknown as Course;
     vi.mocked(createCourse).mockResolvedValue(existing);
     const out = await clarify({ userId: USER, topic: "Rust" });
-    // Idempotency branch: rebuilds ClarifyTurn from stored JSONB.
+    // Idempotency branch: rebuilds the Turn from stored JSONB.
     expect(out.clarification.questions.questions).toHaveLength(2);
     expect(out.clarification.questions.questions[0]?.prompt).toBe("A");
+    // The replay is projected too: the stored rubrics stay server-side.
+    expect(JSON.stringify(out)).not.toMatch(/"(correct|freetextRubric)":/);
     expect(executeTurn).not.toHaveBeenCalled();
   });
 });
