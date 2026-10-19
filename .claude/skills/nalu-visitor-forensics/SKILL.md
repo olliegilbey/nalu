@@ -12,9 +12,10 @@ production navigation. That event carries everything needed to answer "who hit t
 site, from where, and what did they do" — the only trick is that the two halves of
 the answer live in different systems, joined by one key:
 
-**`distinct_id` (PostHog) = `courses.user_id` (DB).** `proxy.ts` sets `distinct_id`
-to the anon Supabase user id, so a visitor's network origin and their actual
-conversation are the same person on both sides.
+**`distinct_id` (PostHog) = `courses.user_id` (DB), once the visitor has a
+session.** `proxy.ts` sets `distinct_id` to the anon Supabase user id, so a
+visitor's network origin and their actual conversation are the same person on
+both sides.
 
 **Before the first API request there is no user id.** The anon user is minted
 lazily, on the learner's first API request, such as submitting a topic (#232). So a

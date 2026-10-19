@@ -6,7 +6,7 @@ import {
   AuthRetryableFetchError,
   AuthSessionMissingError,
 } from "@supabase/supabase-js";
-import { resolveRequestUserId } from "./requestUser";
+import { resolveOrMintRequestUserId } from "./requestUser";
 
 // Supabase is mocked at `@supabase/ssr`, the seam `src/proxy.test.ts` uses.
 // Next's request cookie store is faked so the test can see the session cookie
@@ -52,13 +52,14 @@ function apiRequest(headers: Record<string, string> = {}): Request {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
-describe("resolveRequestUserId", () => {
+describe("resolveOrMintRequestUserId", () => {
   it("non-production: trusts the x-dev-user-id header and never touches Supabase", async () => {
     vi.stubEnv("NODE_ENV", "development");
 
-    const userId = await resolveRequestUserId(apiRequest({ "x-dev-user-id": "dev-1" }));
+    const userId = await resolveOrMintRequestUserId(apiRequest({ "x-dev-user-id": "dev-1" }));
 
     expect(userId).toBe("dev-1");
     expect(mockedCreateServerClient).not.toHaveBeenCalled();
@@ -68,7 +69,7 @@ describe("resolveRequestUserId", () => {
     vi.stubEnv("NODE_ENV", "production");
     const client = fakeClient({ data: { user: null }, error: new AuthSessionMissingError() });
 
-    const userId = await resolveRequestUserId(apiRequest());
+    const userId = await resolveOrMintRequestUserId(apiRequest());
 
     expect(userId).toBe("minted-1");
     expect(client.auth.signInAnonymously).toHaveBeenCalledOnce();
@@ -85,7 +86,7 @@ describe("resolveRequestUserId", () => {
     vi.stubEnv("NODE_ENV", "production");
     const client = fakeClient({ data: { user: { id: "learner-1" } }, error: null });
 
-    const userId = await resolveRequestUserId(apiRequest());
+    const userId = await resolveOrMintRequestUserId(apiRequest());
 
     expect(userId).toBe("learner-1");
     expect(client.auth.signInAnonymously).not.toHaveBeenCalled();
@@ -101,11 +102,16 @@ describe("resolveRequestUserId", () => {
       data: { user: null },
       error: new AuthRetryableFetchError("fetch failed", 0),
     });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
-    const userId = await resolveRequestUserId(apiRequest());
+    const userId = await resolveOrMintRequestUserId(apiRequest());
 
     expect(userId).toBeUndefined();
     expect(client.auth.signInAnonymously).not.toHaveBeenCalled();
+    // Not swallowed: one content-free line names the error class.
+    expect(stderr).toHaveBeenCalledWith(
+      "[auth] session failed to load name=AuthRetryableFetchError\n",
+    );
   });
 
   it("production, mint fails: throws, so the failure is logged rather than a silent 401", async () => {
@@ -119,6 +125,6 @@ describe("resolveRequestUserId", () => {
       error: limited,
     });
 
-    await expect(resolveRequestUserId(apiRequest())).rejects.toBe(limited);
+    await expect(resolveOrMintRequestUserId(apiRequest())).rejects.toBe(limited);
   });
 });

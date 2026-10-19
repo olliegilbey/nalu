@@ -72,14 +72,14 @@ Items marked **Unbuilt** are still in scope. The code does not deliver them yet.
 
 `AGENTS.md` owns versions and tooling. These are the product-level choices.
 
-| Layer        | Technology                             | Rationale                                                                     |
-| ------------ | -------------------------------------- | ----------------------------------------------------------------------------- |
-| Framework    | Next.js (App Router)                   | SSR + API in one repo.                                                        |
-| API Layer    | tRPC                                   | End-to-end type inference. React Native compatible for future mobile.         |
-| Database     | Supabase Postgres                      | pgvector available for future RAG.                                            |
-| Auth         | Supabase anonymous auth                | A first action mints an anonymous account. Learners start without signing up. |
-| LLM Provider | OpenAI-compatible API (Cerebras today) | `LLM_MODEL` selects the model. Provider swap is a config change.              |
-| Hosting      | Vercel                                 | Zero-config Next.js deployment.                                               |
+| Layer        | Technology                             | Rationale                                                             |
+| ------------ | -------------------------------------- | --------------------------------------------------------------------- |
+| Framework    | Next.js (App Router)                   | SSR + API in one repo.                                                |
+| API Layer    | tRPC                                   | End-to-end type inference. React Native compatible for future mobile. |
+| Database     | Supabase Postgres                      | pgvector available for future RAG.                                    |
+| Auth         | Supabase anonymous auth                | The first API request mints an anonymous account. No sign-up.         |
+| LLM Provider | OpenAI-compatible API (Cerebras today) | `LLM_MODEL` selects the model. Provider swap is a config change.      |
+| Hosting      | Vercel                                 | Zero-config Next.js deployment.                                       |
 
 ### 3.2 Key Architectural Decisions
 

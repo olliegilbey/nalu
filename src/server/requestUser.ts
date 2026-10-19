@@ -1,5 +1,6 @@
 import { isAuthSessionMissingError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { errorLogLine } from "@/lib/security/errorLogLine";
 
 /**
  * Resolve the requesting learner's id, minting an anonymous one if the request
@@ -8,15 +9,19 @@ import { createClient } from "@/lib/supabase/server";
  * so `just dev` and tests need no Supabase Auth. Shared by the tRPC context and
  * the streaming wave-turn route — one auth story, two transports.
  */
-export async function resolveRequestUserId(req: Request): Promise<string | undefined> {
+export async function resolveOrMintRequestUserId(req: Request): Promise<string | undefined> {
   if (process.env.NODE_ENV === "production") {
     const supabase = await createClient();
     const { data, error } = await supabase.auth.getUser();
     if (data.user) return data.user.id;
     // Mint only when Supabase reports no session at all. A session that
     // failed to load (a network blip) is still the learner's; minting over it
-    // would replace their cookie and orphan their courses.
-    if (!isAuthSessionMissingError(error)) return undefined;
+    // would replace their cookie and orphan their courses. Log it, so a
+    // persistent failure shows up as more than a silent UNAUTHORIZED.
+    if (!isAuthSessionMissingError(error)) {
+      process.stderr.write(`${errorLogLine("[auth] session failed to load", {}, error)}\n`);
+      return undefined;
+    }
     // Mint lazily, here, not on page loads: only API requests reach this, so
     // crawlers and link unfurlers create no `auth.users` row. `setAll` writes
     // the new session cookies through Next's cookie store, and Next merges

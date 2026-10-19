@@ -44,7 +44,10 @@ describe("createTRPCContext", () => {
       data: { user: null },
       error: new AuthRetryableFetchError("fetch failed", 0),
     });
+    // The resolver logs the failed load; keep it out of the test output.
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const ctx = await createTRPCContext(fakeOpts());
     expect(ctx.userId).toBeUndefined();
+    stderr.mockRestore();
   });
 });

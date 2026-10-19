@@ -8,7 +8,7 @@ import { submitTurnInputSchema } from "@/lib/types/waveTurnInput";
 // Auth, the profile upsert and the Turn itself are stubbed: these tests
 // cover the route's own work, never a real Turn or a database.
 vi.mock("@/server/requestUser", () => ({
-  resolveRequestUserId: vi.fn().mockResolvedValue("55555555-5555-5555-5555-555555555555"),
+  resolveOrMintRequestUserId: vi.fn().mockResolvedValue("55555555-5555-5555-5555-555555555555"),
 }));
 vi.mock("@/db/queries", () => ({ ensureUserProfile: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/course/streamWaveTurn", () => ({ streamWaveTurn: vi.fn() }));

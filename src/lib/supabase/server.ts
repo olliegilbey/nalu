@@ -5,7 +5,7 @@ import { getEnv } from "@/lib/config";
 /**
  * Supabase server client bound to the Next.js request cookie store.
  *
- * Used by `resolveRequestUserId` (`src/server/requestUser.ts`) in the API
+ * Used by `resolveOrMintRequestUserId` (`src/server/requestUser.ts`) in the API
  * Route Handlers. There `setAll` writes a freshly minted or refreshed session
  * through `cookies()`, and Next merges it into the handler's response. The
  * `try/catch` tolerates the read-only cookie store of a Server Component, so
@@ -36,8 +36,9 @@ export async function createClient() {
               cookieStore.set(name, value, options);
             });
           } catch {
-            // Read-only cookie store (Server Component) — safe to ignore;
-            // the proxy owns session refresh.
+            // Read-only cookie store (Server Component) — safe to ignore.
+            // Only Route Handlers mint, and their store is writable; a page's
+            // session refresh is the proxy's.
           }
         },
       },

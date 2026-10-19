@@ -74,12 +74,13 @@ Preview anyway.
 
 - **Anonymous users are minted lazily (#232).** A page load never creates an
   `auth.users` row. `src/proxy.ts` only refreshes an existing session. The
-  first API request that needs a learner mints one
-  (`src/server/requestUser.ts`), such as submitting a topic. Crawlers, link
-  unfurlers and uptime checks of a page create no account. Supabase limits
+  first API request mints one (`src/server/requestUser.ts`), such as
+  submitting a topic. Crawlers, link unfurlers and uptime checks of a page
+  create no account. Every tRPC request resolves a learner, so don't point an
+  uptime check at `health.ping`: it would mint (#246). Supabase limits
   anonymous sign-ins per IP (30 an hour by default; Auth → Rate Limits). A
-  learner over it gets "Something went wrong", and the log shows
-  `name=AuthApiError`.
+  learner over it gets "Something went wrong", and the
+  `[trpc] procedure failed` log line shows `name=AuthApiError`.
 - **Preview deploys hit the production Supabase project.** Vercel sets
   `NODE_ENV=production` for every build, including Preview — so Preview
   deployments run the real auth path and mint real anonymous users in the

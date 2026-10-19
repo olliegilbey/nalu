@@ -65,17 +65,6 @@ describe("proxy", () => {
     expect(res.headers.get("set-cookie")).toBeNull();
   });
 
-  it("production, existing session: does not mint a new account", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    const client = fakeClient({ user: { id: "user-1" } });
-    mockedCreateServerClient.mockReturnValue(client as never);
-
-    const res = await proxy(new NextRequest("https://nalu.ollie.gg/"));
-
-    expect(client.auth.signInAnonymously).not.toHaveBeenCalled();
-    expect(res).toBeInstanceOf(NextResponse);
-  });
-
   it("production, auth failure: fails open and logs", async () => {
     vi.stubEnv("NODE_ENV", "production");
     mockedCreateServerClient.mockReturnValue(

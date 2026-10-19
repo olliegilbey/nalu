@@ -1,6 +1,6 @@
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { z } from "zod/v4";
-import { resolveRequestUserId } from "@/server/requestUser";
+import { resolveOrMintRequestUserId } from "@/server/requestUser";
 import { submitTurnInputSchema } from "@/lib/types/waveTurnInput";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
@@ -26,7 +26,7 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ courseId: string; waveNumber: string }> },
 ) {
-  const userId = await resolveRequestUserId(req);
+  const userId = await resolveOrMintRequestUserId(req);
   if (!userId) return new Response("Unauthorized", { status: 401 });
   await ensureUserProfile(userId);
 

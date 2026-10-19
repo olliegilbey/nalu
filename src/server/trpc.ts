@@ -4,16 +4,17 @@ import { NotFoundError } from "@/db/queries/errors";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import { clientErrorText } from "@/lib/security/clientErrorText";
-import { resolveRequestUserId } from "./requestUser";
+import { resolveOrMintRequestUserId } from "./requestUser";
 
 /**
  * Build the tRPC request context. Resolves `userId` (possibly undefined)
- * via `resolveRequestUserId` — the auth story shared with the streaming
+ * via `resolveOrMintRequestUserId` — the auth story shared with the streaming
  * wave-turn route handler. A cookieless request mints its anonymous learner
- * here, once per HTTP request, so a batch of calls shares one mint.
+ * here, once per HTTP request, so a batch of calls shares one mint. Public
+ * procedures resolve too, so a cookieless `health.ping` mints (#246).
  */
 export const createTRPCContext = async (opts: FetchCreateContextFnOptions) => {
-  return { userId: await resolveRequestUserId(opts.req) };
+  return { userId: await resolveOrMintRequestUserId(opts.req) };
 };
 
 // Every tRPC error response passes through `errorFormatter`. The client gets
