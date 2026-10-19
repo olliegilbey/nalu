@@ -14,12 +14,56 @@
     "headlineLead": "What would you like",
     "headlineTail": "to learn today",
     "suggestionsLabel": "/ start a course on",
-    "suggestions": [
-      { "kind": "language", "label": "conversational Japanese" },
-      { "kind": "concept", "label": "how transformers work" },
-      { "kind": "skill", "label": "playing chess like a 1500 elo" },
-      { "kind": "history", "label": "the Edo period in 10 lessons" }
-    ]
+    "suggestionPool": {
+      "language": [
+        "conversational Japanese",
+        "Spanish for a trip to Mexico",
+        "reading Korean hangul",
+        "Mandarin tones",
+        "ordering food in French",
+        "Italian for the dinner table",
+        "Brazilian Portuguese basics",
+        "everyday German",
+        "Welsh for beginners",
+        "British Sign Language basics"
+      ],
+      "concept": [
+        "how transformers work",
+        "why the sky is blue",
+        "how vaccines work",
+        "compound interest",
+        "how packets cross the internet",
+        "entropy, intuitively",
+        "how GPS knows where you are",
+        "Bayes' theorem",
+        "how black holes form",
+        "what inflation actually is"
+      ],
+      "skill": [
+        "playing chess like a 1500 elo",
+        "sourdough from scratch",
+        "touch typing at 80 wpm",
+        "drawing faces from life",
+        "SQL for data analysis",
+        "public speaking without notes",
+        "basic car maintenance",
+        "sight-reading piano music",
+        "solving a Rubik's cube",
+        "building a monthly budget"
+      ],
+      "history": [
+        "the Edo period in 10 lessons",
+        "the fall of the Roman Republic",
+        "the Silk Road",
+        "the space race, launch by launch",
+        "the French Revolution",
+        "the pharaohs of ancient Egypt",
+        "the Cold War, start to finish",
+        "the Ottoman Empire",
+        "the history of jazz",
+        "the Meiji Restoration"
+      ]
+    }
   },
   "composer": {
     "placeholderFirst": "What do you want to learn…",

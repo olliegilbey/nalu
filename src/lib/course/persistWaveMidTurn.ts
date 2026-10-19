@@ -6,10 +6,9 @@ import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog
 import type { McOptionKey } from "@/lib/types/mcOptionKey";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { SubmitTurnPayload } from "@/lib/types/waveTurnInput";
-import type { GradedSignal } from "./applyAssessmentGrading";
 import { findOpenQuestionnaire, buildMcCorrectKeyMap } from "./findOpenQuestionnaire";
 import type { LoadedWaveContext } from "./loadWaveContext";
-import { gradePriorAnswers } from "./persistWaveMidTurn.grade";
+import { gradePriorAnswers, type GradedRow } from "./persistWaveMidTurn.grade";
 import {
   insertNewQuestionnaire,
   type NewQuestionnaireProjection,
@@ -29,13 +28,7 @@ export interface PersistWaveMidTurnResult {
   /** New questionnaire to drop, or null if the model emitted none this turn. */
   readonly newQuestionnaire: NewQuestionnaireProjection | null;
   /** Per-question grading results for the learner's prior answers. */
-  readonly gradedSignals: readonly {
-    readonly kind: GradedSignal["kind"];
-    readonly questionId: string;
-    readonly xpAwarded: number;
-    readonly correct?: boolean;
-    readonly qualityScore?: number;
-  }[];
+  readonly gradedSignals: readonly GradedRow[];
 }
 
 /**

@@ -12,9 +12,10 @@ import { userProfiles } from "./userProfiles";
  * (`src/lib/scoring/progression.ts`) decides. Advancement is one-way today;
  * issue #85 tracks demotion.
  *
- * `summary` is the course summary. Scoping close sets it from the close
- * turn's `summary` field (`submitBaseline.persist.ts`). Nothing rewrites it
- * after that: the Wave-close `summary` goes to `waves.summary` (issue #93).
+ * `summary` is the cumulative course summary. Scoping close sets the first
+ * one from the close turn's `summary` field (`submitBaseline.persist.ts`).
+ * Each Wave close rewrites it whole from its own `summary` field
+ * (`persistWaveClose`). Every Wave turn renders it as `<progress_summary>`.
  *
  * `total_xp` is a cached aggregate (see §3 decisions). Nothing recomputes it.
  * Three writers keep it in step, each in the transaction that makes the award:

@@ -113,6 +113,28 @@ export async function setCourseStartingStateInTx(
   `);
 }
 
+/**
+ * Overwrite `courses.summary` inside the caller's tx. Wave close calls it
+ * with the close turn's summary, which rewrites the whole course summary.
+ *
+ * Each Wave turn renders this column into the system prompt. Call it only
+ * at a Wave close: the closing Wave takes no more turns, so only the next
+ * Wave's prompt sees the new value.
+ */
+export async function setCourseSummaryInTx(
+  courseId: string,
+  summary: string,
+  tx: DbOrTx,
+): Promise<void> {
+  await tx.execute(sql`
+    UPDATE courses
+    SET summary = ${summary},
+        summary_updated_at = NOW(),
+        updated_at = NOW()
+    WHERE id = ${courseId}
+  `);
+}
+
 /** Set `courses.current_tier` inside the caller's tx. */
 export async function updateCourseTierInTx(
   courseId: string,

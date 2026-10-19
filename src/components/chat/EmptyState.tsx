@@ -3,6 +3,11 @@
 import { ArrowUpRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { t, getGreeting, type Greeting } from "@/i18n";
+import {
+  pickHomeSuggestions,
+  type HomeSuggestion,
+  type HomeSuggestionPool,
+} from "@/lib/pickHomeSuggestions";
 
 const KIND_COLORS: Record<string, string> = {
   language: "var(--sakura-pink)",
@@ -15,8 +20,6 @@ const KIND_COLORS: Record<string, string> = {
   ideate: "var(--carp-yellow)",
 };
 
-type Suggestion = { kind: string; label: string };
-
 /** Home screen shown before a course exists: greeting, headline, suggestion buttons. */
 export function EmptyState({ onPick }: { onPick: (t: string) => void }) {
   // Compute on the client only to avoid SSR/CSR hydration mismatch on time-of-day.
@@ -28,7 +31,16 @@ export function EmptyState({ onPick }: { onPick: (t: string) => void }) {
     setGreeting(getGreeting());
   }, []);
 
-  const suggestions = t<Suggestion[]>("home.suggestions");
+  // Draw one suggestion per kind on the client, for the same reason: a random
+  // draw would differ between server and client. The server HTML shows no rows.
+  // On a fresh visit the home Splash covers the screen while this runs.
+  const [suggestions, setSuggestions] = useState<readonly HomeSuggestion[]>([]);
+  useEffect(() => {
+    const pool = t<HomeSuggestionPool>("home.suggestionPool");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: client-only random draw
+    setSuggestions(pickHomeSuggestions(pool, Math.random));
+  }, []);
+
   const headlineLead = t<string>("home.headlineLead");
   const headlineTail = t<string>("home.headlineTail");
   const suggestionsLabel = t<string>("home.suggestionsLabel");
