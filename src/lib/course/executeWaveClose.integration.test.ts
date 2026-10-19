@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { userProfiles, assessments, concepts, waves, courses } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
 import { setCourseStartingStateInTx } from "@/db/queries/courses.tx";
-import { openWave, appendWaveChatLog } from "@/db/queries/waves.writes";
+import { openWave, appendWaveChatLog, closeWave } from "@/db/queries/waves.writes";
 import { getWaveByCourseAndNumber } from "@/db/queries/waves";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
 import { getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
@@ -49,6 +49,8 @@ import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTur
  *      the tx — the whole transaction rolls back, no orphan state.
  *   9. Course summary (issue #93): the close rewrites `courses.summary`, and
  *      Wave N+1's system prompt renders it in `<progress_summary>`.
+ *  10. A close whose `closeWave` closes nothing (another path closed Wave N
+ *      first) leaves `courses.summary` alone.
  */
 
 const USER_ID = "99999999-9999-9999-9999-999999999999";
@@ -836,6 +838,33 @@ describe("executeWaveClose (integration)", () => {
       const next = await loadWaveContext({ userId: USER_ID, courseId, waveId: result.nextWaveId });
       const system = renderTeachingSystem(buildWaveSeed(next.course, next.wave));
       expect(system).toContain(`<progress_summary>\n${summary}\n</progress_summary>`);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 10. The summary write needs the close to have happened. Another path
+  //     closes Wave N after this turn loaded it, and no Wave N+1 exists, so
+  //     nothing later in the tx throws. `closeWave` then changes no row, and
+  //     the course summary must keep its prior value.
+  // ---------------------------------------------------------------------------
+  it("leaves courses.summary alone when closeWave closes no row", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave(2);
+      await seedOpenFreeTextQuestionnaire(courseId, waveId);
+
+      const parsed = { ...makeParsedClose(), summary: "late close must not land" };
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
+      );
+
+      // Load while Wave N is open, as `prepareWaveTurn` would.
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      // Another path closes Wave N before this close's tx runs.
+      await closeWave(waveId, { summary: "first close", blueprintEmitted: null });
+      await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
+
+      const afterCourse = (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!;
+      expect(afterCourse.summary).toBe("seed");
     });
   });
 });

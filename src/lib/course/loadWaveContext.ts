@@ -33,6 +33,9 @@ export async function loadWaveContext(params: {
   // Ownership is enforced inside getCourseById: a course owned by a different
   // user is reported as NotFoundError (info-leak-safe). Router layer maps the
   // class to a TRPC NOT_FOUND code at the transport boundary.
+  // Course before Wave, on purpose; never a `Promise.all`. `prepareWaveTurn`
+  // refuses a closed Wave, so a turn that runs read `courses.summary` before
+  // its Wave's close rewrote it (byte-stability proof: `persistWaveClose` 3a).
   const course = await getCourseById(params.courseId, params.userId);
   const wave = await getWaveById(params.waveId);
   // Cross-course containment: a wave id that belongs to a different course

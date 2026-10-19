@@ -53,7 +53,10 @@ export interface OpenWaveParams {
 
 /** Parameters required to close an open Wave. */
 export interface CloseWaveParams {
-  /** LLM-generated summary of what was covered in this Wave. */
+  /**
+   * The close turn's summary: the whole-course summary as of this close.
+   * `persistWaveClose` writes the same text to `courses.summary`.
+   */
   readonly summary: string;
   /**
    * Blueprint for the next Wave, emitted on the final turn. Nullable because
@@ -62,6 +65,13 @@ export interface CloseWaveParams {
    * is nullable in the schema.
    */
   readonly blueprintEmitted: Blueprint | null;
+}
+
+/** What {@link closeWave} returns: the Wave row, and whether this call closed it. */
+export interface CloseWaveResult {
+  readonly wave: Wave;
+  /** False when the Wave was already closed, so this call changed no row. */
+  readonly closedNow: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +124,9 @@ export async function openWave(params: OpenWaveParams, tx?: DbOrTx): Promise<Wav
  * Idempotent: `COALESCE(closed_at, NOW())` means the timestamp never
  * re-stamps on a second call. `WHERE status = 'open'` scope prevents
  * accidentally re-writing a row that another path already closed.
+ * `closedNow` tells the caller which case it hit, so a write that belongs
+ * to the close (such as the course summary) can skip a close that never
+ * happened.
  *
  * `blueprintEmitted` is Zod-validated before the write (parse-before-persist
  * boundary) so a malformed blueprint never reaches the DB.
@@ -131,7 +144,11 @@ export async function openWave(params: OpenWaveParams, tx?: DbOrTx): Promise<Wav
  *
  * @throws {NotFoundError} if `id` does not match any row (via the re-fetch).
  */
-export async function closeWave(id: string, params: CloseWaveParams, tx?: DbOrTx): Promise<Wave> {
+export async function closeWave(
+  id: string,
+  params: CloseWaveParams,
+  tx?: DbOrTx,
+): Promise<CloseWaveResult> {
   // Validate JSONB BEFORE the write — never trust caller-supplied JSONB shape.
   const validatedBlueprint = blueprintEmittedSchema.parse(params.blueprintEmitted);
 
@@ -144,7 +161,10 @@ export async function closeWave(id: string, params: CloseWaveParams, tx?: DbOrTx
   const blueprintSql =
     validatedBlueprint === null ? sql`NULL` : sql`${JSON.stringify(validatedBlueprint)}::jsonb`;
   const exec = tx ?? db;
-  await exec.execute(sql`
+  // `RETURNING id` only counts the rows this UPDATE changed: one when it
+  // closed the Wave, none when the Wave was already closed. The typed
+  // re-fetch below still supplies the row.
+  const updated = await exec.execute(sql`
     UPDATE waves
     SET status = 'closed',
         summary = ${params.summary},
@@ -152,6 +172,7 @@ export async function closeWave(id: string, params: CloseWaveParams, tx?: DbOrTx
         closed_at = COALESCE(closed_at, NOW())
     WHERE id = ${id}
       AND status = 'open'
+    RETURNING id
   `);
 
   // Re-fetch on the SAME executor. Inlined (rather than delegating to
@@ -159,7 +180,7 @@ export async function closeWave(id: string, params: CloseWaveParams, tx?: DbOrTx
   // observes the just-applied UPDATE inside the same tx.
   const [row] = await exec.select().from(waves).where(eq(waves.id, id));
   if (!row) throw new NotFoundError("wave", id);
-  return waveRowGuard(row);
+  return { wave: waveRowGuard(row), closedNow: updated.length > 0 };
 }
 
 // ---------------------------------------------------------------------------

@@ -61,7 +61,8 @@ export interface PersistWaveCloseResult {
  *      step throws. Without the tx thread, the UPDATE would commit even when
  *      the orchestrator's openWave(N+1) hits a unique-violation.
  *   3a. Rewrite `courses.summary` with the close's summary
- *      (`setCourseSummaryInTx`). Wave N+1's `<progress_summary>` renders it.
+ *      (`setCourseSummaryInTx`), only if step 3 closed Wave N. Wave N+1's
+ *      `<progress_summary>` renders it.
  *   4. Tier-advancement check — gated by
  *        (waveNumber % WAVE.tierCheckInterval === 0)
  *        || (plannedConcepts.length === 0)
@@ -106,7 +107,7 @@ export async function persistWaveClose(
     // 3. Close Wave N. Tx-threaded so rollback wipes the close UPDATE if
     //    openWave(N+1) below trips either the partial open-index or the
     //    (course_id, wave_number) unique index.
-    await closeWave(
+    const { closedNow } = await closeWave(
       ctx.wave.id,
       { summary: parsed.summary, blueprintEmitted: parsed.nextUnitBlueprint },
       tx,
@@ -118,8 +119,13 @@ export async function persistWaveClose(
     //     Byte stability: every Wave turn renders `courses.summary` into its
     //     system prompt, read once per turn. That is safe only because this
     //     write runs at close. Wave N takes no more turns, so only Wave N+1's
-    //     prompt ever sees the new value.
-    await setCourseSummaryInTx(ctx.course.id, parsed.summary, tx);
+    //     prompt ever sees the new value. It also leans on the read order in
+    //     `loadWaveContext`: course row first, then the Wave's open check.
+    //     Skip it when step 3 closed nothing: another path closed Wave N, and
+    //     its summary stands.
+    if (closedNow) {
+      await setCourseSummaryInTx(ctx.course.id, parsed.summary, tx);
+    }
 
     // 3b. Closing assistant entry on Wave N's chat_log — paired with the
     //     close-turn assistant_response that was persisted by executeTurn in

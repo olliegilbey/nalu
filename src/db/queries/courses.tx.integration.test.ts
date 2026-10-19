@@ -136,7 +136,9 @@ describe("courses close-transaction queries", () => {
   it("setCourseSummaryInTx overwrites the summary and stamps summary_updated_at", async () => {
     await seedCourseAndRun(async (db, courseId) => {
       await setCourseStartingStateInTx(courseId, { summary: "seed", startingTier: 1 }, db);
-      const before = await getCourseById(courseId);
+      // Backdate the stamp, so a strict `>` proves the helper re-stamps it.
+      const oldStamp = new Date("2020-01-01T00:00:00Z");
+      await db.update(courses).set({ summaryUpdatedAt: oldStamp }).where(eq(courses.id, courseId));
       await db.transaction(async (tx) => {
         await setCourseSummaryInTx(courseId, "rewritten after lesson 1", tx);
       });
@@ -144,10 +146,7 @@ describe("courses close-transaction queries", () => {
       const after = await getCourseById(courseId);
       // Overwritten whole, never appended.
       expect(after.summary).toBe("rewritten after lesson 1");
-      expect(after.summaryUpdatedAt).not.toBeNull();
-      expect(after.summaryUpdatedAt!.getTime()).toBeGreaterThanOrEqual(
-        before.summaryUpdatedAt!.getTime(),
-      );
+      expect(after.summaryUpdatedAt!.getTime()).toBeGreaterThan(oldStamp.getTime());
     });
   });
 
