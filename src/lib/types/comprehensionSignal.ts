@@ -14,8 +14,10 @@ import type { QualityScore } from "@/lib/types/spaced-repetition";
  * envelope also carries the Harness's answer key: the options and the
  * correct key (issue #149).
  *
- * Nothing on this path ties `qualityScore` to the `verdict` band (issue
- * #198). The close turn's schema enforces that band (`closeTurn.ts`).
+ * No band check ties `verdict` to `qualityScore`, and none is needed: the
+ * Harness derives correctness from `qualityScore` (`verdictForQualityScore`),
+ * so `verdict` is advisory (issue #198). The close turn's schema enforces
+ * the band (`closeTurn.ts`).
  */
 export type ComprehensionSignal =
   | {
@@ -31,9 +33,9 @@ export type ComprehensionSignal =
       kind: "free-text";
       /** Raw question id the model saw in the prompt. */
       questionId: string;
-      /** The model's judgement of the learner's text. */
+      /** The model's judgement of the learner's text. Advisory: correctness comes from `qualityScore`. */
       verdict: "correct" | "partial" | "incorrect";
-      /** 0-5. Drives the answer's XP (`calculateXP`). */
+      /** 0-5. Drives the answer's XP (`calculateXP`) and correctness. */
       qualityScore: QualityScore;
       /** Two sentences: why this verdict, then what to teach next. */
       rationale: string;
