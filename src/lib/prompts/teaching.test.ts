@@ -156,4 +156,16 @@ describe("renderTeachingSystem (output contract)", () => {
     const out = renderTeachingSystem(baseInputs);
     expect(out).toContain("- recordComprehensionSignals: call it before anything else,");
   });
+
+  // gpt-oss ends its turn with the learner-facing message, so "call the tool
+  // after your prose" turned into a quiz written as JSON text (A/B 2026-10-14).
+  it("asks for the quiz tool call before the message", () => {
+    const out = renderTeachingSystem(baseInputs);
+    expect(out).toContain(
+      "- presentQuestionnaire: call it at most once per turn, before you write your message,",
+    );
+    expect(out).toContain("never write the quiz questions in your message.");
+    expect(out).toContain("after any tool calls finish, write your message.");
+    expect(out).not.toContain("after your teaching prose");
+  });
 });

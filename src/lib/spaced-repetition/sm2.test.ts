@@ -1,11 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { calculateSM2, SM2_DEFAULTS } from "./sm2";
+import { calculateSM2 } from "./sm2";
 import { SM2 } from "@/lib/config/tuning";
+import type { SM2CardState } from "@/lib/types/spaced-repetition";
 
 // Fixed reference time for deterministic tests. Any Date works — SM-2 only
 // uses `now` to compute nextReviewAt = now + interval days.
 const NOW = new Date("2026-01-01T00:00:00Z");
 const DAY_MS = 86_400_000;
+
+// A never-reviewed card. Production gets this state from the `concepts`
+// column defaults, so only the tests need it spelled out.
+const SM2_DEFAULTS: SM2CardState = {
+  easinessFactor: SM2.initialEasinessFactor,
+  interval: 0,
+  repetitionCount: 0,
+};
 
 describe("calculateSM2", () => {
   describe("successful recall (quality >= 3)", () => {

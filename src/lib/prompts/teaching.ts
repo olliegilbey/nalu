@@ -152,11 +152,17 @@ const LOOKUP_LINES = (
  * close turn back to single-JSON — the harness provides no tools on that
  * turn (`executeWaveClose` runs the blocking `executeTurn` with
  * `response_format`), so the prompt must cover both turn shapes.
+ *
+ * Tool calls come BEFORE the message. In gpt-oss's harmony format the
+ * learner-facing message ends the model's turn, so "call the tool after your
+ * prose" can only be met by writing the call as text. The tool description
+ * and the gate's directives state the same order. Live A/B on Wave Turn 1,
+ * 2026-10-14, 20 Steps per arm: JSON-text quizzes 8 → 0, quiz calls 11 → 20.
  */
 const OUTPUT_FORMAT_BLOCK = `On teaching turns, your text output IS your message to the learner: write it as natural conversational prose. Do not emit JSON or XML framing. Structured actions are tool calls, never prose:
 - recordComprehensionSignals: call it before anything else, whenever the learner answered graded questions last turn — one signal per answered question. Skip it on pure teaching turns.
-- presentQuestionnaire: call it at most once per turn, after your teaching prose, to drop a graded concept-check quiz.
+- presentQuestionnaire: call it at most once per turn, before you write your message, to drop a graded concept-check quiz. The learner sees the quiz card below your message, so never write the quiz questions in your message.
 ${LOOKUP_LINES}
 Never invent or assume review history — if you have not looked it up, do not claim it.
-Every turn must include teaching prose for the learner, even when you call tools.
+Every turn must include teaching prose for the learner: after any tool calls finish, write your message.
 On the lesson's final turn no tools are available; respond with a single JSON object validated against the schema provided in that turn's message.`;
