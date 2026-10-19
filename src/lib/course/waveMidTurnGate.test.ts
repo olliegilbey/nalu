@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import type { WaveTurnCollector } from "./waveTurnTools";
-import type { SubmitTurnPayload } from "./buildLearnerInput";
+import type { SubmitTurnPayload } from "@/lib/types/waveTurnInput";
 import { validateWaveMidToolTurn } from "./waveMidTurnGate";
 
 const CHAT_PAYLOAD: SubmitTurnPayload = { kind: "chat-text", text: "tell me more" };

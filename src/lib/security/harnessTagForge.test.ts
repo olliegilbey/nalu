@@ -48,7 +48,7 @@ import { generateFramework } from "@/lib/course/generateFramework";
 import { submitBaseline } from "@/lib/course/submitBaseline";
 import { loadWaveContext } from "@/lib/course/loadWaveContext";
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
-import type { SubmitTurnPayload } from "@/lib/course/buildLearnerInput";
+import type { SubmitTurnPayload } from "@/lib/types/waveTurnInput";
 import { renderScopingSystem } from "@/lib/prompts/scoping";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";

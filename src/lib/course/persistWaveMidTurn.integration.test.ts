@@ -17,7 +17,7 @@ import { loadWaveContext } from "./loadWaveContext";
 import { persistWaveMidTurn } from "./persistWaveMidTurn";
 import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
 import { namespaceQuestionId } from "./namespaceQuestionId";
-import type { SubmitTurnPayload } from "./buildLearnerInput";
+import type { SubmitTurnPayload } from "@/lib/types/waveTurnInput";
 
 /**
  * Integration tests for `persistWaveMidTurn`: the post-LLM transaction of a

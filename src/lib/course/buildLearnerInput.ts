@@ -5,27 +5,9 @@ import {
   type McOptionKey,
   type McOptions,
 } from "@/lib/types/mcOptionKey";
+import type { SubmitTurnPayload } from "@/lib/types/waveTurnInput";
 import { escapeXmlText } from "@/lib/security/escapeXmlText";
 import { sanitiseUserInput } from "@/lib/security/sanitiseUserInput";
-
-/** A single answer in a questionnaire-answers submission. */
-export type SubmittedAnswer =
-  | { readonly id: string; readonly kind: "mc"; readonly selected: McOptionKey }
-  | {
-      readonly id: string;
-      readonly kind: "freetext";
-      readonly text: string;
-      readonly fromEscape: boolean;
-    };
-
-/** The discriminated payload of one Wave turn submission (validated by `submitTurnInputSchema`). */
-export type SubmitTurnPayload =
-  | { readonly kind: "chat-text"; readonly text: string }
-  | {
-      readonly kind: "questionnaire-answers";
-      readonly questionnaireId: string;
-      readonly answers: readonly SubmittedAnswer[];
-    };
 
 /**
  * Minimal shape of an open questionnaire as loaded by `loadWaveContext`.

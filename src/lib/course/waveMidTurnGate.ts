@@ -3,7 +3,7 @@ import { findBracesOutsideCode, opensJsonKey } from "@/lib/turn/proseBraces";
 import { escapeXmlText } from "@/lib/security/escapeXmlText";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { ToolQuestionInput, WaveTurnCollector } from "./waveTurnTools";
-import type { SubmitTurnPayload } from "./buildLearnerInput";
+import type { SubmitTurnPayload } from "@/lib/types/waveTurnInput";
 
 /**
  * Post-loop validation gate for a streamed tool mid-turn — the tool-channel
