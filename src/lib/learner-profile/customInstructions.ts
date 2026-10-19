@@ -20,5 +20,5 @@ export async function saveCustomInstructions(
   userId: string,
   value: string | null,
 ): Promise<string | null> {
-  return updateUserCustomInstructions(userId, value);
+  return updateUserCustomInstructions({ userId, customInstructions: value });
 }

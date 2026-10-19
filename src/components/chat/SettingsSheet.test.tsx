@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import type { UseCustomInstructionsResult } from "@/hooks/useCustomInstructions";
+import { PROFILE } from "@/lib/config/tuning";
 
 /*
  * The learner reaches the settings sheet from the side menu's Settings button,
@@ -77,15 +78,16 @@ describe("SettingsSheet", () => {
     openSettingsFromSideMenu();
 
     expect(screen.getByText("Changes apply from your next Wave.")).toBeTruthy();
-    // 1000-character cap minus the 31-character saved value.
-    expect(screen.getByText("969 characters left")).toBeTruthy();
+    // The cap minus the 31-character saved value.
+    const left = PROFILE.maxCustomInstructionsLength - 31;
+    expect(screen.getByText(`${left} characters left`)).toBeTruthy();
   });
 
   it("caps the text area at the tunable", () => {
     openSettingsFromSideMenu();
 
     const box = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Custom instructions" });
-    expect(box.maxLength).toBe(1000);
+    expect(box.maxLength).toBe(PROFILE.maxCustomInstructionsLength);
   });
 
   it("shows an empty box when nothing is saved", () => {

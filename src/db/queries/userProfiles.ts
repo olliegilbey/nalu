@@ -53,10 +53,13 @@ export async function getUserCustomInstructions(userId: string): Promise<string 
  *
  * @throws {NotFoundError} when no `user_profiles` row has this id.
  */
-export async function updateUserCustomInstructions(
-  userId: string,
-  customInstructions: string | null,
-): Promise<string | null> {
+export async function updateUserCustomInstructions({
+  userId,
+  customInstructions,
+}: {
+  readonly userId: string;
+  readonly customInstructions: string | null;
+}): Promise<string | null> {
   await db.execute(sql`
     UPDATE user_profiles
     SET custom_instructions = ${customInstructions}
