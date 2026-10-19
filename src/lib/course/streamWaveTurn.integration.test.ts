@@ -390,15 +390,18 @@ async function presentQuiz(courseId: string): Promise<string> {
 /** XP a learner already holds before the Wave. A non-zero start tells a total from a delta. */
 const PRIOR_XP = 30;
 
+/** XP for a correct answer to QUIZ_INPUT's MC question, at its tier. */
+const QUIZ_MC_XP = calculateMcXp(QUIZ_INPUT.questions[0]!.tier, true);
+
 /** The `data-turn-result` part's `totalXp`, plus `courses.total_xp` after the turn. */
 async function readTotals(
   parts: readonly { type: string; [k: string]: unknown }[],
   courseId: string,
-): Promise<{ readonly wire: unknown; readonly db: number }> {
+): Promise<{ readonly fromResult: unknown; readonly fromDb: number }> {
   const resultPart = parts.at(-1)!;
   expect(resultPart.type).toBe("data-turn-result");
   const data = resultPart["data"] as { totalXp?: unknown };
-  return { wire: data.totalXp, db: (await getCourseById(courseId)).totalXp };
+  return { fromResult: data.totalXp, fromDb: (await getCourseById(courseId)).totalXp };
 }
 
 describe("streamWaveTurn (integration)", () => {
@@ -1223,8 +1226,8 @@ describe("streamWaveTurn (integration)", () => {
       );
 
       const totals = await readTotals(parts, courseId);
-      expect(totals.wire).toBe(PRIOR_XP + calculateMcXp(QUIZ_INPUT.questions[0]!.tier, true));
-      expect(totals.wire).toBe(totals.db);
+      expect(totals.fromResult).toBe(PRIOR_XP + QUIZ_MC_XP);
+      expect(totals.fromResult).toBe(totals.fromDb);
     });
   });
 
@@ -1277,9 +1280,8 @@ describe("streamWaveTurn (integration)", () => {
 
       expect(parts.at(-1)!["data"]).toMatchObject({ kind: "close-turn", nextWaveNumber: 2 });
       const totals = await readTotals(parts, courseId);
-      const gradedXp = calculateMcXp(QUIZ_INPUT.questions[0]!.tier, true);
-      expect(totals.wire).toBe(PRIOR_XP + gradedXp + WAVE.completionXp);
-      expect(totals.wire).toBe(totals.db);
+      expect(totals.fromResult).toBe(PRIOR_XP + QUIZ_MC_XP + WAVE.completionXp);
+      expect(totals.fromResult).toBe(totals.fromDb);
     });
   });
 
@@ -1315,8 +1317,8 @@ describe("streamWaveTurn (integration)", () => {
       await streamWaveTurn(params, retry.writer);
 
       const totals = await readTotals(retry.parts, courseId);
-      expect(totals.wire).toBe(PRIOR_XP + calculateMcXp(QUIZ_INPUT.questions[0]!.tier, true));
-      expect(totals.wire).toBe(totals.db);
+      expect(totals.fromResult).toBe(PRIOR_XP + QUIZ_MC_XP);
+      expect(totals.fromResult).toBe(totals.fromDb);
     });
   });
 });
