@@ -35,7 +35,7 @@ Think Duolingo, but for anything.
 - [just](https://github.com/casey/just) (`brew install just`)
 - Cerebras API key (free tier) or any OpenAI-compatible provider
 - Docker, for the dev database and the integration tests
-- Supabase account (free tier), for production only. Dev runs without it.
+- Supabase account (free tier), for production and `just start`. `just dev` runs without it.
 
 ### Setup
 
@@ -55,8 +55,9 @@ just db-seed      # insert the dev user
 ```
 
 `just db-down` stops the container and keeps its data. `just db-reset` wipes
-and rebuilds the dev database. Production migrations run through
-`just db-migrate-prod`; see `docs/DEPLOY.md`.
+and rebuilds the dev database. These dev recipes refuse any database but this
+machine's. Production migrations run only through `just db-migrate-prod`; see
+`docs/DEPLOY.md`.
 
 ### Run
 

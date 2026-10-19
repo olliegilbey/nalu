@@ -11,14 +11,14 @@
  * strips it from the stored event, so `src/lib/analytics/buildPageviewEvent.ts`
  * mirrors the value into `client_ip`. Querying `$ip` returns nothing.
  *
- * Env, from two files passed with `bun --env-file` (the later file wins):
- *   - `POSTHOG_PERSONAL_API_KEY` (`.env.local`) — a `phx_` personal key, scope
- *     `query:read`. The `phc_` POSTHOG_KEY is the ingestion key and CANNOT read.
- *   - `DATABASE_URL` (`.env.production.local`) — pooled (PgBouncer) production
- *     Supabase. It replaces the dev URL that `.env.local` also sets.
+ * Env, both from `.env.production.local`, loaded by `bun --env-file` (bun then
+ * skips `.env.local`, whose `DATABASE_URL` is the dev container):
+ *   - `POSTHOG_PERSONAL_API_KEY` — a `phx_` personal key, scope `query:read`.
+ *     The `phc_` POSTHOG_KEY is the ingestion key and CANNOT read.
+ *   - `DATABASE_URL` — pooled (PgBouncer) production Supabase.
  *
  * Usage (run from the project root):
- *   bun --env-file=.env.local --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts [flags]
+ *   bun --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts [flags]
  *
  * `--minutes N` (default 1440): window, N minutes back.
  * `--since <ISO>`: absolute timestamp; wins over `--minutes`.
@@ -58,7 +58,7 @@ const posthogKey = process.env.POSTHOG_PERSONAL_API_KEY;
 if (!posthogKey) {
   console.error(
     "POSTHOG_PERSONAL_API_KEY not set — add a phx_ personal key (scope: query:read) to\n" +
-      ".env.local and pass it with bun --env-file (see this file's header). The phc_ POSTHOG_KEY is\n" +
+      ".env.production.local and run with bun --env-file=.env.production.local. The phc_ POSTHOG_KEY is\n" +
       "the write-only ingestion key and cannot read events. See this skill's SKILL.md.",
   );
   process.exit(1);
@@ -67,7 +67,7 @@ if (!posthogKey) {
 const dbUrl = process.env.DATABASE_URL;
 if (!dbUrl) {
   console.error(
-    "DATABASE_URL not set — pass --env-file=.env.production.local last (see this file's header)",
+    "DATABASE_URL not set — run from the project root with bun --env-file=.env.production.local",
   );
   process.exit(1);
 }

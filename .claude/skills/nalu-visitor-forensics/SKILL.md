@@ -25,24 +25,27 @@ typed, how far they got.
 
 ## Step 0 — One-time setup
 
-The script needs `POSTHOG_PERSONAL_API_KEY` in `.env.local` (a `phx_` key, scope
-**`query:read`**). Create one at PostHog → Settings → Personal API keys.
+The script reads two production values from the gitignored `.env.production.local`
+(`docs/DEPLOY.md`), never from `.env.local`:
+
+- `POSTHOG_PERSONAL_API_KEY`, a `phx_` key with scope **`query:read`**. Create one at
+  PostHog → Settings → Personal API keys.
+- `DATABASE_URL`, the pooled production URL.
 
 **`POSTHOG_KEY` is NOT this key.** That's the `phc_` ingestion key — write-only, it
 can capture events but cannot read one back. Sending it to the query API returns 401.
 
-It also needs the production `DATABASE_URL`, from the gitignored
-`.env.production.local`. Pass both files, production last: bun lets the later file
-win, so production's `DATABASE_URL` replaces the dev one from `.env.local`.
-
 ## Step 1 — Run it
 
+Always pass `--env-file=.env.production.local`: bun then skips `.env.local`, whose
+`DATABASE_URL` is the dev container.
+
 ```bash
-bun --env-file=.env.local --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts                 # last 24h
-bun --env-file=.env.local --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts --minutes 300   # last 5h
-bun --env-file=.env.local --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts --since 2026-07-17T09:00:00Z
-bun --env-file=.env.local --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts --ip 203.0.113.42       # this IP, ever
-bun --env-file=.env.local --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts --distinct <uuid>       # this visitor, ever
+bun --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts                 # last 24h
+bun --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts --minutes 300   # last 5h
+bun --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts --since 2026-07-17T09:00:00Z
+bun --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts --ip 203.0.113.42       # this IP, ever
+bun --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts --distinct <uuid>       # this visitor, ever
 ```
 
 One row per pageview: `when`, `where` (geo), `ip`, `org` (ASN + owner), `from`
