@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { TRPCError } from "@trpc/server";
 import { eq, sql } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
@@ -50,7 +51,7 @@ import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTur
  *   9. Course summary (issue #93): the close rewrites `courses.summary`, and
  *      Wave N+1's system prompt renders it in `<progress_summary>`.
  *  10. A close whose `closeWave` closes nothing (another path closed Wave N
- *      first) leaves `courses.summary` alone.
+ *      first) throws PRECONDITION_FAILED and changes nothing.
  */
 
 const USER_ID = "99999999-9999-9999-9999-999999999999";
@@ -842,15 +843,19 @@ describe("executeWaveClose (integration)", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 10. The summary write needs the close to have happened. Another path
-  //     closes Wave N after this turn loaded it, and no Wave N+1 exists, so
-  //     nothing later in the tx throws. `closeWave` then changes no row, and
-  //     the course summary must keep its prior value.
+  // 10. A close that closes nothing fails explicitly. Another path closes
+  //     Wave N after this turn loaded it, and no Wave N+1 exists, so nothing
+  //     later in the tx would throw on its own. `persistWaveClose` throws
+  //     PRECONDITION_FAILED, and the tx changes nothing: no summary rewrite,
+  //     no grading, no SM-2, no XP, no Wave N+1.
   // ---------------------------------------------------------------------------
-  it("leaves courses.summary alone when closeWave closes no row", async () => {
+  it("throws PRECONDITION_FAILED and changes nothing when closeWave closes no row", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave(2);
-      await seedOpenFreeTextQuestionnaire(courseId, waveId);
+      const { conceptId, questionId } = await seedOpenFreeTextQuestionnaire(courseId, waveId);
+      const initialConcept = (
+        await db.select().from(concepts).where(eq(concepts.id, conceptId))
+      )[0]!;
 
       const parsed = { ...makeParsedClose(), summary: "late close must not land" };
       vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
@@ -861,10 +866,30 @@ describe("executeWaveClose (integration)", () => {
       const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
       // Another path closes Wave N before this close's tx runs.
       await closeWave(waveId, { summary: "first close", blueprintEmitted: null });
-      await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
+      const error = await executeWaveClose(ctx, "<learner_reply>final</learner_reply>").catch(
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(TRPCError);
+      expect((error as TRPCError).code).toBe("PRECONDITION_FAILED");
 
+      // Course: summary and XP untouched.
       const afterCourse = (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!;
       expect(afterCourse.summary).toBe("seed");
+      expect(afterCourse.totalXp).toBe(0);
+      // Assessment row still at its placeholder grading.
+      const assessmentRow = (
+        await db.select().from(assessments).where(eq(assessments.questionId, questionId))
+      )[0]!;
+      expect(assessmentRow.qualityScore).toBe(0);
+      // SM-2 untouched.
+      const afterConcept = (await db.select().from(concepts).where(eq(concepts.id, conceptId)))[0]!;
+      expect(afterConcept.repetitionCount).toBe(initialConcept.repetitionCount);
+      expect(afterConcept.lastQualityScore).toBe(initialConcept.lastQualityScore);
+      expect(afterConcept.nextReviewAt).toEqual(initialConcept.nextReviewAt);
+      // No Wave N+1; Wave N keeps the first close's summary.
+      const allWaves = await db.select().from(waves).where(eq(waves.courseId, courseId));
+      expect(allWaves).toHaveLength(1);
+      expect(allWaves[0]!.summary).toBe("first close");
     });
   });
 });

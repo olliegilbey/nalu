@@ -124,9 +124,8 @@ export async function openWave(params: OpenWaveParams, tx?: DbOrTx): Promise<Wav
  * Idempotent: `COALESCE(closed_at, NOW())` means the timestamp never
  * re-stamps on a second call. `WHERE status = 'open'` scope prevents
  * accidentally re-writing a row that another path already closed.
- * `closedNow` tells the caller which case it hit, so a write that belongs
- * to the close (such as the course summary) can skip a close that never
- * happened.
+ * `closedNow` tells the caller which case it hit, so it can refuse a close
+ * that never happened (`persistWaveClose` throws).
  *
  * `blueprintEmitted` is Zod-validated before the write (parse-before-persist
  * boundary) so a malformed blueprint never reaches the DB.
