@@ -7,6 +7,7 @@ import { createCourse, getCourseById } from "./courses";
 import { updateCourseScopingState } from "./courses.scoping";
 import {
   getCourseBaselineAndFrameworkInTx,
+  getCourseTotalXpInTx,
   setCourseBaselineInTx,
   setCourseStartingStateInTx,
   setCourseSummaryInTx,
@@ -156,6 +157,19 @@ describe("courses close-transaction queries", () => {
         await expect(lockCourseRowInTx(courseId, tx)).resolves.toBeUndefined();
         await expect(
           lockCourseRowInTx("00000000-0000-0000-0000-000000000000", tx),
+        ).rejects.toBeInstanceOf(NotFoundError);
+      });
+    });
+  });
+
+  it("getCourseTotalXpInTx reads total_xp and throws NotFoundError for an unknown id", async () => {
+    await seedCourseAndRun(async (db, courseId) => {
+      await db.transaction(async (tx) => {
+        await incrementCourseXpInTx(courseId, 12, tx);
+        // Same tx: the read sees the uncommitted bump it will commit.
+        expect(await getCourseTotalXpInTx(courseId, tx)).toBe(12);
+        await expect(
+          getCourseTotalXpInTx("00000000-0000-0000-0000-000000000000", tx),
         ).rejects.toBeInstanceOf(NotFoundError);
       });
     });

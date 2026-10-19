@@ -5,6 +5,7 @@ import { appendWaveChatLog, closeWave, openWave } from "@/db/queries/waves.write
 import { getConceptsByCourse, getDueConceptsByCourse } from "@/db/queries/concepts";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
 import {
+  getCourseTotalXpInTx,
   incrementCourseXpInTx,
   lockCourseRowInTx,
   setCourseSummaryInTx,
@@ -42,13 +43,15 @@ export interface PersistWaveCloseResult {
   /** New currentTier if advancement fired this close; null when unchanged. */
   readonly tierAdvancedTo: number | null;
   readonly gradedSignals: readonly PersistedGradedSignal[];
+  /** Course XP after this request: `courses.total_xp`, never a delta. */
+  readonly totalXp: number;
 }
 
 /**
  * Transactional close body: closes Wave N, applies gradings + SM-2 updates,
  * rewrites the course summary, optionally advances current_tier, opens Wave
- * N+1, seeds the opening message, and bumps total_xp. All-or-nothing — any
- * failure rolls every step back.
+ * N+1, seeds the opening message, bumps total_xp, and reads it back.
+ * All-or-nothing — any failure rolls every step back.
  *
  * Ordering (top → bottom):
  *   0. Lock the course row (`lockCourseRowInTx`) before any Wave or
@@ -77,6 +80,7 @@ export interface PersistWaveCloseResult {
  *      tx so SM-2 advances from step 3 are reflected.
  *   6. Insert turn-0 assistant message on Wave N+1 carrying `openingText`.
  *   7. Bump `courses.total_xp` by `WAVE.completionXp` (flat reward).
+ *   8. Read `courses.total_xp` back for the turn result (`totalXp`).
  *
  * Like `persistScopingClose`, every `courses` write goes through the tx
  * helpers in `@/db/queries/courses.tx`. A write on the `db` singleton would
@@ -226,12 +230,17 @@ export async function persistWaveClose(
     // 8. Bump total_xp by completionXp, inside the tx.
     await incrementCourseXpInTx(ctx.course.id, WAVE.completionXp, tx);
 
+    // 9. Read the total back after the last XP write. The course-row lock from
+    //    step 0 holds, so this is the value the transaction commits.
+    const totalXp = await getCourseTotalXpInTx(ctx.course.id, tx);
+
     return {
       nextWaveId: nextWave.id,
       nextWaveNumber,
       completionXpAwarded: WAVE.completionXp,
       tierAdvancedTo,
       gradedSignals,
+      totalXp,
     } as const;
   });
 }

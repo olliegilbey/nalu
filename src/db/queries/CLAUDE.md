@@ -11,8 +11,10 @@ Transactions: the persist files in `src/lib/course/` open `db.transaction`
 and pass `tx` to every helper they call, so the writes commit or roll back
 together. Most helpers take an optional trailing `tx`. A helper whose
 name ends in `InTx` requires it. `courses.tx.ts` holds the `courses` reads
-and writes the close transactions run; each re-fetches nothing. The
-mid-turn grading tx runs one of them too: `incrementCourseXpInTx`. A
+and writes the close transactions run; the writes re-fetch nothing. The
+mid-turn grading tx runs two of them too: `incrementCourseXpInTx`, and
+`getCourseTotalXpInTx`, which both Wave saves call last to read the total
+for the turn result. A
 `courses` UPDATE on the `db` singleton inside any of these transactions
 would deadlock on the transaction's row lock. A test that needs one of these
 writes passes `db` as the handle; do not add a `db`-bound twin.
