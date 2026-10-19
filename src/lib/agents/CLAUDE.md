@@ -39,6 +39,13 @@ Rules:
 - Prompt text lives in src/lib/prompts/ — agents import renderers. Agent
   instructions must stay byte-identical to `renderContext(seed,…).system`
   (tested) or the provider cache prefix breaks.
+- Every agent passes a silent stream `onError`. The SDK default,
+  `console.error(error)`, prints raw model output or the provider's
+  response body to the server log (#173). The error part still reaches
+  `fullStream`; `executeToolTurnStream` rethrows it and the route logs one
+  content-free `errorLogLine`. `ToolLoopAgentSettings` does not type
+  `onError`, but `ToolLoopAgent.prepareCall` spreads every constructor
+  setting into `streamText`.
 - `providerOptions` come from `llmProviderOptions(promptCacheKey)`. It sends
   the Context's `prompt_cache_key` on every Step: the wave id for
   `buildWaveMidTurnAgent` (#146). The key is an opaque id, never learner

@@ -140,7 +140,7 @@ The tell: `inspect-db.ts --course` prints WAVE CONTEXT MESSAGES plus a `chatlog_
 
 - **Leaking secrets.** Never pipe `.env.local` through a redaction `sed` — BSD `sed` ≠ GNU `sed`, and a wrong pattern prints the value verbatim. List variable _names_ only: `rg -o '^[A-Z_]+=' .env.local`. (A past session leaked the production DB password this way.)
 - Treating the browser error as the root cause. It's a symptom — go to the DB.
-- Expecting Vercel runtime logs to quote the error message. They won't, by design. A tRPC 500 logs one `[trpc] procedure failed` line and a Wave turn one `[wave-turn] turn failed` line, with ids and codes only, never the message. A mid-turn stream error is also printed raw just before it, by the AI SDK's default `onError` (#173).
+- Expecting Vercel runtime logs to quote the error message. They won't, by design. A tRPC 500 logs one `[trpc] procedure failed` line and a Wave turn one `[wave-turn] turn failed` line, with ids and codes only, never the message.
 - Forgetting `course.clarify` has no dedup: each call (and each user retry) creates a fresh `courses` row + a new LLM burst, multiplying load against the rate limit.
 
 ## Quick reference

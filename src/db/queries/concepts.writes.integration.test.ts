@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { sql } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { userProfiles, courses, concepts as conceptsTable } from "@/db/schema";
-import { upsertConcept } from "./concepts.writes";
+import { SM2 } from "@/lib/config/tuning";
+import { upsertConcept, updateConceptSm2, type Sm2Update } from "./concepts.writes";
 
 /** Fixed UUIDs per plan §D8. */
 const USER = "66666666-6666-6666-6666-666666666666";
@@ -83,6 +84,53 @@ describe("concepts writes", () => {
           sql`lower(${conceptsTable.name}) = lower('Pythagoras') AND ${conceptsTable.courseId} = ${COURSE}`,
         );
       expect(countRow?.count).toBe(1);
+    });
+  });
+});
+
+/** An SM-2 write that differs only in its easiness factor. */
+function sm2WithEasinessFactor(easinessFactor: number): Sm2Update {
+  const now = new Date();
+  return {
+    easinessFactor,
+    intervalDays: 1,
+    repetitionCount: 0,
+    lastQualityScore: 1,
+    lastReviewedAt: now,
+    nextReviewAt: now,
+  };
+}
+
+// The CHECK `concepts_easiness_factor_min` against the floor that sm2.ts
+// clamps to (issue #210). `easiness_factor` is `real`, and real 1.3 is
+// 1.29999995. Compared as float8, the floor itself failed the CHECK, so two
+// failed reviews from 2.5 (→ 1.7 → 1.3) broke the Wave close.
+describe("updateConceptSm2 at the easiness-factor floor", () => {
+  it("accepts EF exactly at SM2.easinessFactorFloor", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+      const concept = await upsertConcept({ courseId: COURSE, name: "Floor", tier: 1 });
+
+      const updated = await updateConceptSm2(
+        concept.id,
+        sm2WithEasinessFactor(SM2.easinessFactorFloor),
+      );
+
+      // Read back at real precision: 1.3 returns as 1.2999999523…
+      expect(updated.easinessFactor).toBeCloseTo(SM2.easinessFactorFloor, 5);
+    });
+  });
+
+  it("rejects EF just below SM2.easinessFactorFloor", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+      const concept = await upsertConcept({ courseId: COURSE, name: "Below", tier: 1 });
+
+      await expect(
+        updateConceptSm2(concept.id, sm2WithEasinessFactor(SM2.easinessFactorFloor - 0.0001)),
+      ).rejects.toMatchObject({
+        cause: { code: "23514", constraint_name: "concepts_easiness_factor_min" },
+      });
     });
   });
 });

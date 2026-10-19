@@ -81,6 +81,31 @@ describe("contextMessages writes", () => {
   });
 
   // -------------------------------------------------------------------------
+  // Mismatched kind/role: tsc rejects it before the DB CHECK can (#108)
+  // -------------------------------------------------------------------------
+  // `AppendMessageParams` pairs each kind with its one role, so this call
+  // fails tsc. The directive lets it compile; the DB CHECK then rejects it
+  // at insert, the same pair the type forbids.
+  it("rejects a mismatched kind/role pair in tsc and at insert", async () => {
+    await withTestDb(async (db) => {
+      await seedFixtures(db);
+      await expect(
+        // @ts-expect-error tool_result takes role 'tool' only.
+        appendMessage({
+          parent: { kind: "wave", id: WAVE },
+          turnIndex: 0,
+          seq: 0,
+          kind: "tool_result",
+          role: "assistant",
+          content: "x",
+        }),
+      ).rejects.toMatchObject({
+        cause: { code: "23514", constraint_name: "context_messages_kind_role_pair" },
+      });
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Test 4: CHECK constraint rejects a row with neither parent set
   // -------------------------------------------------------------------------
   it("CHECK constraint rejects a row with both wave_id and scoping_pass_id NULL", async () => {

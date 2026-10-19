@@ -25,13 +25,19 @@ import type { QualityScore } from "@/lib/types/spaced-repetition";
  *
  * On failure the repetition count resets to 0 and the interval collapses
  * to `failureInterval`.
+ *
+ * The `concepts` schema reads `initialEasinessFactor` (column default) and
+ * `easinessFactorFloor` (CHECK bound). Retuning either changes the schema:
+ * run `just db-generate <name>` and commit the migration.
+ * `src/db/schemaTuningDrift.test.ts` fails until you do.
  */
 export const SM2 = {
   // SM-2 canonical default EF (Woźniak 1987). Starting memory stability
-  // for a never-reviewed card.
+  // for a never-reviewed card. The DB applies it as the column default.
   initialEasinessFactor: 2.5,
   // SM-2 canonical EF floor. Prevents EF collapse under repeated failure,
   // which would otherwise lock a concept into daily reviews forever.
+  // `sm2.ts` clamps to it, and the DB CHECK enforces the same bound.
   easinessFactorFloor: 1.3,
   // Stage-1 interval after first success: reinforce the next day.
   firstSuccessInterval: 1,

@@ -264,7 +264,7 @@ The system prompt is crystallised **once per phase** (scoping, or a single Wave)
 
 **Output contract.** The model emits JSON or tool calls, never free-form tagged blocks.
 
-- **Mid-Wave turn**: teaching prose; optional comprehension signals that grade the cards the learner just answered; an optional questionnaire of 1-N questions. Each question names one concept. Each multiple-choice question carries its correct key. Each free-text question carries a rubric that states what a correct answer contains; baseline questions follow the same rule. The model streams prose as text and sends the rest as tool calls (`recordComprehensionSignals`, `presentQuestionnaire`).
+- **Mid-Wave turn**: teaching prose; optional comprehension signals that grade the cards the learner just answered; an optional questionnaire of 1-N questions. Each question names one concept. Each multiple-choice question carries its correct key. Each free-text question carries a rubric that states what a correct answer contains; baseline questions follow the same rule. The model sends the rest as tool calls (`recordComprehensionSignals`, `presentQuestionnaire`) first, then streams its prose as text. The learner sees the prose above the quiz card.
 - **Final turn**: one JSON object with the closing message, gradings for cards answered this turn, a Wave summary, the next Wave's blueprint (topic, outline, opening text, planned concepts), and per-concept SM-2 quality scores.
 - **Scoping close**: the same close-turn base, plus a durable learner profile and the starting tier.
 

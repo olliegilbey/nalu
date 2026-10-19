@@ -69,9 +69,11 @@ format:
 format-check:
     bun x prettier --check .
 
-# Find unused exports, deps, files
+# Find unused exports, deps, files. The --production pass skips tests, so it
+# also fails on an export that only tests use.
 deadcode:
     bun x knip
+    bun x knip --production
 
 # Run all checks (format + lint + typecheck + unit + integration + deadcode).
 # Matches CI; green locally means green on PR.
@@ -103,6 +105,7 @@ db-reset:
 db-seed:
     bun src/db/seed.ts
 
-# drizzle-kit drift check — fails if schema TS and migrations are out of sync
+# drizzle-kit history check: fails on an inconsistent migration chain. It does
+# not diff schema TS against the migrations, so it misses an ungenerated change.
 db-check:
     bunx drizzle-kit check

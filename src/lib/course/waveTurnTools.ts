@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod/v4";
-import type { comprehensionSignalSchema } from "@/lib/prompts/waveTurn";
+import type { ComprehensionSignal } from "@/lib/types/comprehensionSignal";
 import {
   GRADED_RUBRIC_RULE,
   isPlaceholderRubric,
@@ -12,8 +12,8 @@ import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
 import { toToolInputSchema } from "@/lib/llm/toCerebrasJsonSchema";
 import { WAVE } from "@/lib/config/tuning";
 
-/** One staged grading signal — inferred from the shared prompt-layer schema. */
-export type StagedComprehensionSignal = z.infer<typeof comprehensionSignalSchema>;
+/** One staged grading signal: the canonical {@link ComprehensionSignal}. */
+export type StagedComprehensionSignal = ComprehensionSignal;
 
 /**
  * Mutable per-turn staging area filled by tool executes, drained by
@@ -30,8 +30,8 @@ export interface WaveTurnCollector {
 // ---------------------------------------------------------------------------
 // FLAT tool-input schemas (wire + validator).
 //
-// WHY FLAT: the canonical `questionSchema` / `comprehensionSignalSchema` are
-// discriminated unions, which render as `anyOf` on the wire. The Task-1 probe
+// WHY FLAT: the canonical `questionSchema` / `ComprehensionSignal` are
+// discriminated unions; as Zod, a union renders as `anyOf` on the wire. The Task-1 probe
 // (docs/status/2026-07-06-tool-call-probe-verdict.md, finding 2) measured
 // anyOf-union tool schemas cratering gpt-oss-120b's valid-call rate from
 // ~95% to ~44%, with record→array confusion — and the live Task-7
@@ -335,7 +335,7 @@ function buildRecordSignalsTool(collector: WaveTurnCollector, scope: WaveMidTurn
 
 function buildPresentQuestionnaireTool(collector: WaveTurnCollector) {
   return tool({
-    description: `Present a graded concept-check quiz (1-${WAVE.quizMaxQuestions} questions) to the learner. Call at most once per turn, after your teaching prose. Every question carries conceptName; every multiple-choice question carries options and correct (A, B, C, or D).`,
+    description: `Present a graded concept-check quiz (1-${WAVE.quizMaxQuestions} questions) to the learner. Call at most once per turn, before you write your message. The learner sees the quiz card below your message, so never write the questions in your message. Every question carries conceptName; every multiple-choice question carries options and correct (A, B, C, or D).`,
     inputSchema: toToolInputSchema(toolQuestionnaireSchema, {
       name: "present_questionnaire_input",
     }),
