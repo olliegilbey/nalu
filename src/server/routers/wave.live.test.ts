@@ -162,18 +162,19 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
       assertFrameworkStructural(framework);
 
       const { baseline } = await caller.course.generateBaseline({ courseId });
-      assertBaselineStructural(baseline, framework);
+      // The wire drops concept names and rubrics; the JSONB keeps them. So
+      // the structural check reads the persisted baseline. Free text answers
+      // correctly from the persisted rubric (issue #22), so the scoping-close
+      // `[grading-debug]` lines are diagnostic.
+      const persistedBaseline = baselineJsonbSchema.parse(
+        (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!.baseline,
+      );
+      assertBaselineStructural(persistedBaseline, framework);
 
       const questions = baseline.questions.questions as ReadonlyArray<{
         readonly id: string;
         readonly type: "multiple_choice" | "free_text";
       }>;
-      // Free text answers correctly from the persisted rubric (issue #22),
-      // so the scoping-close `[grading-debug]` lines are diagnostic. The
-      // wire drops rubrics once issue #58 lands; the JSONB keeps them.
-      const persistedBaseline = baselineJsonbSchema.parse(
-        (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!.baseline,
-      );
       const rubricById = new Map(
         persistedBaseline.questions.map((q) => [q.id, q.freetextRubric] as const),
       );

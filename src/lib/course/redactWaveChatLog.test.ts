@@ -60,7 +60,7 @@ describe("redactWaveChatLog", () => {
     if (!mc || mc.type !== "multiple_choice") throw new Error("MC expected");
     if (!ft || ft.type !== "free_text") throw new Error("free_text expected");
     expect("correct" in mc).toBe(false);
-    expect(decodeCorrect("qid-mc", mc.correctEnc)).toBe(KEY_TO_INDEX.B);
+    expect(decodeCorrect("qid-mc", mc.correctEnc ?? "")).toBe(KEY_TO_INDEX.B);
     expect(ft.prompt).toBe("Why?");
   });
 

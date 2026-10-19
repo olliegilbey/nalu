@@ -1,6 +1,5 @@
-import type { Question } from "@/lib/prompts/questionnaire";
-import { KEY_TO_INDEX, MC_OPTION_KEYS, type McOptions } from "@/lib/types/mcOptionKey";
-import type { OpenQuestionForClient } from "./redactQuestionnaire";
+import { MC_OPTION_KEYS, type McOptions } from "@/lib/types/mcOptionKey";
+import type { QuestionForClient } from "./redactQuestionnaire";
 import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
 
 /** The Composer's question shape: one card question, MC or free text. */
@@ -41,50 +40,24 @@ export function deriveMcFeedback(
 }
 
 /**
- * Adapt a Nalu `Question[]` to the Composer's `ChoiceQuestion[]`.
+ * Adapt one question of the open card, scoping or Wave, to the Composer's
+ * `ChoiceQuestion`. The server sends `QuestionForClient`: an obfuscated
+ * `correctEnc` rather than a plaintext `correct`.
  *
- * - `multiple_choice` → options materialised as a string array, one per key
- *   in `MC_OPTION_KEYS` order; `correct` letter (if present) becomes `correctIndex`.
- * - `free_text` → `options: []`. The Composer's pure-free-text branch
- *   renders the textarea instead of the option grid for these.
- */
-export function adaptQuestionnaire(qs: readonly Question[]): readonly ChoiceQuestion[] {
-  return qs.map((q): ChoiceQuestion => {
-    if (q.type === "multiple_choice") {
-      return {
-        id: q.id,
-        prompt: q.prompt,
-        options: MC_OPTION_KEYS.map((key) => q.options[key]),
-        correctIndex: q.correct !== undefined ? KEY_TO_INDEX[q.correct] : undefined,
-        // Carried through so the Composer's `calculateMcXp` can award exact XP
-        // for a correct MC answer — including in the scoping baseline flow.
-        tier: q.tier,
-      };
-    }
-    return { id: q.id, prompt: q.prompt, options: [], tier: q.tier };
-  });
-}
-
-/**
- * Adapt a client-side `OpenQuestionForClient` (wave-flow questionnaire, with
- * obfuscated `correctEnc` rather than plaintext `correct`) to the Composer's
- * `ChoiceQuestion`.
- *
- * MC branch: decodes the `correctEnc` via `decodeCorrect(id, correctEnc)` —
- * the encoding is bound to the question id (spec §7.8) so the Composer can
- * render the instant-feedback toast locally without round-tripping. A failed
- * decode (`null`) leaves `correctIndex` undefined; the Composer treats that
- * as "no toast, ask the server" — server-side grading is still authoritative.
+ * MC branch: options materialise as a string array in `MC_OPTION_KEYS` order.
+ * `decodeCorrect(id, correctEnc)` recovers the correct index. The encoding is
+ * bound to the question id (spec §7.8), so the Composer can render the
+ * instant-feedback toast locally without round-tripping. An ungraded MC
+ * question (clarify) has no `correctEnc`; a failed decode returns `null`. Both
+ * leave `correctIndex` undefined, and the Composer shows no verdict; server
+ * grading stays authoritative. `tier` carries through for `calculateMcXp`.
  *
  * Free-text branch: `options: []`, no `correctIndex` — the Composer renders
  * the textarea path.
- *
- * The discriminated union (`OpenQuestionForClient`) guarantees MC questions
- * carry `options` + `correctEnc`, so no extra truthy guards are needed.
  */
-export function adaptOpenQuestion(q: OpenQuestionForClient): ChoiceQuestion {
+export function adaptOpenQuestion(q: QuestionForClient): ChoiceQuestion {
   if (q.type === "multiple_choice") {
-    const decoded = decodeCorrect(q.id, q.correctEnc);
+    const decoded = q.correctEnc === undefined ? null : decodeCorrect(q.id, q.correctEnc);
     return {
       id: q.id,
       prompt: q.prompt,

@@ -1,7 +1,6 @@
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import { formatAnswers } from "./deriveChatEntries";
 import type { WaveChatLogEntryForClient } from "./redactWaveChatLog";
-import type { V3Question } from "@/lib/types/jsonb";
 
 /**
  * Project the wave's wire-redacted chat log to `ChatEntry[]` for the chat scroll.
@@ -53,9 +52,8 @@ export function deriveWaveChatEntries(
       return { kind: "user-text", content: entry.content };
     }
     if (entry.role === "user" && entry.kind === "answers") {
-      // formatAnswers needs `V3Question[]` — the client wire shape has
-      // `correctEnc` instead of `correct`, but the formatter only reads
-      // `prompt`, `type`, and `options`, so a structural projection works.
+      // formatAnswers takes the client question shape, so the redacted
+      // questions pass straight through.
       // O(n) scan per user.answers entry → O(n²) overall. Bounded in practice
       // by WAVE.turnCount (~10-15 entries per wave); a Map would be faster
       // but isn't worth the line count at this scale.
@@ -67,27 +65,9 @@ export function deriveWaveChatEntries(
             e.kind === "text_with_questionnaire" &&
             e.questionnaireId === entry.questionnaireId,
         );
-      // `freetextRubric` is backfilled empty: the client wire shape no longer
-      // carries rubrics (grading keys — see redactWaveChatLog), and V3Question
-      // requires the field structurally while formatAnswers never reads it.
-      const questions: readonly V3Question[] =
+      const questions =
         qEntry?.role === "assistant" && qEntry.kind === "text_with_questionnaire"
-          ? qEntry.questions.map((q) =>
-              q.type === "multiple_choice"
-                ? {
-                    id: q.id,
-                    type: "multiple_choice",
-                    prompt: q.prompt,
-                    options: q.options,
-                    freetextRubric: "",
-                  }
-                : {
-                    id: q.id,
-                    type: "free_text",
-                    prompt: q.prompt,
-                    freetextRubric: "",
-                  },
-            )
+          ? qEntry.questions
           : [];
       return {
         kind: "user-questionnaire-answers",

@@ -1,4 +1,4 @@
-import type { OpenQuestionForClient } from "@/lib/course/redactQuestionnaire";
+import type { QuestionForClient } from "@/lib/course/redactQuestionnaire";
 
 /**
  * One entry in the rendered chat scroll (one speaker's message). Phase-agnostic:
@@ -38,7 +38,7 @@ export type ChatEntry =
       readonly kind: "assistant-text-with-questionnaire";
       readonly content: string;
       readonly questionnaire: {
-        readonly questions: readonly OpenQuestionForClient[];
+        readonly questions: readonly QuestionForClient[];
         readonly questionnaireId: string;
       };
     }

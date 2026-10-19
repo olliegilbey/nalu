@@ -31,7 +31,7 @@ Ordered by weight. When two collide, the earlier one wins.
 - Commit through the hooks. A red hook means fix the root cause. CI re-runs every check anyway. `--no-verify`, `HUSKY=0`, and weakening a hook are off-limits.
 - Ollie merges to `main`. Agents work on a branch and stop at a green PR.
 - Tests run in three tiers. `*.test.ts` is unit-only, with no DB: `just test`. `*.integration.test.ts` boots a Postgres testcontainer: `just test-int`. `*.live.test.ts` calls real Cerebras and costs real tokens: `just smoke`, opt-in only.
-- Learner content and answer keys stay server-side. Telemetry records no LLM inputs or outputs. The client receives no plaintext answer key before the learner submits. Wave turns hold this line; scoping does not yet (issue #58). `src/lib/llm/CLAUDE.md` and `src/lib/course/CLAUDE.md` name the mechanisms.
+- Learner content and answer keys stay server-side. Telemetry records no LLM inputs or outputs. The client receives no plaintext answer key before the learner submits. Wave turns and scoping both hold this line. `src/lib/llm/CLAUDE.md` and `src/lib/course/CLAUDE.md` name the mechanisms.
 
 ## Great code here
 

@@ -11,6 +11,9 @@ import { getNextTurnIndex } from "@/db/queries/contextMessages";
 import { upsertConcept } from "@/db/queries/concepts.writes";
 import { insertOpenAssessments } from "@/db/queries/assessments.open";
 import { WAVE } from "@/lib/config/tuning";
+import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
+import { expectNoPlaintextAnswerKey } from "@/lib/testing/expectNoPlaintextAnswerKey";
+import { KEY_TO_INDEX } from "@/lib/types/mcOptionKey";
 import type { WaveMidTurn } from "@/lib/prompts/waveTurn";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import { loadWaveContext } from "./loadWaveContext";
@@ -545,13 +548,18 @@ describe("persistWaveMidTurn (integration)", () => {
 
       expect(result.newQuestionnaire).not.toBeNull();
       expect(result.newQuestionnaire!.questions).toHaveLength(2);
-      // MC question carries correctEnc (base64). Free-text does not.
-      expect(result.newQuestionnaire!.questions[0]).toMatchObject({
+      // The turn result streams to the client: no plaintext key in it.
+      expectNoPlaintextAnswerKey(result.newQuestionnaire);
+      // MC question carries correctEnc (base64), decoding to the stored key.
+      // Free-text does not.
+      const [mc] = result.newQuestionnaire!.questions;
+      expect(mc).toMatchObject({
         id: "q-new-mc",
         type: "multiple_choice",
         options: { A: "yes", B: "no", C: "maybe", D: "never" },
       });
-      expect(result.newQuestionnaire!.questions[0]!.correctEnc).toBeTruthy();
+      if (mc?.type !== "multiple_choice") throw new Error("expected an MC question");
+      expect(decodeCorrect("q-new-mc", mc.correctEnc ?? "")).toBe(KEY_TO_INDEX.A);
       expect(result.newQuestionnaire!.questions[1]).toMatchObject({
         id: "q-new-ft",
         type: "free_text",

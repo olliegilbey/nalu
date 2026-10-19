@@ -61,9 +61,13 @@ export const plannedConceptSchema = z.object({
     .describe(
       "Level (1-indexed) of the concept; must be within the in-scope levels from the prompt.",
     ),
+  // Name only what the model sees: the Wave close lists due concepts in
+  // `<review_due>`; the scoping close shows no due list (issue #151).
   role: z
     .enum(["fresh", "review"])
-    .describe("'review' for SM-2-due concepts (must be in reviewDueNames); 'fresh' for new ones."),
+    .describe(
+      "'review' only for a concept listed in <review_due>. Every other concept is 'fresh'. No <review_due> list means all are 'fresh'.",
+    ),
 });
 
 /** Blueprint for the next lesson — shared by scoping-close and wave-close. */
@@ -190,12 +194,19 @@ export function makeCloseTurnBaseSchema(params: MakeCloseTurnBaseSchemaParams) {
         });
       }
       // 5. plannedConcepts.role='review' names must be in reviewDueNames.
+      // The message is a retry directive, so it names what the model sees:
+      // the review_due list. `buildRetryDirective` escapes messages, so it
+      // names the list without angle brackets. An empty list means nothing
+      // is due yet, as at the scoping close (issue #151).
       val.nextUnitBlueprint.plannedConcepts.forEach((pc, idx) => {
         if (pc.role === "review" && !reviewDue.has(pc.name)) {
           ctx.addIssue({
             code: "custom",
             path: ["nextUnitBlueprint", "plannedConcepts", idx, "name"],
-            message: `review-role plannedConcept '${pc.name}' not in reviewDueNames [${params.reviewDueNames.join(", ")}].`,
+            message:
+              reviewDue.size === 0
+                ? `plannedConcept '${pc.name}' has role 'review', but nothing is due for review yet. Set its role to 'fresh'.`
+                : `plannedConcept '${pc.name}' has role 'review', but it is not in the review_due list [${params.reviewDueNames.join(", ")}]. Use 'review' only for a name copied exactly from that list; otherwise set its role to 'fresh'.`,
           });
         }
       });

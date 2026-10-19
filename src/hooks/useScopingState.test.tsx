@@ -21,7 +21,7 @@ const hoisted = vi.hoisted(() => {
     topic: "T",
     clarification: {
       userMessage: "intro",
-      questions: [{ id: "q1", type: "free_text", prompt: "Why?", freetextRubric: "n/a" }],
+      questions: [{ id: "q1", type: "free_text", prompt: "Why?" }],
       responses: [],
     },
     framework: null,
@@ -66,7 +66,7 @@ const baselineState: Record<string, unknown> = {
         type: "multiple_choice",
         prompt: "P?",
         options: ["A", "B", "C", "D"],
-        correct: "A",
+        correctEnc: "unused",
       },
     ],
     responses: [],
@@ -125,7 +125,7 @@ const strandedFrameworkState: Record<string, unknown> = {
   ...hoisted.clarifyState,
   clarification: {
     userMessage: "intro",
-    questions: [{ id: "q1", type: "free_text", prompt: "Why?", freetextRubric: "n/a" }],
+    questions: [{ id: "q1", type: "free_text", prompt: "Why?" }],
     responses: [{ questionId: "q1", freetext: "because" }],
   },
 };
