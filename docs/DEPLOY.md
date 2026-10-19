@@ -101,7 +101,9 @@ Preview anyway.
 `LLM_TELEMETRY=true`, every LLM call emits spans labelled by stage
 (`functionId`). Spans carry timing, tokens, model and retries.
 `src/lib/llm/telemetry.ts` pins `recordInputs` and `recordOutputs` to false,
-so no LLM input or output enters a trace.
+so no LLM input or output enters a trace. A failed call's span keeps the
+error's class name and the ERROR status, and drops the error's message and
+stack. Those can quote model output or provider text (issue #204).
 
 Spans export **nowhere** until an OTLP destination is set. `@vercel/otel`
 reads it from the standard

@@ -2,6 +2,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { z } from "zod/v4";
 import type { WaveSeedInputs } from "@/lib/types/context";
 import { LLM } from "@/lib/config/tuning";
+// Static, unlike the per-test `import("./provider")` calls below. The agent
+// graph pulls in drizzle and the DB schema: a cold import took ~1.5s, and
+// over 5s under load, inside one test's timeout. A static import pays it
+// once, at file load. `vi.resetModules()` does not touch it. That is safe:
+// the agent reads env only when built, so it sees the `beforeEach` stubs.
+import { buildWaveMidTurnAgent } from "@/lib/agents/waveMidTurnAgent";
 
 /**
  * Provider factory is thin — it reads env via `getEnv()` and wires the
@@ -129,7 +135,6 @@ describe("getLlmModel", () => {
             { headers: { "content-type": "text/event-stream" } },
           ),
       );
-      const { buildWaveMidTurnAgent } = await import("@/lib/agents/waveMidTurnAgent");
       const { agent } = buildWaveMidTurnAgent({
         seed: WAVE_SEED,
         courseId: "11111111-1111-4111-8111-111111111111",

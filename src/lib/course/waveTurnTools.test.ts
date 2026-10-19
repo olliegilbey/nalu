@@ -330,6 +330,15 @@ describe("buildWaveMidTurnTools", () => {
     );
   });
 
+  // Same order as the teaching prompt: the call comes before the message,
+  // because gpt-oss's message ends its turn (A/B 2026-10-14).
+  it("quiz tool description asks for the call before the message", () => {
+    const { tools } = buildWaveMidTurnTools(CHAT_TURN);
+    expect(tools.presentQuestionnaire.description).toContain(
+      "Call at most once per turn, before you write your message. The learner sees the quiz card below your message, so never write the questions in your message.",
+    );
+  });
+
   it("keeps the plain result on a chat turn, whatever ids the model grades", async () => {
     const { tools } = buildWaveMidTurnTools(CHAT_TURN);
     const result = await tools.recordComprehensionSignals.execute!(
