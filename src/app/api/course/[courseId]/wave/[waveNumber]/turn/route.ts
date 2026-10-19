@@ -1,7 +1,7 @@
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { z } from "zod/v4";
 import { resolveRequestUserId } from "@/server/requestUser";
-import { submitTurnInputSchema } from "@/server/routers/waveTurnInput";
+import { submitTurnInputSchema } from "@/lib/types/waveTurnInput";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";

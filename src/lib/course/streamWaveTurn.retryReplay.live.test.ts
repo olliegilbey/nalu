@@ -35,7 +35,7 @@ import * as waveMidTurnAgentModule from "@/lib/agents/waveMidTurnAgent";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { findJsonProseLeakIndex } from "@/lib/turn/findJsonProseLeakIndex";
 import type { WaveTurnUIMessage } from "@/lib/types/waveStream";
-import type { SubmitTurnPayload } from "./buildLearnerInput";
+import type { SubmitTurnPayload } from "@/lib/types/waveTurnInput";
 import * as gateModule from "./waveMidTurnGate";
 import { streamWaveTurn } from "./streamWaveTurn";
 

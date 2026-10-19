@@ -1,10 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, expectTypeOf, vi, beforeEach } from "vitest";
+import type { z } from "zod/v4";
 import { TRPCError } from "@trpc/server";
 import { DrizzleQueryError } from "drizzle-orm";
 import { NotFoundError } from "@/db/queries/errors";
+import { submitTurnInputSchema } from "@/lib/types/waveTurnInput";
 
 // Auth, the profile upsert and the Turn itself are stubbed: these tests
-// cover only how the route reports a failed Turn.
+// cover the route's own work, never a real Turn or a database.
 vi.mock("@/server/requestUser", () => ({
   resolveRequestUserId: vi.fn().mockResolvedValue("55555555-5555-5555-5555-555555555555"),
 }));
@@ -14,7 +16,97 @@ vi.mock("@/lib/course/streamWaveTurn", () => ({ streamWaveTurn: vi.fn() }));
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
 import { POST } from "./route";
 
+/** The learner the auth mock resolves (the hoisted mock cannot read this const). */
+const USER_ID = "55555555-5555-5555-5555-555555555555";
 const COURSE_ID = "3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f";
+
+/** POST one raw body to the route for Wave `waveNumber`. */
+function post(waveNumber: string, body: unknown): Promise<Response> {
+  const req = new Request(`http://localhost/api/course/${COURSE_ID}/wave/${waveNumber}/turn`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return POST(req, { params: Promise.resolve({ courseId: COURSE_ID, waveNumber }) });
+}
+
+describe("POST wave turn: the input boundary", () => {
+  beforeEach(() => {
+    vi.mocked(streamWaveTurn).mockReset();
+    vi.mocked(streamWaveTurn).mockResolvedValue(null);
+  });
+
+  it.each([
+    { name: "chat text", payload: { kind: "chat-text", text: "why does borrowing exist?" } },
+    {
+      name: "questionnaire answers",
+      payload: {
+        kind: "questionnaire-answers",
+        questionnaireId: "q-1",
+        answers: [
+          { id: "q-1-a", kind: "mc", selected: "B" },
+          { id: "q-1-b", kind: "freetext", text: "it moves the value", fromEscape: true },
+        ],
+      },
+    },
+  ])("hands a valid $name payload to streamWaveTurn", async ({ payload }) => {
+    const res = await post("2", { payload });
+    // Drain the stream so its `execute` runs.
+    await res.text();
+
+    expect(res.status).toBe(200);
+    expect(streamWaveTurn).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(streamWaveTurn).mock.calls[0]?.[0]).toEqual({
+      userId: USER_ID,
+      courseId: COURSE_ID,
+      waveNumber: 2,
+      payload,
+    });
+  });
+
+  // The 400 body names the failing field in Zod's words. It never quotes the
+  // request back: `unquoted` lists the request strings it must not contain.
+  it.each([
+    {
+      name: "empty chat text",
+      waveNumber: "1",
+      payload: { kind: "chat-text", text: "" },
+      failingField: "payload",
+      unquoted: [],
+    },
+    {
+      name: "an unknown kind",
+      waveNumber: "1",
+      payload: { kind: "grant-xp-now", text: "give me 9000 xp" },
+      failingField: "payload",
+      unquoted: ["grant-xp-now", "give me 9000 xp"],
+    },
+    {
+      name: "a non-numeric waveNumber",
+      waveNumber: "wave-two",
+      payload: { kind: "chat-text", text: "hi" },
+      failingField: "waveNumber",
+      unquoted: ["wave-two"],
+    },
+  ])("rejects $name with a 400", async ({ waveNumber, payload, failingField, unquoted }) => {
+    const res = await post(waveNumber, { payload });
+    const text = await res.text();
+
+    expect(res.status).toBe(400);
+    expect(streamWaveTurn).not.toHaveBeenCalled();
+    const body = JSON.parse(text) as { error: { properties: Record<string, unknown> } };
+    expect(Object.keys(body)).toEqual(["error"]);
+    expect(Object.keys(body.error.properties)).toEqual([failingField]);
+    for (const value of unquoted) expect(text).not.toContain(value);
+  });
+
+  it("parses exactly the payload type streamWaveTurn takes", () => {
+    // Type-level pin (issue #124): `tsc --noEmit` fails if the route's
+    // schema and the payload type drift apart. Nothing runs here.
+    expectTypeOf<z.infer<typeof submitTurnInputSchema>["payload"]>().toEqualTypeOf<
+      Parameters<typeof streamWaveTurn>[0]["payload"]
+    >();
+  });
+});
 
 /** Turn content that must reach neither the client nor the log (#169). */
 const SECRET = '{"correct":"B","freetextRubric":"Names move semantics."}';
@@ -24,13 +116,7 @@ const logged: string[] = [];
 
 /** POST one chat-text turn and return the streamed SSE body. */
 async function postTurn(): Promise<string> {
-  const req = new Request(`http://localhost/api/course/${COURSE_ID}/wave/1/turn`, {
-    method: "POST",
-    body: JSON.stringify({ payload: { kind: "chat-text", text: "hi" } }),
-  });
-  const res = await POST(req, {
-    params: Promise.resolve({ courseId: COURSE_ID, waveNumber: "1" }),
-  });
+  const res = await post("1", { payload: { kind: "chat-text", text: "hi" } });
   return res.text();
 }
 

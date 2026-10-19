@@ -7,9 +7,9 @@ import { makeBaselineSchema } from "@/lib/prompts/baseline";
 import { responsesSchema } from "@/lib/prompts/questionnaire";
 import { buildWaveMidTurnTools } from "@/lib/course/waveTurnTools";
 import { courseRouter } from "@/server/routers/course";
-import { submitTurnInputSchema } from "@/server/routers/waveTurnInput";
 import { clarificationJsonbSchema, baselineJsonbSchema } from "./jsonb";
 import { waveChatLogSchema } from "./jsonbWaveChatLog";
+import { submitTurnInputSchema } from "./waveTurnInput";
 import { MC_OPTION_KEYS } from "./mcOptionKey";
 
 describe("MC_OPTION_KEYS", () => {
