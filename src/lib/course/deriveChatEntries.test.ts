@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { deriveChatEntries, formatAnswers } from "./deriveChatEntries";
 import type { CourseState } from "./getState";
-import type { V3Question, V3Response } from "@/lib/types/jsonb";
+import type { V3Response } from "@/lib/types/jsonb";
+import type { QuestionForClient } from "./redactQuestionnaire";
 
 function baseState(overrides: Partial<CourseState>): CourseState {
   return {
@@ -12,6 +13,7 @@ function baseState(overrides: Partial<CourseState>): CourseState {
     framework: null,
     baseline: null,
     scopingResult: null,
+    totalXp: 0,
     ...overrides,
   };
 }
@@ -27,7 +29,7 @@ describe("deriveChatEntries", () => {
       baseState({
         clarification: {
           userMessage: "Let's narrow this down.",
-          questions: [{ id: "q1", type: "free_text", prompt: "Why?", freetextRubric: "n/a" }],
+          questions: [{ id: "q1", type: "free_text", prompt: "Why?" }],
           responses: [],
         },
       }),
@@ -44,8 +46,8 @@ describe("deriveChatEntries", () => {
         clarification: {
           userMessage: "Let's narrow this down.",
           questions: [
-            { id: "q1", type: "free_text", prompt: "Why are you learning?", freetextRubric: "n/a" },
-            { id: "q2", type: "free_text", prompt: "Prior experience?", freetextRubric: "n/a" },
+            { id: "q1", type: "free_text", prompt: "Why are you learning?" },
+            { id: "q2", type: "free_text", prompt: "Prior experience?" },
           ],
           responses: [
             { questionId: "q1", freetext: "to pass an exam" },
@@ -108,7 +110,6 @@ describe("deriveChatEntries", () => {
           userMessage: "Let's check what you know.",
           questions: [],
           responses: [],
-          gradings: [],
         },
       }),
     );
@@ -145,16 +146,12 @@ describe("deriveChatEntries", () => {
               type: "multiple_choice",
               prompt: "What is 2+2?",
               options: { A: "3", B: "4", C: "5", D: "6" },
-              correct: "B",
-              freetextRubric: "n/a",
-              conceptName: "addition",
+              correctEnc: "unused",
               tier: 1,
             },
           ],
           responses: [{ questionId: "b1", choice: "B" }],
-          gradings: [],
-          startingTier: 1,
-        } as unknown as NonNullable<CourseState["baseline"]>,
+        },
         scopingResult: { closingMessage: "Nicely done.", startingTier: 1 },
       }),
     );
@@ -179,14 +176,12 @@ describe("deriveChatEntries", () => {
 
 describe("formatAnswers", () => {
   it("renders MC answers as the chosen option's text", () => {
-    const questions: V3Question[] = [
+    const questions: QuestionForClient[] = [
       {
         id: "q1",
         type: "multiple_choice",
         prompt: "Color?",
         options: { A: "red", B: "blue", C: "green", D: "yellow" },
-        correct: "B",
-        freetextRubric: "n/a",
       },
     ];
     const responses: V3Response[] = [{ questionId: "q1", choice: "B" }];
@@ -194,9 +189,7 @@ describe("formatAnswers", () => {
   });
 
   it("renders free-text answers verbatim", () => {
-    const questions: V3Question[] = [
-      { id: "q1", type: "free_text", prompt: "Why?", freetextRubric: "n/a" },
-    ];
+    const questions: QuestionForClient[] = [{ id: "q1", type: "free_text", prompt: "Why?" }];
     const responses: V3Response[] = [{ questionId: "q1", freetext: "because." }];
     expect(formatAnswers(questions, responses)).toBe("1. Why? — because.");
   });

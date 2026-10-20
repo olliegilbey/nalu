@@ -18,9 +18,11 @@
  */
 
 import { describe, test, expect, beforeAll } from "vitest";
+import { eq } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { appRouter } from "./index";
-import { userProfiles } from "@/db/schema";
+import { courses, userProfiles } from "@/db/schema";
+import { baselineJsonbSchema } from "@/lib/types/jsonb";
 import { SCOPING_TOPICS } from "@/lib/testing/topicPool";
 import {
   assertFrameworkStructural,
@@ -96,7 +98,12 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           // ---------------------------------------------------------------
           const { baseline } = await caller.course.generateBaseline({ courseId });
 
-          assertBaselineStructural(baseline, framework);
+          // The router returns the client projection, which drops concept
+          // names and rubrics. Check the persisted questions instead.
+          const persistedBaseline = baselineJsonbSchema.parse(
+            (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!.baseline,
+          );
+          assertBaselineStructural(persistedBaseline, framework);
 
           // ---------------------------------------------------------------
           // 4. Idempotency — second call must hit DB, not LLM

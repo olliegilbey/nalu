@@ -2,12 +2,13 @@
  * Read-only production-DB inspector for debugging Nalu LLM-pipeline failures.
  * A `.claude/` debugging tool, never imported by the app; SELECT only.
  *
- * Connection: reads `DATABASE_URL` from `.env.local` (auto-loaded by `bun`).
+ * Connection: reads `DATABASE_URL` from `.env.production.local`, loaded by
+ * `bun --env-file` (bun then skips `.env.local`, which holds the dev URL).
  * That URL is the pooled (PgBouncer) production Supabase endpoint, so
  * `prepare: false` is required — prepared statements don't survive PgBouncer.
  *
- * Usage (run from the project root so bun loads .env.local):
- *   bun .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts [flags]
+ * Usage (run from the project root):
+ *   bun --env-file=.env.production.local .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts [flags]
  *
  * `--minutes N` (default 30): overview window, N minutes back.
  * `--since <ISO>`: absolute timestamp; wins over `--minutes` for older incidents.
@@ -18,7 +19,9 @@ import postgres from "postgres";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
-  console.error("DATABASE_URL not set — run from the project root so bun loads .env.local");
+  console.error(
+    "DATABASE_URL not set — run from the project root with bun --env-file=.env.production.local",
+  );
   process.exit(1);
 }
 

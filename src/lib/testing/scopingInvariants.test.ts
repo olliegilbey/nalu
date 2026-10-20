@@ -51,11 +51,10 @@ function validFramework(): FrameworkJsonb {
 }
 
 /**
- * Minimal valid baseline (new BaselineTurn shape):
- * `{ questions: { questions: [...] } }`.
+ * Minimal valid persisted baseline: `{ questions: [...] }`.
  * 7 questions, tiers 1 and 2.
  */
-function validBaseline(): { readonly questions: { readonly questions: readonly unknown[] } } {
+function validBaseline(): { readonly questions: readonly unknown[] } {
   const questions = Array.from({ length: 7 }, (_, i) => ({
     id: `b${i + 1}`,
     tier: (i % 2) + 1, // alternates 1, 2, 1, 2, ...
@@ -66,7 +65,7 @@ function validBaseline(): { readonly questions: { readonly questions: readonly u
     correct: "A" as const,
     freetextRubric: `A good answer explains concept ${i + 1}.`,
   }));
-  return { questions: { questions } };
+  return { questions };
 }
 
 // ---------------------------------------------------------------------------
@@ -155,29 +154,23 @@ describe("assertBaselineStructural", () => {
 
   it("throws when questions < minQuestions (7)", () => {
     // Slice to 6 questions — below the minimum.
-    const fewer = {
-      questions: { questions: validBaseline().questions.questions.slice(0, 6) },
-    };
+    const fewer = { questions: validBaseline().questions.slice(0, 6) };
     expect(() => assertBaselineStructural(fewer, validFramework())).toThrow();
   });
 
   it("throws when a question has a tier outside baselineScopeTiers", () => {
     // Tier 3 is not in baselineScopeTiers [1, 2].
-    const mutated = validBaseline().questions.questions.map((q, i) =>
+    const mutated = validBaseline().questions.map((q, i) =>
       i === 0 ? { ...(q as Record<string, unknown>), tier: 3 } : q,
     );
-    expect(() =>
-      assertBaselineStructural({ questions: { questions: mutated } }, validFramework()),
-    ).toThrow();
+    expect(() => assertBaselineStructural({ questions: mutated }, validFramework())).toThrow();
   });
 
   it("throws when question IDs are not unique", () => {
     // Duplicate the first question ID onto the second question.
-    const qs = validBaseline().questions.questions as ReadonlyArray<Record<string, unknown>>;
+    const qs = validBaseline().questions as ReadonlyArray<Record<string, unknown>>;
     const mutated = qs.map((q, i) => (i === 1 ? { ...q, id: "b1" } : q));
-    expect(() =>
-      assertBaselineStructural({ questions: { questions: mutated } }, validFramework()),
-    ).toThrow();
+    expect(() => assertBaselineStructural({ questions: mutated }, validFramework())).toThrow();
   });
 });
 

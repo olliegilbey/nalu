@@ -3,6 +3,8 @@
   "entry": [
     "src/db/seed.ts",
     "src/db/reset.ts",
+    "src/db/assertLocalDirectUrl.ts",
+    "src/db/assertRemoteDirectUrl.ts",
     "scripts/inspect-wave.ts",
     "scripts/probe-model.ts",
     ".claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts",
@@ -18,7 +20,7 @@
     "**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts,css}!",
     // Scorer for the scripts/probe-model.ts dev CLI.
     "!scripts/toolProbeScore.ts!",
-    // Localhost guard for the src/db/reset.ts dev CLI.
+    // Loopback rule for the src/db/reset.ts and assert*DirectUrl.ts CLIs.
     "!src/db/everyHostIsLoopback.ts!",
     // Seeds rows for the assessments integration suites.
     "!src/db/queries/assessments.fixtures.ts!",
@@ -32,6 +34,8 @@
     "!src/lib/course/submitBaseline.fixtures.ts!",
     // Live smoke: restates a rubric as a known-correct answer.
     "!src/lib/testing/answerFromRubric.ts!",
+    // Unit and integration tests: asserts a client payload carries no plaintext answer key.
+    "!src/lib/testing/expectNoPlaintextAnswerKey.ts!",
     // Unit tests: in-memory localStorage polyfill.
     "!src/lib/testing/memoryStorage.ts!",
     // Live smoke: structural assertions on scoping output.
@@ -50,8 +54,6 @@
   "ignoreBinaries": [],
   "ignoreIssues": {
     "src/lib/prompts/questionnaire.ts": ["types"],
-    "src/lib/prompts/clarify.ts": ["types"],
-    "src/lib/prompts/baseline.ts": ["types"],
     "src/lib/prompts/closeTurn.ts": ["types"],
     "src/lib/prompts/scopingClose.ts": ["types"],
     "src/components/ui/sheet.tsx": ["exports"],

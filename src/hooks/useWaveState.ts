@@ -6,6 +6,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { toast } from "sonner";
 import { useTRPC, devUserHeaders } from "@/lib/trpc";
+import { isNotFoundError } from "@/lib/errors";
 import { deriveWaveChatEntries } from "@/lib/course/deriveWaveChatEntries";
 import { deriveActiveQuestionnaire } from "@/lib/course/deriveActiveQuestionnaire";
 import {
@@ -64,6 +65,8 @@ export interface UseWaveStateResult extends StreamingTurn {
   readonly isPending: boolean;
   /** Non-null while a failed Turn's saved entry awaits a learner Retry. */
   readonly failedTurn: FailedWaveTurn | null;
+  /** True when `wave.getState` found no such Wave for this learner: a wrong URL, or another browser's course. */
+  readonly waveNotFound: boolean;
   readonly submitChatText: (text: string, opts?: SubmitTurnOptions) => void;
   readonly submitQuestionnaireAnswers: (
     answers: readonly ShapedQuestionnaireAnswer[],
@@ -95,6 +98,9 @@ interface SubmitTurnOptions {
  * A failed Turn whose learner entry the server saved lands in `failedTurn`
  * (`deriveRetryableWaveTurn`). Its Retry re-sends the same payload, so the
  * server reuses the entry rather than spending a second Turn (issue #231).
+ *
+ * A `getState` NOT_FOUND sets `waveNotFound`. The app's QueryClient
+ * (`src/lib/queryClient.ts`) never retries it.
  */
 export function useWaveState(courseId: string, waveNumber: number): UseWaveStateResult {
   const trpc = useTRPC();
@@ -247,6 +253,7 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     awardMcXp: courseXp.addXp,
     isPending,
     failedTurn,
+    waveNotFound: isNotFoundError(state.error),
     streamingText,
     streamingQuestions,
     submitChatText,

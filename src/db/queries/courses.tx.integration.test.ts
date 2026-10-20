@@ -7,8 +7,10 @@ import { createCourse, getCourseById } from "./courses";
 import { updateCourseScopingState } from "./courses.scoping";
 import {
   getCourseBaselineAndFrameworkInTx,
+  getCourseTotalXpInTx,
   setCourseBaselineInTx,
   setCourseStartingStateInTx,
+  setCourseSummaryInTx,
   updateCourseTierInTx,
   incrementCourseXpInTx,
   lockCourseRowInTx,
@@ -32,7 +34,6 @@ const CLOSED_BASELINE: BaselineClosedJsonb = {
   questions: [],
   responses: [],
   gradings: [],
-  immutableSummary: "profile",
   summarySeed: "seed",
   startingTier: 2,
 };
@@ -84,6 +85,19 @@ describe("courses close-transaction queries", () => {
     });
   });
 
+  // Issue #94: courses closed before the change hold `immutableSummary` in
+  // their baseline. The row guard must still load them, key and all.
+  it("reads a closed baseline that still holds the legacy immutableSummary key", async () => {
+    await seedCourseAndRun(async (db, courseId) => {
+      // Written raw, as an old close left it: no helper writes the key now.
+      const legacy = { ...CLOSED_BASELINE, immutableSummary: "profile" };
+      await db.update(courses).set({ baseline: legacy }).where(eq(courses.id, courseId));
+
+      const after = await getCourseById(courseId);
+      expect(after.baseline).toEqual(legacy);
+    });
+  });
+
   it("setCourseStartingStateInTx sets status='active', the summary, and both tiers", async () => {
     await seedCourseAndRun(async (db, courseId) => {
       // No transaction open: the helper runs on the `db` handle as-is.
@@ -132,12 +146,42 @@ describe("courses close-transaction queries", () => {
     });
   });
 
+  it("setCourseSummaryInTx overwrites the summary and stamps summary_updated_at", async () => {
+    await seedCourseAndRun(async (db, courseId) => {
+      await setCourseStartingStateInTx(courseId, { summary: "seed", startingTier: 1 }, db);
+      // Backdate the stamp, so a strict `>` proves the helper re-stamps it.
+      const oldStamp = new Date("2020-01-01T00:00:00Z");
+      await db.update(courses).set({ summaryUpdatedAt: oldStamp }).where(eq(courses.id, courseId));
+      await db.transaction(async (tx) => {
+        await setCourseSummaryInTx(courseId, "rewritten after lesson 1", tx);
+      });
+
+      const after = await getCourseById(courseId);
+      // Overwritten whole, never appended.
+      expect(after.summary).toBe("rewritten after lesson 1");
+      expect(after.summaryUpdatedAt!.getTime()).toBeGreaterThan(oldStamp.getTime());
+    });
+  });
+
   it("lockCourseRowInTx locks an existing course and throws NotFoundError for an unknown id", async () => {
     await seedCourseAndRun(async (db, courseId) => {
       await db.transaction(async (tx) => {
         await expect(lockCourseRowInTx(courseId, tx)).resolves.toBeUndefined();
         await expect(
           lockCourseRowInTx("00000000-0000-0000-0000-000000000000", tx),
+        ).rejects.toBeInstanceOf(NotFoundError);
+      });
+    });
+  });
+
+  it("getCourseTotalXpInTx reads total_xp and throws NotFoundError for an unknown id", async () => {
+    await seedCourseAndRun(async (db, courseId) => {
+      await db.transaction(async (tx) => {
+        await incrementCourseXpInTx(courseId, 12, tx);
+        // Same tx: the read sees the uncommitted bump it will commit.
+        expect(await getCourseTotalXpInTx(courseId, tx)).toBe(12);
+        await expect(
+          getCourseTotalXpInTx("00000000-0000-0000-0000-000000000000", tx),
         ).rejects.toBeInstanceOf(NotFoundError);
       });
     });

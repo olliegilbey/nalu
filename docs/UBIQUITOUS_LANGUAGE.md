@@ -20,11 +20,11 @@ What the User submits when the assessment-card UI replaces the chat input. A tur
 
 ## Cumulative summary
 
-The text on `courses.summary`. The scoping close turn writes it once, from its `summary` field. Every Wave's system prompt renders it as `<progress_summary>`. A Wave close writes its own `summary` to `waves.summary`, not here. Nothing rewrites `courses.summary` after scoping today (issue #93).
+The text on `courses.summary`. The scoping close turn writes the first one, from its `summary` field. Each Wave close rewrites it whole from its own `summary` field: the model compresses the prior summary and folds in the lesson. Every Wave's system prompt renders it as `<progress_summary>`. A Wave close also keeps the same text on `waves.summary`, a per-Wave snapshot that no code reads back.
 
 ## Baseline
 
-The 7-9 assessment questions generated after the framework is confirmed. Mix of multiple choice (graded mechanically by `submitBaseline`, no LLM) and free-text (graded by a single batched LLM call inside `submitBaseline`). Determines the learner's starting tier.
+The 7-9 assessment questions generated after the framework is confirmed. Mix of multiple choice (graded mechanically by `submitBaseline`, no LLM) and free-text (graded by a single batched LLM call inside `submitBaseline`). Its per-tier results set the learner's starting tier: `determineStartingTier` in `src/lib/scoring/startingTier.ts`, with the threshold `BASELINE.tierMasteryRatio`. The model grades answers; it never picks the tier.
 
 ## Concept
 
@@ -67,7 +67,7 @@ The learner's reply to one Question: either a `choice` (MC option key) or a `fre
 
 ## Harness injection
 
-Context content authored by the Harness (not the User, not the LLM). Turn-level injections ride inside the `user_message` envelope: `<turns_remaining>` on every Wave turn, and `<concepts_for_next_wave>` on a Wave's final turn. The one Harness-authored row kind written is `harness_retry_directive`, after a failed attempt; new rows wrap it in `<harness_feedback>`. The schema CHECK still allows `harness_turn_counter` and `harness_review_block` row kinds, but nothing writes them. Content is wrapped in an XML tag, so the model reads it the same way it reads any other turn (P4: harness injections are visible in the Context, not hidden side-channel state).
+Context content authored by the Harness (not the User, not the LLM). Turn-level injections ride inside the `user_message` envelope: `<turns_remaining>` on every Wave turn, and `<concepts_for_next_wave>` on a Wave's final turn. The scoping close's stage envelope ends with `<placement_rule>`: how the Harness places the learner, so the model pitches Wave 1 at that tier. The one Harness-authored row kind written is `harness_retry_directive`, after a failed attempt; new rows wrap it in `<harness_feedback>`. The schema CHECK still allows `harness_turn_counter` and `harness_review_block` row kinds, but nothing writes them. Content is wrapped in an XML tag, so the model reads it the same way it reads any other turn (P4: harness injections are visible in the Context, not hidden side-channel state).
 
 ## LLM-facing terminology
 
@@ -137,7 +137,7 @@ A single ~5-7 minute teaching unit within a Teaching session — Nalu's equivale
 
 **Fixed turn count.** A Wave runs for `WAVE.turnCount` turns (default 10, in `src/lib/config/tuning.ts`). Pacing is not LLM-decided — the Harness enforces it. On every turn the Harness appends `<turns_remaining>N</turns_remaining>` so the LLM knows where it is in the Wave and can pace toward the close. This gives Waves a consistent shape across a course.
 
-**Final turn does double duty.** On the last turn (`turns_remaining == 0`), the Harness additionally injects `<concepts_for_next_wave>…</concepts_for_next_wave>`. It lists the fresh concepts at the current tier and the SM-2 concepts now due. The model answers with one JSON response (`makeWaveCloseSchema`, no tools). It carries the closing message and summary for the current Wave, gradings for any answers submitted this turn, per-concept SM-2 scores, **and** the next Wave's _blueprint_: topic, outline, opening user-facing text, and planned concepts. The close transaction (`persistWaveClose`) opens the next Wave seeded with that blueprint and writes its opening text as turn 0. Pre-generating the opening text means the User returns to something to respond to, not a blank chat.
+**Final turn does double duty.** On the last turn (`turns_remaining == 0`), the Harness additionally injects `<concepts_for_next_wave>…</concepts_for_next_wave>`. It lists the fresh concepts at the current tier and the SM-2 concepts now due. The model answers with one JSON response (`makeWaveCloseSchema`, no tools). It carries the closing message, the whole-course summary as of this close (see **Cumulative summary**), gradings for any answers submitted this turn, per-concept SM-2 scores, **and** the next Wave's _blueprint_: topic, outline, opening user-facing text, and planned concepts. The close transaction (`persistWaveClose`) opens the next Wave seeded with that blueprint and writes its opening text as turn 0. Pre-generating the opening text means the User returns to something to respond to, not a blank chat.
 
 **Terminology split.** Internally (code, DB, docs, UI) the term is **Wave**. In LLM-facing prompt text the term is **lesson** — the model has strong priors around "lesson" and no pre-existing understanding of "Wave" in this domain. Structured JSON field names in the LLM's output can use either. See **LLM-facing terminology** for where the split lives.
 

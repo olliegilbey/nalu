@@ -33,6 +33,8 @@ export interface ExecuteWaveCloseResult {
   readonly tierAdvancedTo: number | null;
   /** Per-question grading projection. Empty when no questions were graded. */
   readonly gradedSignals: readonly PersistedGradedSignal[];
+  /** Course XP after this request: `courses.total_xp`, never a delta. */
+  readonly totalXp: number;
 }
 
 /**
@@ -47,8 +49,9 @@ export interface ExecuteWaveCloseResult {
  *   2. Dispatch `executeTurn` against the close schema. The harness persists
  *      `user_message + assistant_response` at a freshly-allocated turn_index.
  *   3. Delegate to `persistWaveClose` for the all-or-nothing transaction:
- *      gradings → SM-2 → close Wave N → tier check → open Wave N+1 → seed
- *      opening message → bump total_xp.
+ *      close Wave N (throws PRECONDITION_FAILED if it was already closed) →
+ *      gradings → SM-2 → course summary → tier check → open Wave N+1 → seed
+ *      opening message → bump total_xp → read the total back.
  *
  * No redaction step is needed: a close turn emits no questionnaire, so the
  * result carries no answer keys.
@@ -130,5 +133,6 @@ export async function executeWaveClose(
     completionXpAwarded: persisted.completionXpAwarded,
     tierAdvancedTo: persisted.tierAdvancedTo,
     gradedSignals: persisted.gradedSignals,
+    totalXp: persisted.totalXp,
   };
 }

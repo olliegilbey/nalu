@@ -70,6 +70,7 @@ function waveState(overrides: Partial<UseWaveStateResult>): UseWaveStateResult {
     awardMcXp: vi.fn(),
     isPending: false,
     failedTurn: null,
+    waveNotFound: false,
     streamingText: "",
     streamingQuestions: null,
     submitChatText: vi.fn(),

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { expectNoPlaintextAnswerKey } from "@/lib/testing/expectNoPlaintextAnswerKey";
 import { clarify } from "./clarify";
 
 vi.mock("@/lib/turn/executeTurn", () => ({ executeTurn: vi.fn() }));
@@ -27,7 +28,7 @@ const USER = "11111111-1111-1111-1111-111111111111";
 // Minimal stub — only fields accessed by clarify. Cast via unknown for TS.
 const COURSE = { id: "c1", userId: USER, topic: "Rust", clarification: null } as unknown as Course;
 
-/** Minimal valid ClarifyTurn mock return — matches clarifySchema wire shape. */
+/** Minimal valid clarify Turn mock return — matches clarifySchema wire shape. */
 const MOCK_CLARIFY_PARSED = {
   userMessage: "Let me ask a couple of questions.",
   questions: {
@@ -71,7 +72,7 @@ describe("clarify", () => {
 
     const out = await clarify({ userId: USER, topic: "Rust" });
     expect(out.courseId).toBe(COURSE.id);
-    // New shape: clarification is the full ClarifyTurn wire payload.
+    // clarification is the client projection of the clarify Turn.
     expect(out.clarification.questions.questions).toHaveLength(2);
     expect(out.clarification.questions.questions[0]?.prompt).toBe("What is your goal?");
     expect(out.nextStage).toBe("framework");
@@ -86,6 +87,31 @@ describe("clarify", () => {
         }),
       }),
     );
+  });
+
+  it("returns no grading rubric: the payload is the client projection", async () => {
+    vi.mocked(createCourse).mockResolvedValue(COURSE);
+    vi.mocked(ensureOpenScopingPass).mockResolvedValue({ id: "p1" } as never);
+    vi.mocked(executeTurn).mockResolvedValue({
+      parsed: MOCK_CLARIFY_PARSED,
+      usage: MOCK_USAGE,
+    });
+    vi.mocked(updateCourseScopingState).mockResolvedValue(COURSE);
+
+    const out = await clarify({ userId: USER, topic: "Rust" });
+
+    expectNoPlaintextAnswerKey(out);
+    expect(out.clarification.questions.questions[0]).toEqual({
+      id: "q1",
+      type: "free_text",
+      prompt: "What is your goal?",
+    });
+    // The DB keeps the rubric: the scoping close reads it from there.
+    expect(updateCourseScopingState).toHaveBeenCalledWith(COURSE.id, {
+      clarification: expect.objectContaining({
+        questions: MOCK_CLARIFY_PARSED.questions.questions,
+      }),
+    });
   });
 
   it("is idempotent: returns cached clarification when already populated", async () => {
@@ -114,9 +140,11 @@ describe("clarify", () => {
     } as unknown as Course;
     vi.mocked(createCourse).mockResolvedValue(existing);
     const out = await clarify({ userId: USER, topic: "Rust" });
-    // Idempotency branch: rebuilds ClarifyTurn from stored JSONB.
+    // Idempotency branch: rebuilds the Turn from stored JSONB.
     expect(out.clarification.questions.questions).toHaveLength(2);
     expect(out.clarification.questions.questions[0]?.prompt).toBe("A");
+    // The replay is projected too: the stored rubrics stay server-side.
+    expectNoPlaintextAnswerKey(out);
     expect(executeTurn).not.toHaveBeenCalled();
   });
 });

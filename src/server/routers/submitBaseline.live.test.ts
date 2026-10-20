@@ -79,12 +79,16 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
 
       // 3. generateBaseline
       const { baseline } = await caller.course.generateBaseline({ courseId });
-      assertBaselineStructural(baseline, framework);
+      // The wire `baseline` drops concept names, rubrics and plaintext MC
+      // keys, so the structural check and the answer keys below both read
+      // the persisted `courses.baseline` JSONB.
+      const persistedBaseline = baselineJsonbSchema.parse(
+        (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!.baseline,
+      );
+      assertBaselineStructural(persistedBaseline, framework);
 
       // 4. submitBaseline — build one BaselineAnswer per question.
-      //    MC: answer CORRECTLY. The wire `baseline` strips the `correct`
-      //    key (answer keys never reach the client), so read it back from
-      //    the persisted `courses.baseline` JSONB. Answering correctly keeps
+      //    MC: answer CORRECTLY, from the persisted key. Answering correctly keeps
       //    `totalXp > 0` deterministic — blindly picking one key flakes
       //    ~1/3 of runs: when the model places the right answer off that key
       //    on every MC question, mechanical XP is 0, and with generic
@@ -92,9 +96,7 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       //    free_text: answer CORRECTLY too, from the persisted rubric
       //    (issue #22). A known-correct reply makes the `[grading-debug]`
       //    lines diagnostic: `q=0` blames the grader, `xp=0` the plumbing.
-      const persistedQuestions = baselineJsonbSchema.parse(
-        (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!.baseline,
-      ).questions as ReadonlyArray<{
+      const persistedQuestions = persistedBaseline.questions as ReadonlyArray<{
         readonly id: string;
         readonly type: "multiple_choice" | "free_text";
         readonly options?: McOptions;
@@ -149,17 +151,14 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       expect(courseRow!.status, "status flipped to active").toBe("active");
       expect(courseRow!.totalXp, "totalXp > 0").toBeGreaterThan(0);
 
-      // Re-parse via the close-shape schema — asserts all four required
-      // close-turn fields are present and well-shaped in one pass.
+      // Re-parse via the close-shape schema — asserts the close-turn fields
+      // are present and well-shaped in one pass.
       const closedBaseline = baselineClosedJsonbSchema.parse(courseRow!.baseline);
-      expect(closedBaseline.immutableSummary.length, "immutableSummary non-empty").toBeGreaterThan(
-        0,
-      );
       expect(closedBaseline.summarySeed.length, "summarySeed non-empty").toBeGreaterThan(0);
       expect(typeof closedBaseline.startingTier, "startingTier is number").toBe("number");
 
-      // startingTier ∈ framework.baselineScopeTiers — defence-in-depth; the
-      // close-turn schema already enforces this on parse.
+      // startingTier ∈ framework.baselineScopeTiers — defence-in-depth;
+      // `determineStartingTier` only ever returns an in-scope tier.
       const scopeTiers = (framework as FrameworkJsonb).baselineScopeTiers;
       expect(scopeTiers, "startingTier ∈ baselineScopeTiers").toContain(
         closedBaseline.startingTier,

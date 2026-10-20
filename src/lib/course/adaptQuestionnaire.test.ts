@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { adaptQuestionnaire, adaptOpenQuestion, deriveMcFeedback } from "./adaptQuestionnaire";
-import type { Question } from "@/lib/prompts/questionnaire";
+import { adaptOpenQuestion, deriveMcFeedback } from "./adaptQuestionnaire";
+import { encodeCorrect } from "@/lib/security/obfuscateCorrect";
+import { KEY_TO_INDEX } from "@/lib/types/mcOptionKey";
 
 describe("deriveMcFeedback", () => {
   it("returns null for ungraded questions regardless of selection", () => {
@@ -17,87 +18,54 @@ describe("deriveMcFeedback", () => {
   });
 });
 
-describe("adaptQuestionnaire", () => {
-  it("adapts MC questions and derives correctIndex from `correct` letter key", () => {
-    const qs: readonly Question[] = [
-      {
+describe("adaptOpenQuestion", () => {
+  it("decodes correctEnc into correctIndex for a graded MC question", () => {
+    expect(
+      adaptOpenQuestion({
         id: "b1",
         type: "multiple_choice",
         prompt: "What is 2+2?",
         options: { A: "3", B: "4", C: "5", D: "6" },
-        correct: "B",
-        freetextRubric: "n/a",
-        conceptName: "addition",
+        correctEnc: encodeCorrect("b1", KEY_TO_INDEX.B),
         tier: 1,
-      },
-    ];
-    expect(adaptQuestionnaire(qs)).toEqual([
-      {
-        id: "b1",
-        prompt: "What is 2+2?",
-        options: ["3", "4", "5", "6"],
-        correctIndex: 1,
-        tier: 1,
-      },
-    ]);
+      }),
+    ).toEqual({
+      id: "b1",
+      prompt: "What is 2+2?",
+      options: ["3", "4", "5", "6"],
+      correctIndex: 1,
+      tier: 1,
+    });
   });
 
-  it("carries the optional tier through for MC and free-text questions", () => {
-    const qs: readonly Question[] = [
-      {
-        id: "m1",
-        type: "multiple_choice",
-        prompt: "p",
-        options: { A: "1", B: "2", C: "3", D: "4" },
-        correct: "A",
-        freetextRubric: "n/a",
-        conceptName: "c",
-        tier: 3,
-      },
-      {
-        id: "f1",
-        type: "free_text",
-        prompt: "p2",
-        freetextRubric: "n/a",
-        conceptName: "c2",
-        tier: 4,
-      },
-    ];
-    const r = adaptQuestionnaire(qs);
-    expect(r[0]!.tier).toBe(3);
-    expect(r[1]!.tier).toBe(4);
+  it("leaves correctIndex undefined when correctEnc is absent (clarify-style MC)", () => {
+    const adapted = adaptOpenQuestion({
+      id: "c1",
+      type: "multiple_choice",
+      prompt: "Pick one",
+      options: { A: "a", B: "b", C: "c", D: "d" },
+    });
+    expect(adapted.correctIndex).toBeUndefined();
   });
 
-  it("leaves correctIndex undefined when `correct` is absent (clarify-style MC)", () => {
-    const qs: readonly Question[] = [
-      {
-        id: "c1",
-        type: "multiple_choice",
-        prompt: "Pick one",
-        options: { A: "a", B: "b", C: "c", D: "d" },
-        freetextRubric: "n/a",
-      },
-    ];
-    const r = adaptQuestionnaire(qs);
-
-    expect(r[0]!.correctIndex).toBeUndefined();
+  it("leaves correctIndex undefined when correctEnc is bound to another question", () => {
+    const adapted = adaptOpenQuestion({
+      id: "q1",
+      type: "multiple_choice",
+      prompt: "?",
+      options: { A: "1", B: "2", C: "3", D: "4" },
+      correctEnc: encodeCorrect("q2", 0),
+    });
+    expect(adapted.correctIndex).toBeUndefined();
   });
 
   it("adapts free-text questions to ChoiceQuestion with empty options array", () => {
-    const qs: readonly Question[] = [
-      {
-        id: "f1",
-        type: "free_text",
-        prompt: "Why are you learning?",
-        freetextRubric: "n/a",
-      },
-    ];
-    expect(adaptQuestionnaire(qs)).toEqual([
-      { id: "f1", prompt: "Why are you learning?", options: [] },
-    ]);
+    expect(
+      adaptOpenQuestion({ id: "f1", type: "free_text", prompt: "Why are you learning?", tier: 4 }),
+    ).toEqual({ id: "f1", prompt: "Why are you learning?", options: [], tier: 4 });
   });
 
-  it("adaptOpenQuestion carries the optional tier through", () => {
+  it("carries the optional tier through", () => {
     const adapted = adaptOpenQuestion({
       id: "q1",
       type: "multiple_choice",

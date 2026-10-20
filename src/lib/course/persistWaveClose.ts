@@ -1,9 +1,15 @@
+import { TRPCError } from "@trpc/server";
 import { db } from "@/db/client";
 import { WAVE } from "@/lib/config/tuning";
 import { appendWaveChatLog, closeWave, openWave } from "@/db/queries/waves.writes";
 import { getConceptsByCourse, getDueConceptsByCourse } from "@/db/queries/concepts";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
-import { incrementCourseXpInTx, lockCourseRowInTx } from "@/db/queries/courses.tx";
+import {
+  getCourseTotalXpInTx,
+  incrementCourseXpInTx,
+  lockCourseRowInTx,
+  setCourseSummaryInTx,
+} from "@/db/queries/courses.tx";
 import { dueConceptsSnapshotSchema, type FrameworkJsonb } from "@/lib/types/jsonb";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import type { LoadedWaveContext } from "./loadWaveContext";
@@ -37,25 +43,32 @@ export interface PersistWaveCloseResult {
   /** New currentTier if advancement fired this close; null when unchanged. */
   readonly tierAdvancedTo: number | null;
   readonly gradedSignals: readonly PersistedGradedSignal[];
+  /** Course XP after this request: `courses.total_xp`, never a delta. */
+  readonly totalXp: number;
 }
 
 /**
- * Transactional close body: applies gradings + SM-2 updates, closes Wave N,
- * optionally advances current_tier, opens Wave N+1, seeds the opening message,
- * and bumps total_xp. All-or-nothing — any failure rolls every step back.
+ * Transactional close body: closes Wave N, applies gradings + SM-2 updates,
+ * rewrites the course summary, optionally advances current_tier, opens Wave
+ * N+1, seeds the opening message, bumps total_xp, and reads it back.
+ * All-or-nothing — any failure rolls every step back.
  *
  * Ordering (top → bottom):
  *   0. Lock the course row (`lockCourseRowInTx`) before any Wave or
  *      assessment row. A concurrent mid-turn save takes the same first lock,
  *      so the two queue instead of deadlocking (lock order:
  *      `src/db/queries/CLAUDE.md`).
- *   1. Apply close `gradings[]` via `applyCloseGradings` (helpers.ts). Each
- *      grading also adds its XP to `courses.total_xp`.
- *   2. Apply `conceptUpdates[]` via `applySm2Update` per concept.
- *   3. `closeWave(...)` — UPDATE goes through the SAME tx (closeWave accepts
+ *   1. `closeWave(...)` — UPDATE goes through the SAME tx (closeWave accepts
  *      optional tx, mirroring openWave) so the close rolls back if a later
  *      step throws. Without the tx thread, the UPDATE would commit even when
- *      the orchestrator's openWave(N+1) hits a unique-violation.
+ *      the orchestrator's openWave(N+1) hits a unique-violation. It runs
+ *      first so a close that closes nothing (another path closed Wave N)
+ *      throws `PRECONDITION_FAILED` before any other write.
+ *   2. Apply close `gradings[]` via `applyCloseGradings` (helpers.ts). Each
+ *      grading also adds its XP to `courses.total_xp`.
+ *   3. Apply `conceptUpdates[]` via `applySm2Update` per concept.
+ *   3a. Rewrite `courses.summary` with the close's summary
+ *      (`setCourseSummaryInTx`). Wave N+1's `<progress_summary>` renders it.
  *   4. Tier-advancement check — gated by
  *        (waveNumber % WAVE.tierCheckInterval === 0)
  *        || (plannedConcepts.length === 0)
@@ -64,9 +77,10 @@ export interface PersistWaveCloseResult {
  *      `updateCourseTierInTx`.
  *   5. Open Wave N+1 with `seed_source.prior_blueprint` carrying the just-
  *      emitted blueprint and a fresh `dueConceptsSnapshot` taken via the SAME
- *      tx so SM-2 advances from step 2 are reflected.
+ *      tx so SM-2 advances from step 3 are reflected.
  *   6. Insert turn-0 assistant message on Wave N+1 carrying `openingText`.
  *   7. Bump `courses.total_xp` by `WAVE.completionXp` (flat reward).
+ *   8. Read `courses.total_xp` back for the turn result (`totalXp`).
  *
  * Like `persistScopingClose`, every `courses` write goes through the tx
  * helpers in `@/db/queries/courses.tx`. A write on the `db` singleton would
@@ -82,11 +96,30 @@ export async function persistWaveClose(
     //    write `courses.total_xp`.
     await lockCourseRowInTx(ctx.course.id, tx);
 
-    // 1. Apply per-question gradings.
+    // 1. Close Wave N. Tx-threaded so rollback wipes the close UPDATE if
+    //    openWave(N+1) below trips either the partial open-index or the
+    //    (course_id, wave_number) unique index.
+    const { wave: closingWave, closedNow } = await closeWave(
+      ctx.wave.id,
+      { summary: parsed.summary, blueprintEmitted: parsed.nextUnitBlueprint },
+      tx,
+    );
+    // Another path closed Wave N after this turn passed `prepareWaveTurn`.
+    // Fail explicitly before any grading, SM-2, summary or Wave N+1 write;
+    // the throw rolls the tx back. Same code and message shape as
+    // `prepareWaveTurn`'s closed-Wave guard, so `clientErrorText` passes it.
+    if (!closedNow) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `wave ${ctx.wave.id} is not open (status='${closingWave.status}')`,
+      });
+    }
+
+    // 2. Apply per-question gradings.
     const gradedSignals = await applyCloseGradings(tx, ctx, parsed);
 
-    // 2. Apply SM-2 updates. Reads via tx so step-3 close + step-5 dueSnapshot
-    //    see the just-applied next_review_at writes.
+    // 3. Apply SM-2 updates. Reads via tx so the step-5 dueSnapshot sees the
+    //    just-applied next_review_at writes.
     for (const update of parsed.conceptUpdates) {
       await applySm2Update({
         courseId: ctx.course.id,
@@ -97,14 +130,15 @@ export async function persistWaveClose(
       });
     }
 
-    // 3. Close Wave N. Tx-threaded so rollback wipes the close UPDATE if
-    //    openWave(N+1) below trips either the partial open-index or the
-    //    (course_id, wave_number) unique index.
-    await closeWave(
-      ctx.wave.id,
-      { summary: parsed.summary, blueprintEmitted: parsed.nextUnitBlueprint },
-      tx,
-    );
+    // 3a. Rewrite the course summary. The close schema asks the model for the
+    //     whole course summary, so this overwrites; it never appends. Wave N
+    //     keeps the same text in `waves.summary` (step 1) as its snapshot.
+    //     Byte stability: every Wave turn renders `courses.summary` into its
+    //     system prompt, read once per turn. That is safe only because this
+    //     write runs at close. Wave N takes no more turns, so only Wave N+1's
+    //     prompt ever sees the new value. It also leans on the read order in
+    //     `loadWaveContext`: course row first, then the Wave's open check.
+    await setCourseSummaryInTx(ctx.course.id, parsed.summary, tx);
 
     // 3b. Closing assistant entry on Wave N's chat_log — paired with the
     //     close-turn assistant_response that was persisted by executeTurn in
@@ -125,7 +159,7 @@ export async function persistWaveClose(
     const consolidationGateOpen = parsed.nextUnitBlueprint.plannedConcepts.length === 0;
     const tierCheckRuns = moduloGateOpen || consolidationGateOpen;
 
-    // Pull concepts via tx so step-2 SM-2 advances are visible. The helper
+    // Pull concepts via tx so step-3 SM-2 advances are visible. The helper
     // filters to current tier + non-null lastQualityScore internally.
     const allConcepts = await getConceptsByCourse(ctx.course.id, tx);
     const currentTier = ctx.course.currentTier;
@@ -134,7 +168,7 @@ export async function persistWaveClose(
       : null;
     const newCurrentTier = tierAdvancedTo ?? currentTier;
 
-    // 5. Capture due snapshot for Wave N+1 — via tx so step-2's next_review_at
+    // 5. Capture due snapshot for Wave N+1 — via tx so step-3's next_review_at
     //    writes are reflected. Parse-before-persist routes the raw
     //    `lastQualityScore: number | null` through the schema so any stored
     //    value outside [0,5] surfaces here, not as a downstream Zod failure.
@@ -196,12 +230,17 @@ export async function persistWaveClose(
     // 8. Bump total_xp by completionXp, inside the tx.
     await incrementCourseXpInTx(ctx.course.id, WAVE.completionXp, tx);
 
+    // 9. Read the total back after the last XP write. The course-row lock from
+    //    step 0 holds, so this is the value the transaction commits.
+    const totalXp = await getCourseTotalXpInTx(ctx.course.id, tx);
+
     return {
       nextWaveId: nextWave.id,
       nextWaveNumber,
       completionXpAwarded: WAVE.completionXp,
       tierAdvancedTo,
       gradedSignals,
+      totalXp,
     } as const;
   });
 }

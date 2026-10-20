@@ -4,9 +4,12 @@
  * the assistant's JSON payloads (questions, framework, gradings, blueprint)
  * parsed into readable blocks instead of raw one-liners. SELECT only.
  *
- *   bun .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course <uuid>
- *   bun .../dump-chat.ts --course <uuid> --json | jq      # structured output
- *   bun .../dump-chat.ts --course <uuid> --full           # include retry schema
+ *   bun --env-file=.env.production.local .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course <uuid>
+ *   bun --env-file=.env.production.local .../dump-chat.ts --course <uuid> --json | jq   # structured output
+ *   bun --env-file=.env.production.local .../dump-chat.ts --course <uuid> --full        # include retry schema
+ *
+ * `--env-file` loads the production `DATABASE_URL` and makes bun skip
+ * `.env.local`, which holds the dev URL.
  *
  * Colors auto-disable when stdout isn't a TTY (piping to a file / jq) or when
  * NO_COLOR is set, so redirected output stays clean.
@@ -16,7 +19,9 @@ import postgres from "postgres";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
-  console.error("DATABASE_URL not set — run from project root so bun loads .env.local");
+  console.error(
+    "DATABASE_URL not set — run from project root with bun --env-file=.env.production.local",
+  );
   process.exit(1);
 }
 const sql = postgres(url, { prepare: false });

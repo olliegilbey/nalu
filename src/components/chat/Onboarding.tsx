@@ -8,11 +8,12 @@ import { shapeQuestionnaireAnswers } from "@/lib/course/shapeQuestionnaireAnswer
 import { shapeClarifyAnswers } from "@/lib/course/shapeClarifyAnswers";
 import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
+import { CourseNotFound } from "./CourseNotFound";
 import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
 import { RetryRow } from "./RetryRow";
 import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
-import { t } from "@/i18n";
+import { t, tFill } from "@/i18n";
 
 /**
  * Drives the chat scroll + Composer mode for a given courseId.
@@ -55,6 +56,10 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
   // Composer immediately, rather than lingering until the server round-trip.
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
+  // getState found no course for this learner: a wrong URL, or a course
+  // another browser started. Say so, rather than show an empty chat.
+  if (courseNotFound) return <CourseNotFound message={t<string>("courseNotFound.message")} />;
+
   // Map ChatEntry[] → array of <MessageBubble> / structured renderers.
   // The scoping flow never emits `assistant-text-with-questionnaire` (that's a
   // wave-only variant) — we keep the case for exhaustiveness and fall through
@@ -85,15 +90,13 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
     }
   });
 
-  // Compute composer mode. A missing course offers a fresh start instead.
-  const moveOn = courseNotFound
-    ? { label: t<string>("courseNotFound.action"), onAdvance: () => router.push("/") }
-    : scopingResult
-      ? {
-          label: t<string>("moveOn.toWave").replace("{n}", "1"),
-          onAdvance: () => router.push(`/course/${courseId}/wave/1`),
-        }
-      : undefined;
+  // Compute composer mode.
+  const moveOn = scopingResult
+    ? {
+        label: tFill("moveOn.toWave", { n: 1 }),
+        onAdvance: () => router.push(`/course/${courseId}/wave/1`),
+      }
+    : undefined;
 
   // The question card the Composer shows, or null once it is submitted.
   const cardQuestions =
@@ -159,17 +162,6 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
       }
     >
       {scroll}
-      {/* getState found no course for this learner: a wrong URL, or a course
-          another browser started. Say so, rather than show an empty chat. */}
-      {courseNotFound && (
-        <MessageBubble
-          message={{
-            id: "not-found",
-            role: "assistant",
-            content: t<string>("courseNotFound.message"),
-          }}
-        />
-      )}
       {optimistic && chatEntries.length === optimistic.entryCountAtSubmit && (
         <MessageBubble message={{ id: "pending", role: "user", content: optimistic.content }} />
       )}

@@ -33,9 +33,9 @@ Think Duolingo, but for anything.
 
 - [Bun](https://bun.sh) 1.3.11 (pinned in `.bun-version`)
 - [just](https://github.com/casey/just) (`brew install just`)
-- Supabase account (free tier)
 - Cerebras API key (free tier) or any OpenAI-compatible provider
-- Docker, for integration tests (they boot a Postgres testcontainer)
+- Docker, for the dev database and the integration tests
+- Supabase account (free tier), for production and `just start`. `just dev` runs without it.
 
 ### Setup
 
@@ -44,13 +44,20 @@ git clone <repo-url>
 cd nalu
 bun install
 
-# Environment
+# Environment: dev values only
 cp .env.local.example .env.local
-# Fill in your Supabase and LLM provider credentials
+# Fill in your LLM provider key
 
-# Database schema
-just db-migrate   # applies src/db/migrations/ via DIRECT_URL
+# Dev database: Postgres in Docker on 127.0.0.1:54322
+just db-up        # start (or reuse) the nalu-dev-db container
+just db-migrate   # apply src/db/migrations/
+just db-seed      # insert the dev user
 ```
+
+`just db-down` stops the container and keeps its data. `just db-reset` wipes
+and rebuilds the dev database. These dev recipes refuse any database but this
+machine's. Production migrations run only through `just db-migrate-prod`; see
+`docs/DEPLOY.md`.
 
 ### Run
 

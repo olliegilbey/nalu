@@ -28,14 +28,27 @@ const zodIssueListSchema = z
 // stage needs no mapping. Each signature is the *leaf* key name we expect to
 // see quoted in the JSON body — pre-flattened so the scoring loop is a plain
 // `includes` check and avoids chained string ops that trip typed-lint rules.
-// The two close turns share `gradings`, `summary` and `nextUnitBlueprint`;
-// their own keys break the tie.
+// The scoping close emits only the close-turn base, so its signature is the
+// base's keys, the blueprint's included. A close body also matches three of
+// the baseline's keys (`conceptName`, `tier`, and `"correct"` as a verdict),
+// so the blueprint keys keep a close body with one broken key ahead of the
+// baseline. The Wave close adds `conceptUpdates`: a body with it fits the
+// Wave close better. A body without it ties the two, and a tie never claims
+// a wrong turn.
+const CLOSE_TURN_KEYS = [
+  "gradings",
+  "summary",
+  "nextUnitBlueprint",
+  "outline",
+  "openingText",
+  "plannedConcepts",
+] as const;
 const STAGE_KEY_SIGNATURES = {
   clarify: ["questions", "freetextRubric"],
   framework: ["tiers", "estimatedStartingTier", "baselineScopeTiers"],
   baseline: ["questions", "conceptName", "tier", "correct"],
-  "scoping-close": ["gradings", "summary", "nextUnitBlueprint", "immutableSummary", "startingTier"],
-  "wave-close": ["gradings", "summary", "nextUnitBlueprint", "conceptUpdates"],
+  "scoping-close": CLOSE_TURN_KEYS,
+  "wave-close": [...CLOSE_TURN_KEYS, "conceptUpdates"],
 } as const satisfies Record<string, readonly string[]>;
 
 /** A Turn label with a key signature: the stages the diagnosis can tell apart. */

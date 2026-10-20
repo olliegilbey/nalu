@@ -4,8 +4,8 @@ import type { LanguageModelV3StreamPart } from "@ai-sdk/provider";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
-import { createCourse } from "@/db/queries/courses";
-import { setCourseStartingStateInTx } from "@/db/queries/courses.tx";
+import { createCourse, getCourseById } from "@/db/queries/courses";
+import { incrementCourseXpInTx, setCourseStartingStateInTx } from "@/db/queries/courses.tx";
 import { appendWaveChatLog, openWave } from "@/db/queries/waves.writes";
 import { getWaveById } from "@/db/queries/waves";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
@@ -346,6 +346,62 @@ function makeBlockingTurnMock(parsed: unknown) {
     });
     return { parsed: parsed as T, usage: FAKE_USAGE };
   };
+}
+
+/**
+ * Seed `count` consumed learner chat turns on a Wave, in both stores, as
+ * production leaves them. Each consumes one turn of the Wave's budget.
+ */
+async function seedPastChatTurns(waveId: string, count: number): Promise<void> {
+  await Array.from({ length: count }).reduce<Promise<void>>(async (accP, _v, i) => {
+    await accP;
+    await appendMessage({
+      parent: { kind: "wave", id: waveId },
+      turnIndex: i,
+      seq: 0,
+      kind: "user_message",
+      role: "user",
+      content: `<learner_reply>past turn ${i}</learner_reply>`,
+    });
+    await appendWaveChatLog(db, waveId, {
+      role: "user",
+      kind: "text",
+      content: `past turn ${i}`,
+    });
+  }, Promise.resolve());
+}
+
+/**
+ * Run one chat turn whose scripted attempt presents a quiz. Returns the new
+ * questionnaire's id. The caller scripts that attempt with `mockAgentAttempts`.
+ */
+async function presentQuiz(courseId: string): Promise<string> {
+  const { parts, writer } = recordingWriter();
+  await streamWaveTurn(
+    { userId: USER_ID, courseId, waveNumber: 1, payload: { kind: "chat-text", text: "quiz me" } },
+    writer,
+  );
+  const data = parts.at(-1)!["data"] as {
+    newQuestionnaire: { questionnaireId: string } | null;
+  };
+  return data.newQuestionnaire!.questionnaireId;
+}
+
+/** XP a learner already holds before the Wave. A non-zero start tells a total from a delta. */
+const PRIOR_XP = 30;
+
+/** XP for a correct answer to QUIZ_INPUT's MC question, at its tier. */
+const QUIZ_MC_XP = calculateMcXp(QUIZ_INPUT.questions[0]!.tier, true);
+
+/** The `data-turn-result` part's `totalXp`, plus `courses.total_xp` after the turn. */
+async function readTotals(
+  parts: readonly { type: string; [k: string]: unknown }[],
+  courseId: string,
+): Promise<{ readonly fromResult: unknown; readonly fromDb: number }> {
+  const resultPart = parts.at(-1)!;
+  expect(resultPart.type).toBe("data-turn-result");
+  const data = resultPart["data"] as { totalXp?: unknown };
+  return { fromResult: data.totalXp, fromDb: (await getCourseById(courseId)).totalXp };
 }
 
 describe("streamWaveTurn (integration)", () => {
@@ -988,27 +1044,9 @@ describe("streamWaveTurn (integration)", () => {
   it("close turn: emits only data-turn-result (kind close-turn), no text parts", async () => {
     await withTestDb(async () => {
       const { courseId, waveId } = await seedCourseWithOpenWave();
-      // Seed WAVE.turnCount - 1 consumed learner turns (both stores, matching
-      // production shape) so this submission is the close turn.
-      await Array.from({ length: WAVE.turnCount - 1 }).reduce<Promise<void>>(
-        async (accP, _v, i) => {
-          await accP;
-          await appendMessage({
-            parent: { kind: "wave", id: waveId },
-            turnIndex: i,
-            seq: 0,
-            kind: "user_message",
-            role: "user",
-            content: `<learner_reply>past turn ${i}</learner_reply>`,
-          });
-          await appendWaveChatLog(db, waveId, {
-            role: "user",
-            kind: "text",
-            content: `past turn ${i}`,
-          });
-        },
-        Promise.resolve(),
-      );
+      // Seed WAVE.turnCount - 1 consumed learner turns so this submission is
+      // the close turn.
+      await seedPastChatTurns(waveId, WAVE.turnCount - 1);
 
       const closeParsed: WaveCloseTurn = {
         userMessage: "Closing chat.",
@@ -1069,20 +1107,7 @@ describe("streamWaveTurn (integration)", () => {
       );
 
       // Turn 1: the quiz lands through production code (row + chat_log entry).
-      const first = recordingWriter();
-      await streamWaveTurn(
-        {
-          userId: USER_ID,
-          courseId,
-          waveNumber: 1,
-          payload: { kind: "chat-text", text: "quiz me" },
-        },
-        first.writer,
-      );
-      const firstData = first.parts.at(-1)!["data"] as {
-        newQuestionnaire: { questionnaireId: string } | null;
-      };
-      const questionnaireId = firstData.newQuestionnaire!.questionnaireId;
+      const questionnaireId = await presentQuiz(courseId);
 
       // Turn 2: the learner picks the correct option.
       const second = recordingWriter();
@@ -1100,13 +1125,13 @@ describe("streamWaveTurn (integration)", () => {
       // A chat turn binds none.
       expect(agentBuildSpy.mock.calls.map(([p]) => p.answeredQuestionIds)).toEqual([[], ["q1"]]);
 
-      // The result part carries the grade. It fails if grading is skipped.
+      // The result part carries the grade's XP. It fails if grading is skipped.
       const resultPart = second.parts.at(-1)!;
       expect(resultPart.type).toBe("data-turn-result");
       const expectedXp = calculateMcXp(QUIZ_INPUT.questions[0]!.tier, true);
       expect(resultPart["data"]).toMatchObject({
         kind: "mid-turn",
-        gradedSignals: [{ questionId: "q1", correct: true, xpAwarded: expectedXp }],
+        gradedSignals: [{ questionId: "q1", xpAwarded: expectedXp }],
       });
       // The assessment row holds the same grade, keyed on the namespaced id.
       const row = await getAssessmentByWaveAndQuestionId(
@@ -1135,24 +1160,12 @@ describe("streamWaveTurn (integration)", () => {
         failingAttempt,
         toolCallAttempt("recordComprehensionSignals", SIGNALS_INPUT, { recorded: 1 }, "Right!"),
       );
-      const first = recordingWriter();
-      await streamWaveTurn(
-        {
-          userId: USER_ID,
-          courseId,
-          waveNumber: 1,
-          payload: { kind: "chat-text", text: "quiz me" },
-        },
-        first.writer,
-      );
-      const firstData = first.parts.at(-1)!["data"] as {
-        newQuestionnaire: { questionnaireId: string } | null;
-      };
+      const questionnaireId = await presentQuiz(courseId);
       const params = {
         userId: USER_ID,
         courseId,
         waveNumber: 1,
-        payload: correctAnswerPayload(firstData.newQuestionnaire!.questionnaireId),
+        payload: correctAnswerPayload(questionnaireId),
       };
 
       // Attempt 1 dies after prepareWaveTurn appended the learner's answers.
@@ -1165,14 +1178,147 @@ describe("streamWaveTurn (integration)", () => {
       await streamWaveTurn(params, retry.writer);
       expect(retry.parts.at(-1)!["data"]).toMatchObject({
         kind: "mid-turn",
-        gradedSignals: [{ questionId: "q1", correct: true }],
+        gradedSignals: [{ questionId: "q1" }],
       });
+      // The assessment row holds the grade, keyed on the namespaced id.
+      const row = await getAssessmentByWaveAndQuestionId(
+        waveId,
+        namespaceQuestionId(questionnaireId, "q1"),
+      );
+      expect(row).toMatchObject({ isCorrect: true });
       // chat_log holds exactly one learner answers entry.
       const wave = await getWaveById(waveId);
       const answers = (wave.chatLog as WaveChatLog).filter(
         (e) => e.role === "user" && e.kind === "answers",
       );
       expect(answers).toHaveLength(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 7. The mid-turn result carries the course total after its gradings. The
+  //    course starts at PRIOR_XP, so a delta or a pre-grading read fails.
+  // -------------------------------------------------------------------------
+  it("answered quiz: the turn result's totalXp equals courses.total_xp", async () => {
+    await withTestDb(async () => {
+      const { courseId } = await seedCourseWithOpenWave();
+      await incrementCourseXpInTx(courseId, PRIOR_XP, db);
+      mockAgentAttempts(
+        toolCallAttempt(
+          "presentQuestionnaire",
+          QUIZ_INPUT,
+          { accepted: true, questionCount: 1 },
+          "Quiz below!",
+        ),
+        toolCallAttempt("recordComprehensionSignals", SIGNALS_INPUT, { recorded: 1 }, "Right!"),
+      );
+      const questionnaireId = await presentQuiz(courseId);
+
+      const { parts, writer } = recordingWriter();
+      await streamWaveTurn(
+        {
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: correctAnswerPayload(questionnaireId),
+        },
+        writer,
+      );
+
+      const totals = await readTotals(parts, courseId);
+      expect(totals.fromResult).toBe(PRIOR_XP + QUIZ_MC_XP);
+      expect(totals.fromResult).toBe(totals.fromDb);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 8. The close-turn result carries the total after the close grading AND
+  //    the completion bump. The quiz lands on the last mid-turn, so the close
+  //    grades its MC answer.
+  // -------------------------------------------------------------------------
+  it("close turn: totalXp includes the graded XP and completion XP", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      await incrementCourseXpInTx(courseId, PRIOR_XP, db);
+      // Two turns short of the budget: the quiz turn, then the close turn.
+      await seedPastChatTurns(waveId, WAVE.turnCount - 2);
+      mockAgentAttempts(
+        toolCallAttempt(
+          "presentQuestionnaire",
+          QUIZ_INPUT,
+          { accepted: true, questionCount: 1 },
+          "Quiz below!",
+        ),
+      );
+      const questionnaireId = await presentQuiz(courseId);
+      const closeParsed: WaveCloseTurn = {
+        userMessage: "Closing chat.",
+        summary: "We covered ownership.",
+        gradings: [{ kind: "mc-index", questionId: "q1", rationale: "Knows let moves." }],
+        nextUnitBlueprint: {
+          topic: "Borrowing rules",
+          outline: ["borrow"],
+          openingText: "Welcome to lesson 2.",
+          plannedConcepts: [{ name: "ownership", tier: 1, role: "fresh" }],
+        },
+        conceptUpdates: [],
+      };
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeBlockingTurnMock(closeParsed) as unknown as typeof executeTurnModule.executeTurn,
+      );
+
+      const { parts, writer } = recordingWriter();
+      await streamWaveTurn(
+        {
+          userId: USER_ID,
+          courseId,
+          waveNumber: 1,
+          payload: correctAnswerPayload(questionnaireId),
+        },
+        writer,
+      );
+
+      expect(parts.at(-1)!["data"]).toMatchObject({ kind: "close-turn", nextWaveNumber: 2 });
+      const totals = await readTotals(parts, courseId);
+      expect(totals.fromResult).toBe(PRIOR_XP + QUIZ_MC_XP + WAVE.completionXp);
+      expect(totals.fromResult).toBe(totals.fromDb);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 9. bug_001 retry: the failed attempt awards nothing, and the retry's
+  //    total counts the answer's XP once.
+  // -------------------------------------------------------------------------
+  it("answered quiz after a failed attempt: totalXp counts the answer once", async () => {
+    await withTestDb(async () => {
+      const { courseId } = await seedCourseWithOpenWave();
+      await incrementCourseXpInTx(courseId, PRIOR_XP, db);
+      mockAgentAttempts(
+        toolCallAttempt(
+          "presentQuestionnaire",
+          QUIZ_INPUT,
+          { accepted: true, questionCount: 1 },
+          "Quiz below!",
+        ),
+        failingAttempt,
+        toolCallAttempt("recordComprehensionSignals", SIGNALS_INPUT, { recorded: 1 }, "Right!"),
+      );
+      const params = {
+        userId: USER_ID,
+        courseId,
+        waveNumber: 1,
+        payload: correctAnswerPayload(await presentQuiz(courseId)),
+      };
+      await expect(streamWaveTurn(params, recordingWriter().writer)).rejects.toThrow(
+        "LLM transport failure",
+      );
+
+      const retry = recordingWriter();
+      await streamWaveTurn(params, retry.writer);
+
+      const totals = await readTotals(retry.parts, courseId);
+      expect(totals.fromResult).toBe(PRIOR_XP + QUIZ_MC_XP);
+      expect(totals.fromResult).toBe(totals.fromDb);
     });
   });
 });

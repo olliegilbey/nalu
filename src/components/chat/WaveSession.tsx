@@ -6,6 +6,7 @@ import { useWaveState } from "@/hooks/useWaveState";
 import { shapeQuestionnaireAnswers } from "@/lib/course/shapeQuestionnaireAnswers";
 import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
+import { CourseNotFound } from "./CourseNotFound";
 import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
 import { RetryRow } from "./RetryRow";
@@ -16,7 +17,7 @@ import {
   composerTextAfterRetry,
   resendsFailedTurn,
 } from "@/lib/course/failedChatText";
-import { t } from "@/i18n";
+import { t, tFill } from "@/i18n";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 
 /**
@@ -53,6 +54,7 @@ export function WaveSession({
     awardMcXp,
     isPending,
     failedTurn,
+    waveNotFound,
     streamingText,
     streamingQuestions,
     submitChatText,
@@ -72,6 +74,11 @@ export function WaveSession({
   // The questionnaire key just submitted — its question card is hidden from the
   // Composer immediately, rather than lingering until the server round-trip.
   const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+
+  // getState found no such Wave for this learner: a wrong URL, a course
+  // another browser started, or a Wave number this course lacks. One NOT_FOUND
+  // covers all three, so the copy says "lesson", which is true of each (#230).
+  if (waveNotFound) return <CourseNotFound message={t<string>("waveNotFound.message")} />;
 
   // Map ChatEntry[] → scroll JSX. The switch is exhaustive over ChatEntry's
   // kinds so a future variant addition becomes a compile-time error here.
@@ -95,7 +102,7 @@ export function WaveSession({
   const isClosed = closeResult !== null || status === "closed";
   const moveOn = isClosed
     ? {
-        label: t<string>("moveOn.toWave").replace("{n}", String(nextWaveNumber)),
+        label: tFill("moveOn.toWave", { n: nextWaveNumber }),
         onAdvance: () => router.push(`/course/${courseId}/wave/${nextWaveNumber}`),
       }
     : undefined;

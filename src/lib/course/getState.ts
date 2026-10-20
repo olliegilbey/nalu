@@ -5,6 +5,10 @@ import type {
   BaselineJsonb,
   BaselineClosedJsonb,
 } from "@/lib/types/jsonb";
+import {
+  redactScopingQuestionnaire,
+  type ScopingQuestionnaireForClient,
+} from "./redactQuestionnaire";
 
 /** Input to {@link getState}. `userId` enforces row-level ownership. */
 export interface GetStateParams {
@@ -22,24 +26,31 @@ export interface ScopingResult {
 }
 
 /**
- * Client-facing projection of a `courses` row. Each JSONB column is exposed
- * directly so `deriveChatEntries` can render the chat scroll from a single object.
- * `scopingResult` is the post-close summary; null while scoping is in progress.
+ * Client-facing projection of a `courses` row, so `deriveChatEntries` can
+ * render the chat scroll from a single object. `framework` ships as stored.
+ * `clarification` and `baseline` ship redacted: no rubric, and MC keys only as
+ * `correctEnc`. `scopingResult` is the post-close summary; null while scoping
+ * is in progress.
  */
 export interface CourseState {
   readonly courseId: string;
   readonly status: "scoping" | "active" | "archived";
   readonly topic: string;
-  readonly clarification: ClarificationJsonb | null;
+  readonly clarification: ScopingQuestionnaireForClient | null;
   readonly framework: FrameworkJsonb | null;
-  /** The pre-close baseline JSONB (questions only). Null when not yet generated. */
-  readonly baseline: BaselineJsonb | null;
+  /** The baseline questions and saved answers. Null when not yet generated. */
+  readonly baseline: ScopingQuestionnaireForClient | null;
   /** Populated only when `status === 'active'`. Drives the Move-on CTA. */
   readonly scopingResult: ScopingResult | null;
+  /** Course XP after this request: `courses.total_xp`, never a delta. */
+  readonly totalXp: number;
 }
 
 /**
  * Read a course and project to the client-facing state shape.
+ *
+ * Grading keys stay server-side: `submitBaseline` grades against the stored
+ * questions, never against anything the client sends back.
  *
  * Trust boundary: `getCourseById` runs `courseRowGuard` which Zod-validates
  * every JSONB column. Ownership is enforced by passing `userId`; rows owned
@@ -75,9 +86,10 @@ export async function getState(params: GetStateParams): Promise<CourseState> {
     courseId: course.id,
     status: course.status as CourseState["status"],
     topic: course.topic,
-    clarification: (course.clarification as ClarificationJsonb | null) ?? null,
+    clarification: redactScopingQuestionnaire(course.clarification as ClarificationJsonb | null),
     framework: (course.framework as FrameworkJsonb | null) ?? null,
-    baseline,
+    baseline: redactScopingQuestionnaire(baseline),
     scopingResult,
+    totalXp: course.totalXp,
   };
 }

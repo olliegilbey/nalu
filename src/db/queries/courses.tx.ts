@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { z } from "zod";
 import type { DbOrTx } from "@/db/client";
 import type { BaselineClosedJsonb } from "@/lib/types/jsonb";
 import { NotFoundError } from "./errors";
@@ -12,8 +13,8 @@ import { NotFoundError } from "./errors";
  *
  * A `courses` write on the `db` singleton inside one of these transactions
  * would wait on the row lock the transaction holds, and the transaction would
- * wait on it: a deadlock. These helpers re-fetch nothing; their callers need
- * no row back.
+ * wait on it: a deadlock. The writes re-fetch nothing. The Wave saves read
+ * the new total once, last, through `getCourseTotalXpInTx`.
  *
  * All statements use raw `tx.execute(sql\`...\`)` (house style).
  */
@@ -82,9 +83,9 @@ export async function setCourseBaselineInTx(
 
 /** What scoping close writes when it activates a course. */
 export interface CourseActivation {
-  /** The evolving summary seed. The immutable summary lives in the baseline JSONB. */
+  /** The evolving summary seed: the scoping close's `summary`. */
   readonly summary: string;
-  /** Tier from the baseline grading. Sets both `starting_tier` and `current_tier`. */
+  /** Tier `determineStartingTier` computed. Sets both `starting_tier` and `current_tier`. */
   readonly startingTier: number;
 }
 
@@ -110,6 +111,28 @@ export async function setCourseStartingStateInTx(
         updated_at = NOW()
     WHERE id = ${courseId}
       AND status = 'scoping'
+  `);
+}
+
+/**
+ * Overwrite `courses.summary` inside the caller's tx. Wave close calls it
+ * with the close turn's summary, which rewrites the whole course summary.
+ *
+ * Each Wave turn renders this column into the system prompt. Call it only
+ * at a Wave close: the closing Wave takes no more turns, so only the next
+ * Wave's prompt sees the new value.
+ */
+export async function setCourseSummaryInTx(
+  courseId: string,
+  summary: string,
+  tx: DbOrTx,
+): Promise<void> {
+  await tx.execute(sql`
+    UPDATE courses
+    SET summary = ${summary},
+        summary_updated_at = NOW(),
+        updated_at = NOW()
+    WHERE id = ${courseId}
   `);
 }
 
@@ -145,4 +168,23 @@ export async function incrementCourseXpInTx(
         updated_at = NOW()
     WHERE id = ${courseId}
   `);
+}
+
+/**
+ * The `total_xp` row shape. Raw `tx.execute` skips Drizzle's typing, so the
+ * read is parsed. The CHECK `courses_total_xp_nonneg` keeps it at zero or above.
+ */
+const courseTotalXpRowSchema = z.object({ total_xp: z.number().int().nonnegative() });
+
+/**
+ * Read `courses.total_xp` inside the caller's tx. The Wave saves call it after
+ * their last XP write. They hold the course-row lock, so the value read is the
+ * value the tx commits.
+ *
+ * @throws {NotFoundError} if `courseId` does not match any row.
+ */
+export async function getCourseTotalXpInTx(courseId: string, tx: DbOrTx): Promise<number> {
+  const rows = await tx.execute(sql`SELECT total_xp FROM courses WHERE id = ${courseId}`);
+  if (rows.length === 0) throw new NotFoundError("course", courseId);
+  return courseTotalXpRowSchema.parse(rows[0]).total_xp;
 }

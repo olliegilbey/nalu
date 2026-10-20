@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { TRPCError } from "@trpc/server";
 import { eq, sql } from "drizzle-orm";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles, assessments, concepts, waves, courses } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
 import { setCourseStartingStateInTx } from "@/db/queries/courses.tx";
-import { openWave, appendWaveChatLog } from "@/db/queries/waves.writes";
+import { openWave, appendWaveChatLog, closeWave } from "@/db/queries/waves.writes";
 import { getWaveByCourseAndNumber } from "@/db/queries/waves";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
 import { getMessagesForWave, getNextTurnIndex } from "@/db/queries/contextMessages";
@@ -15,8 +16,11 @@ import { WAVE } from "@/lib/config/tuning";
 import { calculateXP } from "@/lib/scoring/xp";
 import * as executeTurnModule from "@/lib/turn/executeTurn";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
+import type { V3Question, V3Response } from "@/lib/types/jsonb";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import type { McOptionKey } from "@/lib/types/mcOptionKey";
+import { renderTeachingSystem } from "@/lib/prompts/teaching";
+import { buildWaveSeed } from "./buildWaveSeed";
 import { loadWaveContext } from "./loadWaveContext";
 import { executeWaveClose } from "./executeWaveClose";
 import { namespaceQuestionId } from "./namespaceQuestionId";
@@ -45,6 +49,12 @@ import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTur
  *   4. Concurrent close attempt: a pre-existing `wave_number = N+1` row trips
  *      the `(course_id, wave_number)` unique index when openWave runs inside
  *      the tx — the whole transaction rolls back, no orphan state.
+ *   9. Course summary (issue #93): the close rewrites `courses.summary`, and
+ *      Wave N+1's system prompt renders it in `<progress_summary>`.
+ *  10. A close whose `closeWave` closes nothing (another path closed Wave N
+ *      first) throws PRECONDITION_FAILED and changes nothing.
+ *  11. Issue #214: close-graded answers store the learner's text (free text)
+ *      and click (MC) on `user_answer`.
  */
 
 const USER_ID = "99999999-9999-9999-9999-999999999999";
@@ -95,92 +105,118 @@ async function seedCourseWithOpenWave(
   return { courseId: course.id, waveId: wave.id };
 }
 
+/** A stored question that names its concept, so the seed can upsert it. */
+type SeedQuestion = V3Question & { readonly conceptName: string };
+
+/** The close tests' MC question, `q-mc`, with the given correct key. */
+function mcQuestion(correct: McOptionKey, conceptName = "ownership"): SeedQuestion {
+  return {
+    id: "q-mc",
+    type: "multiple_choice",
+    prompt: "Which keyword transfers ownership?",
+    options: { A: "let", B: "move", C: "ref", D: "copy" },
+    correct,
+    freetextRubric: "rubric",
+    conceptName,
+    tier: 1,
+  };
+}
+
+/** The close tests' free-text question, `q-close`, on its concept and tier. */
+function freeTextQuestion(conceptName = "ownership", tier = 1): SeedQuestion {
+  return {
+    id: "q-close",
+    type: "free_text",
+    prompt: `Explain ${conceptName} in one sentence`,
+    freetextRubric: "rubric",
+    conceptName,
+    tier,
+  };
+}
+
 /**
- * Seed an open questionnaire on the wave AND its placeholder assessment row.
- * Returns the concept id (for SM-2 assertions) and the namespaced
- * `question_id` so tests can query the row back directly.
+ * Seed an OPEN questionnaire on the wave plus one placeholder assessment row
+ * per question. Each question's concept is upserted at the question's tier.
  *
- * Mirrors `seedOpenQuestionnaire` in `persistWaveMidTurn.integration.test.ts` but
- * close-turn focused: only one free-text question is needed. Writes BOTH the
- * `context_messages` assistant_response AND the `chat_log`
- * `text_with_questionnaire` entry — `findOpenQuestionnaire` (used by
- * `executeWaveClose` and now `applyCloseGradings`) derives the open
- * questionnaire from `chat_log`, and its `questionnaireId` namespaces the
- * stored `question_id` (`namespaceQuestionId`).
+ * Writes BOTH the `context_messages` assistant_response AND the `chat_log`
+ * `text_with_questionnaire` entry. `findOpenQuestionnaire` (used by
+ * `executeWaveClose` and `applyCloseGradings`) derives the open questionnaire
+ * from `chat_log`, and its `questionnaireId` namespaces each stored
+ * `question_id` (`namespaceQuestionId`), as `insertNewQuestionnaire` does in
+ * production. Does NOT write the learner's answers: those must land AFTER
+ * `loadWaveContext` snapshots `ctx.wave.chatLog` (see `appendCloseAnswers`),
+ * because in production `prepareWaveTurn` appends them post-snapshot.
+ *
+ * Returns the `questionnaireId`, and per raw question id its concept id (for
+ * SM-2 assertions) and namespaced `question_id` (to query the row back).
  */
-async function seedOpenFreeTextQuestionnaire(
+async function seedOpenQuestionnaire(
   courseId: string,
   waveId: string,
-  conceptName = "ownership",
-  conceptTier = 1,
-): Promise<{ readonly conceptId: string; readonly questionId: string }> {
-  const concept = await upsertConcept({ courseId, name: conceptName, tier: conceptTier });
-  // Seed the assistant_response so loadWaveContext reconstructs `openQuestionnaire`.
-  const assistantPayload = {
-    userMessage: "Final question:",
-    questionnaire: {
-      questions: [
-        {
-          id: "q-close",
-          type: "free_text" as const,
-          prompt: "Explain ownership in one sentence",
-          freetextRubric: "rubric",
-          conceptName,
-          tier: 1,
-        },
-      ],
-    },
-  };
+  questions: readonly SeedQuestion[],
+): Promise<{
+  readonly questionnaireId: string;
+  readonly rows: ReadonlyMap<string, { readonly conceptId: string; readonly questionId: string }>;
+}> {
+  const userMessage = "Final questions:";
   const assistantRow = await appendMessage({
     parent: { kind: "wave", id: waveId },
     turnIndex: 1,
     seq: 0,
     kind: "assistant_response",
     role: "assistant",
-    content: JSON.stringify(assistantPayload),
+    content: JSON.stringify({ userMessage, questionnaire: { questions } }),
   });
-  // Mirror the production dual-write: chat_log carries a `text_with_questionnaire`
-  // entry whose `questionnaireId` matches the assistant_response row id.
-  // `findOpenQuestionnaire` reads chat_log; `applyCloseGradings` re-derives the
-  // namespaced `question_id` from this id.
   await appendWaveChatLog(db, waveId, {
     role: "assistant",
     kind: "text_with_questionnaire",
     questionnaireId: assistantRow.id,
-    content: assistantPayload.userMessage,
-    questions: assistantPayload.questionnaire.questions,
+    content: userMessage,
+    questions: [...questions],
   });
-  // Insert the placeholder assessment row the mid-turn flow would have written.
-  // The stored `question_id` is namespaced by the questionnaire id — matching
-  // `insertNewQuestionnaire` in production. The close transaction updates it
-  // via applyAssessmentGrading.
-  const questionId = namespaceQuestionId(assistantRow.id, "q-close");
+  const seeded = await Promise.all(
+    questions.map(async (q) => {
+      const concept = await upsertConcept({ courseId, name: q.conceptName, tier: q.tier ?? 1 });
+      return { q, conceptId: concept.id, questionId: namespaceQuestionId(assistantRow.id, q.id) };
+    }),
+  );
   await insertOpenAssessments({
     waveId,
     turnIndex: 1,
-    rows: [
-      {
-        conceptId: concept.id,
-        questionId,
-        question: "Explain ownership in one sentence",
-        assessmentKind: "card_freetext",
-      },
-    ],
+    rows: seeded.map((s) => ({
+      conceptId: s.conceptId,
+      questionId: s.questionId,
+      question: s.q.prompt,
+      assessmentKind: s.q.type === "multiple_choice" ? "card_mc" : "card_freetext",
+    })),
   });
-  return { conceptId: concept.id, questionId };
+  return {
+    questionnaireId: assistantRow.id,
+    rows: new Map(
+      seeded.map((s) => [s.q.id, { conceptId: s.conceptId, questionId: s.questionId }] as const),
+    ),
+  };
+}
+
+/** Seed an open questionnaire with one free-text question, `q-close`. */
+async function seedOpenFreeTextQuestionnaire(
+  courseId: string,
+  waveId: string,
+  conceptName = "ownership",
+  conceptTier = 1,
+): Promise<{ readonly conceptId: string; readonly questionId: string }> {
+  const { rows } = await seedOpenQuestionnaire(courseId, waveId, [
+    freeTextQuestion(conceptName, conceptTier),
+  ]);
+  return rows.get("q-close")!;
 }
 
 /**
- * Seed an OPEN MC questionnaire on the wave plus its placeholder `card_mc`
- * assessment row. Does NOT write the learner's answer — that must land AFTER
- * `loadWaveContext` snapshots `ctx.wave.chatLog` (see `appendCloseMcAnswer`),
- * because in production `prepareWaveTurn` appends it post-snapshot.
+ * Seed an open questionnaire with one MC question, `q-mc`.
  *
  * bug_003: a questionnaire posed on the FINAL mid-turn has no later mid-turn,
- * so its MC question is answered — and graded — at close.
- *
- * Returns the `questionnaireId` (so the test can append the matching answer),
- * the concept id, and the namespaced stored `question_id`.
+ * so its MC question is answered — and graded — at close. Returns the
+ * `questionnaireId` too, so the test can append the matching answer.
  */
 async function seedOpenMcQuestionnaire(
   courseId: string,
@@ -191,77 +227,30 @@ async function seedOpenMcQuestionnaire(
   readonly questionId: string;
   readonly questionnaireId: string;
 }> {
-  const conceptName = opts.conceptName ?? "ownership";
-  const concept = await upsertConcept({ courseId, name: conceptName, tier: 1 });
-  const assistantPayload = {
-    userMessage: "Final question:",
-    questionnaire: {
-      questions: [
-        {
-          id: "q-mc",
-          type: "multiple_choice" as const,
-          prompt: "Which keyword transfers ownership?",
-          options: { A: "let", B: "move", C: "ref", D: "copy" },
-          correct: opts.correct,
-          freetextRubric: "rubric",
-          conceptName,
-          tier: 1,
-        },
-      ],
-    },
-  };
-  const assistantRow = await appendMessage({
-    parent: { kind: "wave", id: waveId },
-    turnIndex: 1,
-    seq: 0,
-    kind: "assistant_response",
-    role: "assistant",
-    content: JSON.stringify(assistantPayload),
-  });
-  // chat_log carries the assistant's `text_with_questionnaire` entry —
-  // `findOpenQuestionnaire` reads it for the server-side `correct` key.
-  await appendWaveChatLog(db, waveId, {
-    role: "assistant",
-    kind: "text_with_questionnaire",
-    questionnaireId: assistantRow.id,
-    content: assistantPayload.userMessage,
-    questions: assistantPayload.questionnaire.questions,
-  });
-  // Placeholder `card_mc` row the mid-turn flow would have inserted.
-  const questionId = namespaceQuestionId(assistantRow.id, "q-mc");
-  await insertOpenAssessments({
-    waveId,
-    turnIndex: 1,
-    rows: [
-      {
-        conceptId: concept.id,
-        questionId,
-        question: assistantPayload.questionnaire.questions[0]!.prompt,
-        assessmentKind: "card_mc",
-      },
-    ],
-  });
-  return { conceptId: concept.id, questionId, questionnaireId: assistantRow.id };
+  const { questionnaireId, rows } = await seedOpenQuestionnaire(courseId, waveId, [
+    mcQuestion(opts.correct, opts.conceptName),
+  ]);
+  return { ...rows.get("q-mc")!, questionnaireId };
 }
 
 /**
- * Append the learner's close-turn MC click to the LIVE `chat_log`. Production
+ * Append the learner's close-turn Responses to the LIVE `chat_log`. Production
  * `prepareWaveTurn` does this pre-LLM, AFTER `loadWaveContext` has snapshotted
  * `ctx.wave.chatLog` — so tests must call this between `loadWaveContext` and
  * `executeWaveClose` to faithfully reproduce the bug_003 path: the snapshot
  * still sees the questionnaire as OPEN; `applyCloseGradings` re-reads the live
- * column to find the click.
+ * column to find the answers.
  */
-async function appendCloseMcAnswer(
+async function appendCloseAnswers(
   waveId: string,
   questionnaireId: string,
-  clicked: McOptionKey,
+  responses: readonly V3Response[],
 ): Promise<void> {
   await appendWaveChatLog(db, waveId, {
     role: "user",
     kind: "answers",
     questionnaireId,
-    responses: [{ questionId: "q-mc", choice: clicked }],
+    responses: [...responses],
   });
 }
 
@@ -567,6 +556,8 @@ describe("executeWaveClose (integration)", () => {
       // XP not incremented: the grading's XP rolls back; the completion bump never runs.
       const afterCourse = (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!;
       expect(afterCourse.totalXp).toBe(0);
+      // The course summary rewrite rolls back too: it keeps the scoping seed.
+      expect(afterCourse.summary).toBe("seed");
 
       // Fix 5: executeTurn's user_message + assistant_response rows sit OUTSIDE
       // `persistWaveClose`'s tx and must survive its rollback. The orchestrator
@@ -663,7 +654,7 @@ describe("executeWaveClose (integration)", () => {
       const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
       // Learner clicks the correct option (B). Lands on the live chat_log after
       // the snapshot, exactly as prepareWaveTurn does pre-LLM.
-      await appendCloseMcAnswer(waveId, questionnaireId, "B");
+      await appendCloseAnswers(waveId, questionnaireId, [{ questionId: "q-mc", choice: "B" }]);
       // Before the fix this throws (the `mc-index` branch hard-throws); after it
       // resolves and closes the wave.
       const result = await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
@@ -721,7 +712,7 @@ describe("executeWaveClose (integration)", () => {
       const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
       // Learner clicks D — wrong (correct is B). The model's grading is NOT
       // trusted for correctness; the server computes D != B server-side.
-      await appendCloseMcAnswer(waveId, questionnaireId, "D");
+      await appendCloseAnswers(waveId, questionnaireId, [{ questionId: "q-mc", choice: "D" }]);
       const result = await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
 
       expect(result.kind).toBe("close-turn");
@@ -796,6 +787,152 @@ describe("executeWaveClose (integration)", () => {
         await db.select().from(assessments).where(eq(assessments.questionId, questionId))
       )[0]!;
       expect(assessmentRow.xpAwarded).toBe(dbTierXp);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 9. Course summary (issue #93). The close's summary is the whole course
+  //    summary, rewritten. It replaces the scoping seed in `courses.summary`,
+  //    and the next Wave's system prompt renders it in `<progress_summary>`.
+  //    `waves.summary` keeps the same text as the closed Wave's snapshot.
+  // ---------------------------------------------------------------------------
+  it("rewrites courses.summary from the close summary and renders it in Wave N+1's <progress_summary>", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave(2);
+      await seedOpenFreeTextQuestionnaire(courseId, waveId);
+
+      const summary = "Learner explains ownership and moves in their own words. Borrowing is next.";
+      const parsed = { ...makeParsedClose(), summary };
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
+      );
+
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      const result = await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
+
+      // The scoping seed is gone; the close's summary replaces it whole.
+      const afterCourse = (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!;
+      expect(afterCourse.summary).toBe(summary);
+      // The closed Wave keeps the same text as its per-Wave snapshot.
+      const closedWave = (await db.select().from(waves).where(eq(waves.id, waveId)))[0]!;
+      expect(closedWave.summary).toBe(summary);
+
+      // Wave N+1's system prompt, built the way every turn builds it.
+      const next = await loadWaveContext({ userId: USER_ID, courseId, waveId: result.nextWaveId });
+      const system = renderTeachingSystem(buildWaveSeed(next.course, next.wave));
+      expect(system).toContain(`<progress_summary>\n${summary}\n</progress_summary>`);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 10. A close that closes nothing fails explicitly. Another path closes
+  //     Wave N after this turn loaded it, and no Wave N+1 exists, so nothing
+  //     later in the tx would throw on its own. `persistWaveClose` throws
+  //     PRECONDITION_FAILED, and the tx changes nothing: no summary rewrite,
+  //     no grading, no SM-2, no XP, no Wave N+1.
+  // ---------------------------------------------------------------------------
+  it("throws PRECONDITION_FAILED and changes nothing when closeWave closes no row", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave(2);
+      const { conceptId, questionId } = await seedOpenFreeTextQuestionnaire(courseId, waveId);
+      const initialConcept = (
+        await db.select().from(concepts).where(eq(concepts.id, conceptId))
+      )[0]!;
+
+      const parsed = { ...makeParsedClose(), summary: "late close must not land" };
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
+      );
+
+      // Load while Wave N is open, as `prepareWaveTurn` would.
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      // Another path closes Wave N before this close's tx runs.
+      await closeWave(waveId, { summary: "first close", blueprintEmitted: null });
+      const error = await executeWaveClose(ctx, "<learner_reply>final</learner_reply>").catch(
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(TRPCError);
+      expect((error as TRPCError).code).toBe("PRECONDITION_FAILED");
+
+      // Course: summary and XP untouched.
+      const afterCourse = (await db.select().from(courses).where(eq(courses.id, courseId)))[0]!;
+      expect(afterCourse.summary).toBe("seed");
+      expect(afterCourse.totalXp).toBe(0);
+      // Assessment row still at its placeholder grading.
+      const assessmentRow = (
+        await db.select().from(assessments).where(eq(assessments.questionId, questionId))
+      )[0]!;
+      expect(assessmentRow.qualityScore).toBe(0);
+      // SM-2 untouched.
+      const afterConcept = (await db.select().from(concepts).where(eq(concepts.id, conceptId)))[0]!;
+      expect(afterConcept.repetitionCount).toBe(initialConcept.repetitionCount);
+      expect(afterConcept.lastQualityScore).toBe(initialConcept.lastQualityScore);
+      expect(afterConcept.nextReviewAt).toEqual(initialConcept.nextReviewAt);
+      // No Wave N+1; Wave N keeps the first close's summary.
+      const allWaves = await db.select().from(waves).where(eq(waves.courseId, courseId));
+      expect(allWaves).toHaveLength(1);
+      expect(allWaves[0]!.summary).toBe("first close");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 11. Issue #214: a close-graded answer stores what the learner sent on
+  //     `user_answer`, as a mid-turn grading does. The final questionnaire has
+  //     one MC and one free-text question, both answered in the close turn's
+  //     `answers` entry. The free-text row gets the typed text, not the `""`
+  //     placeholder; the MC row still gets the clicked key.
+  // ---------------------------------------------------------------------------
+  it("stores the learner's close-turn answers on user_answer: typed text and MC click", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave(2);
+      const { questionnaireId, rows } = await seedOpenQuestionnaire(courseId, waveId, [
+        mcQuestion("B"),
+        freeTextQuestion("borrowing"),
+      ]);
+
+      const typed = "A borrow lends a value without moving ownership.";
+      const parsed = makeParsedClose({
+        gradings: [
+          { kind: "mc-index", questionId: "q-mc", rationale: "clicked B. teach next." },
+          {
+            kind: "free-text",
+            questionId: "q-close",
+            verdict: "correct",
+            qualityScore: 5,
+            conceptName: "borrowing",
+            conceptTier: 1,
+            rationale: "captured it. move on.",
+          },
+        ],
+      });
+      vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+        makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
+      );
+
+      // Snapshot first, then the answers land, as in `prepareWaveTurn`.
+      const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+      await appendCloseAnswers(waveId, questionnaireId, [
+        { questionId: "q-mc", choice: "B" },
+        { questionId: "q-close", freetext: typed },
+      ]);
+      await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
+
+      const ftRow = (
+        await db
+          .select()
+          .from(assessments)
+          .where(eq(assessments.questionId, rows.get("q-close")!.questionId))
+      )[0]!;
+      expect(ftRow.qualityScore).toBe(5);
+      expect(ftRow.userAnswer).toBe(typed);
+      const mcRow = (
+        await db
+          .select()
+          .from(assessments)
+          .where(eq(assessments.questionId, rows.get("q-mc")!.questionId))
+      )[0]!;
+      expect(mcRow.isCorrect).toBe(true);
+      expect(mcRow.userAnswer).toBe("B");
     });
   });
 });

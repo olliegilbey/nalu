@@ -1,17 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { deriveActiveScopingQuestionnaire } from "./deriveActiveScopingQuestionnaire";
 import type { CourseState } from "./getState";
-import type { BaselineJsonb, ClarificationJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
+import type { ScopingQuestionnaireForClient } from "./redactQuestionnaire";
+import type { FrameworkJsonb } from "@/lib/types/jsonb";
+import { encodeCorrect } from "@/lib/security/obfuscateCorrect";
+import { KEY_TO_INDEX } from "@/lib/types/mcOptionKey";
 
-const clarification: ClarificationJsonb = {
+const clarification: ScopingQuestionnaireForClient = {
   userMessage: "Let's narrow this down.",
   questions: [
-    { id: "q1", type: "free_text", prompt: "Why?", freetextRubric: "n/a" },
-    { id: "q2", type: "free_text", prompt: "How far?", freetextRubric: "n/a" },
+    { id: "q1", type: "free_text", prompt: "Why?" },
+    { id: "q2", type: "free_text", prompt: "How far?" },
   ],
   responses: [],
 };
-const answeredClarification: ClarificationJsonb = {
+const answeredClarification: ScopingQuestionnaireForClient = {
   ...clarification,
   responses: [{ questionId: "q1", freetext: "Curious" }],
 };
@@ -23,7 +26,7 @@ const framework: FrameworkJsonb = {
   baselineScopeTiers: [1],
 };
 
-const baseline: BaselineJsonb = {
+const baseline: ScopingQuestionnaireForClient = {
   userMessage: "Quick check.",
   questions: [
     {
@@ -31,14 +34,12 @@ const baseline: BaselineJsonb = {
       type: "multiple_choice",
       prompt: "Pick one",
       options: { A: "a", B: "b", C: "c", D: "d" },
-      correct: "B",
-      freetextRubric: "n/a",
+      correctEnc: encodeCorrect("b1", KEY_TO_INDEX.B),
       tier: 1,
     },
-    { id: "b2", type: "free_text", prompt: "Explain", freetextRubric: "n/a", tier: 1 },
+    { id: "b2", type: "free_text", prompt: "Explain", tier: 1 },
   ],
   responses: [],
-  gradings: [],
 };
 
 function state(overrides: Partial<CourseState>): CourseState {
@@ -50,6 +51,7 @@ function state(overrides: Partial<CourseState>): CourseState {
     framework: null,
     baseline: null,
     scopingResult: null,
+    totalXp: 0,
     ...overrides,
   };
 }
@@ -86,7 +88,7 @@ describe("deriveActiveScopingQuestionnaire", () => {
     expect(deriveActiveScopingQuestionnaire(s)).toEqual({
       kind: "baseline",
       questions: [
-        // The client gets the baseline answer key pre-submission: issue #58. Fixing #58 changes this.
+        // Instant MC feedback: the index decodes from the id-bound `correctEnc`.
         { id: "b1", prompt: "Pick one", options: ["a", "b", "c", "d"], correctIndex: 1, tier: 1 },
         { id: "b2", prompt: "Explain", options: [], tier: 1 },
       ],
@@ -96,7 +98,7 @@ describe("deriveActiveScopingQuestionnaire", () => {
   });
 
   it("returns null once the baseline answers are saved", () => {
-    const answered: BaselineJsonb = {
+    const answered: ScopingQuestionnaireForClient = {
       ...baseline,
       responses: [{ questionId: "b1", choice: "B" }],
     };

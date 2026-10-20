@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { hasScopingTurnLanded, type ScopingTurnKind } from "./hasScopingTurnLanded";
 import type { CourseState } from "./getState";
-import type { BaselineJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
+import type { ScopingQuestionnaireForClient } from "./redactQuestionnaire";
+import type { FrameworkJsonb } from "@/lib/types/jsonb";
 
 const framework: FrameworkJsonb = {
   userMessage: "Here's your ladder.",
@@ -10,11 +11,10 @@ const framework: FrameworkJsonb = {
   baselineScopeTiers: [1],
 };
 
-const baseline: BaselineJsonb = {
+const baseline: ScopingQuestionnaireForClient = {
   userMessage: "Quick check.",
-  questions: [{ id: "b1", type: "free_text", prompt: "Explain", freetextRubric: "n/a" }],
+  questions: [{ id: "b1", type: "free_text", prompt: "Explain" }],
   responses: [{ questionId: "b1", freetext: "Because" }],
-  gradings: [],
 };
 
 function state(overrides: Partial<CourseState>): CourseState {
@@ -26,6 +26,7 @@ function state(overrides: Partial<CourseState>): CourseState {
     framework: null,
     baseline: null,
     scopingResult: null,
+    totalXp: 0,
     ...overrides,
   };
 }
