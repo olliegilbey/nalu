@@ -32,6 +32,34 @@ describe("deriveWaveProgress", () => {
     });
   });
 
+  it("caps the turn at the budget when more turns landed than it allows", () => {
+    // A budget lowered under an open Wave: getWaveState clamps turnsRemaining
+    // at 0, so the label must not read "Turn 4 of 3".
+    expect(deriveWaveProgress({ turnsRemaining: 0, turnBudget: 3, isClosed: false })).toEqual({
+      currentTurn: 3,
+      turnBudget: 3,
+      percent: 100,
+      isComplete: false,
+    });
+  });
+
+  it("rounds the bar to a whole percent", () => {
+    // One of three landed: 33.33…% rounds to 33.
+    expect(deriveWaveProgress({ turnsRemaining: 2, turnBudget: 3, isClosed: false })).toEqual({
+      currentTurn: 2,
+      turnBudget: 3,
+      percent: 33,
+      isComplete: false,
+    });
+  });
+
+  it("shows nothing until the server's counts arrive", () => {
+    // useWaveState reports both counts null until wave.getState resolves.
+    expect(deriveWaveProgress({ turnsRemaining: null, turnBudget: null, isClosed: false })).toBe(
+      null,
+    );
+  });
+
   it("shows a closed Wave complete, with a full bar", () => {
     expect(deriveWaveProgress({ turnsRemaining: 0, turnBudget: 10, isClosed: true })).toEqual({
       currentTurn: 10,

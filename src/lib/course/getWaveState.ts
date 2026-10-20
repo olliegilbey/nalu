@@ -89,13 +89,13 @@ export interface GetWaveStateParams {
  *      `redactWaveChatLog`.
  *   4. `turnsRemaining` = `WAVE.turnCount - (landed Turn count)`.
  *
- * NOTE on `turnsRemaining`: post-rewrite this is now derived from chat_log
- * exclusively. The chat_log is dual-written everywhere a user submission
- * lands (prepareWaveTurn pre-LLM persist, persistWaveMidTurn assistant entry,
- * persistWaveClose summary entry), so the count matches the
- * envelope-derived value the LLM saw on its last emission. Future cleanup
- * (Tasks 12, 13) removes the `context_messages` legacy that produced that
- * count previously.
+ * NOTE on `turnsRemaining`: it is derived from chat_log alone. A Turn lands
+ * when its reply is saved: `persistWaveMidTurn` and `persistWaveClose` each
+ * append an assistant entry after the learner's. `prepareWaveTurn` writes the
+ * learner entry before the LLM call, so that write alone is not a landed
+ * Turn. Counting landed Turns gives the value the LLM saw on its last
+ * successful emission. Future cleanup (Tasks 12, 13) removes the
+ * `context_messages` legacy that produced that count previously.
  */
 export async function getWaveState(params: GetWaveStateParams): Promise<WaveState> {
   // (1) Resolve waveNumber → wave row. Use this resolver in both
@@ -140,8 +140,9 @@ export async function getWaveState(params: GetWaveStateParams): Promise<WaveStat
   // trailing user entry is a Turn still streaming, or one that failed and
   // waits for a retry (bug_001). It has not landed, so it does not count.
   // Otherwise a refetch would move the progress strip early (issue #80).
-  // This matches `prepareWaveTurn`'s `consumed` on a retry, which strips
-  // that entry before counting.
+  // This matches `prepareWaveTurn`'s `consumed` only on an identical retry:
+  // `learnerEntryAlreadyAppended` strips the entry before counting. A
+  // different message counts the stranded entry as a spent Turn.
   const submitted = entries.filter((e) => e.role === "user").length;
   const replyPending = entries.at(-1)?.role === "user";
   const landed = replyPending ? submitted - 1 : submitted;

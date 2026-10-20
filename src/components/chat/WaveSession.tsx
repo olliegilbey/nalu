@@ -104,11 +104,8 @@ export function WaveSession({
 
   // Progress strip: the server's turn counts, refetched after each landed
   // Turn. It flips to complete with the move-on CTA, on the same `isClosed`.
-  // None until the state query resolves.
-  const progress =
-    turnsRemaining === null || turnBudget === null
-      ? null
-      : deriveWaveProgress({ turnsRemaining, turnBudget, isClosed });
+  // Null, so no strip, until the state query resolves.
+  const progress = deriveWaveProgress({ turnsRemaining, turnBudget, isClosed });
 
   return (
     <ChatShell

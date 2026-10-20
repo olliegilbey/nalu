@@ -20,8 +20,10 @@ import { getWaveState } from "./getWaveState";
  * reconstruction; no `context_messages` reads):
  *   1. Redacted chat_log — `text_with_questionnaire` entry redacts MC `correct`
  *      to a `correctEnc` blob that round-trips through `decodeCorrect`.
- *   2. `turnsRemaining` is derived from user-role chat_log entries — assistant
- *      entries don't decrement.
+ *   2. `turnsRemaining` counts landed Turns: user-role entries with a reply
+ *      saved after them. Assistant entries don't decrement.
+ *   2b. A trailing user entry with no reply (streaming or failed) does not
+ *      count.
  *   3. Closed wave → `status: "closed"`.
  *   4. Missing waveNumber → TRPC NOT_FOUND.
  */
