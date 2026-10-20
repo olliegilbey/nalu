@@ -196,6 +196,28 @@ describe("getState", () => {
     expect(result.scopingResult?.startingTier).toBe(1);
   });
 
+  it("carries the course's totalXp", async () => {
+    mockedGetCourse.mockResolvedValue({
+      id: "c6",
+      userId: "u1",
+      topic: "T",
+      status: "scoping",
+      clarification: null,
+      framework: null,
+      baseline: null,
+      summary: null,
+      startingTier: null,
+      currentTier: 1,
+      totalXp: 37,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      summaryUpdatedAt: null,
+    } as unknown as Awaited<ReturnType<typeof getCourseById>>);
+
+    const result = await getState({ userId: "u1", courseId: "c6" });
+    expect(result.totalXp).toBe(37);
+  });
+
   it("re-throws NotFoundError from the query layer", async () => {
     mockedGetCourse.mockRejectedValue(new NotFoundError("course", "c3"));
     await expect(getState({ userId: "u1", courseId: "c3" })).rejects.toThrow(NotFoundError);

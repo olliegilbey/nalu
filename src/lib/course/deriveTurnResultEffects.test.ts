@@ -10,6 +10,7 @@ const midTurn = (
   assistantContent: "Keep going.",
   newQuestionnaire: null,
   gradedSignals,
+  totalXp: 0,
 });
 
 const closeTurn = (
@@ -22,6 +23,7 @@ const closeTurn = (
   completionXpAwarded: 20,
   tierAdvancedTo: null,
   gradedSignals: [],
+  totalXp: 0,
   ...overrides,
 });
 
