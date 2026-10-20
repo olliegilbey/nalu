@@ -24,7 +24,7 @@ The text on `courses.summary`. The scoping close turn writes the first one, from
 
 ## Baseline
 
-The 7-9 assessment questions generated after the framework is confirmed. Mix of multiple choice (graded mechanically by `submitBaseline`, no LLM) and free-text (graded by a single batched LLM call inside `submitBaseline`). Determines the learner's starting tier.
+The 7-9 assessment questions generated after the framework is confirmed. Mix of multiple choice (graded mechanically by `submitBaseline`, no LLM) and free-text (graded by a single batched LLM call inside `submitBaseline`). Its per-tier results set the learner's starting tier: `determineStartingTier` in `src/lib/scoring/startingTier.ts`, with the threshold `BASELINE.tierMasteryRatio`. The model grades answers; it never picks the tier.
 
 ## Concept
 
@@ -67,7 +67,7 @@ The learner's reply to one Question: either a `choice` (MC option key) or a `fre
 
 ## Harness injection
 
-Context content authored by the Harness (not the User, not the LLM). Turn-level injections ride inside the `user_message` envelope: `<turns_remaining>` on every Wave turn, and `<concepts_for_next_wave>` on a Wave's final turn. The one Harness-authored row kind written is `harness_retry_directive`, after a failed attempt; new rows wrap it in `<harness_feedback>`. The schema CHECK still allows `harness_turn_counter` and `harness_review_block` row kinds, but nothing writes them. Content is wrapped in an XML tag, so the model reads it the same way it reads any other turn (P4: harness injections are visible in the Context, not hidden side-channel state).
+Context content authored by the Harness (not the User, not the LLM). Turn-level injections ride inside the `user_message` envelope: `<turns_remaining>` on every Wave turn, and `<concepts_for_next_wave>` on a Wave's final turn. The scoping close's stage envelope ends with `<placement_rule>`: how the Harness places the learner, so the model pitches Wave 1 at that tier. The one Harness-authored row kind written is `harness_retry_directive`, after a failed attempt; new rows wrap it in `<harness_feedback>`. The schema CHECK still allows `harness_turn_counter` and `harness_review_block` row kinds, but nothing writes them. Content is wrapped in an XML tag, so the model reads it the same way it reads any other turn (P4: harness injections are visible in the Context, not hidden side-channel state).
 
 ## LLM-facing terminology
 

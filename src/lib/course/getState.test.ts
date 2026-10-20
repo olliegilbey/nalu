@@ -185,7 +185,6 @@ describe("getState", () => {
           { questionId: "b2", freetext: "counting" },
         ],
         gradings: [],
-        immutableSummary: "profile",
         summarySeed: "seed",
         startingTier: 1,
       },

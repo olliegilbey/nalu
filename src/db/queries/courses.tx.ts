@@ -82,9 +82,9 @@ export async function setCourseBaselineInTx(
 
 /** What scoping close writes when it activates a course. */
 export interface CourseActivation {
-  /** The evolving summary seed. The immutable summary lives in the baseline JSONB. */
+  /** The evolving summary seed: the scoping close's `summary`. */
   readonly summary: string;
-  /** Tier from the baseline grading. Sets both `starting_tier` and `current_tier`. */
+  /** Tier `determineStartingTier` computed. Sets both `starting_tier` and `current_tier`. */
   readonly startingTier: number;
 }
 

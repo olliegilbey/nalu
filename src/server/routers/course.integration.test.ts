@@ -175,7 +175,7 @@ function validBaselineText(): string {
 const CLARIFY_ANSWERS: string[] = ["Learn systems programming.", "C++ background."];
 
 /**
- * Valid scoping-close LLM response — pure JSON matching `makeScopingCloseSchema`.
+ * Valid scoping-close LLM response — pure JSON matching `makeCloseTurnBaseSchema`.
  * One grading per baseline question (7 total), all conceptTier in scope ([1, 2]),
  * verdict/qualityScore bands aligned (correct → 5 ∈ [4,5]).
  */
@@ -195,9 +195,6 @@ function validScopingCloseText(): string {
       rationale: "Selected the correct option. Start lesson 1 with a deeper probe.",
     })),
     summary: "Learner shows solid grasp of foundations across the baseline.",
-    immutableSummary:
-      "C++ background; aims to learn systems programming. Comfortable with manual memory models.",
-    startingTier: 2,
     nextUnitBlueprint: {
       topic: "Ownership basics",
       outline: ["intro to ownership", "moves vs copies", "borrowing rules"],
@@ -716,8 +713,8 @@ describe("course.submitBaseline", () => {
       // Stage 1: clarify. Mock returns 2 free-text questions.
       // Stage 2: framework. Mock returns 3 tiers, baselineScopeTiers=[1,2].
       // Stage 3: baseline. Mock returns 7 MC questions, all `correct: "A"`.
-      // Stage 4: scoping-close. Mock returns gradings covering all 7 ids,
-      //          startingTier=2 (in scope), valid blueprint + immutableSummary.
+      // Stage 4: scoping-close. Mock returns gradings covering all 7 ids
+      //          and a valid blueprint. The Harness computes the starting tier.
       vi.mocked(generateChat)
         .mockResolvedValueOnce(llmSuccess(validClarifyText()))
         .mockResolvedValueOnce(llmSuccess(validFrameworkText()))
@@ -763,6 +760,9 @@ describe("course.submitBaseline", () => {
       // Course flipped to active.
       const course = await getCourseById(courseId);
       expect(course.status).toBe("active");
+      // Every click was right, so both scope tiers are mastered and the
+      // learner starts at the top of scope (issue #94).
+      expect(course.startingTier).toBe(2);
     });
   });
 });
