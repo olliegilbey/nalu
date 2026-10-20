@@ -68,6 +68,29 @@ describe("deriveRetryableWaveTurn", () => {
     expect(deriveRetryableWaveTurn(chatText, [opener, otherAnswers])).toBeNull();
   });
 
+  it("offers nothing when an assistant entry with the same text trails the log", () => {
+    // Only a learner entry can be the saved one; the role decides, not the text.
+    const echo: WaveChatLogEntryForClient = { role: "assistant", kind: "text", content: "why?" };
+    expect(deriveRetryableWaveTurn(chatText, [opener, orphan, echo])).toBeNull();
+  });
+
+  it("offers nothing when the trailing answers differ from the failed ones", () => {
+    // Same questionnaire, other picks: the server's resume check compares the
+    // responses too, so a re-send would not reuse this entry.
+    const answers: SubmitTurnPayload = {
+      kind: "questionnaire-answers",
+      questionnaireId: "q-1",
+      answers: [{ id: "q1", kind: "mc", selected: "B" }],
+    };
+    const otherPicks: WaveChatLogEntryForClient = {
+      role: "user",
+      kind: "answers",
+      questionnaireId: "q-1",
+      responses: [{ questionId: "q1", choice: "C" }],
+    };
+    expect(deriveRetryableWaveTurn(answers, [opener, otherPicks])).toBeNull();
+  });
+
   it("offers nothing when the trailing answers belong to another questionnaire", () => {
     const answers: SubmitTurnPayload = {
       kind: "questionnaire-answers",

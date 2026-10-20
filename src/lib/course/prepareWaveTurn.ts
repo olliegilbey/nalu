@@ -3,11 +3,12 @@ import { db } from "@/db/client";
 import { appendWaveChatLog } from "@/db/queries/waves.writes";
 import { getWaveByCourseAndNumber } from "@/db/queries/waves";
 import { WAVE } from "@/lib/config/tuning";
-import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
+import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import type { SubmitTurnPayload } from "@/lib/types/waveTurnInput";
 import { buildLearnerInput } from "./buildLearnerInput";
 import { findOpenQuestionnaire } from "./findOpenQuestionnaire";
 import { learnerEntryAlreadyAppended } from "./learnerEntryAlreadyAppended";
+import { learnerEntryForPayload } from "./learnerEntryForPayload";
 import { loadWaveContext, type LoadedWaveContext } from "./loadWaveContext";
 
 /** One learner turn submission: who, which Wave, and what they sent. */
@@ -72,20 +73,9 @@ export async function prepareWaveTurn(params: PrepareWaveTurnParams): Promise<Pr
   }
 
   // Build the learner's chat_log entry up front — both the resume check and
-  // the (conditional) append consume it.
-  const learnerEntry: WaveChatLogEntry =
-    params.payload.kind === "chat-text"
-      ? { role: "user", kind: "text", content: params.payload.text }
-      : {
-          role: "user",
-          kind: "answers",
-          questionnaireId: params.payload.questionnaireId,
-          responses: params.payload.answers.map((a) =>
-            a.kind === "mc"
-              ? { questionId: a.id, choice: a.selected }
-              : { questionId: a.id, freetext: a.text },
-          ),
-        };
+  // the (conditional) append consume it. The client's Retry gate builds it
+  // the same way (`deriveRetryableWaveTurn`).
+  const learnerEntry = learnerEntryForPayload(params.payload);
 
   // bug_001: resume-aware idempotency. The pre-LLM append below is a raw,
   // non-idempotent JSONB concat; a previous attempt whose LLM dispatch threw

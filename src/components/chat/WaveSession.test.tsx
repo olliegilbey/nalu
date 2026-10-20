@@ -209,7 +209,7 @@ describe("WaveSession failed chat-text Turn (issue #231)", () => {
     return opts.onError;
   }
 
-  it("puts the sent text back in the Composer when the Turn fails", () => {
+  it("puts the sent text back in the Composer and drops its bubble when the Turn fails", () => {
     const submitChatText = vi.fn();
     wave.value = waveState({ submitChatText });
     render(<WaveSession courseId="c1" waveNumber={1} />);
@@ -217,8 +217,12 @@ describe("WaveSession failed chat-text Turn (issue #231)", () => {
     const fail = sendText(submitChatText, "why?");
     expect(submitChatText).toHaveBeenCalledWith("why?", expect.anything());
     expect(textbox().value).toBe("");
+    expect(screen.queryByTestId("pending")).not.toBeNull();
     act(() => fail());
     expect(textbox().value).toBe("why?");
+    // The text is back in the Composer, so an optimistic copy would show it
+    // twice. A saved entry comes back with the refetch.
+    expect(screen.queryByTestId("pending")).toBeNull();
   });
 
   it("re-sends the failed Turn on Retry and lets go of its restored text", () => {

@@ -62,9 +62,9 @@ export function WaveSession({
   const [composerValue, setComposerValue] = useState("");
   // Optimistic user message. `entryCountAtSubmit` is the `chatEntries.length`
   // captured at submit: the bubble shows while `chatEntries` has not grown past
-  // it (server round-trip not yet landed, or it failed) and hides the instant
-  // the real entry appears — so it never duplicates the real entry, and it
-  // survives an error rather than vanishing with `isPending`.
+  // it (server round-trip not yet landed) and hides the instant the real entry
+  // appears, so it never duplicates the real entry. A failed send drops it:
+  // the Composer gets the text or the card back instead.
   const [optimistic, setOptimistic] = useState<{
     readonly content: string;
     readonly entryCountAtSubmit: number;
@@ -123,10 +123,14 @@ export function WaveSession({
               setOptimistic({ content: text, entryCountAtSubmit: chatEntries.length });
             }
             setComposerValue("");
-            // On failure, hand the text back: retyped text would spend a
-            // second Turn (issue #231).
+            // On failure, hand the text back and drop its optimistic copy:
+            // retyped text would spend a second Turn (issue #231). A saved
+            // entry comes back with the refetch.
             submitChatText(text, {
-              onError: () => setComposerValue((value) => composerTextAfterFailure(value, text)),
+              onError: () => {
+                setComposerValue((value) => composerTextAfterFailure(value, text));
+                setOptimistic(null);
+              },
             });
           }}
           disabled={isPending}
@@ -182,7 +186,8 @@ export function WaveSession({
       )}
       {/* A failed Turn whose entry the server saved. Retry re-sends the same
           payload, so the server reuses that entry. No card can be open here:
-          the saved entry is a chat-text or closes the questionnaire. */}
+          the saved entry is a `text` entry, or answers that close the
+          questionnaire. */}
       {failedTurn && (
         <RetryRow
           disabled={isPending}
