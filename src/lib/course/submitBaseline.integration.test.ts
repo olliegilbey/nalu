@@ -8,7 +8,50 @@ import * as executeTurnModule from "@/lib/turn/executeTurn";
 import { getCourseById } from "@/db/queries/courses";
 import { getOpenWaveByCourse } from "@/db/queries/waves";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
+import { updateCourseScopingState } from "@/db/queries/courses.scoping";
+import type { CloseTurnBase } from "@/lib/prompts/closeTurn";
 import { USER_ID, PARSED, MERGED, ZERO_USAGE, seedScopingCourse } from "./submitBaseline.fixtures";
+
+/** A two-tier baseline: an MC question at tier 1 and a free-text one at tier 2. */
+const TWO_TIER_BASELINE = {
+  userMessage: "baseline framing",
+  questions: [
+    {
+      id: "m1",
+      type: "multiple_choice" as const,
+      prompt: "Which keyword moves ownership?",
+      options: { A: "none, assignment moves", B: "move", C: "own", D: "take" },
+      correct: "A" as const,
+      freetextRubric: "Assignment moves ownership; no keyword is needed.",
+      conceptName: "ownership",
+      tier: 1,
+    },
+    {
+      id: "f2",
+      type: "free_text" as const,
+      prompt: "What is a borrow?",
+      freetextRubric: "A reference that uses a value without taking ownership.",
+      conceptName: "borrowing",
+      tier: 2,
+    },
+  ],
+  responses: [],
+  gradings: [],
+};
+
+/** The close turn's gradings for {@link TWO_TIER_BASELINE}: the free-text answer is correct. */
+const TWO_TIER_GRADINGS: CloseTurnBase["gradings"] = [
+  { kind: "mc-index", questionId: "m1", rationale: "Wrong click. Revisit moves." },
+  {
+    kind: "free-text",
+    questionId: "f2",
+    verdict: "correct",
+    qualityScore: 5,
+    conceptName: "borrowing",
+    conceptTier: 2,
+    rationale: "Clear answer. Build on it.",
+  },
+];
 
 /**
  * Integration tests for `submitBaseline`.
@@ -62,15 +105,16 @@ describe("submitBaseline (integration)", () => {
 
       const after = await getCourseById(courseId);
       expect(after.status).toBe("active");
-      expect(after.startingTier).toBe(PARSED.startingTier);
-      expect(after.currentTier).toBe(PARSED.startingTier);
+      expect(after.startingTier).toBe(MERGED.startingTier);
+      expect(after.currentTier).toBe(MERGED.startingTier);
       // Closing userMessage replaces the baseline-presentation framing.
       expect(after.baseline).toMatchObject({
         userMessage: PARSED.userMessage,
-        immutableSummary: PARSED.immutableSummary,
         summarySeed: PARSED.summary,
-        startingTier: PARSED.startingTier,
+        startingTier: MERGED.startingTier,
       });
+      // Issue #93: the scoping close no longer writes a second summary.
+      expect(after.baseline).not.toHaveProperty("immutableSummary");
 
       // The scoping pass closes in the same transaction (issue #99).
       const passes = await db
@@ -80,6 +124,37 @@ describe("submitBaseline (integration)", () => {
       expect(passes).toEqual([
         expect.objectContaining({ status: "closed", closedAt: expect.any(Date) }),
       ]);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Issue #94: the Harness places the learner. The mocked reply still names
+  // a tier, as the old schema asked the model to. Tier 1's only answer is a
+  // wrong click, so the learner starts at tier 1 whatever the model says.
+  // ---------------------------------------------------------------------------
+  it("places the learner from the graded answers, ignoring a tier the model names", async () => {
+    await withTestDb(async () => {
+      const courseId = await seedScopingCourse();
+      await updateCourseScopingState(courseId, { baseline: TWO_TIER_BASELINE });
+      vi.spyOn(executeTurnModule, "executeTurn").mockResolvedValue({
+        parsed: { ...PARSED, gradings: TWO_TIER_GRADINGS, startingTier: 2 },
+        usage: ZERO_USAGE,
+      } as never);
+
+      await submitBaseline({
+        courseId,
+        userId: USER_ID,
+        answers: [
+          { id: "m1", kind: "mc", selected: "B" },
+          { id: "f2", kind: "freetext", text: "a borrow is a reference", fromEscape: false },
+        ],
+      });
+
+      const after = await getCourseById(courseId);
+      expect(after.startingTier).toBe(1);
+      expect(after.currentTier).toBe(1);
+      expect(after.baseline).toMatchObject({ startingTier: 1 });
+      expect((await getOpenWaveByCourse(courseId))?.tier).toBe(1);
     });
   });
 

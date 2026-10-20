@@ -85,24 +85,83 @@ start:
 
 # === DB ===
 
+# The dev database is a postgres:16-alpine container (the integration-test
+# image) named nalu-dev-db, with user and database `postgres` and no
+# password: postgresql://postgres@127.0.0.1:54322/postgres, as
+# `.env.local.example` expects. Trust auth is safe here: the port is
+# published on loopback only, and the data is throwaway. The nalu-dev-db
+# volume keeps data across restarts. A rerun is a no-op: `docker start` on a
+# running container does nothing. Plain Postgres is enough: `just dev` auth is
+# the `x-dev-user-id` stub (src/server/requestUser.ts), and the migrations use
+# no Supabase objects.
+# Start (or reuse) the dev database on 127.0.0.1:54322.
+db-up:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if docker container inspect nalu-dev-db >/dev/null 2>&1; then
+      docker start nalu-dev-db >/dev/null
+    else
+      docker run --detach --name nalu-dev-db \
+        --publish 127.0.0.1:54322:5432 \
+        --env POSTGRES_HOST_AUTH_METHOD=trust \
+        --volume nalu-dev-db:/var/lib/postgresql/data \
+        postgres:16-alpine >/dev/null
+    fi
+    # Probe over TCP: the first-boot init server listens on a Unix socket
+    # only, so a TCP answer means the real server is up.
+    for _ in $(seq 30); do
+      if docker exec nalu-dev-db pg_isready --quiet --host 127.0.0.1 --username postgres; then
+        echo "nalu-dev-db ready on 127.0.0.1:54322"
+        exit 0
+      fi
+      sleep 1
+    done
+    echo "nalu-dev-db did not accept connections within 30s; see: docker logs nalu-dev-db" >&2
+    exit 1
+
+# Keeps the nalu-dev-db volume. `docker volume rm nalu-dev-db` deletes it.
+# Stop the dev database; `just db-up` brings it back with its data.
+db-down:
+    docker stop nalu-dev-db
+
 # Generate a new migration from schema TS changes
 db-generate name:
     bunx drizzle-kit generate --name {{name}}
 
-# Apply pending migrations (uses DIRECT_URL)
+# The gate refuses unless every DIRECT_URL host is this machine, so
+# `just db-migrate-prod` is the only path to a remote database.
+# Apply pending migrations to the dev database (DIRECT_URL in `.env.local`).
 db-migrate:
+    bun src/db/assertLocalDirectUrl.ts
     bunx drizzle-kit migrate
 
+# Production URLs live in the gitignored `.env.production.local`, never in
+# `.env.local` (docs/DEPLOY.md). `unset` drops the dev URLs that
+# `set dotenv-filename` exported, because an exported var beats
+# `bun --env-file`. `--env-file` also stops bun from auto-loading
+# `.env.local`. The guard refuses a missing or loopback DIRECT_URL, so this
+# never migrates the dev database. `bun run`, not `bunx`: `bunx` drops the
+# `--env-file` values, and drizzle-kit then sees no URL.
+# Apply pending migrations to production, from `.env.production.local`.
+db-migrate-prod:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    unset DATABASE_URL DIRECT_URL
+    bun --env-file=.env.production.local src/db/assertRemoteDirectUrl.ts
+    bun --env-file=.env.production.local run drizzle-kit migrate
+
 # Wipe the local DB, then re-migrate and re-seed. src/db/reset.ts drops the
-# app schemas at DIRECT_URL, and refuses unless DIRECT_URL is localhost:
-# `.env.local` may point at the production Supabase project.
+# app schemas at DIRECT_URL, and refuses unless every host is this machine:
+# an exported DIRECT_URL or a stale `.env.local` can still name production.
 db-reset:
     bun src/db/reset.ts
     just db-migrate
     just db-seed
 
+# The gate refuses unless every DIRECT_URL host is this machine.
 # Insert dev user idempotently
 db-seed:
+    bun src/db/assertLocalDirectUrl.ts
     bun src/db/seed.ts
 
 # Repair courses.total_xp from its source rows (issue #208). A dry run by

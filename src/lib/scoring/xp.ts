@@ -58,7 +58,7 @@ export function calculateMcXp(tier: number, correct: boolean): number {
  *   XP = Σ calculateXP(startingTier, grading.qualityScore)
  *
  * The tier is the placement (`startingTier`), never a grading's own concept
- * tier: the LLM emits only quality. The scoping close (`mergeAndComputeXp`)
+ * tier: the LLM emits only quality. The scoping close (`scoreBaseline`)
  * and the course XP repair (`recomputeCourseTotalXp`) both call this, so the
  * award and the repair cannot drift apart.
  */

@@ -1,6 +1,10 @@
 import { db } from "@/db/client";
-import { lockCourseRowInTx } from "@/db/queries/courses.tx";
-import { getCourseXpAndBaselineInTx, setCourseTotalXpInTx } from "@/db/queries/courses.repair";
+import {
+  getCourseBaselineAndFrameworkInTx,
+  getCourseTotalXpInTx,
+  lockCourseRowInTx,
+} from "@/db/queries/courses.tx";
+import { setCourseTotalXpInTx } from "@/db/queries/courses.repair";
 import { countClosedWavesInTx } from "@/db/queries/waves";
 import { sumCourseAssessmentXpInTx } from "@/db/queries/assessments";
 import { WAVE } from "@/lib/config/tuning";
@@ -39,16 +43,19 @@ export async function recomputeCourseTotalXp(
   options: { readonly apply: boolean },
 ): Promise<CourseTotalXpRecompute> {
   return db.transaction(async (tx) => {
+    // Throws NotFoundError for an unknown id. Under the lock, the row stays.
     await lockCourseRowInTx(courseId, tx);
-    const course = await getCourseXpAndBaselineInTx(courseId, tx);
+    const oldTotal = await getCourseTotalXpInTx(courseId, tx);
+    const course = await getCourseBaselineAndFrameworkInTx(courseId, tx);
     const closedWaves = await countClosedWavesInTx(courseId, tx);
     const assessmentXp = await sumCourseAssessmentXpInTx(courseId, tx);
 
-    const newTotal = baselineXpOf(course.baseline) + WAVE.completionXp * closedWaves + assessmentXp;
-    if (options.apply && newTotal !== course.totalXp) {
+    const baselineXp = baselineXpOf(course?.baseline ?? null);
+    const newTotal = baselineXp + WAVE.completionXp * closedWaves + assessmentXp;
+    if (options.apply && newTotal !== oldTotal) {
       await setCourseTotalXpInTx(courseId, newTotal, tx);
     }
-    return { oldTotal: course.totalXp, newTotal };
+    return { oldTotal, newTotal };
   });
 }
 

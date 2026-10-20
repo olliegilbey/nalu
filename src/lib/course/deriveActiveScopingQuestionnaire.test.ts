@@ -51,6 +51,7 @@ function state(overrides: Partial<CourseState>): CourseState {
     framework: null,
     baseline: null,
     scopingResult: null,
+    totalXp: 0,
     ...overrides,
   };
 }

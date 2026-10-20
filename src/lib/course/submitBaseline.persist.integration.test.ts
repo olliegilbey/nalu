@@ -43,12 +43,12 @@ describe("persistScopingClose (integration)", () => {
       expect(after.status).toBe("active");
       expect(after.startingTier).toBe(2);
       expect(after.currentTier).toBe(2);
-      expect(after.totalXp).toBe(50);
+      expect(after.totalXp).toBe(30);
       expect(after.summary).toBe("evolving seed");
 
-      // 2. Baseline JSONB widened to the closed shape.
+      // 2. Baseline JSONB widened to the closed shape. The starting tier is
+      //    the computed one in `merged`, not anything the model wrote.
       expect(after.baseline).toMatchObject({
-        immutableSummary: "durable profile",
         summarySeed: "evolving seed",
         startingTier: 2,
         // Gradings overwritten with the merged canonical-order list.
@@ -65,7 +65,7 @@ describe("persistScopingClose (integration)", () => {
       expect(concepts).toHaveLength(1);
       expect(concepts[0]).toMatchObject({
         name: "ownership",
-        tier: 2,
+        tier: 1,
         lastReviewedAt: null,
         nextReviewAt: null,
       });
@@ -160,9 +160,9 @@ describe("persistScopingClose (integration)", () => {
       expect(after.status).toBe("scoping");
       expect(after.totalXp).toBe(0);
       expect(after.startingTier).toBeNull();
-      // The widened payload includes `immutableSummary`; pre-close shape does NOT.
+      // The widened payload includes `summarySeed`; pre-close shape does NOT.
       // After rollback, baseline JSONB must NOT contain that key.
-      expect(after.baseline).not.toHaveProperty("immutableSummary");
+      expect(after.baseline).not.toHaveProperty("summarySeed");
 
       // Only the pre-existing Wave 1 row should be present — no extras from
       // a partial run. The pre-existing wave has the "pre-existing" topic.

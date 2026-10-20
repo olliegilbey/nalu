@@ -8,7 +8,7 @@ import { lockCourseRowInTx } from "@/db/queries/courses.tx";
 import { getConceptsByCourse } from "@/db/queries/concepts";
 import { insertOpenAssessments } from "@/db/queries/assessments.open";
 import { BASELINE, WAVE } from "@/lib/config/tuning";
-import { mergeAndComputeXp } from "@/lib/scoring/baselineMerge";
+import { scoreBaseline } from "@/lib/scoring/scoreBaseline";
 import type { WaveCloseTurn } from "@/lib/prompts/waveClose";
 import { applyAssessmentGrading } from "./applyAssessmentGrading";
 import { loadWaveContext } from "./loadWaveContext";
@@ -258,15 +258,13 @@ describe("recomputeCourseTotalXp (integration)", () => {
 
   it("agrees with the live writers", async () => {
     await seedScopingCourseAndRun(async (courseId, scopingPassId) => {
-      // 1. Scoping close, with the XP `submitBaseline` computes: tier 2, q5.
-      //    It passes the free-text gradings only, as `submitBaseline` does.
-      const merged = mergeAndComputeXp({
-        parsed: {
-          gradings: PARSED.gradings.filter((g) => g.kind === "free-text"),
-          startingTier: PARSED.startingTier,
-        },
+      // 1. Scoping close, scored as `submitBaseline` scores it: free-text
+      //    gradings only. b1 (tier 1, q5) masters tier 1, so placement
+      //    starts the learner at tier 2.
+      const merged = scoreBaseline({
+        parsed: { gradings: PARSED.gradings.filter((g) => g.kind === "free-text") },
         mechanicalGradings: [],
-        baselineQuestionIds: ["b1"],
+        baselineQuestions: BASELINE_PRECLOSE.questions,
         scopeTiers: FRAMEWORK.baselineScopeTiers,
       });
       const { wave1Id } = await persistScopingClose({
@@ -308,10 +306,11 @@ describe("recomputeCourseTotalXp (integration)", () => {
 
       const result = await recomputeCourseTotalXp(courseId, { apply: true });
 
-      // Baseline 30 (tier 2, q5) + the grading's 30 (tier 2, q5) + one close.
+      // Baseline 30 (starting tier 2, q5) + the grading's 15 (the concept's
+      // tier 1, q5) + one close.
       expect(result).toEqual({
-        oldTotal: 60 + WAVE.completionXp,
-        newTotal: 60 + WAVE.completionXp,
+        oldTotal: 45 + WAVE.completionXp,
+        newTotal: 45 + WAVE.completionXp,
       });
     });
   });

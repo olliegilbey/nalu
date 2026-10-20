@@ -181,7 +181,7 @@ describe("jsonb trust-boundary schemas", () => {
   // baselineClosedJsonbSchema — close-turn shape (after submitBaseline)
   // ---------------------------------------------------------------------------
 
-  it("accepts the closing payload with summaries, startingTier, and per-grading conceptTier", () => {
+  it("accepts the closing payload with summarySeed, startingTier, and per-grading conceptTier", () => {
     const parsed = baselineClosedJsonbSchema.parse({
       userMessage: "wrap-up",
       questions: [
@@ -206,7 +206,6 @@ describe("jsonb trust-boundary schemas", () => {
           rationale: "fine",
         },
       ],
-      immutableSummary: "durable profile",
       summarySeed: "evolving summary v0",
       startingTier: 2,
     });
@@ -230,7 +229,6 @@ describe("jsonb trust-boundary schemas", () => {
             rationale: "r",
           },
         ],
-        immutableSummary: "s",
         summarySeed: "s",
         startingTier: 1,
       }),
@@ -255,7 +253,6 @@ describe("jsonb trust-boundary schemas", () => {
       questions: [],
       responses: [],
       gradings: [],
-      immutableSummary: "s",
       summarySeed: "s",
       startingTier: 1,
     });
@@ -266,18 +263,49 @@ describe("jsonb trust-boundary schemas", () => {
   // the pre-close arm, a half-written close payload (missing `summarySeed`)
   // would fail the closed arm and then fall through to the pre-close arm,
   // which would happily strip the unknown close-turn fields and look healthy.
-  it("rejects a malformed close payload (immutableSummary without summarySeed) through the union", () => {
+  it("rejects a malformed close payload (startingTier without summarySeed) through the union", () => {
     expect(() =>
       baselineJsonbSchema.parse({
         userMessage: "x",
         questions: [],
         responses: [],
         gradings: [],
-        immutableSummary: "durable",
         // summarySeed missing
         startingTier: 1,
       }),
-    ).toThrow(); // strict mode on the questions arm makes immutableSummary/startingTier unknown keys
+    ).toThrow(); // strict mode on the questions arm makes startingTier an unknown key
+  });
+
+  // Issue #94: rows closed before the change still hold `immutableSummary`.
+  // No code reads it, and no migration removes it, so the row guard must
+  // still accept those rows. The closed arm lists it as an optional legacy key.
+  it("reads a closed row that still holds the legacy immutableSummary key", () => {
+    const legacy = {
+      userMessage: "x",
+      questions: [],
+      responses: [],
+      gradings: [],
+      immutableSummary: "durable",
+      summarySeed: "v0",
+      startingTier: 2,
+    };
+    expect(baselineJsonbSchema.parse(legacy)).toEqual(legacy);
+  });
+
+  // The closed arm stays strict: `updateCourseScopingState` stores the raw
+  // patch after parsing it, so an unknown key must fail the parse.
+  it("rejects a closed payload with an unknown key", () => {
+    expect(() =>
+      baselineJsonbSchema.parse({
+        userMessage: "x",
+        questions: [],
+        responses: [],
+        gradings: [],
+        summarySeed: "v0",
+        startingTier: 2,
+        junk: "y",
+      }),
+    ).toThrow();
   });
 
   // Parallel guard: a well-formed closed payload must surface its close-turn
@@ -288,7 +316,6 @@ describe("jsonb trust-boundary schemas", () => {
       questions: [],
       responses: [],
       gradings: [],
-      immutableSummary: "durable",
       summarySeed: "v0",
       startingTier: 3,
     });

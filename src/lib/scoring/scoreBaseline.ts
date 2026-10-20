@@ -1,28 +1,33 @@
 import type { z } from "zod";
 import type { baselineGradingSchema } from "@/lib/types/jsonb";
 import { calculateBaselineXp } from "@/lib/scoring/xp";
+import { determineStartingTier } from "@/lib/scoring/startingTier";
 
 /** Persisted grading shape — matches `baselineGradingSchema` in jsonbBaseline. */
 export type StoredGrading = z.infer<typeof baselineGradingSchema>;
 
-/** Inputs to the pure merge / XP step. All readonly to keep callers honest. */
-export interface MergeAndComputeXpParams {
+/** Inputs to {@link scoreBaseline}. All readonly to keep callers honest. */
+export interface ScoreBaselineParams {
   /** LLM-side parsed close-turn payload. `gradings` may be in any order. */
   readonly parsed: {
     readonly gradings: readonly StoredGrading[];
-    readonly startingTier: number;
   };
   /** Mechanical MC gradings produced by `gradeMc` (deterministic, no LLM). */
   readonly mechanicalGradings: readonly StoredGrading[];
-  /** The canonical order — same as `baseline.questions.map(q => q.id)`. */
-  readonly baselineQuestionIds: readonly string[];
+  /**
+   * `baseline.questions` in canonical order: each id with the tier the
+   * question was generated at. Placement reads these tiers.
+   */
+  readonly baselineQuestions: readonly { readonly id: string; readonly tier: number }[];
   /** Tiers that exist in the framework. Anything outside is a contract bug. */
   readonly scopeTiers: readonly number[];
 }
 
-/** Pure output: ordered gradings + deterministic total XP. */
-export interface MergeAndComputeXpResult {
+/** Pure output: ordered gradings, the starting tier, and deterministic XP. */
+export interface ScoreBaselineResult {
   readonly gradings: readonly StoredGrading[];
+  /** Tier Wave 1 starts at, from `determineStartingTier`. Baseline XP is scored at it. */
+  readonly startingTier: number;
   readonly totalXp: number;
   /**
    * XP subtotal for free-text (LLM-graded) baseline questions only — i.e.
@@ -35,38 +40,33 @@ export interface MergeAndComputeXpResult {
 }
 
 /**
- * Merge LLM and mechanical gradings into one canonically-ordered list and
- * compute total XP for the baseline, plus a free-text-only subtotal the
- * client uses to avoid double-counting instantly-scored MC answers.
+ * Score a graded baseline in three steps. Merge LLM and mechanical gradings
+ * into one canonically-ordered list. Place the learner with
+ * `determineStartingTier`. Compute total XP for the baseline at that tier.
+ * Also returns a free-text-only XP subtotal the client uses to avoid
+ * double-counting instantly-scored MC answers.
  *
  * Lives under `src/lib/scoring/` because it is a pure scoring/aggregation
  * function — no IO, no DB. The orchestrator (`src/lib/course/submitBaseline`)
  * imports it; nothing scoring-side depends on course types.
  *
+ * Placement runs before XP, because XP uses the starting tier rather than
+ * each grading's own `conceptTier`. The LLM emits only quality; the tier
+ * comes from the Harness's placement decision (issue #94).
+ *
  * Defence-in-depth: the LLM schema's superRefine already enforces
- * `startingTier` and `conceptTier` are in scope, but a second assertion
- * here makes the orchestration fail loud if a future schema regression
- * slips through. Out-of-scope tier values throw — they indicate a bug in
- * the validation path, not a recoverable model error.
+ * `conceptTier` is in scope, but a second assertion here makes the
+ * orchestration fail loud if a future schema regression slips through.
+ * Out-of-scope tier values throw — they indicate a bug in the validation
+ * path, not a recoverable model error.
  *
- * XP uses `startingTier` (placement) rather than each grading's own
- * `conceptTier`, consistent with the LLM-XP boundary (LLM emits only
- * quality; tier comes from the harness's placement decision).
- *
- * @throws if `startingTier` is outside `scopeTiers`, or any merged
- *   grading's `conceptTier` is outside `scopeTiers`, or any
- *   `baselineQuestionIds` entry has no matching grading.
+ * @throws if any merged grading's `conceptTier` is outside `scopeTiers`,
+ *   or any `baselineQuestions` entry has no matching grading.
  */
-export function mergeAndComputeXp(params: MergeAndComputeXpParams): MergeAndComputeXpResult {
+export function scoreBaseline(params: ScoreBaselineParams): ScoreBaselineResult {
   // `Set` for O(1) scope lookups. The cast to `number` is safe — `scopeTiers`
   // is `readonly number[]` and `Set` widens to `Set<number>` cleanly.
   const scope = new Set<number>(params.scopeTiers);
-
-  if (!scope.has(params.parsed.startingTier)) {
-    throw new Error(
-      `mergeAndComputeXp: startingTier ${params.parsed.startingTier} outside scopeTiers [${[...scope].join(", ")}]`,
-    );
-  }
 
   // Mechanical MC gradings are authoritative — the LLM never grades MC
   // answers (the harness owns the score). The wire schema still requires the
@@ -79,24 +79,34 @@ export function mergeAndComputeXp(params: MergeAndComputeXpParams): MergeAndComp
     [...params.parsed.gradings, ...params.mechanicalGradings].map((g) => [g.questionId, g]),
   );
 
-  const merged = params.baselineQuestionIds.map((qid) => {
-    const g = byId.get(qid);
+  // Each grading keeps its question's tier beside it, for placement.
+  const placed = params.baselineQuestions.map((q) => {
+    const g = byId.get(q.id);
     if (!g) {
-      throw new Error(`mergeAndComputeXp: no grading for questionId ${qid}`);
+      throw new Error(`scoreBaseline: no grading for questionId ${q.id}`);
     }
     if (!scope.has(g.conceptTier)) {
       throw new Error(
-        `mergeAndComputeXp: grading for ${qid} has conceptTier ${g.conceptTier} outside scopeTiers`,
+        `scoreBaseline: grading for ${q.id} has conceptTier ${g.conceptTier} outside scopeTiers`,
       );
     }
-    return g;
+    return { grading: g, questionTier: q.tier };
+  });
+  const merged = placed.map((p) => p.grading);
+
+  // Placement files each grade under its question's tier. That tier was
+  // fixed before the learner answered. The model's `conceptTier` is not
+  // used: it is written after the model reads the answer.
+  const startingTier = determineStartingTier({
+    results: placed.map((p) => ({ tier: p.questionTier, qualityScore: p.grading.qualityScore })),
+    scopeTiers: params.scopeTiers,
   });
 
   // XP boundary: tier from placement (`startingTier`), quality from grading.
   // The LLM never sees this value — it's computed deterministically here.
   // `calculateBaselineXp` is the one home of this formula: the course XP
   // repair recomputes the same sum from the stored gradings.
-  const totalXp = calculateBaselineXp(params.parsed.startingTier, merged);
+  const totalXp = calculateBaselineXp(startingTier, merged);
 
   // Free-text subtotal: same XP formula, but restricted to questions with no
   // mechanical (MC-click) grading. A question is free-text iff its id is not
@@ -104,9 +114,9 @@ export function mergeAndComputeXp(params: MergeAndComputeXpParams): MergeAndComp
   // answer on an MC question, which is LLM-graded rather than mechanical.
   const mechanicalQids = new Set(params.mechanicalGradings.map((g) => g.questionId));
   const freeTextXp = calculateBaselineXp(
-    params.parsed.startingTier,
+    startingTier,
     merged.filter((g) => !mechanicalQids.has(g.questionId)),
   );
 
-  return { gradings: merged, totalXp, freeTextXp };
+  return { gradings: merged, startingTier, totalXp, freeTextXp };
 }

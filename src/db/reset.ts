@@ -8,12 +8,12 @@ import { everyHostIsLoopback } from "./everyHostIsLoopback";
  *
  * Drops the `public` schema (every app table and enum) and the `drizzle`
  * schema (drizzle-kit's migration journal), then re-creates an empty
- * `public`. Other schemas, such as a local Supabase stack's `auth`, are left
- * alone. One transaction: a failure leaves the database as it was.
+ * `public`. Other schemas are left alone. One transaction: a failure leaves
+ * the database as it was.
  *
- * Refuses unless every host in `DIRECT_URL` is this machine. `.env.local`
- * may hold the production Supabase URL (see `docs/DEPLOY.md`), and this is
- * destructive.
+ * Refuses unless every host in `DIRECT_URL` is this machine. This is
+ * destructive, and an exported `DIRECT_URL` or a stale `.env.local` can still
+ * name production (see `docs/DEPLOY.md`).
  */
 async function main(): Promise<void> {
   const env = getEnv();
@@ -25,8 +25,8 @@ async function main(): Promise<void> {
     if (!everyHostIsLoopback(client.options.host)) {
       // Name no host: a malformed URL can leak part of the password into it.
       throw new Error(
-        "refusing to reset: DIRECT_URL must point only at localhost or 127.0.0.1. " +
-          "Point DIRECT_URL at a local Postgres to reset it.",
+        "refusing to reset: DIRECT_URL must point only at this machine. " +
+          "Point DIRECT_URL at the dev database from `just db-up` to reset it.",
       );
     }
     await client.begin(async (tx) => {

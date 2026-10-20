@@ -67,7 +67,8 @@ const closeBase = {
     plannedConcepts: [{ name: "c", tier: 1 }],
   },
 };
-const scopingCloseBody = { ...closeBase, immutableSummary: "i", startingTier: 1 };
+// The scoping close emits the close-turn base and nothing more (issue #94).
+const scopingCloseBody = closeBase;
 const waveCloseBody = {
   ...closeBase,
   conceptUpdates: [{ name: "c", qualityScore: 4, reason: "r" }],
@@ -101,10 +102,12 @@ describe("diagnoseFailure (JSON contract)", () => {
     expect(out).toMatch(/framework stage .* wrong turn/);
   });
 
+  // The Wave close's `conceptUpdates` is the one key the scoping close lacks,
+  // so only a Wave-close body in a scoping-close turn reads as a wrong turn.
   it("notes a cross-stage payload between the two close turns", () => {
-    const err = failWith(missing("conceptUpdates", "array"));
-    const out = diagnoseFailure(err, rawWithout(scopingCloseBody), "wave-close");
-    expect(out).toMatch(/scoping-close stage .* wrong turn/);
+    const err = failWith(missing("summary", "string"));
+    const out = diagnoseFailure(err, rawWithout(waveCloseBody, "summary"), "scoping-close");
+    expect(out).toMatch(/wave-close stage .* wrong turn/);
   });
 
   // Issue #130: the stage guess reads only the body's keys, so a right-stage
@@ -136,7 +139,8 @@ describe("diagnoseFailure (JSON contract)", () => {
   });
 
   it.each([
-    ["scoping-close", "startingTier", "number", scopingCloseBody],
+    // A close body also matches three baseline keys; it must not read as one.
+    ["scoping-close", "summary", "string", scopingCloseBody],
     ["wave-close", "summary", "string", waveCloseBody],
     // Ties the scoping-close signature on the shared close keys.
     ["wave-close", "conceptUpdates", "array", waveCloseBody],

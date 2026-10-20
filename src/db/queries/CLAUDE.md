@@ -11,8 +11,10 @@ Transactions: the persist files in `src/lib/course/` open `db.transaction`
 and pass `tx` to every helper they call, so the writes commit or roll back
 together. Most helpers take an optional trailing `tx`. A helper whose
 name ends in `InTx` requires it. `courses.tx.ts` holds the `courses` reads
-and writes the close transactions run; each re-fetches nothing. The
-mid-turn grading tx runs one of them too: `incrementCourseXpInTx`. A
+and writes the close transactions run; the writes re-fetch nothing. The
+mid-turn grading tx runs three of them too: `lockCourseRowInTx`,
+`incrementCourseXpInTx` and `getCourseTotalXpInTx`. Both Wave saves call
+`getCourseTotalXpInTx` last, to read the total for the turn result. A
 `courses` UPDATE on the `db` singleton inside any of these transactions
 would deadlock on the transaction's row lock. A test that needs one of these
 writes passes `db` as the handle; do not add a `db`-bound twin.
@@ -32,7 +34,8 @@ siblings, one concern each:
 - `courses.ts`: row guard, create, reads. `courses.scoping.ts`: scoping-phase
   writes. `courses.tx.ts`: the close transactions' reads and writes:
   activation, summary, tier, and XP, plus the course-row lock.
-  `courses.repair.ts`: the XP repair's read and its absolute `total_xp` set.
+  `courses.repair.ts`: the XP repair's absolute `total_xp` set. The repair
+  reads through `courses.tx.ts`.
 - `waves.ts`: row guard and reads. `waves.writes.ts`: open, close, and the
   `chat_log` append.
 - `concepts.ts`: reads. `concepts.writes.ts`: upsert and SM-2 results.

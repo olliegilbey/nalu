@@ -123,6 +123,20 @@ export const SCOPING = {
 } as const;
 
 /**
+ * Learner profile tunables.
+ *
+ * `maxCustomInstructionsLength` caps the learner's custom instructions, counted
+ * after trim. 1,000 characters leaves room for several preferences at about
+ * 250 tokens. The text rides once in each Wave's system prompt and stays
+ * cached across that Wave's Turns, so the cost is paid once per Wave.
+ * `SCOPING.maxTopicLength` (500) is the prior art. The settings sheet's text
+ * area reads the same cap, so the client and server never disagree.
+ */
+export const PROFILE = {
+  maxCustomInstructionsLength: 1000,
+} as const;
+
+/**
  * Proficiency-framework generation bounds. Consumed by
  * `src/lib/prompts/framework.ts` (prompt instructions + Zod schema) so the
  * two never drift. Tier counts are PRD-sourced.
@@ -145,8 +159,9 @@ export const FRAMEWORK = {
 
 /**
  * Baseline-assessment bounds. Consumed by `src/lib/prompts/baseline.ts`
- * (generation) and `src/lib/course/submitBaseline.ts` (mechanical MC
- * scoring + batch grading via the close turn). Keeping
+ * (generation), `src/lib/course/submitBaseline.ts` (mechanical MC
+ * scoring + batch grading via the close turn), and
+ * `src/lib/scoring/startingTier.ts` (placement). Keeping
  * the numbers in one place means prompt text, Zod schemas, and grading
  * code can't drift.
  *
@@ -184,6 +199,18 @@ export const BASELINE = {
   // Mid-Wave MC grading (`applyAssessmentGrading`) reads these too.
   mcCorrectQuality: 4,
   mcIncorrectQuality: 1,
+  // Starting-tier placement (`determineStartingTier`, issue #94). A tier
+  // counts as mastered when at least this share of its baseline answers
+  // are correct (quality 4-5). Wave 1 starts at the first in-scope tier
+  // not mastered. Only the 0.8 ratio matches `PROGRESSION.passingRatio`;
+  // the evidence rules differ. Advancement passes a concept at quality 3+
+  // and needs `minimumConceptsPerTier` concepts. Placement counts only
+  // quality 4-5 and has no minimum count.
+  // With 3-4 questions per tier, one wrong answer keeps the learner on
+  // that tier. That is deliberate: starting a little too easy costs a few
+  // brisk turns, while starting too hard loses the learner. A strict bar
+  // also stops lucky MC guesses (1 in 4 each) from skipping a tier.
+  tierMasteryRatio: 0.8,
 } as const;
 
 /**
