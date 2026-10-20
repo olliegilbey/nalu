@@ -80,9 +80,11 @@ const FRAMEWORK = {
  * dispatch into `executeWaveClose`. Must run inside `withTestDb`.
  *
  * `waveNumber` parameterised so tests can exercise the modulo-gated tier check.
+ * `customInstructionsSnapshot` is what Wave N opened with (issue #236).
  */
 async function seedCourseWithOpenWave(
   waveNumber: number,
+  customInstructionsSnapshot: string | null = null,
 ): Promise<{ readonly courseId: string; readonly waveId: string }> {
   await db.insert(userProfiles).values({ id: USER_ID, displayName: "U" });
   const course = await createCourse({ userId: USER_ID, topic: "Rust" });
@@ -95,7 +97,7 @@ async function seedCourseWithOpenWave(
     waveNumber,
     tier: 1,
     frameworkSnapshot: FRAMEWORK,
-    customInstructionsSnapshot: null,
+    customInstructionsSnapshot,
     dueConceptsSnapshot: [],
     seedSource: {
       kind: "scoping_handoff",
@@ -339,19 +341,22 @@ function makeParsedClose(
   };
 }
 
+/** The preference Wave N opened with, before the learner edits it. */
+const EARLIER_PREFERENCE = "Keep it short.";
 /** A saved preference with characters the render must escape. */
 const PREFERENCE = "Use analogies <not lists> & keep it short.";
 
 /**
- * Open Wave 2, save `preference` as the learner would mid-Wave, then run the
- * close turn. Must run inside `withTestDb`. Returns the ids the tests read.
+ * Open Wave 2 with {@link EARLIER_PREFERENCE} as its snapshot, save
+ * `preference` as the learner would mid-Wave, then run the close turn. Must
+ * run inside `withTestDb`. Returns the ids the tests read.
  */
 async function closeWaveAfterSaving(preference: string): Promise<{
   readonly courseId: string;
   readonly waveId: string;
   readonly nextWaveId: string;
 }> {
-  const { courseId, waveId } = await seedCourseWithOpenWave(2);
+  const { courseId, waveId } = await seedCourseWithOpenWave(2, EARLIER_PREFERENCE);
   await seedOpenFreeTextQuestionnaire(courseId, waveId);
   await saveCustomInstructions(USER_ID, preference);
 
@@ -968,9 +973,9 @@ describe("executeWaveClose (integration)", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // 12. Custom instructions (issue #236). The learner saves a preference
-  //     during Wave N. The close snapshots it onto Wave N+1, raw. Wave N's
-  //     snapshot, taken when it opened, stays null.
+  // 12. Custom instructions (issue #236). The learner saves a new preference
+  //     during Wave N. The close snapshots it onto Wave N+1, raw. Wave N keeps
+  //     the snapshot it opened with.
   // ---------------------------------------------------------------------------
   it("snapshots custom instructions saved during Wave N onto Wave N+1, leaving Wave N's unchanged", async () => {
     await withTestDb(async () => {
@@ -980,7 +985,7 @@ describe("executeWaveClose (integration)", () => {
       expect(nextWave.customInstructionsSnapshot).toBe(PREFERENCE);
       const closedWave = await getWaveByCourseAndNumber(courseId, 2);
       expect(closedWave?.id).toBe(waveId);
-      expect(closedWave?.customInstructionsSnapshot).toBeNull();
+      expect(closedWave?.customInstructionsSnapshot).toBe(EARLIER_PREFERENCE);
     });
   });
 

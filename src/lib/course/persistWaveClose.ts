@@ -189,8 +189,7 @@ export async function persistWaveClose(
     //    course-level, not wave-mutating, so re-snapshotting from the
     //    closing wave is plan-faithful. Wave N+1 snapshots the learner's
     //    current custom instructions (issue #236): a save during Wave N
-    //    lands here, and Wave N's own snapshot never changes. A plain select:
-    //    no lock taken, so the lock order above holds.
+    //    lands here, and Wave N's own snapshot never changes.
     const customInstructionsSnapshot = await getCourseOwnerCustomInstructionsInTx(
       ctx.course.id,
       tx,

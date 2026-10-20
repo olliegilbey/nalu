@@ -143,7 +143,7 @@ export async function persistScopingClose(
     //    emitted on this close turn. Wave 1 snapshots the learner's saved
     //    custom instructions as it opens (issue #236). The snapshot holds
     //    still for the whole Wave, so a later save waits for the next Wave and
-    //    the cache prefix stays byte-stable. A plain select: no lock taken.
+    //    the cache prefix stays byte-stable.
     const customInstructionsSnapshot = await getCourseOwnerCustomInstructionsInTx(courseId, tx);
     const wave1 = await openWave(
       {

@@ -294,8 +294,10 @@ describe("learner text cannot forge a Harness tag: Wave (streamWaveTurn)", () =>
   });
 
   // Issue #236: the path runs saved preference → Wave snapshot → teaching
-  // system prompt. The Wave openers copy the saved text onto the snapshot raw,
-  // so the render is the one escape. The text sits directly inside
+  // system prompt. This test drives the last hop from a stubbed snapshot. The
+  // Wave openers copy the saved text onto the snapshot raw (their own tests,
+  // `submitBaseline.persist` and `executeWaveClose`, cover that hop), so the
+  // render is the one escape. The text sits directly inside
   // <custom_instructions>, with no <user_message> wrapper.
   it("saved preference → Wave snapshot → <custom_instructions> in the teaching system prompt (escapeXmlText)", async () => {
     const system = await teachingSystemFor({ customInstructions: FORGED });
