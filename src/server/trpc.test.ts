@@ -21,6 +21,8 @@ function fakeOpts(headers: Record<string, string> = {}) {
 afterEach(() => {
   vi.unstubAllEnvs();
   getUserMock.mockReset();
+  // Restores the stderr spy even when an `expect` before it throws.
+  vi.restoreAllMocks();
 });
 
 describe("createTRPCContext", () => {
@@ -45,9 +47,8 @@ describe("createTRPCContext", () => {
       error: new AuthRetryableFetchError("fetch failed", 0),
     });
     // The resolver logs the failed load; keep it out of the test output.
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const ctx = await createTRPCContext(fakeOpts());
     expect(ctx.userId).toBeUndefined();
-    stderr.mockRestore();
   });
 });

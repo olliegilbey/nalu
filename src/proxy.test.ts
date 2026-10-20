@@ -1,7 +1,8 @@
 // @vitest-environment node
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { NextRequest, NextResponse, type NextFetchEvent } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { AuthRetryableFetchError, AuthSessionMissingError } from "@supabase/supabase-js";
 import { capturePageview } from "@/lib/analytics/capturePageview";
 import { proxy, config } from "./proxy";
 
@@ -27,20 +28,36 @@ function fakeEvent(): NextFetchEvent {
 }
 
 /**
- * Builds a fake Supabase client. `user` is what `getUser()` resolves with;
- * `getUserError` makes `getUser()` reject to drive the fail-open path.
+ * Builds a fake Supabase client. `getUser()` resolves with `user`, plus the
+ * error auth-js returns alongside it: `AuthSessionMissingError` when there is
+ * no user, unless `error` overrides it. `thrown` makes `getUser()` reject
+ * instead, as auth-js does for an error that is not an AuthError.
  */
-function fakeClient(opts: { user: unknown; getUserError?: boolean }) {
-  const getUser = opts.getUserError
-    ? vi.fn().mockRejectedValue(new Error("auth host unreachable"))
-    : vi.fn().mockResolvedValue({ data: { user: opts.user } });
+function fakeClient(opts: { user: unknown; error?: unknown; thrown?: unknown }) {
+  const error = opts.error ?? (opts.user ? null : new AuthSessionMissingError());
+  const getUser =
+    opts.thrown === undefined
+      ? vi.fn().mockResolvedValue({ data: { user: opts.user }, error })
+      : vi.fn().mockRejectedValue(opts.thrown);
   const signInAnonymously = vi.fn().mockResolvedValue({ data: {}, error: null });
   return { auth: { getUser, signInAnonymously } };
 }
 
+/** Every line the proxy wrote to stderr in the current test. */
+const logged: string[] = [];
+
+beforeEach(() => {
+  logged.length = 0;
+  vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+    logged.push(String(chunk));
+    return true;
+  });
+});
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("proxy", () => {
@@ -63,19 +80,36 @@ describe("proxy", () => {
 
     expect(client.auth.signInAnonymously).not.toHaveBeenCalled();
     expect(res.headers.get("set-cookie")).toBeNull();
+    // A missing session is the normal cookieless visit, not a failure.
+    expect(logged).toEqual([]);
   });
 
-  it("production, auth failure: fails open and logs", async () => {
+  it("production, auth error returned: serves the page and logs a content-free line", async () => {
+    // auth-js returns a bad key or an unreachable host as `{ error }`; it
+    // does not throw. The failure must still reach the log.
     vi.stubEnv("NODE_ENV", "production");
+    const unreachable = new AuthRetryableFetchError("fetch failed: stub.supabase.co", 0);
     mockedCreateServerClient.mockReturnValue(
-      fakeClient({ user: null, getUserError: true }) as never,
+      fakeClient({ user: null, error: unreachable }) as never,
     );
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await proxy(new NextRequest("https://nalu.ollie.gg/"));
 
     expect(res).toBeInstanceOf(NextResponse);
-    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(logged).toEqual(["[proxy] Supabase auth failed name=AuthRetryableFetchError\n"]);
+  });
+
+  it("production, auth error thrown: fails open and logs a content-free line", async () => {
+    // auth-js rethrows an error that is not an AuthError, so the catch stays.
+    vi.stubEnv("NODE_ENV", "production");
+    mockedCreateServerClient.mockReturnValue(
+      fakeClient({ user: null, thrown: new TypeError("lock failed") }) as never,
+    );
+
+    const res = await proxy(new NextRequest("https://nalu.ollie.gg/"));
+
+    expect(res).toBeInstanceOf(NextResponse);
+    expect(logged).toEqual(["[proxy] Supabase auth failed name=TypeError\n"]);
   });
 
   it("production, refreshing: forwards Supabase cache-control headers onto the response", async () => {
@@ -89,10 +123,9 @@ describe("proxy", () => {
       await cookies?.setAll?.([{ name: "sb-access-token", value: "token", options: {} }], {
         "Cache-Control": "private, no-cache, no-store, must-revalidate, max-age=0",
       });
-      return { data: { user: { id: "user-1" } } };
+      return { data: { user: { id: "user-1" } }, error: null };
     });
-    const signInAnonymously = vi.fn();
-    mockedCreateServerClient.mockReturnValue({ auth: { getUser, signInAnonymously } } as never);
+    mockedCreateServerClient.mockReturnValue({ auth: { getUser } } as never);
 
     const res = await proxy(new NextRequest("https://nalu.ollie.gg/"));
 

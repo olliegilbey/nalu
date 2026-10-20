@@ -14,6 +14,7 @@ vi.mock("@/db/queries", () => ({ ensureUserProfile: vi.fn().mockResolvedValue(un
 vi.mock("@/lib/course/streamWaveTurn", () => ({ streamWaveTurn: vi.fn() }));
 
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
+import { resolveOrMintRequestUserId } from "@/server/requestUser";
 import { POST } from "./route";
 
 /** The learner the auth mock resolves (the hoisted mock cannot read this const). */
@@ -56,6 +57,7 @@ describe("POST wave turn: the input boundary", () => {
   beforeEach(() => {
     vi.mocked(streamWaveTurn).mockReset();
     vi.mocked(streamWaveTurn).mockResolvedValue(null);
+    vi.mocked(resolveOrMintRequestUserId).mockClear();
   });
 
   it.each([
@@ -116,6 +118,8 @@ describe("POST wave turn: the input boundary", () => {
 
     expect(res.status).toBe(400);
     expect(streamWaveTurn).not.toHaveBeenCalled();
+    // Refused before auth: a bad body never mints an anonymous learner (#232).
+    expect(resolveOrMintRequestUserId).not.toHaveBeenCalled();
     const body = JSON.parse(text) as { error: { properties: Record<string, unknown> } };
     expect(Object.keys(body)).toEqual(["error"]);
     expect(Object.keys(body.error.properties)).toEqual([failingField]);
@@ -135,6 +139,7 @@ describe("POST wave turn: the input boundary", () => {
     // Exact equality: the body carries the fixed text and no echo of the input.
     expect(await res.json()).toEqual({ error: "Body must be a JSON object." });
     expect(streamWaveTurn).not.toHaveBeenCalled();
+    expect(resolveOrMintRequestUserId).not.toHaveBeenCalled();
     expect(logged).toEqual([]);
   });
 

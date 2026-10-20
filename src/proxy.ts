@@ -1,7 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
+import { isAuthSessionMissingError } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest, type NextFetchEvent } from "next/server";
 import { getEnv } from "@/lib/config";
 import { capturePageview } from "@/lib/analytics/capturePageview";
+import { errorLogLine } from "@/lib/security/errorLogLine";
 
 /**
  * Next.js proxy (formerly `middleware`) — keeps a returning visitor's Supabase
@@ -16,9 +18,9 @@ import { capturePageview } from "@/lib/analytics/capturePageview";
  * Gated on `NODE_ENV === "production"`: in dev/test this is a passthrough so
  * the `x-dev-user-id` stub seam (see `src/server/trpc.ts`) is untouched.
  *
- * Fails open — a transient Supabase error returns `NextResponse.next()`
- * rather than bricking the page; the subsequent tRPC call degrades to
- * `UNAUTHORIZED`, which the UI already handles.
+ * Fails open — a Supabase auth error is logged and the page still serves;
+ * the subsequent tRPC call degrades to `UNAUTHORIZED`, which the UI already
+ * handles.
  *
  * Also fires a best-effort server-side PostHog `$pageview` (via `waitUntil`)
  * with the visitor's real IP as `$ip`, so PostHog Cloud geolocates the visitor
@@ -68,14 +70,21 @@ export async function proxy(request: NextRequest, event?: NextFetchEvent): Promi
     // Refresh only. `getUser` validates an existing session and, when its
     // access token has expired, refreshes it through `setAll`. A visitor with
     // no session leaves with none: page loads never mint (#232).
-    const { data } = await supabase.auth.getUser();
+    const { data, error } = await supabase.auth.getUser();
     userId = data.user?.id;
+    // auth-js returns an auth failure (bad publishable key, auth host
+    // unreachable) as `error`; it does not throw. Log it so a *persistent*
+    // failure surfaces as a greppable line, not visitors silently degrading
+    // to `UNAUTHORIZED`. A missing session is the normal cookieless visit.
+    // Serve the page anyway: `response` may carry the cookie clear auth-js
+    // writes for a dead session.
+    if (error && !isAuthSessionMissingError(error)) {
+      process.stderr.write(`${errorLogLine("[proxy] Supabase auth failed", {}, error)}\n`);
+    }
   } catch (error) {
-    // Fail open: never brick a page load on a transient auth error. Log it so
-    // a *persistent* failure — bad publishable key, auth host unreachable —
-    // surfaces as a greppable server log instead of every visitor silently
-    // degrading to `UNAUTHORIZED` with no signal.
-    console.error("[proxy] Supabase auth failed; serving page without session", error);
+    // auth-js rethrows only an error that is not an AuthError. Fail open:
+    // never brick a page load on it, and log it the same way.
+    process.stderr.write(`${errorLogLine("[proxy] Supabase auth failed", {}, error)}\n`);
     return NextResponse.next();
   }
 

@@ -82,6 +82,34 @@ describe("resolveOrMintRequestUserId", () => {
     );
   });
 
+  it("production, revoked session: mints a fresh learner over the cleared cookie", async () => {
+    // A revoked session's cookie still arrives. auth-js finds no live session
+    // behind it, clears the cookie through `setAll`, and returns
+    // AuthSessionMissingError, so the resolver mints.
+    vi.stubEnv("NODE_ENV", "production");
+    const client = fakeClient({ data: { user: null }, error: new AuthSessionMissingError() });
+    client.auth.getUser.mockImplementationOnce(async () => {
+      const adapter = mockedCreateServerClient.mock.calls[0]?.[2]?.cookies;
+      await adapter?.setAll?.(
+        [{ name: SESSION_COOKIE.name, value: "", options: { maxAge: 0 } }],
+        {},
+      );
+      return { data: { user: null }, error: new AuthSessionMissingError() };
+    });
+
+    const userId = await resolveOrMintRequestUserId(apiRequest());
+
+    expect(userId).toBe("minted-1");
+    expect(client.auth.signInAnonymously).toHaveBeenCalledOnce();
+    // The fresh session is the last write, so it is the cookie the browser keeps.
+    expect(cookieStore.set).toHaveBeenCalledTimes(2);
+    expect(cookieStore.set).toHaveBeenLastCalledWith(
+      SESSION_COOKIE.name,
+      SESSION_COOKIE.value,
+      SESSION_COOKIE.options,
+    );
+  });
+
   it("production, existing session: resolves its learner and never mints", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const client = fakeClient({ data: { user: { id: "learner-1" } }, error: null });

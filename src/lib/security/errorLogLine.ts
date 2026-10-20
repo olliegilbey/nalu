@@ -14,10 +14,18 @@ const SAFE_TOKEN = /^[\w.-]{1,64}$/;
 const SQLSTATE = /^[0-9A-Z]{5}$/;
 
 /**
+ * A Supabase Auth error code: lowercase snake_case, e.g.
+ * `over_request_rate_limit`. SQLSTATE, TRPC and Node errno codes are
+ * uppercase, so they never read as one.
+ */
+const AUTH_CODE = /^[a-z][a-z0-9_]{0,63}$/;
+
+/**
  * One content-free stderr line for a failed request (issues #169, #171).
  * `event` is the caller's fixed prefix, e.g. `[wave-turn] turn failed`. The
  * line carries the place, error class names and safe codes only: the TRPC
- * code, the Postgres SQLSTATE and constraint name, and the HTTP status. It
+ * code, the Postgres SQLSTATE and constraint name, the Supabase Auth code,
+ * and the HTTP status. It
  * never reads a message, params, or a response body. A DrizzleQueryError's
  * message lists its params, and an APICallError holds the provider's
  * response body. Both can quote learner text, model prose and answer keys.
@@ -36,6 +44,9 @@ export function errorLogLine(event: string, place: ErrorLogPlace, error: unknown
     ["trpcCode", safeToken(error instanceof TRPCError ? error.code : undefined)],
     ["sqlstate", firstMatch([error, inner], "code", SQLSTATE)],
     ["constraint", firstMatch([error, inner], "constraint_name", SAFE_TOKEN)],
+    // Tells a failed anonymous mint's causes apart: the per-IP rate limit
+    // from a provider switched off (#232).
+    ["authCode", firstMatch([error, inner], "code", AUTH_CODE)],
     ["status", firstStatus([error, inner])],
   ];
   const logged = fields.filter(([, value]) => value !== undefined);

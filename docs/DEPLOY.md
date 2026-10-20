@@ -80,7 +80,8 @@ Preview anyway.
   uptime check at `health.ping`: it would mint (#246). Supabase limits
   anonymous sign-ins per IP (30 an hour by default; Auth → Rate Limits). A
   learner over it gets "Something went wrong", and the
-  `[trpc] procedure failed` log line shows `name=AuthApiError`.
+  `[trpc] procedure failed` log line shows `name=AuthApiError` and
+  `authCode=over_request_rate_limit`.
 - **Preview deploys hit the production Supabase project.** Vercel sets
   `NODE_ENV=production` for every build, including Preview — so Preview
   deployments run the real auth path and mint real anonymous users in the
