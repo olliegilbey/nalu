@@ -4,6 +4,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
+import { incrementCourseXpInTx } from "@/db/queries/courses.tx";
 import { appendWaveChatLog, closeWave, openWave } from "@/db/queries/waves.writes";
 import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
 import { WAVE } from "@/lib/config/tuning";
@@ -24,6 +25,7 @@ import { getWaveState } from "./getWaveState";
  *      entries don't decrement.
  *   3. Closed wave → `status: "closed"`.
  *   4. Missing waveNumber → TRPC NOT_FOUND.
+ *   5. `totalXp` carries `courses.total_xp`.
  */
 
 const USER_ID = "77777777-7777-7777-7777-777777777777";
@@ -178,6 +180,21 @@ describe("getWaveState (integration)", () => {
       const promise = getWaveState({ userId: USER_ID, courseId, waveNumber: 99 });
       await expect(promise).rejects.toBeInstanceOf(TRPCError);
       await expect(promise).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 5. `totalXp` is the course total read from the course row, not a delta.
+  //    A non-zero seed fails a projection that drops or hard-codes it.
+  // -------------------------------------------------------------------------
+  it("carries the course total", async () => {
+    await withTestDb(async () => {
+      const { courseId } = await seedCourseWithOpenWave();
+      await incrementCourseXpInTx(courseId, 42, db);
+
+      const state = await getWaveState({ userId: USER_ID, courseId, waveNumber: 1 });
+
+      expect(state.totalXp).toBe(42);
     });
   });
 });

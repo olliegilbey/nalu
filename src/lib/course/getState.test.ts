@@ -185,7 +185,6 @@ describe("getState", () => {
           { questionId: "b2", freetext: "counting" },
         ],
         gradings: [],
-        immutableSummary: "profile",
         summarySeed: "seed",
         startingTier: 1,
       },
@@ -195,6 +194,28 @@ describe("getState", () => {
 
     expectNoPlaintextAnswerKey(result);
     expect(result.scopingResult?.startingTier).toBe(1);
+  });
+
+  it("carries the course's totalXp", async () => {
+    mockedGetCourse.mockResolvedValue({
+      id: "c6",
+      userId: "u1",
+      topic: "T",
+      status: "scoping",
+      clarification: null,
+      framework: null,
+      baseline: null,
+      summary: null,
+      startingTier: null,
+      currentTier: 1,
+      totalXp: 37,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      summaryUpdatedAt: null,
+    } as unknown as Awaited<ReturnType<typeof getCourseById>>);
+
+    const result = await getState({ userId: "u1", courseId: "c6" });
+    expect(result.totalXp).toBe(37);
   });
 
   it("re-throws NotFoundError from the query layer", async () => {

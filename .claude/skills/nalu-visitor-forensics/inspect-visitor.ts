@@ -11,13 +11,14 @@
  * strips it from the stored event, so `src/lib/analytics/buildPageviewEvent.ts`
  * mirrors the value into `client_ip`. Querying `$ip` returns nothing.
  *
- * Env (both from `.env.local`, auto-loaded by `bun` from the project root):
+ * Env, both from `.env.production.local`, loaded by `bun --env-file` (bun then
+ * skips `.env.local`, whose `DATABASE_URL` is the dev container):
  *   - `POSTHOG_PERSONAL_API_KEY` — a `phx_` personal key, scope `query:read`.
  *     The `phc_` POSTHOG_KEY is the ingestion key and CANNOT read.
  *   - `DATABASE_URL` — pooled (PgBouncer) production Supabase.
  *
- * Usage (run from the project root so bun loads .env.local):
- *   bun .claude/skills/nalu-visitor-forensics/inspect-visitor.ts [flags]
+ * Usage (run from the project root):
+ *   bun --env-file=.env.production.local .claude/skills/nalu-visitor-forensics/inspect-visitor.ts [flags]
  *
  * `--minutes N` (default 1440): window, N minutes back.
  * `--since <ISO>`: absolute timestamp; wins over `--minutes`.
@@ -57,7 +58,7 @@ const posthogKey = process.env.POSTHOG_PERSONAL_API_KEY;
 if (!posthogKey) {
   console.error(
     "POSTHOG_PERSONAL_API_KEY not set — add a phx_ personal key (scope: query:read) to\n" +
-      ".env.local and run from the project root so bun loads it. The phc_ POSTHOG_KEY is\n" +
+      ".env.production.local and run with bun --env-file=.env.production.local. The phc_ POSTHOG_KEY is\n" +
       "the write-only ingestion key and cannot read events. See this skill's SKILL.md.",
   );
   process.exit(1);
@@ -65,7 +66,9 @@ if (!posthogKey) {
 
 const dbUrl = process.env.DATABASE_URL;
 if (!dbUrl) {
-  console.error("DATABASE_URL not set — run from the project root so bun loads .env.local");
+  console.error(
+    "DATABASE_URL not set — run from the project root with bun --env-file=.env.production.local",
+  );
   process.exit(1);
 }
 
@@ -264,7 +267,7 @@ if (events.length === 0) {
     console.log("\nRead a visitor's full conversation:");
     for (const course of started.slice(0, 10)) {
       console.log(
-        `  bun .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course ${course.id}`,
+        `  bun --env-file=.env.production.local .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course ${course.id}`,
       );
     }
     if (started.length > 10) {

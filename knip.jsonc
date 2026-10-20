@@ -3,6 +3,8 @@
   "entry": [
     "src/db/seed.ts",
     "src/db/reset.ts",
+    "src/db/assertLocalDirectUrl.ts",
+    "src/db/assertRemoteDirectUrl.ts",
     "scripts/inspect-wave.ts",
     "scripts/probe-model.ts",
     ".claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts",
@@ -18,7 +20,7 @@
     "**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts,css}!",
     // Scorer for the scripts/probe-model.ts dev CLI.
     "!scripts/toolProbeScore.ts!",
-    // Localhost guard for the src/db/reset.ts dev CLI.
+    // Loopback rule for the src/db/reset.ts and assert*DirectUrl.ts CLIs.
     "!src/db/everyHostIsLoopback.ts!",
     // Seeds rows for the assessments integration suites.
     "!src/db/queries/assessments.fixtures.ts!",

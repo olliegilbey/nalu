@@ -42,6 +42,8 @@ export interface CourseState {
   readonly baseline: ScopingQuestionnaireForClient | null;
   /** Populated only when `status === 'active'`. Drives the Move-on CTA. */
   readonly scopingResult: ScopingResult | null;
+  /** Course XP after this request: `courses.total_xp`, never a delta. */
+  readonly totalXp: number;
 }
 
 /**
@@ -88,5 +90,6 @@ export async function getState(params: GetStateParams): Promise<CourseState> {
     framework: (course.framework as FrameworkJsonb | null) ?? null,
     baseline: redactScopingQuestionnaire(baseline),
     scopingResult,
+    totalXp: course.totalXp,
   };
 }

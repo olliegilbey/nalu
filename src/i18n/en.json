@@ -94,6 +94,19 @@
     "empty": "No courses yet — start your first one.",
     "courses": []
   },
+  "settings": {
+    "title": "Settings",
+    "description": "Tell nalu how you learn best. It applies to every course.",
+    "customInstructionsLabel": "Custom instructions",
+    "customInstructionsPlaceholder": "e.g. I learn best through analogies",
+    "remaining": "{n} characters left",
+    "nextWaveHelp": "Changes apply from your next Wave.",
+    "save": "Save",
+    "saved": "Settings saved",
+    "saveFailed": "Couldn't save your settings",
+    "loading": "Loading…",
+    "loadFailed": "Couldn't load your settings. Close and reopen to try again."
+  },
   "stages": {
     "clarify": { "indicator": "Clarifying" },
     "framework": { "label": "Your learning ladder" },
