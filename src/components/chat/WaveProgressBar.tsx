@@ -1,4 +1,4 @@
-import { interpolate, t } from "@/i18n";
+import { t, tFill } from "@/i18n";
 import type { WaveProgress } from "@/lib/course/deriveWaveProgress";
 
 /**
@@ -9,10 +9,7 @@ import type { WaveProgress } from "@/lib/course/deriveWaveProgress";
 export function WaveProgressBar({ progress }: { readonly progress: WaveProgress }) {
   const label = progress.isComplete
     ? t<string>("waveProgress.complete")
-    : interpolate(t<string>("waveProgress.turn"), {
-        current: progress.currentTurn,
-        total: progress.turnBudget,
-      });
+    : tFill("waveProgress.turn", { current: progress.currentTurn, total: progress.turnBudget });
   return (
     // A progressbar's children are presentational, so the label also rides
     // on aria-valuetext for screen readers.

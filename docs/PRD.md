@@ -34,22 +34,22 @@ Items marked **Unbuilt** are still in scope. The code does not deliver them yet.
 
 ### 2.1 In Scope
 
-| Feature                            | Description                                                                                                                                                                                                                                            |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Topic selection with clarification | User types a topic. Model asks 2-4 clarifying questions before generating the framework (e.g. "Software engineering" prompts "What area? Backend, frontend, full-stack? Any specific language?").                                                      |
-| Dynamic proficiency framework      | 3-8 tiers generated per topic (flexible by breadth). Each tier has a human-readable name and description. Framework is mutable as the course evolves. **Unbuilt:** the framework is frozen after scoping.                                              |
-| Baseline assessment                | 7-9 generated questions spanning tiers to establish starting level.                                                                                                                                                                                    |
-| Conversational learning            | Teaching through dialogue. Model opens each Wave; the user never faces a blank chat.                                                                                                                                                                   |
-| Assessment cards                   | Structured multiple-choice and free-text cards rendered distinctly in chat.                                                                                                                                                                            |
-| Free-text comprehension            | Model also infers understanding from conversational responses (silent to user; the header XP badge only). **Unbuilt:** the model grades only answered cards.                                                                                           |
-| Persistent state                   | Course progress, concept scores, review schedules, and Wave history saved between sessions.                                                                                                                                                            |
-| Spaced repetition (SM-2)           | Per-concept review scheduling. Due concepts are injected at Wave boundaries.                                                                                                                                                                           |
-| XP scoring                         | Points per correct answer, weighted by tier. Deterministic calculation, not LLM-decided.                                                                                                                                                               |
-| Session resumption                 | On return, user sees the Wave's chat history in the UI. Each Wave opens with text the model drafted at the end of the prior Wave. User responds to something, never initiates from nothing.                                                            |
-| Dynamic curriculum                 | User can steer into sub-topics. Model also proactively surfaces blindspots the user may not know to ask about. New concepts created on the fly. Framework adapts. **Unbuilt:** framework adaptation.                                                   |
-| Custom user instructions           | Free-text field for learning preferences (e.g. "I have ADHD, keep sessions short and varied", "I learn best through analogies"). Appended to system prompt for all courses. **Unbuilt:** no UI sets them, and Waves do not copy them yet (issue #100). |
-| Prompt injection guards            | Input sanitisation on user-supplied text. System prompt instructs model to ignore directives in user messages. XP and progression are deterministic (not gameable via prompt).                                                                         |
-| Anti-gaming                        | XP awarded by deterministic code based on LLM quality evaluation. User cannot self-report scores. Tier advancement requires minimum concept count and quality thresholds.                                                                              |
+| Feature                            | Description                                                                                                                                                                                                                       |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Topic selection with clarification | User types a topic. Model asks 2-4 clarifying questions before generating the framework (e.g. "Software engineering" prompts "What area? Backend, frontend, full-stack? Any specific language?").                                 |
+| Dynamic proficiency framework      | 3-8 tiers generated per topic (flexible by breadth). Each tier has a human-readable name and description. Framework is mutable as the course evolves. **Unbuilt:** the framework is frozen after scoping.                         |
+| Baseline assessment                | 7-9 generated questions spanning tiers to establish starting level.                                                                                                                                                               |
+| Conversational learning            | Teaching through dialogue. Model opens each Wave; the user never faces a blank chat.                                                                                                                                              |
+| Assessment cards                   | Structured multiple-choice and free-text cards rendered distinctly in chat.                                                                                                                                                       |
+| Free-text comprehension            | Model also infers understanding from conversational responses (silent to user; the header XP badge only). **Unbuilt:** the model grades only answered cards.                                                                      |
+| Persistent state                   | Course progress, concept scores, review schedules, and Wave history saved between sessions.                                                                                                                                       |
+| Spaced repetition (SM-2)           | Per-concept review scheduling. Due concepts are injected at Wave boundaries.                                                                                                                                                      |
+| XP scoring                         | Points per correct answer, weighted by tier. Deterministic calculation, not LLM-decided.                                                                                                                                          |
+| Session resumption                 | On return, user sees the Wave's chat history in the UI. Each Wave opens with text the model drafted at the end of the prior Wave. User responds to something, never initiates from nothing.                                       |
+| Dynamic curriculum                 | User can steer into sub-topics. Model also proactively surfaces blindspots the user may not know to ask about. New concepts created on the fly. Framework adapts. **Unbuilt:** framework adaptation.                              |
+| Custom user instructions           | Free-text field for learning preferences (e.g. "I have ADHD, keep sessions short and varied", "I learn best through analogies"). Appended to system prompt for all courses. **Unbuilt:** Waves do not copy them yet (issue #100). |
+| Prompt injection guards            | Input sanitisation on user-supplied text. System prompt instructs model to ignore directives in user messages. XP and progression are deterministic (not gameable via prompt).                                                    |
+| Anti-gaming                        | XP awarded by deterministic code based on LLM quality evaluation. User cannot self-report scores. Tier advancement requires minimum concept count and quality thresholds.                                                         |
 
 ### 2.2 Out of Scope (post-MVP)
 
@@ -141,7 +141,11 @@ User types a topic
        (becomes courses.summary and Wave 1's <progress_summary>),
        and drafts Wave 1's blueprint
     -> Deterministic code sets the starting tier from per-tier baseline results
-       Today the LLM emits the starting tier within a validated range; see issue #94.
+       (determineStartingTier): walk the in-scope tiers from lowest to highest;
+       start at the first tier whose share of correct answers (quality 4-5)
+       falls below BASELINE.tierMasteryRatio, or at the highest if every tier
+       meets it.
+       A tier with no answers counts as not mastered. The LLM never picks the tier.
     -> Upsert baseline concepts at default SM-2 state; award XP
     -> UPDATE courses SET current_tier, starting_tier, baseline, summary, total_xp, status = 'active'
     -> Open Wave 1 from the blueprint; seed its opening text
@@ -267,9 +271,9 @@ The system prompt is crystallised **once per phase** (scoping, or a single Wave)
 
 - **Mid-Wave turn**: teaching prose; optional comprehension signals that grade the cards the learner just answered; an optional questionnaire of 1-N questions. Each question names one concept. Each multiple-choice question carries its correct key. Each free-text question carries a rubric that states what a correct answer contains; baseline questions follow the same rule. The model sends the rest as tool calls (`recordComprehensionSignals`, `presentQuestionnaire`) first, then streams its prose as text. The learner sees the prose above the quiz card.
 - **Final turn**: one JSON object with the closing message, gradings for cards answered this turn, the rewritten course summary, the next Wave's blueprint (topic, outline, opening text, planned concepts), and per-concept SM-2 quality scores.
-- **Scoping close**: the same close-turn base, plus a durable learner profile and the starting tier.
+- **Scoping close**: the same close-turn base and nothing more. Its summary seeds `courses.summary`. The Harness computes the starting tier (Section 4.1). The close envelope states the placement rule, so the model pitches Wave 1's opening and planned concepts at the level the learner will be placed.
 
-Exact schemas live in `src/lib/prompts/` (`waveTurn.ts`, `waveClose.ts`, `closeTurn.ts`, `scopingClose.ts`, `questionnaire.ts`). Tool schemas live in `src/lib/course/waveTurnTools.ts`. The Harness redacts answer keys from every Wave and scoping client payload (Section 8.2).
+Exact schemas live in `src/lib/prompts/` (`waveTurn.ts`, `waveClose.ts`, `closeTurn.ts`, `questionnaire.ts`). Tool schemas live in `src/lib/course/waveTurnTools.ts`. The Harness redacts answer keys from every Wave and scoping client payload (Section 8.2).
 
 ### 5.2 Quality Score Mapping
 
@@ -382,7 +386,9 @@ Before any user text enters a prompt:
 
 Anonymous auth needs no login or register pages.
 
-**Unbuilt:** a dashboard (course cards, total XP, new course CTA) and a settings page (custom instructions). The side menu's course list is placeholder copy.
+The side menu's Settings button opens a settings sheet on every page. The sheet holds the learner's custom instructions.
+
+**Unbuilt:** a dashboard (course cards, total XP, new course CTA). The side menu's course list is placeholder copy.
 
 ### 9.3 Learning Session Layout
 

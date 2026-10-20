@@ -19,16 +19,13 @@ export function t<T = string>(path: string): T {
 }
 
 /**
- * Fill the `{name}` slots in a copy string.
- * e.g. interpolate(t("moveOn.toWave"), { n: 2 }) → "Move on to Wave 2"
+ * Translate a string at `path`, then fill each `{name}` placeholder from
+ * `values`. e.g. tFill("moveOn.toWave", { n: 2 }) → "Move on to Wave 2".
  */
-export function interpolate(
-  template: string,
-  values: Readonly<Record<string, string | number>>,
-): string {
+export function tFill(path: string, values: Readonly<Record<string, string | number>>): string {
   return Object.entries(values).reduce(
     (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
-    template,
+    t<string>(path),
   );
 }
 

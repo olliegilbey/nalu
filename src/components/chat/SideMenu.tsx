@@ -30,7 +30,7 @@ export function SideMenu({
   activeCourseId?: string | null;
   onSelectCourse: (course: Course) => void;
   onNewCourse: () => void;
-  onOpenSettings?: () => void;
+  onOpenSettings: () => void;
 }) {
   const courses = t<Course[]>("menu.courses");
 

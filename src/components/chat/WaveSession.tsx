@@ -13,7 +13,7 @@ import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
 import { selectComposerQuestionnaire } from "@/lib/course/selectComposerQuestionnaire";
 import { deriveWaveProgress } from "@/lib/course/deriveWaveProgress";
 import { WaveProgressBar } from "./WaveProgressBar";
-import { interpolate, t } from "@/i18n";
+import { t, tFill } from "@/i18n";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 
 /**
@@ -97,7 +97,7 @@ export function WaveSession({
   const isClosed = closeResult !== null || status === "closed";
   const moveOn = isClosed
     ? {
-        label: interpolate(t<string>("moveOn.toWave"), { n: nextWaveNumber }),
+        label: tFill("moveOn.toWave", { n: nextWaveNumber }),
         onAdvance: () => router.push(`/course/${courseId}/wave/${nextWaveNumber}`),
       }
     : undefined;

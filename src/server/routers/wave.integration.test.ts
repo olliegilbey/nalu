@@ -3,7 +3,7 @@ import { withTestDb } from "@/db/testing/withTestDb";
 import { db } from "@/db/client";
 import { userProfiles } from "@/db/schema";
 import { createCourse } from "@/db/queries/courses";
-import { setCourseStartingStateInTx } from "@/db/queries/courses.tx";
+import { incrementCourseXpInTx, setCourseStartingStateInTx } from "@/db/queries/courses.tx";
 import { openWave, appendWaveChatLog } from "@/db/queries/waves.writes";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
 import { WAVE } from "@/lib/config/tuning";
@@ -133,7 +133,22 @@ describe("wave.getState", () => {
   });
 
   // -------------------------------------------------------------------------
-  // 2. Missing wave → NOT_FOUND propagates as a TRPCError from the lib layer.
+  // 2. The course total crosses the transport: `totalXp` is `courses.total_xp`.
+  // -------------------------------------------------------------------------
+  it("returns the course totalXp", async () => {
+    await withTestDb(async () => {
+      const { courseId } = await seedCourseWithOpenWave();
+      await incrementCourseXpInTx(courseId, 65, db);
+
+      const caller = appRouter.createCaller({ userId: USER_ID });
+      const state = await caller.wave.getState({ courseId, waveNumber: 1 });
+
+      expect(state.totalXp).toBe(65);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 3. Missing wave → NOT_FOUND propagates as a TRPCError from the lib layer.
   // -------------------------------------------------------------------------
   it("throws NOT_FOUND when the wave doesn't exist", async () => {
     await withTestDb(async () => {

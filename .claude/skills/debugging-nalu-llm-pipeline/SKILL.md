@@ -53,12 +53,12 @@ A pure 429 is a _transport_ error → it propagates out of `executeTurn` untouch
 
 ## Step 3 — Inspect the production DB
 
-`.env.local`'s `DATABASE_URL` points at the **production** Supabase (pooled, PgBouncer). `psql` isn't installed — use the bundled read-only inspector (the `postgres` package is already a project dep; `bun` auto-loads `.env.local`):
+The **production** `DATABASE_URL` (pooled, PgBouncer) lives in the gitignored `.env.production.local`. `.env.local` points at the dev container. `psql` isn't installed — use the bundled read-only inspector (the `postgres` package is already a project dep). Always pass `--env-file=.env.production.local`: bun then skips `.env.local` and reads production. Without it you inspect the dev database and find nothing.
 
 ```bash
-bun .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts --minutes 30                  # overview, last 30 min
-bun .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts --since 2026-05-21T19:00:00Z  # overview from an absolute time
-bun .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts --course <uuid>               # drill into one course
+bun --env-file=.env.production.local .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts --minutes 30                  # overview, last 30 min
+bun --env-file=.env.production.local .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts --since 2026-05-21T19:00:00Z  # overview from an absolute time
+bun --env-file=.env.production.local .claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts --course <uuid>               # drill into one course
 ```
 
 **Size the window to the incident.** `--minutes` looks back from _now_; for anything older than ~30 min, pass a larger `--minutes` or use `--since <ISO>` — otherwise the overview shows nothing and you misdiagnose.
@@ -68,9 +68,9 @@ The overview's scoping-passes table carries the diagnosis directly via its `msgs
 `inspect-db.ts --course` truncates each message to a one-line preview — right for diagnosis, wrong for reading the conversation. To read or hand back the **whole chat**, use the sibling `dump-chat.ts`, which renders the full Context (scoping + waves) with assistant JSON parsed into readable blocks (questions, framework, gradings, blueprint):
 
 ```bash
-bun .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course <uuid>          # colored, human-readable
-bun .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course <uuid> --json   # structured, for jq
-bun .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course <uuid> --full   # also show the folded retry schema
+bun --env-file=.env.production.local .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course <uuid>          # colored, human-readable
+bun --env-file=.env.production.local .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course <uuid> --json   # structured, for jq
+bun --env-file=.env.production.local .claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts --course <uuid> --full   # also show the folded retry schema
 ```
 
 Color auto-disables when stdout isn't a TTY (piping to a file / jq) or when `NO_COLOR` is set. **The agent's own shell is not a TTY, so colors won't show in tool output** — when the user wants the pretty transcript, give them the exact `dump-chat.ts --course <uuid>` line to paste into their own terminal rather than relying on the captured output.
@@ -138,7 +138,7 @@ The tell: `inspect-db.ts --course` prints WAVE CONTEXT MESSAGES plus a `chatlog_
 
 ## Common mistakes
 
-- **Leaking secrets.** Never pipe `.env.local` through a redaction `sed` — BSD `sed` ≠ GNU `sed`, and a wrong pattern prints the value verbatim. List variable _names_ only: `rg -o '^[A-Z_]+=' .env.local`. (A past session leaked the production DB password this way.)
+- **Leaking secrets.** Never pipe `.env.production.local` or `.env.local` through a redaction `sed` — BSD `sed` ≠ GNU `sed`, and a wrong pattern prints the value verbatim. List variable _names_ only: `rg -o '^[A-Z_]+=' .env.production.local`. (A past session leaked the production DB password this way.)
 - Treating the browser error as the root cause. It's a symptom — go to the DB.
 - Expecting Vercel runtime logs to quote the error message. They won't, by design. A tRPC 500 logs one `[trpc] procedure failed` line and a Wave turn one `[wave-turn] turn failed` line, with ids and codes only, never the message.
 - Forgetting `course.clarify` has no dedup: each call (and each user retry) creates a fresh `courses` row + a new LLM burst, multiplying load against the rate limit.

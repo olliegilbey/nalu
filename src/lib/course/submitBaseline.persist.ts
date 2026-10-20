@@ -16,22 +16,22 @@ import {
   frameworkJsonbSchema,
   type FrameworkJsonb,
 } from "@/lib/types/jsonb";
-import type { ScopingCloseTurn } from "@/lib/prompts/scopingClose";
-import type { MergeAndComputeXpResult } from "@/lib/scoring/baselineMerge";
+import type { CloseTurnBase } from "@/lib/prompts/closeTurn";
+import type { ScoreBaselineResult } from "@/lib/scoring/scoreBaseline";
 
 /**
  * Inputs for {@link persistScopingClose}.
  *
  * `parsed` is the validated LLM close-turn payload (post-Zod).
- * `merged` is the canonical-order gradings + deterministic total XP produced
- * by `mergeAndComputeXp`.
+ * `merged` is the canonical-order gradings, the starting tier, and the
+ * deterministic total XP produced by `scoreBaseline`.
  */
 export interface PersistScopingCloseParams {
   readonly courseId: string;
   /** The course's open scoping pass. It closes in this transaction. */
   readonly scopingPassId: string;
-  readonly parsed: ScopingCloseTurn;
-  readonly merged: MergeAndComputeXpResult;
+  readonly parsed: CloseTurnBase;
+  readonly merged: ScoreBaselineResult;
 }
 
 /** Result handle — Wave 1 id is useful for callers that need to refer to it next. */
@@ -67,9 +67,9 @@ export async function persistScopingClose(
 
   // App-layer invariants — surface a clear error at the boundary rather than
   // as a Postgres CHECK violation.
-  if (!Number.isInteger(parsed.startingTier) || parsed.startingTier < 1) {
+  if (!Number.isInteger(merged.startingTier) || merged.startingTier < 1) {
     throw new Error(
-      `persistScopingClose: startingTier must be a positive integer (got ${parsed.startingTier})`,
+      `persistScopingClose: startingTier must be a positive integer (got ${merged.startingTier})`,
     );
   }
   if (!Number.isInteger(merged.totalXp) || merged.totalXp < 0) {
@@ -108,9 +108,8 @@ export async function persistScopingClose(
       questions: existingBaseline.questions,
       responses: existingBaseline.responses,
       gradings: merged.gradings,
-      immutableSummary: parsed.immutableSummary,
       summarySeed: parsed.summary,
-      startingTier: parsed.startingTier,
+      startingTier: merged.startingTier,
     });
     await setCourseBaselineInTx(courseId, widened, tx);
 
@@ -145,7 +144,7 @@ export async function persistScopingClose(
       {
         courseId,
         waveNumber: 1,
-        tier: parsed.startingTier,
+        tier: merged.startingTier,
         frameworkSnapshot: framework,
         customInstructionsSnapshot: null,
         dueConceptsSnapshot: [],
@@ -182,16 +181,14 @@ export async function persistScopingClose(
       content: parsed.nextUnitBlueprint.openingText,
     });
 
-    // 6. Flip course status, persist starting/current tier + the evolving
-    //    summary seed (NOT the immutable summary — that lives only in the
-    //    baseline JSONB column). The tx helper: a write on the `db`
-    //    singleton would deadlock against the earlier baseline widen's row
-    //    lock.
+    // 6. Flip course status, persist starting/current tier + the summary
+    //    seed. The tx helper: a write on the `db` singleton would deadlock
+    //    against the earlier baseline widen's row lock.
     //    The helper's WHERE status='scoping' makes it a no-op if the course
     //    is already active (idempotency at the row level).
     await setCourseStartingStateInTx(
       courseId,
-      { summary: parsed.summary, startingTier: parsed.startingTier },
+      { summary: parsed.summary, startingTier: merged.startingTier },
       tx,
     );
 

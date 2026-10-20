@@ -72,7 +72,7 @@ export const VERDICT_QUALITY_BANDS: Readonly<
  * entries the server uses the stored `question.tier` (authoritative,
  * per the LLM-XP boundary). For free-text entries the LLM's `conceptTier`
  * is what gets stored, validated server-side against the framework's
- * `baselineScopeTiers` via `mergeAndComputeXp`'s defence-in-depth check.
+ * `baselineScopeTiers` via `scoreBaseline`'s defence-in-depth check.
  */
 export const baselineGradingSchema = z
   .object({
@@ -99,7 +99,7 @@ export const baselineGradingSchema = z
  * `gradings` is initialised empty here and populated by `submitBaseline`.
  *
  * `.strict()` is required for union discrimination in `baselineJsonbSchema`:
- * without it, a malformed closed payload (with `immutableSummary` but missing
+ * without it, a malformed closed payload (with `startingTier` but missing
  * `summarySeed`) would silently fall through to this arm and have its
  * close-turn fields stripped, masking a corruption bug.
  */
@@ -123,15 +123,22 @@ export const baselineQuestionsJsonbSchema = z
 
 /**
  * What `submitBaseline` writes on close. Strict superset of the pre-close
- * shape, with the close-turn outputs added: dual summaries (immutable
- * profile + evolving seed) and the chosen `startingTier`.
+ * shape, with the close-turn outputs added: the summary seed and the
+ * `startingTier` that `determineStartingTier` computed.
  *
  * `.strict()` here is symmetric with the pre-close arm — both arms reject
- * unknown keys so the union below has unambiguous discrimination.
+ * unknown keys so the union below has unambiguous discrimination. It also
+ * guards writes: `updateCourseScopingState` parses a patch, then stores the
+ * raw patch, so a stripping schema would let an unknown key reach the row.
  */
 export const baselineClosedJsonbSchema = baselineQuestionsJsonbSchema
   .extend({
-    immutableSummary: z.string(),
+    /**
+     * Legacy key: never written since issue #94; old rows hold it. Nothing
+     * reads it. Listed only so those rows still parse under `.strict()`,
+     * with no data migration.
+     */
+    immutableSummary: z.string().optional(),
     summarySeed: z.string(),
     startingTier: z.number().int().positive(),
   })

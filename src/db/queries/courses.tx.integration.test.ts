@@ -7,6 +7,7 @@ import { createCourse, getCourseById } from "./courses";
 import { updateCourseScopingState } from "./courses.scoping";
 import {
   getCourseBaselineAndFrameworkInTx,
+  getCourseTotalXpInTx,
   setCourseBaselineInTx,
   setCourseStartingStateInTx,
   setCourseSummaryInTx,
@@ -33,7 +34,6 @@ const CLOSED_BASELINE: BaselineClosedJsonb = {
   questions: [],
   responses: [],
   gradings: [],
-  immutableSummary: "profile",
   summarySeed: "seed",
   startingTier: 2,
 };
@@ -82,6 +82,19 @@ describe("courses close-transaction queries", () => {
       expect(after.startingTier).toBe(2);
       expect(after.currentTier).toBe(3);
       expect(after.totalXp).toBe(15);
+    });
+  });
+
+  // Issue #94: courses closed before the change hold `immutableSummary` in
+  // their baseline. The row guard must still load them, key and all.
+  it("reads a closed baseline that still holds the legacy immutableSummary key", async () => {
+    await seedCourseAndRun(async (db, courseId) => {
+      // Written raw, as an old close left it: no helper writes the key now.
+      const legacy = { ...CLOSED_BASELINE, immutableSummary: "profile" };
+      await db.update(courses).set({ baseline: legacy }).where(eq(courses.id, courseId));
+
+      const after = await getCourseById(courseId);
+      expect(after.baseline).toEqual(legacy);
     });
   });
 
@@ -156,6 +169,19 @@ describe("courses close-transaction queries", () => {
         await expect(lockCourseRowInTx(courseId, tx)).resolves.toBeUndefined();
         await expect(
           lockCourseRowInTx("00000000-0000-0000-0000-000000000000", tx),
+        ).rejects.toBeInstanceOf(NotFoundError);
+      });
+    });
+  });
+
+  it("getCourseTotalXpInTx reads total_xp and throws NotFoundError for an unknown id", async () => {
+    await seedCourseAndRun(async (db, courseId) => {
+      await db.transaction(async (tx) => {
+        await incrementCourseXpInTx(courseId, 12, tx);
+        // Same tx: the read sees the uncommitted bump it will commit.
+        expect(await getCourseTotalXpInTx(courseId, tx)).toBe(12);
+        await expect(
+          getCourseTotalXpInTx("00000000-0000-0000-0000-000000000000", tx),
         ).rejects.toBeInstanceOf(NotFoundError);
       });
     });

@@ -31,6 +31,8 @@ import { redactWaveChatLog, type WaveChatLogEntryForClient } from "./redactWaveC
  *   - `turnBudget`: `WAVE.turnCount`, the budget `prepareWaveTurn` enforces.
  *     It rides beside `turnsRemaining` so the progress strip reads both from
  *     the server and derives no turn count from the chat log (issue #80).
+ *   - `totalXp`: the course's `courses.total_xp`, from the course row the
+ *     ownership check loads.
  *   - `closeResult`: always `null` here. The close result streams once, as
  *     the turn's `data-turn-result` part (spec §7.2); it is not a re-readable
  *     wave property. The field exists on the wire shape for client-side union
@@ -53,12 +55,14 @@ export interface WaveState {
   /** Turns in this Wave: `WAVE.turnCount`, the budget the Harness enforces. */
   readonly turnBudget: number;
   readonly chatLog: readonly WaveChatLogEntryForClient[];
+  /** Course XP after this request: `courses.total_xp`, never a delta. */
+  readonly totalXp: number;
   /**
    * Always `null` on `getWaveState` — the close result streams once, as the
    * turn's `data-turn-result` part; it is not a re-readable wave property
    * (spec §7.2). The shape
    * below is a NARROWER SUBSET of `ExecuteWaveCloseResult` (omits `kind`,
-   * `nextWaveId`, `gradedSignals`) — the four fields a client typically
+   * `nextWaveId`, `gradedSignals`, `totalXp`) — the four fields a client typically
    * re-renders after close. The full close payload comes from that stream
    * part; this field exists as a documentation handle only.
    */
@@ -111,7 +115,8 @@ export async function getWaveState(params: GetWaveStateParams): Promise<WaveStat
 
   // (2) Ownership check. `getCourseById` throws `NotFoundError` on a missing
   // row OR a userId mismatch (existence is not disclosed across owners). The
-  // course row is retained — its `topic` populates the wave header title.
+  // course row is retained — its `topic` populates the wave header title, and
+  // its `totalXp` is the course total.
   const course = await getCourseById(params.courseId, params.userId).catch(
     (err: unknown): never => {
       if (err instanceof NotFoundError) {
@@ -162,6 +167,7 @@ export async function getWaveState(params: GetWaveStateParams): Promise<WaveStat
     turnsRemaining,
     turnBudget: WAVE.turnCount,
     chatLog,
+    totalXp: course.totalXp,
     // closeResult is always null on getWaveState — see WaveState TSDoc.
     closeResult: null,
   };
