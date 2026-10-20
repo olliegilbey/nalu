@@ -20,6 +20,8 @@ import type { V3Question, V3Response } from "@/lib/types/jsonb";
 import type { WaveChatLog } from "@/lib/types/jsonbWaveChatLog";
 import type { McOptionKey } from "@/lib/types/mcOptionKey";
 import { renderTeachingSystem } from "@/lib/prompts/teaching";
+import { renderContext } from "@/lib/llm/renderContext";
+import { saveCustomInstructions } from "@/lib/learner-profile/customInstructions";
 import { buildWaveSeed } from "./buildWaveSeed";
 import { loadWaveContext } from "./loadWaveContext";
 import { executeWaveClose } from "./executeWaveClose";
@@ -55,6 +57,10 @@ import type { ExecuteTurnParams, ExecuteTurnResult } from "@/lib/turn/executeTur
  *      first) throws PRECONDITION_FAILED and changes nothing.
  *  11. Issue #214: close-graded answers store the learner's text (free text)
  *      and click (MC) on `user_answer`.
+ *  12. Issue #236: the close snapshots the learner's saved custom
+ *      instructions onto Wave N+1 and leaves Wave N's snapshot as it was.
+ *  13. Issue #236: Wave N+1's prompt renders that snapshot escaped. A later
+ *      save leaves Wave N+1's rendered Context byte-identical.
  */
 
 const USER_ID = "99999999-9999-9999-9999-999999999999";
@@ -331,6 +337,31 @@ function makeParsedClose(
       { name: "ownership", qualityScore: 5, reason: "Demonstrated strong grasp this lesson." },
     ],
   };
+}
+
+/** A saved preference with characters the render must escape. */
+const PREFERENCE = "Use analogies <not lists> & keep it short.";
+
+/**
+ * Open Wave 2, save `preference` as the learner would mid-Wave, then run the
+ * close turn. Must run inside `withTestDb`. Returns the ids the tests read.
+ */
+async function closeWaveAfterSaving(preference: string): Promise<{
+  readonly courseId: string;
+  readonly waveId: string;
+  readonly nextWaveId: string;
+}> {
+  const { courseId, waveId } = await seedCourseWithOpenWave(2);
+  await seedOpenFreeTextQuestionnaire(courseId, waveId);
+  await saveCustomInstructions(USER_ID, preference);
+
+  const parsed = makeParsedClose();
+  vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
+    makeExecuteTurnMock(parsed) as unknown as typeof executeTurnModule.executeTurn,
+  );
+  const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId });
+  const result = await executeWaveClose(ctx, "<learner_reply>final</learner_reply>");
+  return { courseId, waveId, nextWaveId: result.nextWaveId };
 }
 
 describe("executeWaveClose (integration)", () => {
@@ -933,6 +964,56 @@ describe("executeWaveClose (integration)", () => {
       )[0]!;
       expect(mcRow.isCorrect).toBe(true);
       expect(mcRow.userAnswer).toBe("B");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 12. Custom instructions (issue #236). The learner saves a preference
+  //     during Wave N. The close snapshots it onto Wave N+1, raw. Wave N's
+  //     snapshot, taken when it opened, stays null.
+  // ---------------------------------------------------------------------------
+  it("snapshots custom instructions saved during Wave N onto Wave N+1, leaving Wave N's unchanged", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId, nextWaveId } = await closeWaveAfterSaving(PREFERENCE);
+
+      const nextWave = (await db.select().from(waves).where(eq(waves.id, nextWaveId)))[0]!;
+      expect(nextWave.customInstructionsSnapshot).toBe(PREFERENCE);
+      const closedWave = await getWaveByCourseAndNumber(courseId, 2);
+      expect(closedWave?.id).toBe(waveId);
+      expect(closedWave?.customInstructionsSnapshot).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // 13. Byte stability (issue #236). Wave N+1's prompt renders its snapshot,
+  //     escaped. A save while Wave N+1 is open changes no byte of its
+  //     Context: the render reads the snapshot, never the live profile.
+  // ---------------------------------------------------------------------------
+  it("renders Wave N+1's snapshot escaped, and a later save leaves its Context byte-identical", async () => {
+    await withTestDb(async () => {
+      const { courseId, nextWaveId } = await closeWaveAfterSaving(PREFERENCE);
+
+      // Build the Context the way every Wave turn builds it.
+      const renderOpenWave = async () => {
+        const ctx = await loadWaveContext({ userId: USER_ID, courseId, waveId: nextWaveId });
+        return renderContext(
+          buildWaveSeed(ctx.course, ctx.wave),
+          await getMessagesForWave(nextWaveId),
+        );
+      };
+
+      const before = await renderOpenWave();
+      expect(before.system).toContain(
+        "<custom_instructions>\nUse analogies &lt;not lists&gt; &amp; keep it short.\n</custom_instructions>",
+      );
+
+      await saveCustomInstructions(USER_ID, "Use bullet lists.");
+
+      const after = await renderOpenWave();
+      expect(after.system).toBe(before.system);
+      expect(after.messages).toEqual(before.messages);
+      const openNextWave = await getWaveByCourseAndNumber(courseId, 3);
+      expect(openNextWave?.customInstructionsSnapshot).toBe(PREFERENCE);
     });
   });
 });

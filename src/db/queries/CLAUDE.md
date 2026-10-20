@@ -24,6 +24,9 @@ Lock order: a transaction that writes course XP locks the course row first.
 `persistScopingClose` opens with a `courses` UPDATE. Every such transaction
 then queues on the course row before it locks a Wave or assessment row, so
 no two of them can deadlock (`persistWaveLockOrder.integration.test.ts`).
+Both close transactions also read the learner's custom instructions for the
+next Wave's snapshot (`getCourseOwnerCustomInstructionsInTx` in
+`userProfiles.ts`). That read is a plain select and takes no lock.
 
 Modules: one base file per table (`userProfiles.ts`, `courses.ts`,
 `scopingPasses.ts`, `waves.ts`, `contextMessages.ts`, `concepts.ts`,

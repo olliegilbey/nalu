@@ -293,7 +293,13 @@ describe("learner text cannot forge a Harness tag: Wave (streamWaveTurn)", () =>
     expectEscaped(system);
   });
 
-  it("custom instructions → teaching system prompt (sanitiseUserInput)", async () => {
-    expectEscaped(await teachingSystemFor({ customInstructions: FORGED }));
+  // Issue #236: the path runs saved preference → Wave snapshot → teaching
+  // system prompt. The Wave openers copy the saved text onto the snapshot raw,
+  // so the render is the one escape. The text sits directly inside
+  // <custom_instructions>, with no <user_message> wrapper.
+  it("saved preference → Wave snapshot → <custom_instructions> in the teaching system prompt (escapeXmlText)", async () => {
+    const system = await teachingSystemFor({ customInstructions: FORGED });
+    expect(system).toContain(`<custom_instructions>\n${ESCAPED}\n</custom_instructions>`);
+    expectEscaped(system);
   });
 });

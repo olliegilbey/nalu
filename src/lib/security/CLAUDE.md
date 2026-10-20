@@ -1,6 +1,6 @@
 # src/lib/security
 
-All user-supplied text must be escaped before it enters a prompt. Wave learner replies and custom instructions pass through `sanitiseUserInput`. Scoping input is escaped by `escapeXmlText` inside `renderStageEnvelope`, without the wrapper (see `src/lib/course/clarify.ts`).
+All user-supplied text must be escaped before it enters a prompt. Wave learner replies pass through `sanitiseUserInput`. Custom instructions take `escapeXmlText` in their own `<custom_instructions>` tag, with no wrapper: the teaching Security block tells the model to honour them, and a `<user_message>` wrapper would mark them as data (issue #236). Scoping input is escaped by `escapeXmlText` inside `renderStageEnvelope`, without the wrapper (see `src/lib/course/clarify.ts`).
 
 - `sanitiseUserInput.ts`: HTML-encode `&`, `<`, `>` (in that order — `&` first to prevent double-decode resurrection), wrap in `<user_message>…</user_message>`. Pure.
 - `escapeXmlText.ts`: the encoding alone, no wrapper. Use it for text whose tag the prompt author fixes (topic, framework JSON, concept names).

@@ -4,6 +4,7 @@ import { WAVE } from "@/lib/config/tuning";
 import { appendWaveChatLog, closeWave, openWave } from "@/db/queries/waves.writes";
 import { getConceptsByCourse, getDueConceptsByCourse } from "@/db/queries/concepts";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
+import { getCourseOwnerCustomInstructionsInTx } from "@/db/queries/userProfiles";
 import {
   getCourseTotalXpInTx,
   incrementCourseXpInTx,
@@ -76,8 +77,9 @@ export interface PersistWaveCloseResult {
  *      gate. On advance, `maybeAdvanceTier` bumps `current_tier` via
  *      `updateCourseTierInTx`.
  *   5. Open Wave N+1 with `seed_source.prior_blueprint` carrying the just-
- *      emitted blueprint and a fresh `dueConceptsSnapshot` taken via the SAME
- *      tx so SM-2 advances from step 3 are reflected.
+ *      emitted blueprint, a fresh `dueConceptsSnapshot` taken via the SAME
+ *      tx so SM-2 advances from step 3 are reflected, and the learner's
+ *      current custom instructions as its snapshot.
  *   6. Insert turn-0 assistant message on Wave N+1 carrying `openingText`.
  *   7. Bump `courses.total_xp` by `WAVE.completionXp` (flat reward).
  *   8. Read `courses.total_xp` back for the turn result (`totalXp`).
@@ -185,7 +187,14 @@ export async function persistWaveClose(
 
     // 6. Open Wave N+1. Same frameworkSnapshot as Wave N — frameworks are
     //    course-level, not wave-mutating, so re-snapshotting from the
-    //    closing wave is plan-faithful.
+    //    closing wave is plan-faithful. Wave N+1 snapshots the learner's
+    //    current custom instructions (issue #236): a save during Wave N
+    //    lands here, and Wave N's own snapshot never changes. A plain select:
+    //    no lock taken, so the lock order above holds.
+    const customInstructionsSnapshot = await getCourseOwnerCustomInstructionsInTx(
+      ctx.course.id,
+      tx,
+    );
     const nextWaveNumber = ctx.wave.waveNumber + 1;
     const nextWave = await openWave(
       {
@@ -193,7 +202,7 @@ export async function persistWaveClose(
         waveNumber: nextWaveNumber,
         tier: newCurrentTier,
         frameworkSnapshot: ctx.wave.frameworkSnapshot as FrameworkJsonb,
-        customInstructionsSnapshot: null,
+        customInstructionsSnapshot,
         dueConceptsSnapshot,
         seedSource: {
           kind: "prior_blueprint",
