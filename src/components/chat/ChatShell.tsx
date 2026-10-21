@@ -10,7 +10,8 @@ import { SettingsSheet } from "./SettingsSheet";
  * Layout shell shared by the empty home page and the in-course chat view.
  *
  * Children render the scroll content; the parent owns Composer rendering and
- * passes it as `composer` so it stays sticky at the bottom.
+ * passes it as `composer` so it stays sticky at the bottom. An optional
+ * `subheader` pins under the header, above the scroll (the Wave progress strip).
  *
  * Course title (when present) is shown in the header. The side-menu nav is
  * inert for MVP (it always opens a fresh empty `/` per parity with whispers'
@@ -21,6 +22,7 @@ export function ChatShell({
   title,
   children,
   composer,
+  subheader,
   onNew,
   xp,
   xpPulseKey,
@@ -30,6 +32,7 @@ export function ChatShell({
   readonly title?: string | null;
   readonly children: ReactNode;
   readonly composer: ReactNode;
+  readonly subheader?: ReactNode;
   readonly onNew: () => void;
   readonly xp?: number;
   readonly xpPulseKey?: number;
@@ -66,6 +69,7 @@ export function ChatShell({
         xpGainAmount={xpGainAmount}
         showXp={showXp}
       />
+      {subheader}
 
       <SideMenu
         open={menuOpen}

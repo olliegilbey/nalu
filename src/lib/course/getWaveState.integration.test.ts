@@ -21,8 +21,10 @@ import { getWaveState } from "./getWaveState";
  * reconstruction; no `context_messages` reads):
  *   1. Redacted chat_log — `text_with_questionnaire` entry redacts MC `correct`
  *      to a `correctEnc` blob that round-trips through `decodeCorrect`.
- *   2. `turnsRemaining` is derived from user-role chat_log entries — assistant
- *      entries don't decrement.
+ *   2. `turnsRemaining` counts landed Turns: user-role entries with a reply
+ *      saved after them. Assistant entries don't decrement.
+ *   2b. A trailing user entry with no reply (streaming or failed) does not
+ *      count.
  *   3. Closed wave → `status: "closed"`.
  *   4. Missing waveNumber → TRPC NOT_FOUND.
  *   5. `totalXp` carries `courses.total_xp`.
@@ -144,10 +146,30 @@ describe("getWaveState (integration)", () => {
 
       expect(state.status).toBe("active");
       expect(state.turnsRemaining).toBe(WAVE.turnCount - 1);
+      // The budget rides beside the count, so the client derives no turn count (#80).
+      expect(state.turnBudget).toBe(WAVE.turnCount);
       expect(state.chatLog).toHaveLength(3);
       // closeResult is always null on getWaveState — the close result is the
       // turn stream's data-turn-result part, not re-readable here.
       expect(state.closeResult).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 2b. A trailing user entry has no reply yet, so its Turn has not landed.
+  //     prepareWaveTurn saves the learner entry before the LLM call: the
+  //     entry trails the log while the Turn streams, and stays after a failed
+  //     Turn. The progress strip must not count it (issue #80).
+  // -------------------------------------------------------------------------
+  it("turnsRemaining skips a trailing user entry with no reply", async () => {
+    await withTestDb(async () => {
+      const { courseId, waveId } = await seedCourseWithOpenWave();
+      await appendWaveChatLog(db, waveId, { role: "assistant", kind: "text", content: "hi" });
+      await appendWaveChatLog(db, waveId, { role: "user", kind: "text", content: "hello" });
+
+      const state = await getWaveState({ userId: USER_ID, courseId, waveNumber: 1 });
+
+      expect(state.turnsRemaining).toBe(WAVE.turnCount);
     });
   });
 

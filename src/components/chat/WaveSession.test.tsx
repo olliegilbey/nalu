@@ -36,6 +36,7 @@ const wave = vi.hoisted(() => ({ value: {} as UseWaveStateResult }));
 vi.mock("@/hooks/useWaveState", () => ({ useWaveState: () => wave.value }));
 
 import { WaveSession } from "./WaveSession";
+import { waveStateFixture } from "./WaveSession.fixtures";
 
 /** Three MC questions with ids q1..q3, labelled by questionnaire. */
 function questionsFor(label: string): ChoiceQuestion[] {
@@ -57,26 +58,7 @@ const submit = vi.fn();
 
 /** A `useWaveState` result for an open Wave; tests override the questionnaire fields. */
 function waveState(overrides: Partial<UseWaveStateResult>): UseWaveStateResult {
-  return {
-    chatEntries: [],
-    activeQuestionnaire: null,
-    closeResult: null,
-    status: "active",
-    topic: "T",
-    currentTier: 1,
-    xp: 0,
-    xpPulseKey: 0,
-    xpGainAmount: 0,
-    awardMcXp: vi.fn(),
-    isPending: false,
-    failedTurn: null,
-    waveNotFound: false,
-    streamingText: "",
-    streamingQuestions: null,
-    submitChatText: vi.fn(),
-    submitQuestionnaireAnswers: submit,
-    ...overrides,
-  };
+  return waveStateFixture({ submitQuestionnaireAnswers: submit, ...overrides });
 }
 
 /** Pick an option, confirm it, and let the 750ms pulse finish. */

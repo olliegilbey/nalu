@@ -17,6 +17,8 @@ import {
   composerTextAfterRetry,
   resendsFailedTurn,
 } from "@/lib/course/failedChatText";
+import { deriveWaveProgress } from "@/lib/course/deriveWaveProgress";
+import { WaveProgressBar } from "./WaveProgressBar";
 import { t, tFill } from "@/i18n";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 
@@ -48,6 +50,8 @@ export function WaveSession({
     status,
     topic,
     currentTier,
+    turnsRemaining,
+    turnBudget,
     xp,
     xpPulseKey,
     xpGainAmount,
@@ -107,6 +111,11 @@ export function WaveSession({
       }
     : undefined;
 
+  // Progress strip: the server's turn counts, refetched after each landed
+  // Turn. It flips to complete with the move-on CTA, on the same `isClosed`.
+  // Null, so no strip, until the state query resolves.
+  const progress = deriveWaveProgress({ turnsRemaining, turnBudget, isClosed });
+
   return (
     <ChatShell
       title={topic}
@@ -115,6 +124,7 @@ export function WaveSession({
       xpPulseKey={xpPulseKey}
       xpGainAmount={xpGainAmount}
       showXp
+      subheader={progress && <WaveProgressBar progress={progress} />}
       composer={
         <Composer
           value={composerValue}

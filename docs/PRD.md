@@ -395,6 +395,7 @@ The side menu's Settings button opens a settings sheet on every page. The sheet 
 - **Chat area** (primary): Full chat history visible (scrollable). User/Nalu messages alternate. Markdown rendered. Assessment cards rendered inline as interactive elements.
 - **Assessment cards**: Visually distinct from chat. MC options as tappable buttons. Free-text as input field. Submit button. Result shown inline after submission.
 - **Comprehension signals**: Invisible to user. XP gain ("+15 XP") pulses on the header badge.
+- **Wave progress**: A slim strip under the header reads "Turn N of M" over a thin bar. The bar fills as Turns land. A closed Wave reads "Wave complete" with a full bar. Display only: it never touches XP.
 - **Progress sidebar** (collapsible): Current tier, wave XP progress bar, session XP, review count. **Unbuilt.**
 - **Nalu opens**: Every Wave starts with a Nalu message. Returning users see the Wave's chat history in the UI. Closed Waves are never replayed to the model; it gets the summary and blueprint.
 

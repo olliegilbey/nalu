@@ -60,6 +60,7 @@ const defaultStateData = {
   currentTier: 1,
   status: "active" as const,
   turnsRemaining: 9,
+  turnBudget: 10,
   chatLog: [{ role: "assistant", kind: "text", content: "Welcome to wave 1." }] as const,
   closeResult: null,
 };
@@ -282,6 +283,16 @@ describe("useWaveState", () => {
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
     await waitFor(() => expect(result.current.topic).toBe("Test topic"));
     expect(result.current.currentTier).toBe(1);
+  });
+
+  it("passes the server's turn counts through for the progress strip", async () => {
+    // Both start null (query unresolved). The client derives no turn count
+    // from the chat log; it reads both numbers from getState (issue #80).
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    expect(result.current.turnsRemaining).toBeNull();
+    expect(result.current.turnBudget).toBeNull();
+    await waitFor(() => expect(result.current.turnsRemaining).toBe(9));
+    expect(result.current.turnBudget).toBe(10);
   });
 
   it("threads the server-authoritative status through the hook", async () => {

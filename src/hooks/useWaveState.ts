@@ -54,6 +54,10 @@ export interface UseWaveStateResult extends StreamingTurn {
   readonly topic: string | null;
   /** Wave tier — fallback for client-side MC XP. Null until the query resolves. */
   readonly currentTier: number | null;
+  /** Turns left in the Wave, from `wave.getState`. Null until the query resolves. */
+  readonly turnsRemaining: number | null;
+  /** Turns in the Wave, from `wave.getState`. Null until the query resolves. */
+  readonly turnBudget: number | null;
   /** Running XP total for the course (display counter). */
   readonly xp: number;
   /** Bumped on each XP gain — drives the header badge animation. */
@@ -247,6 +251,10 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     status: state.data?.status ?? null,
     topic: state.data?.topic ?? null,
     currentTier: state.data?.currentTier ?? null,
+    // Turn counts for the progress strip. They refetch with the state after
+    // each landed Turn, so the strip advances when the Turn lands.
+    turnsRemaining: state.data?.turnsRemaining ?? null,
+    turnBudget: state.data?.turnBudget ?? null,
     xp: courseXp.xp,
     xpPulseKey: courseXp.pulseKey,
     xpGainAmount: courseXp.gainAmount,
