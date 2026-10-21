@@ -1,5 +1,5 @@
 import { asc, eq } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { courses, type Course } from "@/db/schema";
 import {
   clarificationJsonbSchema,
@@ -99,10 +99,12 @@ export async function getCourseById(id: string, userId?: string): Promise<Course
 
 /**
  * Every course id, oldest first. The XP repair script
- * (`scripts/recompute-course-total-xp.ts`) loops over them.
+ * (`scripts/recompute-course-total-xp.ts`) loops over them, through its own
+ * `DIRECT_URL` client.
  */
-export async function listCourseIds(): Promise<readonly string[]> {
-  const rows = await db
+export async function listCourseIds(tx?: DbOrTx): Promise<readonly string[]> {
+  const exec = tx ?? db;
+  const rows = await exec
     .select({ id: courses.id })
     .from(courses)
     .orderBy(asc(courses.createdAt), asc(courses.id));

@@ -1,4 +1,4 @@
-import { db } from "@/db/client";
+import { db, type DB } from "@/db/client";
 import {
   getCourseBaselineAndFrameworkInTx,
   getCourseTotalXpInTx,
@@ -36,13 +36,17 @@ export interface CourseTotalXpRecompute {
  * `updated_at`. With `apply: false` it is a dry run: it reads and reports
  * only.
  *
+ * `database` defaults to the app's pooled `db`. The repair script passes its
+ * own client on `DIRECT_URL`, the URL its recipe's guard checked.
+ *
  * @throws {NotFoundError} if `courseId` does not match any row.
  */
 export async function recomputeCourseTotalXp(
   courseId: string,
   options: { readonly apply: boolean },
+  database?: DB,
 ): Promise<CourseTotalXpRecompute> {
-  return db.transaction(async (tx) => {
+  return (database ?? db).transaction(async (tx) => {
     // Throws NotFoundError for an unknown id. Under the lock, the row stays.
     await lockCourseRowInTx(courseId, tx);
     const oldTotal = await getCourseTotalXpInTx(courseId, tx);

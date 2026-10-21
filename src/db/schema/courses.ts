@@ -23,9 +23,10 @@ import { userProfiles } from "./userProfiles";
  * - each grading adds the change it makes to `assessments.xp_awarded`
  *   (`applyAssessmentGrading`, from mid-turn and Wave close);
  * - Wave close adds `WAVE.completionXp` (`persistWaveClose`).
- * The repair `recomputeCourseTotalXp` (`just recompute-course-xp`) sets it
- * from those same sources. It adds the XP of rows graded before issue #205's
- * fix, which no writer added (issue #208).
+ * The repair `recomputeCourseTotalXp` (`just recompute-course-xp`, or
+ * `recompute-course-xp-prod` on production) sets it from those same sources.
+ * It adds the XP of rows graded before issue #205's fix, which no writer
+ * added (issue #208).
  */
 export const courses = pgTable(
   "courses",
