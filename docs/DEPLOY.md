@@ -65,6 +65,10 @@ Preview anyway.
 - Add `nalu.ollie.gg` in **Settings → Domains**.
 - At the `ollie.gg` DNS provider, add the record Vercel shows — for a
   subdomain that is a `CNAME` for `nalu` → `cname.vercel-dns.com`.
+- Crawlers and link unfurlers see one origin: `SITE_URL` in
+  `src/lib/config/site.ts`. Page metadata, `robots.txt` and `sitemap.xml` read
+  it; `public/llms.txt` repeats it. To change the canonical domain, edit both,
+  then the origin the `robots` and `sitemap` tests in `src/app/` expect.
 
 ## Env files on your machine
 

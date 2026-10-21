@@ -1,0 +1,34 @@
+# Nalu
+
+> Nalu teaches any topic through conversation with an AI tutor. The learner names a topic. Nalu scopes it, places the learner with a short quiz, then teaches in short lessons called Waves, with spaced repetition and XP.
+
+Nalu is an early MVP web app. There is no sign-up: Nalu signs each learner in anonymously. A course is private to the learner who started it. Nalu has no public API or MCP server yet.
+
+**How a course runs**
+
+1. Scoping. The learner types a topic. The model asks 2-4 clarifying questions. It then writes a Framework of 3-8 Tiers and a Baseline quiz of 7-9 questions.
+2. Placement. Code, not the model, sets the starting Tier from the Baseline results.
+3. Waves. Teaching runs in Waves of a fixed number of Turns. Each Wave opens with a message from Nalu, so the learner never faces a blank chat. The model teaches through dialogue, follows the learner's direction, and asks multiple-choice and free-text questions. Code awards XP as each answer is graded.
+4. Wave close. On a Wave's final Turn the model rewrites the course summary and plans the next Wave. The Harness runs SM-2, awards a Wave bonus, checks Tier advancement at intervals, and opens the next Wave.
+
+**Who owns the score**
+
+The model writes the teaching. It grades free-text answers, and typed answers to multiple-choice questions, with a quality score from 0 to 5. Code grades a clicked multiple-choice option against the stored key, with no model call. Deterministic code owns everything else: XP, SM-2 review scheduling, the starting Tier, and Tier advancement. The model never sees XP, so a learner cannot talk their way to a higher score.
+
+**Vocabulary**
+
+- **Scoping**: the opening phase of a course: clarify, Framework, Baseline, grade.
+- **Framework**: the course's 3-8 proficiency Tiers, generated after the clarifying questions.
+- **Tier**: one rung of the Framework. The learner advances when at least 5 current-Tier Concepts are assessed and 80% of them last scored 3 or more.
+- **Baseline**: the 7-9 question placement quiz at the end of Scoping.
+- **Concept**: one unit of knowledge the learner is tracked on. Each graded question names one.
+- **Wave**: one teaching unit of a fixed number of Turns, 10 by default. Prompts to the model call it a "lesson".
+- **Turn**: one full exchange. The learner sends a message or answers an assessment card, and Nalu replies.
+- **Context**: the message list sent to the model for one phase. Scoping has one Context, and each Wave opens a fresh one. Within a phase it only grows, so the prompt cache stays warm.
+- **Harness**: the deterministic code around the model. It owns XP, SM-2, progression and Wave pacing.
+- **XP**: points for each graded answer, scaled by Tier and answer quality, plus a flat bonus for each finished Wave.
+- **SM-2**: the spaced-repetition algorithm. It schedules each Concept's next review. Concepts due for review return at Wave boundaries.
+
+## Pages
+
+- [Start a course](https://nalu-phi.vercel.app/): type any topic to begin Scoping.
