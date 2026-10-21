@@ -4,6 +4,7 @@ import { upsertConcept } from "@/db/queries/concepts.writes";
 import { appendWaveChatLog, openWave } from "@/db/queries/waves.writes";
 import { appendMessage } from "@/db/queries/contextMessages.writes";
 import { closeScopingPass } from "@/db/queries/scopingPasses";
+import { getCourseOwnerCustomInstructionsInTx } from "@/db/queries/userProfiles";
 import {
   getCourseBaselineAndFrameworkInTx,
   setCourseBaselineInTx,
@@ -139,14 +140,18 @@ export async function persistScopingClose(
     }
 
     // 4. Open Wave 1 with seed_source.scoping_handoff carrying the blueprint
-    //    emitted on this close turn.
+    //    emitted on this close turn. Wave 1 snapshots the learner's saved
+    //    custom instructions as it opens (issue #236). The snapshot holds
+    //    still for the whole Wave, so a later save waits for the next Wave and
+    //    the cache prefix stays byte-stable.
+    const customInstructionsSnapshot = await getCourseOwnerCustomInstructionsInTx(courseId, tx);
     const wave1 = await openWave(
       {
         courseId,
         waveNumber: 1,
         tier: merged.startingTier,
         frameworkSnapshot: framework,
-        customInstructionsSnapshot: null,
+        customInstructionsSnapshot,
         dueConceptsSnapshot: [],
         seedSource: {
           kind: "scoping_handoff",

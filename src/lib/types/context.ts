@@ -16,6 +16,7 @@ export interface WaveSeedInputs {
   readonly framework: FrameworkJsonb;
   /** = waves.tier — the tier this Wave is teaching at. */
   readonly currentTier: number;
+  /** = waves.custom_instructions_snapshot — frozen at Wave open; null when none set. */
   readonly customInstructions: string | null;
   /**
    * Live `courses.summary`, read each turn, not frozen on the Wave. Scoping
