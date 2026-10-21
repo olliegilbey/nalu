@@ -348,17 +348,17 @@ const PREFERENCE = "Use analogies <not lists> & keep it short.";
 
 /**
  * Open Wave 2 with {@link EARLIER_PREFERENCE} as its snapshot, save
- * `preference` as the learner would mid-Wave, then run the close turn. Must
- * run inside `withTestDb`. Returns the ids the tests read.
+ * {@link PREFERENCE} as the learner would mid-Wave, then run the close turn.
+ * Must run inside `withTestDb`. Returns the ids the tests read.
  */
-async function closeWaveAfterSaving(preference: string): Promise<{
+async function closeWaveAfterSaving(): Promise<{
   readonly courseId: string;
   readonly waveId: string;
   readonly nextWaveId: string;
 }> {
   const { courseId, waveId } = await seedCourseWithOpenWave(2, EARLIER_PREFERENCE);
   await seedOpenFreeTextQuestionnaire(courseId, waveId);
-  await saveCustomInstructions(USER_ID, preference);
+  await saveCustomInstructions(USER_ID, PREFERENCE);
 
   const parsed = makeParsedClose();
   vi.spyOn(executeTurnModule, "executeTurn").mockImplementation(
@@ -979,7 +979,7 @@ describe("executeWaveClose (integration)", () => {
   // ---------------------------------------------------------------------------
   it("snapshots custom instructions saved during Wave N onto Wave N+1, leaving Wave N's unchanged", async () => {
     await withTestDb(async () => {
-      const { courseId, waveId, nextWaveId } = await closeWaveAfterSaving(PREFERENCE);
+      const { courseId, waveId, nextWaveId } = await closeWaveAfterSaving();
 
       const nextWave = (await db.select().from(waves).where(eq(waves.id, nextWaveId)))[0]!;
       expect(nextWave.customInstructionsSnapshot).toBe(PREFERENCE);
@@ -996,7 +996,7 @@ describe("executeWaveClose (integration)", () => {
   // ---------------------------------------------------------------------------
   it("renders Wave N+1's snapshot escaped, and a later save leaves its Context byte-identical", async () => {
     await withTestDb(async () => {
-      const { courseId, nextWaveId } = await closeWaveAfterSaving(PREFERENCE);
+      const { courseId, nextWaveId } = await closeWaveAfterSaving();
 
       // Build the Context the way every Wave turn builds it.
       const renderOpenWave = async () => {

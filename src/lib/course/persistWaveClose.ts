@@ -70,19 +70,22 @@ export interface PersistWaveCloseResult {
  *   3. Apply `conceptUpdates[]` via `applySm2Update` per concept.
  *   3a. Rewrite `courses.summary` with the close's summary
  *      (`setCourseSummaryInTx`). Wave N+1's `<progress_summary>` renders it.
+ *   3b. Append the closing assistant entry to Wave N's `chat_log`.
  *   4. Tier-advancement check — gated by
  *        (waveNumber % WAVE.tierCheckInterval === 0)
  *        || (plannedConcepts.length === 0)
  *      The consolidation gate (empty plannedConcepts) overrides the modulo
  *      gate. On advance, `maybeAdvanceTier` bumps `current_tier` via
  *      `updateCourseTierInTx`.
- *   5. Open Wave N+1 with `seed_source.prior_blueprint` carrying the just-
- *      emitted blueprint, a fresh `dueConceptsSnapshot` taken via the SAME
- *      tx so SM-2 advances from step 3 are reflected, and the learner's
- *      current custom instructions as its snapshot.
- *   6. Insert turn-0 assistant message on Wave N+1 carrying `openingText`.
- *   7. Bump `courses.total_xp` by `WAVE.completionXp` (flat reward).
- *   8. Read `courses.total_xp` back for the turn result (`totalXp`).
+ *   5. Take a fresh `dueConceptsSnapshot` for Wave N+1 via the SAME tx, so
+ *      SM-2 advances from step 3 are reflected.
+ *   6. Open Wave N+1 with `seed_source.prior_blueprint` carrying the just-
+ *      emitted blueprint, the step-5 due snapshot, and the learner's current
+ *      custom instructions as its snapshot.
+ *   7. Insert turn-0 assistant message on Wave N+1 carrying `openingText`.
+ *   7b. Append the same opening entry to Wave N+1's `chat_log`.
+ *   8. Bump `courses.total_xp` by `WAVE.completionXp` (flat reward).
+ *   9. Read `courses.total_xp` back for the turn result (`totalXp`).
  *
  * Like `persistScopingClose`, every `courses` write goes through the tx
  * helpers in `@/db/queries/courses.tx`. A write on the `db` singleton would
