@@ -451,8 +451,9 @@ describe("persistWaveMidTurn (integration)", () => {
 
       const result = await persistWaveMidTurn({ ctx, parsed, payload, turnsRemaining: 4 });
 
+      // The turn result carries no score. The row keeps it (issue #242).
       expect(result.gradedSignals).toEqual([
-        { kind: "free-text", questionId: "q-ft", xpAwarded: 0, qualityScore: 0 },
+        { kind: "free-text", questionId: "q-ft", xpAwarded: 0 },
       ]);
       const ftRow = (
         await db.select().from(assessments).where(eq(assessments.questionId, ftQuestionId))
