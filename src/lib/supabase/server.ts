@@ -5,11 +5,17 @@ import { getEnv } from "@/lib/config";
 /**
  * Supabase server client bound to the Next.js request cookie store.
  *
- * Used by `createTRPCContext` (server-side only) to read the anonymous
- * session that `src/proxy.ts` mints. Session refresh and cookie writes are
- * owned by the proxy; the `setAll` handler here tolerates the read-only
- * cookie store of a Server Component (the `try/catch`), so this client is
- * safe to construct anywhere on the server.
+ * Used by `resolveOrMintRequestUserId` (`src/server/requestUser.ts`) in the API
+ * Route Handlers. There `setAll` writes a freshly minted or refreshed session
+ * through `cookies()`, and Next merges it into the handler's response. The
+ * `try/catch` tolerates the read-only cookie store of a Server Component, so
+ * this client is safe to construct anywhere on the server.
+ *
+ * `setAll`'s second argument, the `Cache-Control` headers @supabase/ssr asks
+ * us to forward, is dropped: `cookies()` cannot set response headers. Safe on
+ * Vercel: its CDN caches a function response only with `s-maxage`, and never
+ * one carrying `Set-Cookie`. `src/proxy.ts` forwards the headers on page
+ * responses.
  *
  * `cookies()` is async in Next 16 — hence this factory is async.
  */
@@ -30,8 +36,9 @@ export async function createClient() {
               cookieStore.set(name, value, options);
             });
           } catch {
-            // Read-only cookie store (Server Component) — safe to ignore;
-            // the proxy owns session refresh.
+            // Read-only cookie store (Server Component) — safe to ignore.
+            // Only Route Handlers mint, and their store is writable; a page's
+            // session refresh is the proxy's.
           }
         },
       },

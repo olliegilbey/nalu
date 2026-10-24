@@ -65,7 +65,7 @@ machine's. Production migrations run only through `just db-migrate-prod`; see
 just dev        # Start dev server (localhost:3000)
 ```
 
-`just dev` runs with `NODE_ENV=development`, which stubs auth. The client sends an `x-dev-user-id` header (`NEXT_PUBLIC_DEV_USER_ID`), and the server trusts it (`src/server/requestUser.ts`). Production signs each visitor in as a Supabase anonymous user instead (`src/proxy.ts`). See `docs/DEPLOY.md`.
+`just dev` runs with `NODE_ENV=development`, which stubs auth. The client sends an `x-dev-user-id` header (`NEXT_PUBLIC_DEV_USER_ID`), and the server trusts it (`src/server/requestUser.ts`). Production signs a learner in as a Supabase anonymous user on their first API request instead (`src/server/requestUser.ts`). Page loads never mint. See `docs/DEPLOY.md`.
 
 ## Development
 

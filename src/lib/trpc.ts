@@ -19,7 +19,7 @@ const DEV_USER_FALLBACK = "a0000000-0000-4000-8000-000000000001";
 /**
  * Dev-only auth-stub headers, shared by BOTH client transports (tRPC
  * httpBatchLink and the streaming wave-turn DefaultChatTransport) so the
- * server's `resolveRequestUserId` sees one auth story. Empty in production
+ * server's `resolveOrMintRequestUserId` sees one auth story. Empty in production
  * builds: the spoofable header must never ship — prod auth is the Supabase
  * session cookie, which fetch sends automatically.
  */

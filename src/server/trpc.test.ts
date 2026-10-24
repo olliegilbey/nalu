@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { AuthRetryableFetchError } from "@supabase/supabase-js";
 
 // Mock the Supabase server client. `getUserMock` is referenced lazily
 // inside the factory, so it is initialised by the time the mock runs
@@ -20,6 +21,8 @@ function fakeOpts(headers: Record<string, string> = {}) {
 afterEach(() => {
   vi.unstubAllEnvs();
   getUserMock.mockReset();
+  // Restores the stderr spy even when an `expect` before it throws.
+  vi.restoreAllMocks();
 });
 
 describe("createTRPCContext", () => {
@@ -35,9 +38,16 @@ describe("createTRPCContext", () => {
     expect(ctx.userId).toBe("anon-uuid");
   });
 
-  it("production: userId is undefined when there is no session", async () => {
+  it("production: userId is undefined when the session fails to load", async () => {
+    // A missing session mints instead; `src/server/requestUser.test.ts` owns
+    // that rule. This case only checks the context passes `undefined` on.
     vi.stubEnv("NODE_ENV", "production");
-    getUserMock.mockResolvedValueOnce({ data: { user: null } });
+    getUserMock.mockResolvedValueOnce({
+      data: { user: null },
+      error: new AuthRetryableFetchError("fetch failed", 0),
+    });
+    // The resolver logs the failed load; keep it out of the test output.
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const ctx = await createTRPCContext(fakeOpts());
     expect(ctx.userId).toBeUndefined();
   });

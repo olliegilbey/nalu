@@ -106,6 +106,16 @@ different: `next start` sets `NODE_ENV=production`, so `src/proxy.ts` and
 
 ## Known behaviour & gotchas
 
+- **Anonymous users are minted lazily (#232).** A page load never creates an
+  `auth.users` row. `src/proxy.ts` only refreshes an existing session. The
+  first API request mints one (`src/server/requestUser.ts`), such as
+  submitting a topic. Crawlers, link unfurlers and uptime checks of a page
+  create no account. Every tRPC request resolves a learner, so don't point an
+  uptime check at `health.ping`: it would mint (#246). Supabase limits
+  anonymous sign-ins per IP (30 an hour by default; Auth → Rate Limits). A
+  learner over it gets "Something went wrong", and the
+  `[trpc] procedure failed` log line shows `name=AuthApiError` and
+  `authCode=over_request_rate_limit`.
 - **Preview deploys hit the production Supabase project.** Vercel sets
   `NODE_ENV=production` for every build, including Preview — so Preview
   deployments run the real auth path and mint real anonymous users in the
@@ -202,8 +212,10 @@ Once live, LLM latency is measurable per stage (`functionId`: "wave-mid",
 
 ## Post-deploy smoke
 
-1. Open the deployment URL → first load sets an `sb-…-auth-token` cookie.
-2. Scope a topic → a course is created, no errors.
+1. Open the deployment URL in a private window → no `sb-…-auth-token` cookie
+   yet. `curl -sI <url> | grep -i 'set-cookie: sb-'` prints nothing.
+2. Scope a topic → the `course.clarify` response sets the `sb-…-auth-token`
+   cookie, and a course is created, no errors.
 3. Reload the course URL → it persists (same anonymous user).
 4. Supabase → Authentication → Users shows the anonymous user; a matching
    `user_profiles` row exists.

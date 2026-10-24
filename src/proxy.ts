@@ -1,23 +1,26 @@
 import { createServerClient } from "@supabase/ssr";
+import { isAuthSessionMissingError } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest, type NextFetchEvent } from "next/server";
 import { getEnv } from "@/lib/config";
 import { capturePageview } from "@/lib/analytics/capturePageview";
+import { errorLogLine } from "@/lib/security/errorLogLine";
 
 /**
- * Next.js proxy (formerly `middleware`) — establishes a Supabase anonymous
- * session for every visitor.
+ * Next.js proxy (formerly `middleware`) — keeps a returning visitor's Supabase
+ * session fresh on page loads.
  *
- * On a request with no session cookie it calls `signInAnonymously()`, which
- * creates a real `auth.users` row and writes the session cookies onto the
- * response via the `setAll` adapter. Returning visitors already have the
- * cookie; `getUser()` validates (and refreshes) it.
+ * It never mints. A visitor with no session cookie leaves without one, so
+ * crawlers, link unfurlers and uptime checks create no `auth.users` row
+ * (#232). The first API request that needs a learner mints the anonymous
+ * session instead (`src/server/requestUser.ts`). A returning visitor's
+ * `getUser()` validates the cookie and refreshes it via the `setAll` adapter.
  *
  * Gated on `NODE_ENV === "production"`: in dev/test this is a passthrough so
  * the `x-dev-user-id` stub seam (see `src/server/trpc.ts`) is untouched.
  *
- * Fails open — a transient Supabase error returns `NextResponse.next()`
- * rather than bricking the page; the subsequent tRPC call degrades to
- * `UNAUTHORIZED`, which the UI already handles.
+ * Fails open — a Supabase auth error is logged and the page still serves;
+ * the subsequent tRPC call degrades to `UNAUTHORIZED`, which the UI already
+ * handles.
  *
  * Also fires a best-effort server-side PostHog `$pageview` (via `waitUntil`)
  * with the visitor's real IP as `$ip`, so PostHog Cloud geolocates the visitor
@@ -64,41 +67,40 @@ export async function proxy(request: NextRequest, event?: NextFetchEvent): Promi
 
   let userId: string | undefined;
   try {
-    const { data } = await supabase.auth.getUser();
+    // Refresh only. `getUser` validates an existing session and, when its
+    // access token has expired, refreshes it through `setAll`. A visitor with
+    // no session leaves with none: page loads never mint (#232).
+    const { data, error } = await supabase.auth.getUser();
     userId = data.user?.id;
-    if (!data.user) {
-      // No session yet — mint an anonymous account. `signInAnonymously`
-      // triggers `setAll`, writing the new session cookies onto `response`.
-      //
-      // Known race (acceptable for MVP): two near-simultaneous first visits
-      // — e.g. parallel document and RSC fetches on a cold load — can each
-      // see "no user" and mint their own account; the losing cookie is
-      // discarded, leaving a stray session-less `auth.users` row. Harmless
-      // (the surviving cookie wins, `ensureUserProfile` is idempotent). See
-      // issue #55 for the periodic-cleanup follow-up.
-      const signIn = await supabase.auth.signInAnonymously();
-      userId = signIn?.data?.user?.id ?? undefined;
+    // auth-js returns an auth failure (bad publishable key, auth host
+    // unreachable) as `error`; it does not throw. Log it so a *persistent*
+    // failure surfaces as a greppable line, not visitors silently degrading
+    // to `UNAUTHORIZED`. A missing session is the normal cookieless visit.
+    // Serve the page anyway: `response` may carry the cookie clear auth-js
+    // writes for a dead session.
+    if (error && !isAuthSessionMissingError(error)) {
+      process.stderr.write(`${errorLogLine("[proxy] Supabase auth failed", {}, error)}\n`);
     }
   } catch (error) {
-    // Fail open: never brick a page load on a transient auth error. Log it so
-    // a *persistent* failure — bad publishable key, anonymous sign-ins not
-    // enabled in the Supabase dashboard, auth host unreachable — surfaces as
-    // a greppable server log instead of every visitor silently degrading to
-    // `UNAUTHORIZED` with no signal.
-    console.error("[proxy] Supabase auth failed; serving page without session", error);
+    // auth-js rethrows only an error that is not an AuthError. Fail open:
+    // never brick a page load on it, and log it the same way.
+    process.stderr.write(`${errorLogLine("[proxy] Supabase auth failed", {}, error)}\n`);
     return NextResponse.next();
   }
 
   // Server-side pageview: `distinct_id` is the anon user id (joins PostHog
   // sessions to DB courses), `$ip` is the real client IP for correct GeoIP.
+  // A visitor with no session yet gets a fresh random id instead. Their
+  // landing pageview, with its referrer and UTM tags, still lands; it just
+  // does not join to the course they may start later (match on `client_ip`).
   // `waitUntil` runs it past the response so it never adds latency. Prefetches
   // never reach here — the matcher's `missing` conditions exclude them (see
   // `config` below; a runtime header check can't work, Next strips them).
-  if (env.POSTHOG_KEY && userId && event) {
+  if (env.POSTHOG_KEY && event) {
     event.waitUntil(
       capturePageview({
         apiKey: env.POSTHOG_KEY,
-        distinctId: userId,
+        distinctId: userId ?? crypto.randomUUID(),
         url: request.nextUrl.href,
         headers: request.headers,
         timestamp: new Date().toISOString(),
@@ -110,20 +112,20 @@ export async function proxy(request: NextRequest, event?: NextFetchEvent): Promi
 }
 
 export const config = {
-  // Run on page routes only. Exclude API routes (the tRPC route reads the
-  // cookie read-only), Next internals, and any dotted path — static assets
-  // (`favicon.ico`, `nalu-logo.svg`, everything in `/public`) all contain a
-  // `.` and no app route does. Serving assets never needs a session; matching
-  // them would mint a throwaway anonymous user on every crawler/browser asset
-  // fetch and count file requests as `$pageview`s (live preview showed
-  // `/nalu-logo.svg` firing one).
+  // Run on page routes only. Exclude API routes (each resolves, and if need
+  // be mints, its own learner via `src/server/requestUser.ts`), Next
+  // internals, and any dotted path — static assets (`favicon.ico`,
+  // `nalu-logo.svg`, everything in `/public`) all contain a `.` and no app
+  // route does. Serving assets never needs a session; matching them would
+  // count file requests as `$pageview`s (live preview showed `/nalu-logo.svg`
+  // firing one).
   //
   // The `missing` conditions skip prefetches entirely. This MUST live in the
   // matcher: Next strips internal Flight headers (`next-router-prefetch`,
   // `rsc`, …) from `request.headers` before proxy code runs ("RSC requests
   // and rewrites", proxy docs), so a runtime header check silently never
-  // fires. A prefetch is not a real visit — matching it would both inflate
-  // `$pageview` counts and mint anonymous users for hover-prefetches.
+  // fires. A prefetch is not a real visit — matching it would inflate
+  // `$pageview` counts.
   matcher: [
     {
       source: "/((?!api|_next/static|_next/image|.*\\..*).*)",
