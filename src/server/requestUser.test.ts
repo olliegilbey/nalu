@@ -6,7 +6,7 @@ import {
   AuthRetryableFetchError,
   AuthSessionMissingError,
 } from "@supabase/supabase-js";
-import { resolveOrMintRequestUserId } from "./requestUser";
+import { readRequestSession, resolveOrMintRequestUserId } from "./requestUser";
 
 // Supabase is mocked at `@supabase/ssr`, the seam `src/proxy.test.ts` uses.
 // Next's request cookie store is faked so the test can see the session cookie
@@ -154,5 +154,52 @@ describe("resolveOrMintRequestUserId", () => {
     });
 
     await expect(resolveOrMintRequestUserId(apiRequest())).rejects.toBe(limited);
+  });
+});
+
+describe("readRequestSession", () => {
+  it("non-production: reads the x-dev-user-id header and never touches Supabase", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+
+    expect(await readRequestSession(apiRequest({ "x-dev-user-id": "dev-1" }))).toEqual({
+      kind: "learner",
+      userId: "dev-1",
+    });
+    expect(await readRequestSession(apiRequest())).toEqual({ kind: "none" });
+    expect(mockedCreateServerClient).not.toHaveBeenCalled();
+  });
+
+  it("production, no session: reports none and never mints (#246)", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const client = fakeClient({ data: { user: null }, error: new AuthSessionMissingError() });
+
+    expect(await readRequestSession(apiRequest())).toEqual({ kind: "none" });
+    expect(client.auth.signInAnonymously).not.toHaveBeenCalled();
+    expect(cookieStore.set).not.toHaveBeenCalled();
+  });
+
+  it("production, existing session: reports its learner", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    fakeClient({ data: { user: { id: "learner-1" } }, error: null });
+
+    expect(await readRequestSession(apiRequest())).toEqual({
+      kind: "learner",
+      userId: "learner-1",
+    });
+  });
+
+  it("production, session fails to load: reports failed, logs it, never mints", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const client = fakeClient({
+      data: { user: null },
+      error: new AuthRetryableFetchError("fetch failed", 0),
+    });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    expect(await readRequestSession(apiRequest())).toEqual({ kind: "failed" });
+    expect(client.auth.signInAnonymously).not.toHaveBeenCalled();
+    expect(stderr).toHaveBeenCalledWith(
+      "[auth] session failed to load name=AuthRetryableFetchError\n",
+    );
   });
 });

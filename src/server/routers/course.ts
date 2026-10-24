@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { router, protectedProcedure } from "../trpc";
+import { router, protectedProcedure, mintingProcedure } from "../trpc";
 import { clarify } from "@/lib/course/clarify";
 import { getState } from "@/lib/course/getState";
 import { generateFramework } from "@/lib/course/generateFramework";
@@ -21,8 +21,11 @@ export const courseRouter = router({
     .input(z.object({ courseId: z.string().uuid() }))
     .query(({ ctx, input }) => getState({ userId: ctx.userId, courseId: input.courseId })),
 
-  /** Initiate scoping for a new topic: creates a course and returns clarifying questions. */
-  clarify: protectedProcedure
+  /**
+   * Initiate scoping for a new topic: creates a course and returns clarifying
+   * questions. A caller with no session mints its learner first.
+   */
+  clarify: mintingProcedure
     .input(z.object({ topic: z.string().min(1).max(SCOPING.maxTopicLength) }))
     .mutation(({ ctx, input }) => clarify({ userId: ctx.userId, topic: input.topic })),
 

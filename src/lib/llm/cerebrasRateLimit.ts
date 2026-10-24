@@ -28,7 +28,7 @@ import { userIdStore } from "./userIdStore";
  * `usage` accounting in a persistent cross-process store (future work).
  *
  * Per-user fast/slow lane: each call reads the active userId from
- * `userIdStore` (Node AsyncLocalStorage, populated by `protectedProcedure`
+ * `userIdStore` (Node AsyncLocalStorage, populated by the learner procedures
  * in `src/server/trpc.ts`). The first `LLM.fastLaneCallsPerUser` calls per
  * userId use `LLM.fastLaneSpacingMs` (200ms); calls beyond that fall back
  * to `LLM.slowLaneSpacingMs` (13s). Calls with no userId in scope (smoke,

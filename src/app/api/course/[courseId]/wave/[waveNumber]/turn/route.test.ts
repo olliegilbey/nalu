@@ -1,38 +1,55 @@
-import { describe, it, expect, expectTypeOf, vi, beforeEach } from "vitest";
+import { describe, it, expect, expectTypeOf, vi, beforeEach, afterEach } from "vitest";
 import type { z } from "zod/v4";
 import { TRPCError } from "@trpc/server";
 import { DrizzleQueryError } from "drizzle-orm";
+import { AuthRetryableFetchError, AuthSessionMissingError } from "@supabase/supabase-js";
 import { NotFoundError } from "@/db/queries/errors";
 import { submitTurnInputSchema } from "@/lib/types/waveTurnInput";
 
-// Auth, the profile upsert and the Turn itself are stubbed: these tests
-// cover the route's own work, never a real Turn or a database.
-vi.mock("@/server/requestUser", () => ({
-  resolveOrMintRequestUserId: vi.fn().mockResolvedValue("55555555-5555-5555-5555-555555555555"),
+// The profile upsert and the Turn itself are stubbed: these tests cover the
+// route's own work, never a real Turn or a database. Auth runs for real.
+// Outside production it reads the `x-dev-user-id` header. The production
+// case stubs Supabase, so a test can see whether the route mints.
+const getUser = vi.fn();
+const signInAnonymously = vi.fn();
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => ({ auth: { getUser, signInAnonymously } }),
 }));
 vi.mock("@/db/queries", () => ({ ensureUserProfile: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/course/streamWaveTurn", () => ({ streamWaveTurn: vi.fn() }));
 
+import { ensureUserProfile } from "@/db/queries";
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
-import { resolveOrMintRequestUserId } from "@/server/requestUser";
 import { POST } from "./route";
 
-/** The learner the auth mock resolves (the hoisted mock cannot read this const). */
+/** The learner the `x-dev-user-id` header names. */
 const USER_ID = "55555555-5555-5555-5555-555555555555";
 const COURSE_ID = "3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f";
 
-/** POST one raw body string to the route for Wave `waveNumber`. */
-function postRaw(waveNumber: string, rawBody: string): Promise<Response> {
+/**
+ * POST one raw body string to the route for Wave `waveNumber`. It comes from
+ * learner `USER_ID` unless `headers` says otherwise.
+ */
+function postRaw(
+  waveNumber: string,
+  rawBody: string,
+  headers: Record<string, string> = { "x-dev-user-id": USER_ID },
+): Promise<Response> {
   const req = new Request(`http://localhost/api/course/${COURSE_ID}/wave/${waveNumber}/turn`, {
     method: "POST",
+    headers,
     body: rawBody,
   });
   return POST(req, { params: Promise.resolve({ courseId: COURSE_ID, waveNumber }) });
 }
 
 /** POST one body, serialised as JSON, to the route for Wave `waveNumber`. */
-function post(waveNumber: string, body: unknown): Promise<Response> {
-  return postRaw(waveNumber, JSON.stringify(body));
+function post(
+  waveNumber: string,
+  body: unknown,
+  headers?: Record<string, string>,
+): Promise<Response> {
+  return postRaw(waveNumber, JSON.stringify(body), headers);
 }
 
 /** Every line the route wrote to stderr, through either channel. */
@@ -57,7 +74,7 @@ describe("POST wave turn: the input boundary", () => {
   beforeEach(() => {
     vi.mocked(streamWaveTurn).mockReset();
     vi.mocked(streamWaveTurn).mockResolvedValue(null);
-    vi.mocked(resolveOrMintRequestUserId).mockClear();
+    vi.mocked(ensureUserProfile).mockClear();
   });
 
   it.each([
@@ -118,8 +135,8 @@ describe("POST wave turn: the input boundary", () => {
 
     expect(res.status).toBe(400);
     expect(streamWaveTurn).not.toHaveBeenCalled();
-    // Refused before auth: a bad body never mints an anonymous learner (#232).
-    expect(resolveOrMintRequestUserId).not.toHaveBeenCalled();
+    // Refused before auth: a bad body writes no profile row.
+    expect(ensureUserProfile).not.toHaveBeenCalled();
     const body = JSON.parse(text) as { error: { properties: Record<string, unknown> } };
     expect(Object.keys(body)).toEqual(["error"]);
     expect(Object.keys(body.error.properties)).toEqual([failingField]);
@@ -139,7 +156,7 @@ describe("POST wave turn: the input boundary", () => {
     // Exact equality: the body carries the fixed text and no echo of the input.
     expect(await res.json()).toEqual({ error: "Body must be a JSON object." });
     expect(streamWaveTurn).not.toHaveBeenCalled();
-    expect(resolveOrMintRequestUserId).not.toHaveBeenCalled();
+    expect(ensureUserProfile).not.toHaveBeenCalled();
     expect(logged).toEqual([]);
   });
 
@@ -149,6 +166,48 @@ describe("POST wave turn: the input boundary", () => {
     expectTypeOf<z.infer<typeof submitTurnInputSchema>["payload"]>().toEqualTypeOf<
       Parameters<typeof streamWaveTurn>[0]["payload"]
     >();
+  });
+});
+
+describe("POST wave turn: production auth", () => {
+  beforeEach(() => {
+    vi.stubEnv("NODE_ENV", "production");
+    getUser.mockResolvedValue({ data: { user: null }, error: new AuthSessionMissingError() });
+    vi.mocked(streamWaveTurn).mockReset();
+    vi.mocked(ensureUserProfile).mockClear();
+    signInAnonymously.mockClear();
+    signInAnonymously.mockResolvedValue({
+      data: { user: { id: "minted-1" }, session: {} },
+      error: null,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("answers a cookieless turn NOT_FOUND and mints nothing", async () => {
+    // No session owns no course: NOT_FOUND, as for another learner's course (#246).
+    const res = await post("1", { payload: { kind: "chat-text", text: "hi" } }, {});
+
+    expect(res.status).toBe(404);
+    expect(signInAnonymously).not.toHaveBeenCalled();
+    expect(ensureUserProfile).not.toHaveBeenCalled();
+    expect(streamWaveTurn).not.toHaveBeenCalled();
+  });
+
+  it("answers UNAUTHORIZED when the session fails to load, and never mints over it", async () => {
+    getUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthRetryableFetchError("fetch failed", 0),
+    });
+
+    const res = await post("1", { payload: { kind: "chat-text", text: "hi" } }, {});
+
+    expect(res.status).toBe(401);
+    expect(signInAnonymously).not.toHaveBeenCalled();
+    expect(streamWaveTurn).not.toHaveBeenCalled();
+    expect(logged).toEqual(["[auth] session failed to load name=AuthRetryableFetchError\n"]);
   });
 });
 

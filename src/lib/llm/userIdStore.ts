@@ -11,7 +11,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
  * request-scoped ambient data and propagates through `await`, Promise
  * chains, timers, and `fetch`.
  *
- * Populated by `protectedProcedure` in `src/server/trpc.ts`. Returns
+ * Populated by the learner procedures in `src/server/trpc.ts`. Returns
  * `undefined` when the call originates outside a tRPC request (smoke
  * runs, scripts, background jobs), in which case the rate limiter falls
  * back to the fast lane — appropriate for paid-tier smoke.

@@ -9,7 +9,7 @@ import type { AppRouter } from "@/server/routers";
 
 /**
  * Root providers — wraps the app with tRPC + TanStack Query.
- * Dev-only: injects `x-dev-user-id` header so `protectedProcedure` resolves
+ * Dev-only: injects `x-dev-user-id` header so the tRPC context resolves
  * a user without real auth. Swap for a Supabase session token when auth lands.
  */
 export function Providers({ children }: { readonly children: React.ReactNode }) {
@@ -19,7 +19,7 @@ export function Providers({ children }: { readonly children: React.ReactNode }) 
       links: [
         httpBatchLink({
           url: `${getBaseUrl()}/api/trpc`,
-          // Dev-only: lets protectedProcedure resolve ctx.userId without real auth.
+          // Dev-only: lets the tRPC context resolve ctx.userId without real auth.
           // Gated on NODE_ENV (inside devUserHeaders) so a production build can't
           // leak the spoofable header even if the server-side stub seam remains.
           headers: devUserHeaders,

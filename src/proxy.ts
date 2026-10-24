@@ -11,8 +11,8 @@ import { errorLogLine } from "@/lib/security/errorLogLine";
  *
  * It never mints. A visitor with no session cookie leaves without one, so
  * crawlers, link unfurlers and uptime checks create no `auth.users` row
- * (#232). The first API request that needs a learner mints the anonymous
- * session instead (`src/server/requestUser.ts`). A returning visitor's
+ * (#232). The learner's first write mints the anonymous session instead
+ * (`src/server/requestUser.ts`). A returning visitor's
  * `getUser()` validates the cookie and refreshes it via the `setAll` adapter.
  *
  * Gated on `NODE_ENV === "production"`: in dev/test this is a passthrough so

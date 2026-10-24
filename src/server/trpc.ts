@@ -4,17 +4,40 @@ import { NotFoundError } from "@/db/queries/errors";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import { clientErrorText } from "@/lib/security/clientErrorText";
-import { resolveOrMintRequestUserId } from "./requestUser";
+import { readRequestSession, resolveOrMintRequestUserId } from "./requestUser";
+
+/** The tRPC request context. Tests build one with `appRouter.createCaller({ userId })`. */
+export interface TRPCContext {
+  /** The caller's learner, from an existing session. Undefined when the request has none. */
+  readonly userId: string | undefined;
+  /**
+   * Mint the caller's anonymous learner, once per HTTP request. Only
+   * `mintingProcedure` calls it. `createCaller` tests leave it out.
+   */
+  readonly mintUserId?: () => Promise<string | undefined>;
+}
 
 /**
- * Build the tRPC request context. Resolves `userId` (possibly undefined)
- * via `resolveOrMintRequestUserId` — the auth story shared with the streaming
- * wave-turn route handler. A cookieless request mints its anonymous learner
- * here, once per HTTP request, so a batch of calls shares one mint. Public
- * procedures resolve too, so a cookieless `health.ping` mints (#246).
+ * Build the tRPC request context, once per HTTP request. It reads an existing
+ * session and never mints (#246); `mintingProcedure` mints on demand. The
+ * streaming wave-turn route reads the session the same way.
  */
-export const createTRPCContext = async (opts: FetchCreateContextFnOptions) => {
-  return { userId: await resolveOrMintRequestUserId(opts.req) };
+export const createTRPCContext = async (
+  opts: FetchCreateContextFnOptions,
+): Promise<TRPCContext> => {
+  const session = await readRequestSession(opts.req);
+  // A session that failed to load is still a learner's. Refuse the whole
+  // request, so no procedure answers them as a stranger or mints over them.
+  if (session.kind === "failed") {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "session failed to load" });
+  }
+  // One mint per HTTP request: every minting call in a batch awaits this
+  // same promise. Mutable on purpose; it is a per-request memo.
+  let mint: Promise<string | undefined> | undefined;
+  return {
+    userId: session.kind === "learner" ? session.userId : undefined,
+    mintUserId: () => (mint ??= resolveOrMintRequestUserId(opts.req)),
+  };
 };
 
 // Every tRPC error response passes through `errorFormatter`. The client gets
@@ -23,7 +46,7 @@ export const createTRPCContext = async (opts: FetchCreateContextFnOptions) => {
 // lists its params (issue #171). `data` is an allowlist, so `stack` never
 // ships. tRPC adds it outside production, and its first line repeats the
 // raw message.
-const t = initTRPC.context<typeof createTRPCContext>().create({
+const t = initTRPC.context<TRPCContext>().create({
   errorFormatter: ({ shape, error }) => ({
     code: shape.code,
     message: clientErrorText(error),
@@ -33,9 +56,6 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
 
 /** Define a tRPC router */
 export const router = t.router;
-
-/** Public procedure — no auth required */
-export const publicProcedure = t.procedure;
 
 /**
  * Map `NotFoundError` (thrown by `src/db/queries/`) to a tRPC `NOT_FOUND`
@@ -61,22 +81,51 @@ const mapNotFound = t.middleware(async ({ next }) => {
 });
 
 /**
- * Authenticated procedure. In production `ctx.userId` is the Supabase
- * anonymous user's id; in dev it is the `x-dev-user-id` stub. Either way,
- * `ensureUserProfile` provisions the `user_profiles` row on demand — a
- * freshly signed-in anonymous user has an `auth.users` row but no profile
- * row, and `courses.user_id` references `user_profiles.id`.
+ * Run a procedure as `userId`. `ensureUserProfile` provisions the
+ * `user_profiles` row first: a freshly minted anonymous user has an
+ * `auth.users` row but no profile row, and `courses.user_id` references
+ * `user_profiles.id`. Then `userId` is bound to ALS, so the LLM layer
+ * (Cerebras rate limiter) reads it from ambient request scope rather than
+ * threading it through generateChat's signature. ALS propagates through
+ * await/Promise/fetch, so the AI SDK transport preserves the binding.
+ */
+async function runAsLearner<T>(userId: string, run: () => Promise<T>): Promise<T> {
+  await ensureUserProfile(userId);
+  return userIdStore.run(userId, run);
+}
+
+/**
+ * A procedure for an existing learner's named resource; it never mints. A
+ * caller with no session owns no course, so it answers NOT_FOUND, as for
+ * another learner's course (#246). In production `ctx.userId` is the
+ * Supabase anonymous user's id; in dev it is the `x-dev-user-id` stub.
  */
 export const protectedProcedure = t.procedure.use(mapNotFound).use(async ({ ctx, next }) => {
-  if (!ctx.userId) {
-    throw new TRPCError({ code: "UNAUTHORIZED", message: "no authenticated user" });
-  }
-  await ensureUserProfile(ctx.userId);
-  // Bind ctx.userId to ALS so the LLM layer (Cerebras rate limiter) reads
-  // it from ambient request scope rather than threading it through
-  // generateChat's signature. ALS propagates through await/Promise/fetch,
-  // so the AI SDK transport preserves the binding. Hoist into `userId`
-  // first to keep the override ctx well-typed across the callback boundary.
+  // Hoist into `userId` to keep the override ctx well-typed across the
+  // callback boundary.
   const userId = ctx.userId;
-  return userIdStore.run(userId, () => next({ ctx: { ...ctx, userId } }));
+  if (!userId) throw new TRPCError({ code: "NOT_FOUND", message: "no learner session" });
+  return runAsLearner(userId, () => next({ ctx: { ...ctx, userId } }));
+});
+
+/**
+ * A procedure for a read with a natural empty answer; it never mints.
+ * `ctx.userId` stays optional: the procedure answers a caller with no
+ * session with its empty answer (#246). A learner runs as in
+ * `protectedProcedure`.
+ */
+export const optionalLearnerProcedure = t.procedure
+  .use(mapNotFound)
+  .use(async ({ ctx, next }) => (ctx.userId ? runAsLearner(ctx.userId, () => next()) : next()));
+
+/**
+ * A procedure that creates learner data. A caller with no session mints its
+ * anonymous learner here, and nowhere else (#246). `ctx.mintUserId` memoises
+ * the mint per HTTP request, so a batch shares one. A `createCaller` test
+ * with no `userId` has no mint, so it answers UNAUTHORIZED.
+ */
+export const mintingProcedure = t.procedure.use(mapNotFound).use(async ({ ctx, next }) => {
+  const userId = ctx.userId ?? (await ctx.mintUserId?.());
+  if (!userId) throw new TRPCError({ code: "UNAUTHORIZED", message: "no authenticated user" });
+  return runAsLearner(userId, () => next({ ctx: { ...ctx, userId } }));
 });
