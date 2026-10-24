@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { router, protectedProcedure } from "../trpc";
+import { router, learnerProcedure } from "../trpc";
 import { getWaveState } from "@/lib/course/getWaveState";
 
 /**
@@ -13,7 +13,7 @@ import { getWaveState } from "@/lib/course/getWaveState";
  */
 export const waveRouter = router({
   /** Restore wave state by ordinal (spec §7.1) — chatLog, turnsRemaining, turnBudget, closeResult. */
-  getState: protectedProcedure
+  getState: learnerProcedure
     .input(z.object({ courseId: z.uuid(), waveNumber: z.number().int().min(1) }))
     .query(({ ctx, input }) =>
       getWaveState({ userId: ctx.userId, courseId: input.courseId, waveNumber: input.waveNumber }),

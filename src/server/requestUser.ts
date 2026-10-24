@@ -26,26 +26,28 @@ export async function readRequestSession(req: Request): Promise<RequestSession> 
     const userId = req.headers.get("x-dev-user-id");
     return userId ? { kind: "learner", userId } : { kind: "none" };
   }
-  return readSupabaseSession(await createClient());
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.getUser();
+  if (data.user) return { kind: "learner", userId: data.user.id };
+  if (isAuthSessionMissingError(error)) return { kind: "none" };
+  // Log a failed load as one content-free line, so a persistent failure
+  // shows up as more than a silent UNAUTHORIZED.
+  process.stderr.write(`${errorLogLine("[auth] session failed to load", {}, error)}\n`);
+  return { kind: "failed" };
 }
 
 /**
- * Resolve the requesting learner's id, minting an anonymous one if the request
- * has no session. The one home of the mint (#232). Only `mintingProcedure`
- * reaches it, through the tRPC context's per-request `mintUserId`, so only a
- * request that creates learner data mints (#246). Non-production reads the
- * `x-dev-user-id` header and never mints.
+ * Mint an anonymous learner and return their id: the one home of the mint
+ * (#232). Only `mintingProcedure` reaches it, through the tRPC context's
+ * per-request `mintUserId`, after `readRequestSession` found no session
+ * (#246). The context refuses a session that failed to load before any
+ * procedure runs, so a mint never replaces a learner's cookie. Outside
+ * production it never mints: the dev stub has no Supabase Auth, so a request
+ * without the `x-dev-user-id` header gets no learner.
  */
-export async function resolveOrMintRequestUserId(req: Request): Promise<string | undefined> {
-  if (process.env.NODE_ENV !== "production") {
-    return req.headers.get("x-dev-user-id") ?? undefined;
-  }
+export async function mintAnonymousLearner(): Promise<string | undefined> {
+  if (process.env.NODE_ENV !== "production") return undefined;
   const supabase = await createClient();
-  const session = await readSupabaseSession(supabase);
-  if (session.kind === "learner") return session.userId;
-  // Mint only when Supabase reports no session at all. A failed load was
-  // logged by the read; leave it UNAUTHORIZED rather than mint over it.
-  if (session.kind === "failed") return undefined;
   // `setAll` writes the new session cookies through Next's cookie store, and
   // Next merges them into this Route Handler's response.
   //
@@ -60,19 +62,4 @@ export async function resolveOrMintRequestUserId(req: Request): Promise<string |
   // behind an UNAUTHORIZED.
   if (minted.error) throw minted.error;
   return minted.data.user?.id;
-}
-
-/**
- * Read the session behind a Supabase server client's cookies. A session that
- * failed to load logs one content-free line, so a persistent failure shows up
- * as more than a silent UNAUTHORIZED.
- */
-async function readSupabaseSession(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-): Promise<RequestSession> {
-  const { data, error } = await supabase.auth.getUser();
-  if (data.user) return { kind: "learner", userId: data.user.id };
-  if (isAuthSessionMissingError(error)) return { kind: "none" };
-  process.stderr.write(`${errorLogLine("[auth] session failed to load", {}, error)}\n`);
-  return { kind: "failed" };
 }

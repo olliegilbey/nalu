@@ -4,7 +4,7 @@ import { NotFoundError } from "@/db/queries/errors";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
 import { clientErrorText } from "@/lib/security/clientErrorText";
-import { readRequestSession, resolveOrMintRequestUserId } from "./requestUser";
+import { mintAnonymousLearner, readRequestSession } from "./requestUser";
 
 /** The tRPC request context. Tests build one with `appRouter.createCaller({ userId })`. */
 export interface TRPCContext {
@@ -28,6 +28,7 @@ export const createTRPCContext = async (
   const session = await readRequestSession(opts.req);
   // A session that failed to load is still a learner's. Refuse the whole
   // request, so no procedure answers them as a stranger or mints over them.
+  // This is the guard `mintAnonymousLearner` relies on.
   if (session.kind === "failed") {
     throw new TRPCError({ code: "UNAUTHORIZED", message: "session failed to load" });
   }
@@ -36,7 +37,7 @@ export const createTRPCContext = async (
   let mint: Promise<string | undefined> | undefined;
   return {
     userId: session.kind === "learner" ? session.userId : undefined,
-    mintUserId: () => (mint ??= resolveOrMintRequestUserId(opts.req)),
+    mintUserId: () => (mint ??= mintAnonymousLearner()),
   };
 };
 
@@ -95,12 +96,13 @@ async function runAsLearner<T>(userId: string, run: () => Promise<T>): Promise<T
 }
 
 /**
- * A procedure for an existing learner's named resource; it never mints. A
+ * A procedure for an existing learner's named resource, including a write
+ * that needs an existing course, such as `submitBaseline`; it never mints. A
  * caller with no session owns no course, so it answers NOT_FOUND, as for
  * another learner's course (#246). In production `ctx.userId` is the
  * Supabase anonymous user's id; in dev it is the `x-dev-user-id` stub.
  */
-export const protectedProcedure = t.procedure.use(mapNotFound).use(async ({ ctx, next }) => {
+export const learnerProcedure = t.procedure.use(mapNotFound).use(async ({ ctx, next }) => {
   // Hoist into `userId` to keep the override ctx well-typed across the
   // callback boundary.
   const userId = ctx.userId;
@@ -110,19 +112,19 @@ export const protectedProcedure = t.procedure.use(mapNotFound).use(async ({ ctx,
 
 /**
  * A procedure for a read with a natural empty answer; it never mints.
- * `ctx.userId` stays optional: the procedure answers a caller with no
- * session with its empty answer (#246). A learner runs as in
- * `protectedProcedure`.
+ * `ctx.userId` stays optional: the read answers a caller with no session
+ * with its empty answer (#246). A learner runs as in `learnerProcedure`.
  */
 export const optionalLearnerProcedure = t.procedure
   .use(mapNotFound)
   .use(async ({ ctx, next }) => (ctx.userId ? runAsLearner(ctx.userId, () => next()) : next()));
 
 /**
- * A procedure that creates learner data. A caller with no session mints its
- * anonymous learner here, and nowhere else (#246). `ctx.mintUserId` memoises
- * the mint per HTTP request, so a batch shares one. A `createCaller` test
- * with no `userId` has no mint, so it answers UNAUTHORIZED.
+ * A procedure for a write that needs no existing course, such as
+ * `course.clarify`. A caller with no session mints its anonymous learner
+ * here, and nowhere else (#246). `ctx.mintUserId` memoises the mint per HTTP
+ * request, so a batch shares one. A `createCaller` test with no `userId` has
+ * no mint, so it answers UNAUTHORIZED.
  */
 export const mintingProcedure = t.procedure.use(mapNotFound).use(async ({ ctx, next }) => {
   const userId = ctx.userId ?? (await ctx.mintUserId?.());

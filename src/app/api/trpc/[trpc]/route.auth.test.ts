@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { AuthSessionMissingError } from "@supabase/supabase-js";
+import { AuthRetryableFetchError, AuthSessionMissingError } from "@supabase/supabase-js";
 
-// A cookieless request in production: Supabase finds no session, and a mint
-// returns learner `minted-1`. These tests cover only who gets minted (#246).
-// They sit apart from `route.test.ts` because they stub Supabase and run as
-// production; that file runs on the dev-stub header. The Turn, the state
-// reads, the profile write and the profile upsert are stubbed. The custom
-// instructions read stays real: it answers a caller with no session itself.
+// Production requests with no session, or with one that fails to load. By
+// default Supabase finds no session, and a mint returns learner `minted-1`.
+// These tests cover only who gets minted (#246). They sit apart from
+// `route.test.ts` because they stub Supabase and run as production; that file
+// runs on the dev-stub header. The Turn, the state reads, the profile write
+// and the profile upsert are stubbed. The custom instructions read stays
+// real: it answers a caller with no session itself.
 const getUser = vi.fn();
 const signInAnonymously = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
@@ -42,8 +43,13 @@ async function query(path: string, input: unknown): Promise<BatchEntry[]> {
   return (await res.json()) as BatchEntry[];
 }
 
-/** Send cookieless mutations as one batched POST, the way httpBatchLink folds same-tick calls. */
-async function mutate(calls: readonly (readonly [string, unknown])[]): Promise<BatchEntry[]> {
+/**
+ * Send mutations as one batched POST, the way httpBatchLink folds same-tick
+ * calls. Returns the HTTP status and each call's entry.
+ */
+async function mutate(
+  calls: readonly (readonly [string, unknown])[],
+): Promise<{ readonly status: number; readonly entries: BatchEntry[] }> {
   const paths = calls.map(([path]) => path).join(",");
   const body = Object.fromEntries(calls.map(([, input], i) => [i, input]));
   const res = await POST(
@@ -53,7 +59,7 @@ async function mutate(calls: readonly (readonly [string, unknown])[]): Promise<B
       body: JSON.stringify(body),
     }),
   );
-  return (await res.json()) as BatchEntry[];
+  return { status: res.status, entries: (await res.json()) as BatchEntry[] };
 }
 
 beforeEach(() => {
@@ -68,6 +74,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("a cookieless tRPC request", () => {
@@ -97,9 +104,9 @@ describe("a cookieless tRPC request", () => {
   it("course.clarify mints one learner and runs as them", async () => {
     vi.mocked(clarify).mockResolvedValue({} as Awaited<ReturnType<typeof clarify>>);
 
-    const [entry] = await mutate([["course.clarify", { topic: "Rust ownership" }]]);
+    const { entries } = await mutate([["course.clarify", { topic: "Rust ownership" }]]);
 
-    expect(entry).toHaveProperty("result");
+    expect(entries[0]).toHaveProperty("result");
     expect(signInAnonymously).toHaveBeenCalledOnce();
     expect(clarify).toHaveBeenCalledWith({ userId: MINTED, topic: "Rust ownership" });
   });
@@ -108,7 +115,7 @@ describe("a cookieless tRPC request", () => {
     vi.mocked(clarify).mockResolvedValue({} as Awaited<ReturnType<typeof clarify>>);
     vi.mocked(saveCustomInstructions).mockResolvedValue("Use analogies.");
 
-    const entries = await mutate([
+    const { entries } = await mutate([
       ["course.clarify", { topic: "Rust ownership" }],
       ["profile.setCustomInstructions", { customInstructions: "Use analogies." }],
     ]);
@@ -117,5 +124,35 @@ describe("a cookieless tRPC request", () => {
     expect(signInAnonymously).toHaveBeenCalledOnce();
     expect(clarify).toHaveBeenCalledWith({ userId: MINTED, topic: "Rust ownership" });
     expect(saveCustomInstructions).toHaveBeenCalledWith(MINTED, "Use analogies.");
+  });
+});
+
+describe("a tRPC request whose session fails to load", () => {
+  it("refuses a minting batch with 401 and never mints over the session", async () => {
+    // A Supabase blip: the cookie is a learner's, so a mint would orphan
+    // their courses. The context refuses the whole batch first.
+    getUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthRetryableFetchError("fetch failed", 0),
+    });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    const { status, entries } = await mutate([
+      ["course.clarify", { topic: "Rust ownership" }],
+      ["profile.setCustomInstructions", { customInstructions: "Use analogies." }],
+    ]);
+
+    expect(status).toBe(401);
+    expect(entries).toMatchObject([
+      { error: { data: { code: "UNAUTHORIZED" } } },
+      { error: { data: { code: "UNAUTHORIZED" } } },
+    ]);
+    expect(signInAnonymously).not.toHaveBeenCalled();
+    expect(clarify).not.toHaveBeenCalled();
+    expect(saveCustomInstructions).not.toHaveBeenCalled();
+    // One content-free line, and nothing else: UNAUTHORIZED is not a 500 log.
+    expect(stderr.mock.calls).toEqual([
+      ["[auth] session failed to load name=AuthRetryableFetchError\n"],
+    ]);
   });
 });

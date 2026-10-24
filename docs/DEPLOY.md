@@ -108,8 +108,9 @@ different: `next start` sets `NODE_ENV=production`, so `src/proxy.ts` and
 
 - **Anonymous users are minted lazily (#232).** A page load never creates an
   `auth.users` row. `src/proxy.ts` only refreshes an existing session. Only
-  a write mints one (`src/server/requestUser.ts`): submitting a topic or
-  saving custom instructions (#246). Reads never mint. A cookieless course
+  a write that needs no existing course mints one
+  (`src/server/requestUser.ts`): submitting a topic or saving custom
+  instructions (#246). Reads never mint. A cookieless course
   read answers NOT_FOUND, so crawlers on a shared course link create no
   account. There is no API health check; point an uptime monitor at a static
   page. Supabase limits anonymous sign-ins per IP (30 an hour by default;

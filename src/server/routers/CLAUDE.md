@@ -12,13 +12,13 @@ Every procedure returns a typed, hand-shaped payload, never raw LLM text. No pay
 
 Wave turns do not go through tRPC. tRPC serves Wave state (`wave.getState`). The client sends each turn to the streaming route `src/app/api/course/[courseId]/wave/[waveNumber]/turn/route.ts` (AI SDK UI message stream). The route validates with `submitTurnInputSchema` (`src/lib/types/waveTurnInput.ts`, which also infers `SubmitTurnPayload`). A body that is not a JSON object gets a fixed 400, because V8's JSON parse error quotes the body. The route resolves the user via `src/server/requestUser.ts` and calls `streamWaveTurn` in `src/lib/course/`.
 
-Only a write mints (#246). The tRPC context and the Wave-turn route read an existing session through `readRequestSession` (`src/server/requestUser.ts`) and never mint. Each procedure picks one of three types from `src/server/trpc.ts`, by what it answers a caller with no session:
+Only a write that needs no existing course mints (#246). The tRPC context and the Wave-turn route read an existing session through `readRequestSession` (`src/server/requestUser.ts`) and never mint. Each procedure picks one of three types from `src/server/trpc.ts`, by what it answers a caller with no session:
 
-- `protectedProcedure`: a learner's named resource, such as `course.getState`. No session answers NOT_FOUND, as for another learner's course.
+- `learnerProcedure`: a learner's named resource, such as `course.getState`. It includes a write that needs an existing course, such as `submitBaseline`. No session answers NOT_FOUND, as for another learner's course.
 - `optionalLearnerProcedure`: a read with a natural empty answer. `ctx.userId` stays optional, and the lib read answers the empty value: `profile.getCustomInstructions` answers null.
-- `mintingProcedure`: a write, which creates learner data, such as `course.clarify`. No session mints an anonymous learner through `resolveOrMintRequestUserId`, the one home of the mint (#232). Next merges its cookie into the response. The context memoises the mint (`mintUserId`), so a batch shares one.
+- `mintingProcedure`: a write that needs no existing course, such as `course.clarify`. No session mints an anonymous learner through `mintAnonymousLearner`, the one home of the mint (#232). Next merges its cookie into the response. The context memoises the mint (`mintUserId`), so a batch shares one.
 
-Every type provisions the learner's `user_profiles` row and binds their id into ALS (`runAsLearner`). A new procedure that creates learner data uses `mintingProcedure`; a new one that only needs an existing course uses `protectedProcedure`. Tests call `appRouter.createCaller({ userId })`. Such a context has no `mintUserId`, so a minting call with no `userId` answers UNAUTHORIZED.
+Every type provisions the learner's `user_profiles` row and binds their id into ALS (`runAsLearner`). A new write that needs no existing course uses `mintingProcedure`; one that needs an existing course uses `learnerProcedure`. Tests call `appRouter.createCaller({ userId })`. Such a context has no `mintUserId`, so a minting call with no `userId` answers UNAUTHORIZED.
 
 The Wave-turn route reads the session only after the body validates. No session answers 404; a turn needs an existing course. A session that fails to load is never minted over or treated as a stranger: it logs `[auth] session failed to load`, the tRPC context refuses the whole request as UNAUTHORIZED, and the route answers 401. A failed mint throws. Page loads never mint: `src/proxy.ts` only refreshes a session.
 

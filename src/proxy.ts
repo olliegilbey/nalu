@@ -16,7 +16,7 @@ import { errorLogLine } from "@/lib/security/errorLogLine";
  * `getUser()` validates the cookie and refreshes it via the `setAll` adapter.
  *
  * Gated on `NODE_ENV === "production"`: in dev/test this is a passthrough so
- * the `x-dev-user-id` stub seam (see `src/server/trpc.ts`) is untouched.
+ * the `x-dev-user-id` stub seam (see `src/server/requestUser.ts`) is untouched.
  *
  * Fails open — a Supabase auth error is logged and the page still serves;
  * the subsequent tRPC call degrades to `UNAUTHORIZED`, which the UI already

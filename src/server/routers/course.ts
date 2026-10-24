@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { router, protectedProcedure, mintingProcedure } from "../trpc";
+import { router, learnerProcedure, mintingProcedure } from "../trpc";
 import { clarify } from "@/lib/course/clarify";
 import { getState } from "@/lib/course/getState";
 import { generateFramework } from "@/lib/course/generateFramework";
@@ -17,7 +17,7 @@ import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
  */
 export const courseRouter = router({
   /** Return the current persisted state for a course (used by the UI to restore in-progress scoping). */
-  getState: protectedProcedure
+  getState: learnerProcedure
     .input(z.object({ courseId: z.string().uuid() }))
     .query(({ ctx, input }) => getState({ userId: ctx.userId, courseId: input.courseId })),
 
@@ -30,7 +30,7 @@ export const courseRouter = router({
     .mutation(({ ctx, input }) => clarify({ userId: ctx.userId, topic: input.topic })),
 
   /** Generate the tier framework from the learner's clarification answers. */
-  generateFramework: protectedProcedure
+  generateFramework: learnerProcedure
     .input(
       z.object({
         courseId: z.string().uuid(),
@@ -56,14 +56,14 @@ export const courseRouter = router({
     ),
 
   /** Generate the baseline assessment questions from the stored framework. */
-  generateBaseline: protectedProcedure
+  generateBaseline: learnerProcedure
     .input(z.object({ courseId: z.string().uuid() }))
     .mutation(({ ctx, input }) =>
       generateBaseline({ userId: ctx.userId, courseId: input.courseId }),
     ),
 
   /** Close scoping: grade the baseline, prime Wave 1, flip status to active. */
-  submitBaseline: protectedProcedure
+  submitBaseline: learnerProcedure
     .input(
       z.object({
         courseId: z.string().uuid(),

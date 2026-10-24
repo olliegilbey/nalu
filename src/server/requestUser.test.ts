@@ -6,7 +6,7 @@ import {
   AuthRetryableFetchError,
   AuthSessionMissingError,
 } from "@supabase/supabase-js";
-import { readRequestSession, resolveOrMintRequestUserId } from "./requestUser";
+import { mintAnonymousLearner, readRequestSession } from "./requestUser";
 
 // Supabase is mocked at `@supabase/ssr`, the seam `src/proxy.test.ts` uses.
 // Next's request cookie store is faked so the test can see the session cookie
@@ -55,21 +55,19 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("resolveOrMintRequestUserId", () => {
-  it("non-production: trusts the x-dev-user-id header and never touches Supabase", async () => {
+describe("mintAnonymousLearner", () => {
+  it("non-production: never mints and never touches Supabase", async () => {
     vi.stubEnv("NODE_ENV", "development");
 
-    const userId = await resolveOrMintRequestUserId(apiRequest({ "x-dev-user-id": "dev-1" }));
-
-    expect(userId).toBe("dev-1");
+    expect(await mintAnonymousLearner()).toBeUndefined();
     expect(mockedCreateServerClient).not.toHaveBeenCalled();
   });
 
-  it("production, no session: mints one anonymous learner and writes its cookie", async () => {
+  it("production: mints one anonymous learner and writes its cookie", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const client = fakeClient({ data: { user: null }, error: new AuthSessionMissingError() });
 
-    const userId = await resolveOrMintRequestUserId(apiRequest());
+    const userId = await mintAnonymousLearner();
 
     expect(userId).toBe("minted-1");
     expect(client.auth.signInAnonymously).toHaveBeenCalledOnce();
@@ -82,10 +80,11 @@ describe("resolveOrMintRequestUserId", () => {
     );
   });
 
-  it("production, revoked session: mints a fresh learner over the cleared cookie", async () => {
+  it("production, revoked session: the read reports none, then the mint's cookie wins", async () => {
     // A revoked session's cookie still arrives. auth-js finds no live session
     // behind it, clears the cookie through `setAll`, and returns
-    // AuthSessionMissingError, so the resolver mints.
+    // AuthSessionMissingError. So a minting call mints, as the tRPC context
+    // sequences it: read first, then mint.
     vi.stubEnv("NODE_ENV", "production");
     const client = fakeClient({ data: { user: null }, error: new AuthSessionMissingError() });
     client.auth.getUser.mockImplementationOnce(async () => {
@@ -97,7 +96,8 @@ describe("resolveOrMintRequestUserId", () => {
       return { data: { user: null }, error: new AuthSessionMissingError() };
     });
 
-    const userId = await resolveOrMintRequestUserId(apiRequest());
+    expect(await readRequestSession(apiRequest())).toEqual({ kind: "none" });
+    const userId = await mintAnonymousLearner();
 
     expect(userId).toBe("minted-1");
     expect(client.auth.signInAnonymously).toHaveBeenCalledOnce();
@@ -107,38 +107,6 @@ describe("resolveOrMintRequestUserId", () => {
       SESSION_COOKIE.name,
       SESSION_COOKIE.value,
       SESSION_COOKIE.options,
-    );
-  });
-
-  it("production, existing session: resolves its learner and never mints", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    const client = fakeClient({ data: { user: { id: "learner-1" } }, error: null });
-
-    const userId = await resolveOrMintRequestUserId(apiRequest());
-
-    expect(userId).toBe("learner-1");
-    expect(client.auth.signInAnonymously).not.toHaveBeenCalled();
-    expect(cookieStore.set).not.toHaveBeenCalled();
-  });
-
-  it("production, session fails to load: does not mint over it", async () => {
-    // A Supabase blip is not a missing session. Minting here would overwrite
-    // the learner's cookie and orphan their courses; one UNAUTHORIZED is the
-    // lesser harm.
-    vi.stubEnv("NODE_ENV", "production");
-    const client = fakeClient({
-      data: { user: null },
-      error: new AuthRetryableFetchError("fetch failed", 0),
-    });
-    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-
-    const userId = await resolveOrMintRequestUserId(apiRequest());
-
-    expect(userId).toBeUndefined();
-    expect(client.auth.signInAnonymously).not.toHaveBeenCalled();
-    // Not swallowed: one content-free line names the error class.
-    expect(stderr).toHaveBeenCalledWith(
-      "[auth] session failed to load name=AuthRetryableFetchError\n",
     );
   });
 
@@ -153,7 +121,7 @@ describe("resolveOrMintRequestUserId", () => {
       error: limited,
     });
 
-    await expect(resolveOrMintRequestUserId(apiRequest())).rejects.toBe(limited);
+    await expect(mintAnonymousLearner()).rejects.toBe(limited);
   });
 });
 
