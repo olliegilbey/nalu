@@ -31,4 +31,4 @@ The model writes the teaching. It grades free-text answers, and typed answers to
 
 ## Pages
 
-- [Start a course](https://nalu-phi.vercel.app/): type any topic to begin Scoping.
+- [Start a course](https://nalu.ollie.gg/): type any topic to begin Scoping.
