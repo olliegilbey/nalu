@@ -31,7 +31,7 @@ import {
   type FrameworkJsonb,
 } from "@/lib/types/jsonb";
 import type { McOptionKey, McOptions } from "@/lib/types/mcOptionKey";
-import type { BaselineAnswer } from "@/lib/course/submitBaseline";
+import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 
 // Gate: skip every test unless both flags are set. Mirrors course.live.test.ts.
@@ -87,7 +87,7 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       );
       assertBaselineStructural(persistedBaseline, framework);
 
-      // 4. submitBaseline — build one BaselineAnswer per question.
+      // 4. submitBaseline — build one QuestionnaireAnswer per question.
       //    MC: answer CORRECTLY, from the persisted key. Answering correctly keeps
       //    `totalXp > 0` deterministic — blindly picking one key flakes
       //    ~1/3 of runs: when the model places the right answer off that key
@@ -124,7 +124,7 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       }>;
       // Mutable array matches the router's `z.array(...)` element type; entries
       // are still per-entry-immutable via `as const`.
-      const answers: BaselineAnswer[] = questions.map((q) => {
+      const answers: QuestionnaireAnswer[] = questions.map((q) => {
         if (q.id === typedMc!.id) {
           return { id: q.id, kind: "freetext", text: typedMcText, fromEscape: true } as const;
         }

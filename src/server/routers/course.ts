@@ -64,9 +64,9 @@ export const courseRouter = router({
     .input(
       z.object({
         courseId: z.uuid(),
-        // The shared answer schema; the lib's `BaselineAnswer` infers from it.
-        // The router is the trust boundary; the lib function assumes the
-        // shape is already validated.
+        // The shared questionnaire answer schema (issue #220). The router is
+        // the trust boundary; the lib function assumes the shape is already
+        // validated.
         answers: z.array(questionnaireAnswerSchema).min(1),
       }),
     )

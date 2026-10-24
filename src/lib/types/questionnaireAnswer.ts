@@ -7,7 +7,9 @@ import { MC_OPTION_KEYS } from "./mcOptionKey";
  *
  * The one source of the answer shape (issue #220). Both submit paths parse
  * it: `course.submitBaseline` (scoping) and the Wave turn route's
- * `questionnaire-answers` payload. Their lib and client types infer from it.
+ * `questionnaire-answers` payload. Lib and client code use its inferred type,
+ * {@link QuestionnaireAnswer}, under that one name. Clarify answers keep their
+ * own `{ questionId, freetext }` shape.
  */
 export const questionnaireAnswerSchema = z.discriminatedUnion("kind", [
   z.object({

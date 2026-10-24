@@ -18,7 +18,7 @@ import { deriveRetryableWaveTurn } from "@/lib/course/deriveRetryableWaveTurn";
 import type { ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
 import { useCourseXp } from "./useCourseXp";
 import type { ChatEntry } from "@/lib/types/chatEntry";
-import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
+import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
 import type { WaveState } from "@/lib/course/getWaveState";
 import type { WaveTurnResultData, WaveTurnUIMessage } from "@/lib/types/waveStream";
 import type { SubmitTurnBody, SubmitTurnPayload } from "@/lib/types/waveTurnInput";
@@ -73,7 +73,7 @@ export interface UseWaveStateResult extends StreamingTurn {
   readonly waveNotFound: boolean;
   readonly submitChatText: (text: string, opts?: SubmitTurnOptions) => void;
   readonly submitQuestionnaireAnswers: (
-    answers: readonly ShapedQuestionnaireAnswer[],
+    answers: readonly QuestionnaireAnswer[],
     opts?: SubmitTurnOptions,
   ) => void;
 }

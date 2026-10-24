@@ -1,8 +1,6 @@
 import { describe, expectTypeOf, it } from "vitest";
 import type { inferRouterInputs } from "@trpc/server";
 import type { AppRouter } from "@/server/routers";
-import type { BaselineAnswer } from "@/lib/course/submitBaseline";
-import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
 import type { UseScopingStateResult } from "@/hooks/useScopingState";
 import type { UseWaveStateResult } from "@/hooks/useWaveState";
 import type { QuestionnaireAnswer } from "./questionnaireAnswer";
@@ -25,11 +23,6 @@ describe("QuestionnaireAnswer", () => {
   it("is the answer both submit routes parse", () => {
     expectTypeOf<WaveRouteAnswer>().toEqualTypeOf<QuestionnaireAnswer>();
     expectTypeOf<ScopingRouteAnswer>().toEqualTypeOf<QuestionnaireAnswer>();
-  });
-
-  it("is the answer the baseline grader and the client shaper use", () => {
-    expectTypeOf<BaselineAnswer>().toEqualTypeOf<QuestionnaireAnswer>();
-    expectTypeOf<ShapedQuestionnaireAnswer>().toEqualTypeOf<QuestionnaireAnswer>();
   });
 
   it("is the answer both client hooks submit", () => {

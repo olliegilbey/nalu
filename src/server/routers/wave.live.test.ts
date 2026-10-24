@@ -47,7 +47,7 @@ import {
   assertBaselineStructural,
 } from "@/lib/testing/scopingInvariants";
 import { baselineJsonbSchema, seedSourceSchema } from "@/lib/types/jsonb";
-import type { BaselineAnswer } from "@/lib/course/submitBaseline";
+import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
 import { emitSmokeFinalSnapshot } from "@/lib/testing/smokeFinalSnapshot";
 import { WAVE } from "@/lib/config/tuning";
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
@@ -178,7 +178,7 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
       const rubricById = new Map(
         persistedBaseline.questions.map((q) => [q.id, q.freetextRubric] as const),
       );
-      const baselineAnswers: BaselineAnswer[] = questions.map((q) =>
+      const baselineAnswers: QuestionnaireAnswer[] = questions.map((q) =>
         q.type === "multiple_choice"
           ? ({ id: q.id, kind: "mc", selected: "A" } as const)
           : ({

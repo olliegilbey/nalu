@@ -10,21 +10,18 @@ import {
   buildScopingCloseLearnerInput,
   requireQuestionTier,
   splitOne,
-  type BaselineAnswer,
 } from "./submitBaseline.internal";
 import { scoreBaseline } from "@/lib/scoring/scoreBaseline";
 import { logScopingCloseGradings } from "./closeGradingDebug";
 import { persistScopingClose } from "./submitBaseline.persist";
 import type { BaselineJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
-
-/** Re-export the answer shape so callers (router) import it from one place. */
-export type { BaselineAnswer } from "./submitBaseline.internal";
+import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
 
 /** Input to {@link submitBaseline}. */
 export interface SubmitBaselineParams {
   readonly courseId: string;
   readonly userId: string;
-  readonly answers: readonly BaselineAnswer[];
+  readonly answers: readonly QuestionnaireAnswer[];
 }
 
 /** Payload returned by {@link submitBaseline}. */
