@@ -36,7 +36,7 @@ export function everyHostIsLoopback(hosts: readonly string[]): boolean {
 
 /**
  * True when the list is empty, or any host is empty or names this machine.
- * Gates `just db-migrate-prod` (`assertRemoteDirectUrl.ts`). That gate
+ * Gates the `-prod` recipes (`assertRemoteDirectUrl.ts`). That gate
  * refuses on a true, so feeding it more parses of the URL only adds refusals.
  */
 export function someHostIsLoopbackOrEmpty(hosts: readonly string[]): boolean {
