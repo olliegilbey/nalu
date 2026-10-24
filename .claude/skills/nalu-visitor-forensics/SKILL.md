@@ -17,8 +17,8 @@ session.** `proxy.ts` sets `distinct_id` to the anon Supabase user id, so a
 visitor's network origin and their actual conversation are the same person on
 both sides.
 
-**Before the first API request there is no user id.** The anon user is minted
-lazily, on the learner's first API request, such as submitting a topic (#232). So a
+**Before the first write there is no user id.** The anon user is minted lazily,
+on the learner's first write, such as submitting a topic (#232, #246). So a
 pageview from a visitor with no session carries a fresh random `distinct_id` that
 joins to nothing. Its `topic` reads `-` even when that visitor went on to start a
 course. To link a landing pageview to the course, match on `--ip`.

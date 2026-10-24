@@ -1,4 +1,4 @@
-import { router, protectedProcedure } from "../trpc";
+import { router, optionalLearnerProcedure, mintingProcedure } from "../trpc";
 import {
   getCustomInstructions,
   saveCustomInstructions,
@@ -11,16 +11,20 @@ import { setCustomInstructionsInputSchema } from "@/lib/types/customInstructions
  * read and write only their own preferences.
  */
 export const profileRouter = router({
-  /** Read the caller's custom instructions; null when none are set. */
-  getCustomInstructions: protectedProcedure.query(async ({ ctx }) => ({
+  /**
+   * Read the caller's custom instructions; null when none are set. A caller
+   * with no session has set none, so it gets null and mints nothing (#246).
+   */
+  getCustomInstructions: optionalLearnerProcedure.query(async ({ ctx }) => ({
     customInstructions: await getCustomInstructions(ctx.userId),
   })),
 
   /**
    * Save the caller's custom instructions. The schema trims, caps and maps
    * empty to null; an over-cap text fails with BAD_REQUEST and writes nothing.
+   * A caller with no session mints its learner first.
    */
-  setCustomInstructions: protectedProcedure
+  setCustomInstructions: mintingProcedure
     .input(setCustomInstructionsInputSchema)
     .mutation(async ({ ctx, input }) => ({
       customInstructions: await saveCustomInstructions(ctx.userId, input.customInstructions),

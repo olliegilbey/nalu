@@ -129,7 +129,7 @@ Never use "turn" for a single contribution or a single API call — say ChatEntr
 
 ## User
 
-The learner. Distinct from the developer, admin, or agent. When docs say "the user," they mean the learner interacting with the UI unless context says otherwise. There is no sign-up. In production, the learner's first API request mints a Supabase anonymous user (`src/server/requestUser.ts`); page loads never do. Outside production, the `x-dev-user-id` header stands in (`src/server/requestUser.ts`).
+The learner. Distinct from the developer, admin, or agent. When docs say "the user," they mean the learner interacting with the UI unless context says otherwise. There is no sign-up. In production, the learner's first write mints a Supabase anonymous user (`src/server/requestUser.ts`); page loads and reads never do. A write is a request that creates learner data: submitting a topic or saving custom instructions (`mintingProcedure`, `src/server/trpc.ts`). Outside production, the `x-dev-user-id` header stands in (`src/server/requestUser.ts`).
 
 ## Wave
 

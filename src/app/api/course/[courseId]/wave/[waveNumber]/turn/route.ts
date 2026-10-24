@@ -1,6 +1,6 @@
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { z } from "zod/v4";
-import { resolveOrMintRequestUserId } from "@/server/requestUser";
+import { readRequestSession } from "@/server/requestUser";
 import { submitTurnInputSchema } from "@/lib/types/waveTurnInput";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
@@ -49,15 +49,20 @@ export async function POST(
     return Response.json({ error: z.treeifyError(input.error) }, { status: 400 });
   }
 
-  // Auth after validation: a malformed request is refused before it can
-  // mint an anonymous learner (#232).
-  const userId = await resolveOrMintRequestUserId(req);
-  if (!userId) return new Response("Unauthorized", { status: 401 });
+  // Auth after validation: a malformed request costs no session read and
+  // no profile write. A turn needs an existing course, so the route reads
+  // the session and never mints (#246). A session that failed to load is
+  // still a learner's: refuse it rather than answer them as a stranger.
+  // No session owns no course: NOT_FOUND, as for another learner's course.
+  const session = await readRequestSession(req);
+  if (session.kind === "failed") return new Response("Unauthorized", { status: 401 });
+  if (session.kind === "none") return new Response("Not found", { status: 404 });
+  const userId = session.userId;
   await ensureUserProfile(userId);
 
   const stream = createUIMessageStream<WaveTurnUIMessage>({
     // Bind userId into ALS for the Cerebras rate limiter — same contract
-    // as protectedProcedure (src/server/trpc.ts).
+    // as the tRPC learner procedures (`runAsLearner`, src/server/trpc.ts).
     execute: ({ writer }) =>
       userIdStore.run(userId, async () => {
         // Return value (token usage, logged by the live smoke only) is
