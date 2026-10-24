@@ -6,7 +6,7 @@ import { generateFramework } from "@/lib/course/generateFramework";
 import { generateBaseline } from "@/lib/course/generateBaseline";
 import { submitBaseline } from "@/lib/course/submitBaseline";
 import { SCOPING } from "@/lib/config/tuning";
-import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
+import { questionnaireAnswerSchema } from "@/lib/types/questionnaireAnswer";
 
 /**
  * Scoping flow (spec §3.2).
@@ -18,7 +18,7 @@ import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
 export const courseRouter = router({
   /** Return the current persisted state for a course (used by the UI to restore in-progress scoping). */
   getState: protectedProcedure
-    .input(z.object({ courseId: z.string().uuid() }))
+    .input(z.object({ courseId: z.uuid() }))
     .query(({ ctx, input }) => getState({ userId: ctx.userId, courseId: input.courseId })),
 
   /** Initiate scoping for a new topic: creates a course and returns clarifying questions. */
@@ -30,7 +30,7 @@ export const courseRouter = router({
   generateFramework: protectedProcedure
     .input(
       z.object({
-        courseId: z.string().uuid(),
+        courseId: z.uuid(),
         // `responses` replaces the old flat `answers` array — each entry carries
         // the questionId so the lib function can reconstruct Q/A pairs for the LLM.
         responses: z
@@ -54,7 +54,7 @@ export const courseRouter = router({
 
   /** Generate the baseline assessment questions from the stored framework. */
   generateBaseline: protectedProcedure
-    .input(z.object({ courseId: z.string().uuid() }))
+    .input(z.object({ courseId: z.uuid() }))
     .mutation(({ ctx, input }) =>
       generateBaseline({ userId: ctx.userId, courseId: input.courseId }),
     ),
@@ -63,27 +63,11 @@ export const courseRouter = router({
   submitBaseline: protectedProcedure
     .input(
       z.object({
-        courseId: z.string().uuid(),
-        // Discriminated union mirrors the `BaselineAnswer` type exported by
-        // the lib function. The router is the trust boundary; the lib function
-        // assumes the shape is already validated.
-        answers: z
-          .array(
-            z.discriminatedUnion("kind", [
-              z.object({
-                id: z.string().min(1),
-                kind: z.literal("mc"),
-                selected: z.enum(MC_OPTION_KEYS),
-              }),
-              z.object({
-                id: z.string().min(1),
-                kind: z.literal("freetext"),
-                text: z.string().min(1),
-                fromEscape: z.boolean(),
-              }),
-            ]),
-          )
-          .min(1),
+        courseId: z.uuid(),
+        // The shared answer schema; the lib's `BaselineAnswer` infers from it.
+        // The router is the trust boundary; the lib function assumes the
+        // shape is already validated.
+        answers: z.array(questionnaireAnswerSchema).min(1),
       }),
     )
     .mutation(({ ctx, input }) =>

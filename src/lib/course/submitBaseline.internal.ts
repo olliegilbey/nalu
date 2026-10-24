@@ -3,16 +3,10 @@ import { typedMcGradingRule } from "@/lib/prompts/questionnaire";
 import type { McOptionKey, McOptions } from "@/lib/types/mcOptionKey";
 import type { z } from "zod";
 import type { baselineGradingSchema } from "@/lib/types/jsonb";
+import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
 
-/** One learner answer in a baseline submission; MC selects a key, free-text carries prose. */
-export type BaselineAnswer =
-  | { readonly id: string; readonly kind: "mc"; readonly selected: McOptionKey }
-  | {
-      readonly id: string;
-      readonly kind: "freetext";
-      readonly text: string;
-      readonly fromEscape: boolean;
-    };
+/** One learner answer in a baseline submission: the shared {@link QuestionnaireAnswer} (issue #220). */
+export type BaselineAnswer = QuestionnaireAnswer;
 
 /** The new unified grading shape (camelCase, matches baselineGradingSchema). */
 export type GradingEntry = z.infer<typeof baselineGradingSchema>;

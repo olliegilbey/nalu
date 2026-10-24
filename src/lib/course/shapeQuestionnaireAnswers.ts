@@ -1,19 +1,14 @@
-import { MC_OPTION_KEYS, type McOptionKey } from "@/lib/types/mcOptionKey";
+import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
+import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
 import type { ChoiceQuestion } from "./adaptQuestionnaire";
 
 /**
  * One entry in the answer payload submitted to questionnaire consumers
  * (`course.submitBaseline`, and the Wave turn route's
- * `questionnaire-answers` branch). Same wire shape across phases.
+ * `questionnaire-answers` branch): the shared {@link QuestionnaireAnswer},
+ * so the client sends what both routes parse (issue #220).
  */
-export type ShapedQuestionnaireAnswer =
-  | { readonly id: string; readonly kind: "mc"; readonly selected: McOptionKey }
-  | {
-      readonly id: string;
-      readonly kind: "freetext";
-      readonly text: string;
-      readonly fromEscape: boolean;
-    };
+export type ShapedQuestionnaireAnswer = QuestionnaireAnswer;
 
 /** One raw `{ question, answer }` pair as emitted by the Composer. */
 export interface RawComposerAnswer {
