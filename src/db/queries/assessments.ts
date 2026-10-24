@@ -1,6 +1,6 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { assessments, type Assessment } from "@/db/schema";
+import { assessments, waves, type Assessment } from "@/db/schema";
 
 /** Re-exported domain error for missing query targets — single import site for callers. */
 export { NotFoundError } from "./errors";
@@ -64,4 +64,24 @@ export async function getAssessmentByWaveAndQuestionId(
     .from(assessments)
     .where(and(eq(assessments.waveId, waveId), eq(assessments.questionId, questionId)));
   return row ?? null;
+}
+
+/**
+ * Sum `xp_awarded` over every assessment row of a course's Waves, open and
+ * closed, inside the caller's tx. The course XP repair
+ * (`recomputeCourseTotalXp`) adds the stored XP as-is; it never re-scores a
+ * row. 0 when the course has no rows.
+ */
+export async function sumCourseAssessmentXpInTx(courseId: string, tx: DbOrTx): Promise<number> {
+  const [row] = await tx
+    .select({
+      // SUM of an integer column is a bigint, which the driver returns as a
+      // string; `mapWith(Number)` makes it a number. COALESCE covers no rows.
+      xp: sql<number>`coalesce(sum(${assessments.xpAwarded}), 0)`.mapWith(Number),
+    })
+    .from(assessments)
+    .innerJoin(waves, eq(waves.id, assessments.waveId))
+    .where(eq(waves.courseId, courseId));
+  // An aggregate with no GROUP BY always returns one row.
+  return row?.xp ?? 0;
 }

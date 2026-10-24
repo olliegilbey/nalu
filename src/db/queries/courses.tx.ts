@@ -20,8 +20,9 @@ import { NotFoundError } from "./errors";
  */
 
 /**
- * Lock a course row inside the caller's tx. The Wave save transactions call
- * it first, so every transaction that writes course XP queues on the course
+ * Lock a course row inside the caller's tx. The Wave save transactions and
+ * the XP repair (`recomputeCourseTotalXp`) call it first, so every
+ * transaction that writes course XP queues on the course
  * row before it locks a Wave or assessment row. One shared first lock means
  * no lock cycle between them.
  *
@@ -179,7 +180,7 @@ const courseTotalXpRowSchema = z.object({ total_xp: z.number().int().nonnegative
 /**
  * Read `courses.total_xp` inside the caller's tx. The Wave saves call it after
  * their last XP write. They hold the course-row lock, so the value read is the
- * value the tx commits.
+ * value the tx commits. The XP repair reads it first, as the total it replaces.
  *
  * @throws {NotFoundError} if `courseId` does not match any row.
  */

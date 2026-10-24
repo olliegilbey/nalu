@@ -22,12 +22,14 @@ Layout:
 - `everyHostIsLoopback.ts` — the one loopback rule, `isLoopbackHost`:
   `localhost` (any case, optional trailing dot), 127.0.0.0/8, `0.0.0.0`,
   `::1`. Every DB gate uses it.
-- `assertLocalDirectUrl.ts` — gate for `just db-migrate` and `just db-seed`.
-  Refuses unless every `DIRECT_URL` host is loopback, so `db-migrate-prod` is
-  the only path to a remote database.
-- `assertRemoteDirectUrl.ts` — `just db-migrate-prod` gate. Refuses a
-  missing `DIRECT_URL`, or one with an empty or loopback host under the
-  postgres-js or WHATWG parse.
+- `assertLocalDirectUrl.ts` — gate for `just db-migrate`, `just db-seed` and
+  `just recompute-course-xp`. Refuses unless every `DIRECT_URL` host is
+  loopback, so the `-prod` recipes are the only path to a remote database.
+- `assertRemoteDirectUrl.ts` — gate for `just db-migrate-prod` and
+  `just recompute-course-xp-prod`. Refuses a missing `DIRECT_URL`, or one
+  with an empty or loopback host under the postgres-js or WHATWG parse. A
+  script a gate guards connects through `DIRECT_URL` too, so the gate checks
+  the URL it dials.
 - `testing/` — testcontainers harness for integration tests.
 - `client.ts` — Drizzle singleton against `DATABASE_URL` (pooled).
 

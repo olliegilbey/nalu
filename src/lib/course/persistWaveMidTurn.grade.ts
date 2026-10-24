@@ -18,7 +18,6 @@ export interface GradedRow {
   readonly kind: GradedSignal["kind"];
   readonly questionId: string;
   readonly xpAwarded: number;
-  readonly qualityScore?: number;
 }
 
 /**
@@ -117,12 +116,12 @@ export async function gradePriorAnswers(
       tx: params.tx,
       userAnswer,
     });
+    // Copy each field by name. This row rides the stream to the client, so a
+    // field added to `AppliedGrading` must not reach the wire unasked.
     const out: GradedRow = {
       kind: applied.kind,
       questionId: applied.questionId,
       xpAwarded: applied.xpAwarded,
-      // Only free-text carries a model quality score.
-      ...(sig.kind === "free-text" ? { qualityScore: sig.qualityScore } : {}),
     };
     return [...acc, out];
   }, Promise.resolve([]));
