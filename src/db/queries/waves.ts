@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, count } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { waves, type Wave } from "@/db/schema";
 import {
@@ -124,4 +124,18 @@ export async function getWaveChatLog(
   // Trust-boundary validation: the JSONB column is `unknown` on the Drizzle
   // row type; the schema parse is the same discipline as `waveRowGuard`.
   return waveChatLogSchema.parse(row.chatLog);
+}
+
+/**
+ * Count a course's closed Waves inside the caller's tx. Each Wave close
+ * awarded `WAVE.completionXp` once, so the course XP repair
+ * (`recomputeCourseTotalXp`) multiplies by this count.
+ */
+export async function countClosedWavesInTx(courseId: string, tx: DbOrTx): Promise<number> {
+  const [row] = await tx
+    .select({ closed: count() })
+    .from(waves)
+    .where(and(eq(waves.courseId, courseId), eq(waves.status, "closed")));
+  // An aggregate with no GROUP BY always returns one row.
+  return row?.closed ?? 0;
 }

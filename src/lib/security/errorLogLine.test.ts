@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import { DrizzleQueryError } from "drizzle-orm";
 import { APICallError } from "@ai-sdk/provider";
 import { RetryError } from "ai";
+import { AuthApiError } from "@supabase/supabase-js";
 import { errorLogLine } from "./errorLogLine";
 
 const IDS = { courseId: "3f2b8c1e-9d4a-4b7e-8c2f-1a2b3c4d5e6f", waveNumber: 2 } as const;
@@ -72,6 +73,25 @@ describe("errorLogLine", () => {
   it("logs a guard error's TRPC code", () => {
     const guard = new TRPCError({ code: "PRECONDITION_FAILED", message: "no open questionnaire" });
     expect(waveLine(guard)).toContain("name=TRPCError trpcCode=PRECONDITION_FAILED");
+  });
+
+  it("logs a Supabase Auth error's code, so a rate limit and a disabled provider differ", () => {
+    // A failed anonymous mint (#232). Both arrive as AuthApiError; only the
+    // code tells the per-IP limit from a provider switched off.
+    const limited = new AuthApiError(`Rate limit ${SECRET}`, 429, "over_request_rate_limit");
+    const disabled = new AuthApiError(
+      "Anonymous sign-ins are disabled",
+      422,
+      "anonymous_provider_disabled",
+    );
+    const place = { path: "course.clarify" };
+
+    expect(errorLogLine("[trpc] procedure failed", place, limited)).toBe(
+      "[trpc] procedure failed path=course.clarify name=AuthApiError authCode=over_request_rate_limit",
+    );
+    expect(errorLogLine("[trpc] procedure failed", place, disabled)).toBe(
+      "[trpc] procedure failed path=course.clarify name=AuthApiError authCode=anonymous_provider_disabled",
+    );
   });
 
   it("drops a name that is not a plain token", () => {

@@ -1,7 +1,8 @@
 // @vitest-environment node
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { NextRequest, NextResponse, type NextFetchEvent } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { AuthRetryableFetchError, AuthSessionMissingError } from "@supabase/supabase-js";
 import { capturePageview } from "@/lib/analytics/capturePageview";
 import { proxy, config } from "./proxy";
 
@@ -27,20 +28,36 @@ function fakeEvent(): NextFetchEvent {
 }
 
 /**
- * Builds a fake Supabase client. `user` is what `getUser()` resolves with;
- * `getUserError` makes `getUser()` reject to drive the fail-open path.
+ * Builds a fake Supabase client. `getUser()` resolves with `user`, plus the
+ * error auth-js returns alongside it: `AuthSessionMissingError` when there is
+ * no user, unless `error` overrides it. `thrown` makes `getUser()` reject
+ * instead, as auth-js does for an error that is not an AuthError.
  */
-function fakeClient(opts: { user: unknown; getUserError?: boolean }) {
-  const getUser = opts.getUserError
-    ? vi.fn().mockRejectedValue(new Error("auth host unreachable"))
-    : vi.fn().mockResolvedValue({ data: { user: opts.user } });
+function fakeClient(opts: { user: unknown; error?: unknown; thrown?: unknown }) {
+  const error = opts.error ?? (opts.user ? null : new AuthSessionMissingError());
+  const getUser =
+    opts.thrown === undefined
+      ? vi.fn().mockResolvedValue({ data: { user: opts.user }, error })
+      : vi.fn().mockRejectedValue(opts.thrown);
   const signInAnonymously = vi.fn().mockResolvedValue({ data: {}, error: null });
   return { auth: { getUser, signInAnonymously } };
 }
 
+/** Every line the proxy wrote to stderr in the current test. */
+const logged: string[] = [];
+
+beforeEach(() => {
+  logged.length = 0;
+  vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+    logged.push(String(chunk));
+    return true;
+  });
+});
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("proxy", () => {
@@ -51,55 +68,64 @@ describe("proxy", () => {
     expect(mockedCreateServerClient).not.toHaveBeenCalled();
   });
 
-  it("production, no session: mints an anonymous account", async () => {
+  it("production, no session: mints nothing and sets no cookie (#232)", async () => {
+    // Crawlers, link unfurlers and uptime checks arrive with no cookie. A page
+    // load must not create an `auth.users` row for them; the first API request
+    // that needs a learner mints instead (`src/server/requestUser.ts`).
     vi.stubEnv("NODE_ENV", "production");
     const client = fakeClient({ user: null });
     mockedCreateServerClient.mockReturnValue(client as never);
 
     const res = await proxy(new NextRequest("https://nalu.ollie.gg/"));
 
-    expect(client.auth.signInAnonymously).toHaveBeenCalledOnce();
-    expect(res).toBeInstanceOf(NextResponse);
+    expect(client.auth.signInAnonymously).not.toHaveBeenCalled();
+    expect(res.headers.get("set-cookie")).toBeNull();
+    // A missing session is the normal cookieless visit, not a failure.
+    expect(logged).toEqual([]);
   });
 
-  it("production, existing session: does not mint a new account", async () => {
+  it("production, auth error returned: serves the page and logs a content-free line", async () => {
+    // auth-js returns a bad key or an unreachable host as `{ error }`; it
+    // does not throw. The failure must still reach the log.
     vi.stubEnv("NODE_ENV", "production");
-    const client = fakeClient({ user: { id: "user-1" } });
-    mockedCreateServerClient.mockReturnValue(client as never);
+    const unreachable = new AuthRetryableFetchError("fetch failed: stub.supabase.co", 0);
+    mockedCreateServerClient.mockReturnValue(
+      fakeClient({ user: null, error: unreachable }) as never,
+    );
 
     const res = await proxy(new NextRequest("https://nalu.ollie.gg/"));
 
-    expect(client.auth.signInAnonymously).not.toHaveBeenCalled();
     expect(res).toBeInstanceOf(NextResponse);
+    expect(logged).toEqual(["[proxy] Supabase auth failed name=AuthRetryableFetchError\n"]);
   });
 
-  it("production, auth failure: fails open and logs", async () => {
+  it("production, auth error thrown: fails open and logs a content-free line", async () => {
+    // auth-js rethrows an error that is not an AuthError, so the catch stays.
     vi.stubEnv("NODE_ENV", "production");
     mockedCreateServerClient.mockReturnValue(
-      fakeClient({ user: null, getUserError: true }) as never,
+      fakeClient({ user: null, thrown: new TypeError("lock failed") }) as never,
     );
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await proxy(new NextRequest("https://nalu.ollie.gg/"));
 
     expect(res).toBeInstanceOf(NextResponse);
-    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(logged).toEqual(["[proxy] Supabase auth failed name=TypeError\n"]);
   });
 
-  it("production, minting: forwards Supabase cache-control headers onto the response", async () => {
+  it("production, refreshing: forwards Supabase cache-control headers onto the response", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    const getUser = vi.fn().mockResolvedValue({ data: { user: null } });
-    // Simulate @supabase/ssr writing a session: `signInAnonymously` invokes the
-    // `setAll` cookie adapter with a cookie *and* the cache-control headers the
-    // library always passes alongside auth cookies. The library awaits
+    // Simulate @supabase/ssr refreshing an expired session: `getUser` invokes
+    // the `setAll` cookie adapter with a cookie *and* the cache-control headers
+    // the library always passes alongside auth cookies. The library awaits
     // `setAll` (its type allows a Promise), so the stub awaits it too.
-    const signInAnonymously = vi.fn().mockImplementation(async () => {
+    const getUser = vi.fn().mockImplementation(async () => {
       const cookies = mockedCreateServerClient.mock.calls[0]?.[2]?.cookies;
       await cookies?.setAll?.([{ name: "sb-access-token", value: "token", options: {} }], {
         "Cache-Control": "private, no-cache, no-store, must-revalidate, max-age=0",
       });
+      return { data: { user: { id: "user-1" } }, error: null };
     });
-    mockedCreateServerClient.mockReturnValue({ auth: { getUser, signInAnonymously } } as never);
+    mockedCreateServerClient.mockReturnValue({ auth: { getUser } } as never);
 
     const res = await proxy(new NextRequest("https://nalu.ollie.gg/"));
 
@@ -126,16 +152,32 @@ describe("proxy", () => {
     });
   });
 
+  it("production, no session: still fires the landing pageview, under a throwaway id", async () => {
+    // The landing pageview carries the referrer and UTM tags. Losing it with
+    // the mint would blind visitor forensics to everyone who lands and leaves.
+    vi.stubEnv("NODE_ENV", "production");
+    mockedCreateServerClient.mockReturnValue(fakeClient({ user: null }) as never);
+    const event = fakeEvent();
+
+    await proxy(new NextRequest("https://nalu.ollie.gg/?utm_source=cv"), event);
+    await proxy(new NextRequest("https://nalu.ollie.gg/?utm_source=cv"), event);
+
+    expect(mockedCapture).toHaveBeenCalledTimes(2);
+    const [first, second] = mockedCapture.mock.calls.map(([input]) => input.distinctId);
+    expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    // Fresh per request: no stable id ties two cookieless hits together.
+    expect(second).not.toBe(first);
+  });
+
   it("matcher: skips prefetches via `missing` conditions (runtime checks can't — Next strips the headers)", () => {
     // Guards against flattening the matcher back to a bare string: prefetch
     // filtering only works at the matcher level, so losing the `missing`
-    // conditions would silently reintroduce phantom pageviews and
-    // anonymous-user minting on hover-prefetches.
+    // conditions would silently reintroduce phantom pageviews on
+    // hover-prefetches.
     expect(config.matcher).toEqual([
       {
         // Dotted-path exclusion covers all static assets (no app route has a
-        // `.`); losing it would count asset fetches as pageviews and mint
-        // anonymous users for them.
+        // `.`); losing it would count asset fetches as pageviews.
         source: "/((?!api|_next/static|_next/image|.*\\..*).*)",
         missing: [
           { type: "header", key: "next-router-prefetch" },

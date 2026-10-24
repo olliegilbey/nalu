@@ -164,6 +164,28 @@ db-seed:
     bun src/db/assertLocalDirectUrl.ts
     bun src/db/seed.ts
 
+# The XP repair (issue #208) sets courses.total_xp from its source rows. A dry
+# run by default: it prints counts and writes nothing. Pass --apply to write.
+# It connects through DIRECT_URL. The gate refuses unless every DIRECT_URL
+# host is this machine, so `just recompute-course-xp-prod` is the only path to
+# a remote database.
+# Repair course XP totals on the dev database (DIRECT_URL in `.env.local`).
+recompute-course-xp *args:
+    bun src/db/assertLocalDirectUrl.ts
+    bun scripts/recompute-course-total-xp.ts {{args}}
+
+# Same env handling as `db-migrate-prod`: `unset` drops the dev URLs, and
+# `--env-file` loads `.env.production.local` only. The guard refuses a missing
+# or loopback DIRECT_URL, and the script connects through that same URL. The
+# repair keeps no undo record: take a backup before `--apply`.
+# Repair course XP totals on production, from `.env.production.local`.
+recompute-course-xp-prod *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    unset DATABASE_URL DIRECT_URL
+    bun --env-file=.env.production.local src/db/assertRemoteDirectUrl.ts
+    bun --env-file=.env.production.local scripts/recompute-course-total-xp.ts {{args}}
+
 # drizzle-kit history check: fails on an inconsistent migration chain. It does
 # not diff schema TS against the migrations, so it misses an ungenerated change.
 # `just test` catches that: see src/db/schemaMigrationDrift.test.ts.

@@ -50,7 +50,7 @@ describe("persistScopingClose (integration)", () => {
       expect(after.status).toBe("active");
       expect(after.startingTier).toBe(2);
       expect(after.currentTier).toBe(2);
-      expect(after.totalXp).toBe(50);
+      expect(after.totalXp).toBe(30);
       expect(after.summary).toBe("evolving seed");
 
       // 2. Baseline JSONB widened to the closed shape. The starting tier is

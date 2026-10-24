@@ -42,7 +42,7 @@ All files hold plain values, with no `op://` references (see `justfile`).
 | `LLM_API_KEY`                          | Cerebras                     | Cerebras key; secret                                                     |
 | `LLM_MODEL`                            | same as dev                  | `gpt-oss-120b`; vet a replacement with `just probe-model`                |
 | `DATABASE_URL`                         | also `.env.production.local` | **pooled** connection (`?pgbouncer=true`) — required for serverless      |
-| `DIRECT_URL`                           | also `.env.production.local` | direct connection; used only by `just db-migrate-prod`                   |
+| `DIRECT_URL`                           | also `.env.production.local` | direct connection; used by the `-prod` recipes                           |
 | `DEV_USER_ID`                          | any valid UUID               | schema-required even in prod; unused by the prod auth path (see Gotchas) |
 | `POSTHOG_KEY`                          | `phc_…` ingestion key        | optional — absent disables analytics; read by `src/proxy.ts`             |
 
@@ -65,6 +65,10 @@ Preview anyway.
 - Add `nalu.ollie.gg` in **Settings → Domains**.
 - At the `ollie.gg` DNS provider, add the record Vercel shows — for a
   subdomain that is a `CNAME` for `nalu` → `cname.vercel-dns.com`.
+- Crawlers and link unfurlers see one origin: `SITE_URL` in
+  `src/lib/config/site.ts`. Page metadata, `robots.txt` and `sitemap.xml` read
+  it; `public/llms.txt` repeats it. To change the canonical domain, edit both,
+  then the origin the `robots` and `sitemap` tests in `src/app/` expect.
 
 ## Env files on your machine
 
@@ -73,11 +77,11 @@ Two gitignored files split dev from production:
 - `.env.local` holds dev values only (`.env.local.example`). Its database is
   the `just db-up` container: `postgresql://postgres@127.0.0.1:54322/postgres`
   for both URLs, with no password and no `?pgbouncer=true`. `just db-migrate`,
-  `db-seed` and `db-reset` refuse any other host.
+  `db-seed`, `db-reset` and `recompute-course-xp` refuse any other host.
 - `.env.production.local` holds three production values:
   - `DATABASE_URL`, the pooled URL, for the read-only inspectors in
     `.claude/skills/`.
-  - `DIRECT_URL`, for `just db-migrate-prod`.
+  - `DIRECT_URL`, for `just db-migrate-prod` and `just recompute-course-xp-prod`.
   - `POSTHOG_PERSONAL_API_KEY`, a `phx_` personal key with scope
     `query:read`, for the visitor-forensics script. It reads production
     analytics, so it stays out of `.env.local`.
@@ -106,6 +110,16 @@ different: `next start` sets `NODE_ENV=production`, so `src/proxy.ts` and
 
 ## Known behaviour & gotchas
 
+- **Anonymous users are minted lazily (#232).** A page load never creates an
+  `auth.users` row. `src/proxy.ts` only refreshes an existing session. The
+  first API request mints one (`src/server/requestUser.ts`), such as
+  submitting a topic. Crawlers, link unfurlers and uptime checks of a page
+  create no account. Every tRPC request resolves a learner, so don't point an
+  uptime check at `health.ping`: it would mint (#246). Supabase limits
+  anonymous sign-ins per IP (30 an hour by default; Auth → Rate Limits). A
+  learner over it gets "Something went wrong", and the
+  `[trpc] procedure failed` log line shows `name=AuthApiError` and
+  `authCode=over_request_rate_limit`.
 - **Preview deploys hit the production Supabase project.** Vercel sets
   `NODE_ENV=production` for every build, including Preview — so Preview
   deployments run the real auth path and mint real anonymous users in the
@@ -122,6 +136,13 @@ different: `next start` sets `NODE_ENV=production`, so `src/proxy.ts` and
   recipe reads `DIRECT_URL` from `.env.production.local`, ignores the dev
   value in `.env.local`, and refuses a missing, empty or loopback host
   (`src/db/assertRemoteDirectUrl.ts`).
+- **The course XP repair is a manual run** (issue #208).
+  `just recompute-course-xp-prod` sets each course's `total_xp` from its
+  source rows. It reads `.env.production.local` and guards `DIRECT_URL` the
+  way `db-migrate-prod` does, then connects through that URL. It prints
+  counts only. It keeps no undo record, so take a database backup first. Run
+  the dry run, then `--apply`, then `--apply` again: the second apply must
+  print `courses changed: 0`.
 - **Next.js and Bun read `.env.production.local` whenever
   `NODE_ENV=production`**, ahead of `.env.local`. `just build` and
   `just start` export `.env.local` first, and an exported value wins, so they
@@ -202,8 +223,10 @@ Once live, LLM latency is measurable per stage (`functionId`: "wave-mid",
 
 ## Post-deploy smoke
 
-1. Open the deployment URL → first load sets an `sb-…-auth-token` cookie.
-2. Scope a topic → a course is created, no errors.
+1. Open the deployment URL in a private window → no `sb-…-auth-token` cookie
+   yet. `curl -sI <url> | grep -i 'set-cookie: sb-'` prints nothing.
+2. Scope a topic → the `course.clarify` response sets the `sb-…-auth-token`
+   cookie, and a course is created, no errors.
 3. Reload the course URL → it persists (same anonymous user).
 4. Supabase → Authentication → Users shows the anonymous user; a matching
    `user_profiles` row exists.

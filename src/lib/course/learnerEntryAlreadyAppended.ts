@@ -1,4 +1,6 @@
+import type { V3Response } from "@/lib/types/jsonb";
 import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog";
+import type { WaveChatLogEntryForClient } from "./redactWaveChatLog";
 
 /**
  * Decide whether `chat_log` already ends with the learner entry we are about
@@ -35,11 +37,22 @@ import type { WaveChatLog, WaveChatLogEntry } from "@/lib/types/jsonbWaveChatLog
  *    derives `responses` deterministically from the payload's answer order,
  *    so a retry of the same submission produces the identical array).
  *
- * @param log - the wave's current `chat_log` (typed, post-`waveRowGuard`).
+ * ## Shared with the client
+ *
+ * The client's Retry gate (`deriveRetryableWaveTurn`) runs this same check on
+ * the redacted `wave.getState` log, so one rule decides "same submission" on
+ * both sides (issue #231). Redaction passes learner entries through unchanged.
+ * Keep this file client-safe: types-only imports.
+ *
+ * @param log - the wave's `chat_log`: the server row (post-`waveRowGuard`) or
+ *   the client's redacted projection.
  * @param entry - the learner entry `prepareWaveTurn` is about to append.
  * @returns `true` when `log`'s last entry already equals `entry`.
  */
-export function learnerEntryAlreadyAppended(log: WaveChatLog, entry: WaveChatLogEntry): boolean {
+export function learnerEntryAlreadyAppended(
+  log: WaveChatLog | readonly WaveChatLogEntryForClient[],
+  entry: WaveChatLogEntry,
+): boolean {
   const trailing = log.at(-1);
   if (trailing === undefined) return false;
   // Only learner entries are appended pre-LLM; an assistant trailing entry
@@ -57,8 +70,8 @@ export function learnerEntryAlreadyAppended(log: WaveChatLog, entry: WaveChatLog
   return responsesEqual(trailing.responses, entry.responses);
 }
 
-/** The `responses` array shape from a learner `answers` chat-log entry. */
-type AnswerResponses = Extract<WaveChatLogEntry, { kind: "answers" }>["responses"];
+/** The `responses` array of a learner `answers` entry, server row or client projection. */
+type AnswerResponses = readonly V3Response[];
 
 /**
  * Order-sensitive structural equality for two `answers` `responses` arrays.

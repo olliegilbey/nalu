@@ -10,7 +10,8 @@ import { getEnv } from "@/lib/config";
  * Inserts a `user_profiles` row at `DEV_USER_ID`. Outside production the
  * client claims this user via the `x-dev-user-id` header
  * (`src/server/requestUser.ts`). Production users are anonymous Supabase
- * users minted in `src/proxy.ts`; `ensureUserProfile` creates their rows.
+ * users that `src/server/requestUser.ts` mints on their first API request;
+ * `ensureUserProfile` creates their rows.
  *
  * Re-running is safe: `ON CONFLICT DO NOTHING` on the primary key means a
  * second invocation is a no-op (the existing row's `display_name` is NOT

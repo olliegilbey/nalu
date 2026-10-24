@@ -1,6 +1,6 @@
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { z } from "zod/v4";
-import { resolveRequestUserId } from "@/server/requestUser";
+import { resolveOrMintRequestUserId } from "@/server/requestUser";
 import { submitTurnInputSchema } from "@/lib/types/waveTurnInput";
 import { ensureUserProfile } from "@/db/queries";
 import { userIdStore } from "@/lib/llm/userIdStore";
@@ -26,10 +26,6 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ courseId: string; waveNumber: string }> },
 ) {
-  const userId = await resolveRequestUserId(req);
-  if (!userId) return new Response("Unauthorized", { status: 401 });
-  await ensureUserProfile(userId);
-
   const { courseId, waveNumber } = await params;
   // The body carries ONLY the payload — context is rebuilt from the DB
   // (LLM-stateless principle; client messages are never trusted/needed).
@@ -52,6 +48,12 @@ export async function POST(
   if (!input.success) {
     return Response.json({ error: z.treeifyError(input.error) }, { status: 400 });
   }
+
+  // Auth after validation: a malformed request is refused before it can
+  // mint an anonymous learner (#232).
+  const userId = await resolveOrMintRequestUserId(req);
+  if (!userId) return new Response("Unauthorized", { status: 401 });
+  await ensureUserProfile(userId);
 
   const stream = createUIMessageStream<WaveTurnUIMessage>({
     // Bind userId into ALS for the Cerebras rate limiter — same contract

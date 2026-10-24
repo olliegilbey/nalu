@@ -311,6 +311,81 @@ describe("useWaveState", () => {
     expect(result.current.closeResult).toBeNull();
   });
 
+  it("offers a Retry that re-sends the identical chat-text payload (issue #231)", async () => {
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
+
+    const onError = vi.fn();
+    act(() => result.current.submitChatText("why?", { onError }));
+    // The server saved the learner entry before the LLM call failed.
+    currentState = {
+      ...defaultStateData,
+      chatLog: [...defaultStateData.chatLog, { role: "user", kind: "text", content: "why?" }],
+    };
+    // The AI SDK calls onError, then onFinish, on a failed request.
+    act(() => {
+      latestChatOptions?.onError?.(new Error("gate exhausted"));
+      latestChatOptions?.onFinish?.();
+    });
+    expect(onError).toHaveBeenCalledTimes(1);
+
+    await waitFor(() => expect(result.current.failedTurn).toBeTruthy());
+    act(() => result.current.failedTurn?.retry());
+    // Same payload, so the server's resume path reuses the saved entry.
+    expect(sendMessageCalls).toHaveLength(2);
+    expect(sendMessageCalls[1]).toEqual(sendMessageCalls[0]);
+    // The re-send is a new attempt; its failure would set the Retry again.
+    expect(result.current.failedTurn).toBeNull();
+  });
+
+  it("offers a Retry with the same answers once the refetch hides the failed card", async () => {
+    const questionnaire = {
+      role: "assistant",
+      kind: "text_with_questionnaire",
+      questionnaireId: "q-1",
+      content: "Try this:",
+      questions: [
+        {
+          id: "qa",
+          type: "multiple_choice",
+          prompt: "?",
+          options: { A: "1", B: "2", C: "3", D: "4" },
+          correctEnc: "enc",
+        },
+      ],
+    } as const;
+    currentState = { ...defaultStateData, chatLog: [...defaultStateData.chatLog, questionnaire] };
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.activeQuestionnaire).not.toBeNull());
+
+    act(() => result.current.submitQuestionnaireAnswers([{ id: "qa", kind: "mc", selected: "B" }]));
+    currentState = {
+      ...defaultStateData,
+      chatLog: [
+        ...defaultStateData.chatLog,
+        questionnaire,
+        {
+          role: "user",
+          kind: "answers",
+          questionnaireId: "q-1",
+          responses: [{ questionId: "qa", choice: "B" }],
+        },
+      ],
+    };
+    act(() => {
+      latestChatOptions?.onError?.(new Error("gate exhausted"));
+      latestChatOptions?.onFinish?.();
+    });
+
+    // The saved answers close the questionnaire, so its card cannot be the
+    // retry. Without a Retry, any text the learner typed would spend a Turn.
+    await waitFor(() => expect(result.current.activeQuestionnaire).toBeNull());
+    expect(result.current.failedTurn).toBeTruthy();
+    act(() => result.current.failedTurn?.retry());
+    expect(sendMessageCalls).toHaveLength(2);
+    expect(sendMessageCalls[1]).toEqual(sendMessageCalls[0]);
+  });
+
   it("surfaces an error toast when the stream errors", async () => {
     // Submitting into an already-closed wave errors server-side; the route's
     // onError forwards the guard message into the stream, and the hook's

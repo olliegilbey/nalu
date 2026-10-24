@@ -20,7 +20,8 @@ would deadlock on the transaction's row lock. A test that needs one of these
 writes passes `db` as the handle; do not add a `db`-bound twin.
 
 Lock order: a transaction that writes course XP locks the course row first.
-`persistWaveMidTurn` and `persistWaveClose` open with `lockCourseRowInTx`.
+`persistWaveMidTurn`, `persistWaveClose` and the XP repair
+`recomputeCourseTotalXp` open with `lockCourseRowInTx`.
 `persistScopingClose` opens with a `courses` UPDATE. Every such transaction
 then queues on the course row before it locks a Wave or assessment row, so
 no two of them can deadlock (`persistWaveLockOrder.integration.test.ts`).
@@ -36,6 +37,8 @@ siblings, one concern each:
 - `courses.ts`: row guard, create, reads. `courses.scoping.ts`: scoping-phase
   writes. `courses.tx.ts`: the close transactions' reads and writes:
   activation, summary, tier, and XP, plus the course-row lock.
+  `courses.repair.ts`: the XP repair's absolute `total_xp` set. The repair
+  reads through `courses.tx.ts`.
 - `waves.ts`: row guard and reads. `waves.writes.ts`: open, close, and the
   `chat_log` append.
 - `concepts.ts`: reads. `concepts.writes.ts`: upsert and SM-2 results.

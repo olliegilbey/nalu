@@ -23,6 +23,7 @@ export function waveStateFixture(overrides: Partial<UseWaveStateResult> = {}): U
     xpGainAmount: 0,
     awardMcXp: vi.fn(),
     isPending: false,
+    failedTurn: null,
     waveNotFound: false,
     streamingText: "",
     streamingQuestions: null,

@@ -9,8 +9,14 @@ import { Composer } from "./Composer";
 import { CourseNotFound } from "./CourseNotFound";
 import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
 import { FrameworkTierList } from "./FrameworkTierList";
+import { RetryRow } from "./RetryRow";
 import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
 import { selectComposerQuestionnaire } from "@/lib/course/selectComposerQuestionnaire";
+import {
+  composerTextAfterFailure,
+  composerTextAfterRetry,
+  resendsFailedTurn,
+} from "@/lib/course/failedChatText";
 import { deriveWaveProgress } from "@/lib/course/deriveWaveProgress";
 import { WaveProgressBar } from "./WaveProgressBar";
 import { t, tFill } from "@/i18n";
@@ -26,6 +32,8 @@ import type { ChatEntry } from "@/lib/types/chatEntry";
  * `closeResult` from this tab's close-turn, or a server-reported
  * `status === "closed"` after a reload). The move-on branch replaces the input
  * row entirely, so a finished wave never presents a live-but-dead composer.
+ * A failed chat-text send puts its text back in the Composer, and a failed
+ * Turn the server saved gets a Retry row (issue #231).
  */
 export function WaveSession({
   courseId,
@@ -49,6 +57,7 @@ export function WaveSession({
     xpGainAmount,
     awardMcXp,
     isPending,
+    failedTurn,
     waveNotFound,
     streamingText,
     streamingQuestions,
@@ -59,9 +68,9 @@ export function WaveSession({
   const [composerValue, setComposerValue] = useState("");
   // Optimistic user message. `entryCountAtSubmit` is the `chatEntries.length`
   // captured at submit: the bubble shows while `chatEntries` has not grown past
-  // it (server round-trip not yet landed, or it failed) and hides the instant
-  // the real entry appears — so it never duplicates the real entry, and it
-  // survives an error rather than vanishing with `isPending`.
+  // it (server round-trip not yet landed) and hides the instant the real entry
+  // appears, so it never duplicates the real entry. A failed send drops it:
+  // the Composer gets the text or the card back instead.
   const [optimistic, setOptimistic] = useState<{
     readonly content: string;
     readonly entryCountAtSubmit: number;
@@ -125,9 +134,21 @@ export function WaveSession({
             // already filters empty strings (it disables the send button).
             const text = composerValue.trim();
             if (text.length === 0) return;
-            setOptimistic({ content: text, entryCountAtSubmit: chatEntries.length });
-            submitChatText(text);
+            // The failed Turn's own text reuses the entry the server already
+            // shows, so it needs no optimistic copy.
+            if (!resendsFailedTurn(failedTurn?.payload ?? null, text)) {
+              setOptimistic({ content: text, entryCountAtSubmit: chatEntries.length });
+            }
             setComposerValue("");
+            // On failure, hand the text back and drop its optimistic copy:
+            // retyped text would spend a second Turn (issue #231). A saved
+            // entry comes back with the refetch.
+            submitChatText(text, {
+              onError: () => {
+                setComposerValue((value) => composerTextAfterFailure(value, text));
+                setOptimistic(null);
+              },
+            });
           }}
           disabled={isPending}
           // Committed questionnaire (server-derived, interactive) wins;
@@ -155,6 +176,8 @@ export function WaveSession({
             // On submit failure, un-dismiss the question card and drop the
             // optimistic bubble. The Composer restores the learner's answers
             // from its localStorage buffer, so they only re-do the final step.
+            // If the server saved the answers, the refetch closes the card
+            // instead, and the Retry row re-sends them.
             submitQuestionnaireAnswers(shapeQuestionnaireAnswers(answers), {
               onError: () => {
                 setDismissedKey(null);
@@ -177,6 +200,20 @@ export function WaveSession({
         <MessageBubble message={{ id: "streaming", role: "assistant", content: streamingText }} />
       ) : (
         isPending && <TypingBubble />
+      )}
+      {/* A failed Turn whose entry the server saved. Retry re-sends the same
+          payload, so the server reuses that entry. No card can be open here:
+          the saved entry is a `text` entry, or answers that close the
+          questionnaire. */}
+      {failedTurn && (
+        <RetryRow
+          disabled={isPending}
+          onRetry={() => {
+            if (isPending) return;
+            setComposerValue((value) => composerTextAfterRetry(value, failedTurn.payload));
+            failedTurn.retry();
+          }}
+        />
       )}
     </ChatShell>
   );
