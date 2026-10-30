@@ -21,7 +21,7 @@ interface UseWaveTurnChatOptions {
   readonly waveNumber: number;
   /** The `wave.getState` query key. Each finished request refetches it. */
   readonly stateQueryKey: QueryKey;
-  /** Applies a `data-turn-result` part: close result, XP, tier-up toast. */
+  /** Applies a `data-turn-result` part: close result, the badge's server total, tier-up toast. */
   readonly onTurnResult: (result: WaveTurnResultData) => void;
 }
 

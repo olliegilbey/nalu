@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { playWrong } from "@/lib/sound";
+import { playCorrect, playWrong } from "@/lib/sound";
 import { replaceAt } from "@/lib/utils";
 import { deriveMcFeedback, type ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 import { deriveComposerControls, type ComposerControls } from "@/lib/course/deriveComposerControls";
@@ -13,7 +13,6 @@ import {
 } from "@/lib/course/questionnaireBuffer";
 import { questionnaireKey } from "@/lib/course/questionnaireKey";
 import type { RawComposerAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
-import { useMcXpAward } from "./useMcXpAward";
 
 /** How long a confirmed MC pick pulses before the card advances. */
 const CONFIRM_PULSE_MS = 750;
@@ -37,10 +36,6 @@ export interface UseQuestionnaireOptions {
   readonly disabled?: boolean;
   /** Called once every question has an answer. */
   readonly onComplete?: (answers: readonly RawComposerAnswer[]) => void;
-  /** Receives exact display XP for a correct MC answer, once per question. */
-  readonly onCorrectAnswer?: (amount: number) => void;
-  /** Wave tier — fallback for MC XP when a question carries no tier. */
-  readonly waveTier?: number;
 }
 
 /** The answer card's state and handlers, for the Composer to render. */
@@ -83,8 +78,6 @@ export function useQuestionnaire({
   onSend,
   disabled,
   onComplete,
-  onCorrectAnswer,
-  waveTier,
 }: UseQuestionnaireOptions): UseQuestionnaireResult {
   // Identity of the question set. Not unique on its own: a Wave's
   // questionnaires reuse raw ids, so `persistKey` joins it below.
@@ -101,7 +94,6 @@ export function useQuestionnaire({
   const [locked, setLocked] = useState(false);
   // The confirm pulse's pending advance, so a card swap or unmount can cancel it.
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const awardMcXpOnce = useMcXpAward({ persistKey, questionsKey, waveTier, onCorrectAnswer });
 
   const controls = deriveComposerControls({
     questions,
@@ -202,12 +194,13 @@ export function useQuestionnaire({
     const result = deriveMcFeedback(current.correctIndex, currentPending);
     setFeedback(replaceAt(feedback, questionIndex, result));
     setLocked(true);
-    // `awardMcXpOnce` routes through `useCourseXp.addXp`, which plays the
-    // correct-answer sound centrally.
-    if (result === "correct") awardMcXpOnce(current);
+    // One sound per answer: a correct pick's sound plays here, and the
+    // badge's tick for its XP stays silent. The Composer awards no XP; the
+    // badge shows the server total once the Turn lands.
+    if (result === "correct") playCorrect();
     else if (result === "wrong") playWrong();
     // result === null: ungraded MC (clarify preference questions carry no
-    // answer key). No feedback styling, no sound, no XP — punishing an opinion
+    // answer key). No feedback styling, no sound — punishing an opinion
     // with a red "wrong" outline + buzzer was the bug. The answer still locks
     // and advances below on the same uniform timer.
     const chosen = current.options[currentPending]!;
@@ -225,7 +218,6 @@ export function useQuestionnaire({
     else if (action.kind === "answer") {
       // Keep the draft — a free-text answer stays editable on revisit.
       clearPending();
-      if (action.earnsMcXpFor) awardMcXpOnce(action.earnsMcXpFor);
       advanceAfterAnswer(action.answer);
     }
   };

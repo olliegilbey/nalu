@@ -292,8 +292,9 @@ function forwardToolChunk<TOOLS extends ToolSet>(
 
 /**
  * Allowlist-project a validated `presentQuestionnaire` input to the fields
- * the client card needs (id/type/prompt/options/tier), dropping the grading
- * keys (`correct`, `freetextRubric` — "[server] NEVER shown to the learner").
+ * the client card needs (id/type/prompt/options), dropping the grading keys
+ * (`correct`, `freetextRubric` — "[server] NEVER shown to the learner"),
+ * `conceptName` and `tier` (the client computes no XP).
  * Structural rather than schema-bound so a shape drift forwards LESS, never
  * more. Returns null when the shape is unrecognisable.
  */
@@ -310,7 +311,6 @@ function redactQuestionnaireInput(input: unknown): unknown {
         type: rec["type"],
         prompt: rec["prompt"],
         options: rec["options"],
-        tier: rec["tier"],
       };
     }),
   };

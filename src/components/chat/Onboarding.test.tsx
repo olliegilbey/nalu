@@ -1,35 +1,53 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import type { UseScopingStateResult } from "@/hooks/useScopingState";
+import type { RawComposerAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
+import { playCorrect } from "@/lib/sound";
 
 // The retry row lives in Onboarding's scroll children, rendered inside
 // ChatShell. Stub ChatShell to just render its children (the retry row sits
 // there) and its composer slot, and Composer to nothing — the tests target the
-// scroll content, not the surrounding chrome. The Composer stub records its
-// props, so a test can read the move-on CTA. next/navigation + useCourseXp are
-// stubbed so the component mounts without a router or localStorage.
+// scroll content, not the surrounding chrome. The ChatShell stub records the
+// badge's props; the Composer stub records its props, so a test can read the
+// move-on CTA and submit a card. next/navigation is stubbed so the component
+// mounts without a router.
+type BadgeProps = { readonly xp?: number; readonly xpPulseKey?: number };
+const shellProps = vi.hoisted(() => ({ badge: {} as BadgeProps }));
 vi.mock("./ChatShell", () => ({
-  ChatShell: ({ children, composer }: { children: React.ReactNode; composer: React.ReactNode }) => (
-    <div>
-      {children}
-      {composer}
-    </div>
-  ),
+  ChatShell: ({
+    children,
+    composer,
+    ...badge
+  }: BadgeProps & { children: React.ReactNode; composer: React.ReactNode }) => {
+    shellProps.badge = badge;
+    return (
+      <div>
+        {children}
+        {composer}
+      </div>
+    );
+  },
 }));
 type MoveOn = { readonly label: string; readonly onAdvance: () => void };
-const composerProps = vi.hoisted(() => ({ moveOn: undefined as MoveOn | undefined }));
+const composerProps = vi.hoisted(() => ({
+  moveOn: undefined as MoveOn | undefined,
+  onComplete: undefined as ((answers: readonly RawComposerAnswer[]) => void) | undefined,
+}));
 vi.mock("./Composer", () => ({
-  Composer: (props: { moveOn?: MoveOn }) => {
+  Composer: (props: {
+    moveOn?: MoveOn;
+    onComplete?: (answers: readonly RawComposerAnswer[]) => void;
+  }) => {
     composerProps.moveOn = props.moveOn;
+    composerProps.onComplete = props.onComplete;
     return null;
   },
 }));
 const routerPush = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: routerPush }) }));
-vi.mock("@/hooks/useCourseXp", () => ({
-  useCourseXp: () => ({ xp: 0, pulseKey: 0, gainAmount: 0, addXp: vi.fn() }),
-}));
+// WebAudio is not under test: spy on the badge's typed-answer sound.
+vi.mock("@/lib/sound", () => ({ playCorrect: vi.fn() }));
 
 const scopingState = vi.hoisted(() => ({ value: {} as UseScopingStateResult }));
 vi.mock("@/hooks/useScopingState", () => ({
@@ -45,6 +63,7 @@ function baseState(overrides: Partial<UseScopingStateResult>): UseScopingStateRe
     activeQuestionnaire: null,
     scopingResult: null,
     topic: "T",
+    totalXp: 0,
     isPending: false,
     failedTurn: null,
     courseNotFound: false,
@@ -57,7 +76,10 @@ function baseState(overrides: Partial<UseScopingStateResult>): UseScopingStateRe
 beforeEach(() => {
   cleanup();
   composerProps.moveOn = undefined;
+  composerProps.onComplete = undefined;
+  shellProps.badge = {};
   routerPush.mockReset();
+  vi.mocked(playCorrect).mockClear();
 });
 
 describe("Onboarding retry affordance", () => {
@@ -125,5 +147,53 @@ describe("Onboarding course not found", () => {
     render(<Onboarding courseId="c1" />);
     expect(screen.queryByText(/can't find this course/)).toBeNull();
     expect(composerProps.moveOn).toBeUndefined();
+  });
+});
+
+describe("Onboarding XP badge", () => {
+  /** A baseline card with one MC and one free-text question. */
+  const baselineCard = {
+    kind: "baseline" as const,
+    questions: [
+      { id: "b1", prompt: "2+2?", options: ["3", "4", "5", "6"] },
+      { id: "b2", prompt: "Why?", options: [] },
+    ],
+    questionsKey: "b1|b2",
+    persistKey: "nalu:scoping:c1:baseline",
+  };
+  const [mcQuestion, freeTextQuestion] = baselineCard.questions;
+
+  /** Submit the card, then land the close: the refetched total rises to 45. */
+  function submitAndClose(answers: readonly RawComposerAnswer[]) {
+    scopingState.value = baseState({ activeQuestionnaire: baselineCard });
+    const { rerender } = render(<Onboarding courseId="c1" />);
+    act(() => composerProps.onComplete?.(answers));
+    scopingState.value = baseState({ totalXp: 45 });
+    rerender(<Onboarding courseId="c1" />);
+  }
+
+  it("shows getState's totalXp in the header badge", () => {
+    scopingState.value = baseState({ totalXp: 45 });
+    render(<Onboarding courseId="c1" />);
+    expect(shellProps.badge.xp).toBe(45);
+    // The first total after mount is not a gain.
+    expect(shellProps.badge.xpPulseKey).toBe(0);
+  });
+
+  it("plays the correct sound on the close's tick after a typed baseline answer", () => {
+    submitAndClose([
+      { question: mcQuestion!, answer: "4" },
+      { question: freeTextQuestion!, answer: "Because counting on" },
+    ]);
+    expect(shellProps.badge.xp).toBe(45);
+    expect(shellProps.badge.xpPulseKey).toBe(1);
+    expect(playCorrect).toHaveBeenCalledTimes(1);
+  });
+
+  it("ticks silently after an all-MC baseline", () => {
+    // Each correct pick already played its sound at confirm.
+    submitAndClose([{ question: mcQuestion!, answer: "4" }]);
+    expect(shellProps.badge.xpPulseKey).toBe(1);
+    expect(playCorrect).not.toHaveBeenCalled();
   });
 });

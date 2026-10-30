@@ -12,6 +12,8 @@ import { installMemoryStorage } from "@/lib/testing/memoryStorage";
 
 // Mock sonner so we can assert toast calls without dragging the real lib in.
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+// WebAudio is not under test: spy on the badge's typed-answer sound.
+vi.mock("@/lib/sound", () => ({ playCorrect: vi.fn() }));
 
 // Hand-shaped useChat stub (the streaming transport seam). We capture the
 // options object so tests can drive onData / onFinish / onError by hand —
@@ -61,6 +63,7 @@ const defaultStateData = {
   status: "active" as const,
   turnsRemaining: 9,
   turnBudget: 10,
+  totalXp: 0,
   chatLog: [{ role: "assistant", kind: "text", content: "Welcome to wave 1." }] as const,
   closeResult: null,
 };
@@ -99,6 +102,7 @@ vi.mock("@/lib/trpc", () => {
 import { createQueryClient } from "@/lib/queryClient";
 import { useWaveState } from "./useWaveState";
 import { toast } from "sonner";
+import { playCorrect } from "@/lib/sound";
 
 function wrapper({ children }: { children: ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -113,8 +117,8 @@ beforeEach(() => {
   stateError = null;
   getStateCalls = 0;
   chatMessages = [];
-  // Fresh in-memory localStorage per test — useWaveState depends on
-  // useCourseXp, and tests sharing courseId "c1" must not leak XP totals.
+  vi.mocked(playCorrect).mockClear();
+  // Fresh in-memory localStorage per test: the #109 test seeds a stale key.
   installMemoryStorage();
 });
 
@@ -187,6 +191,7 @@ describe("useWaveState", () => {
           completionXpAwarded: 50,
           tierAdvancedTo: 2,
           gradedSignals: [],
+          totalXp: 50,
         },
       }),
     );
@@ -201,9 +206,10 @@ describe("useWaveState", () => {
     await waitFor(() => expect(result.current.xp).toBe(50));
   });
 
-  it("adds free-text XP to the badge and skips mc-index signals", async () => {
+  it("the badge shows the turn result's course total", async () => {
+    currentState = { ...defaultStateData, totalXp: 30 };
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
-    await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
+    await waitFor(() => expect(result.current.xp).toBe(30));
 
     act(() =>
       latestChatOptions?.onData?.({
@@ -214,11 +220,82 @@ describe("useWaveState", () => {
             { kind: "free-text", questionId: "q1", xpAwarded: 30 },
             { kind: "mc-index", questionId: "q2", xpAwarded: 20 },
           ],
+          totalXp: 80,
+        },
+      }),
+    );
+
+    // The server's total, not a client sum of the signals.
+    await waitFor(() => expect(result.current.xp).toBe(80));
+    expect(result.current.xpPulseKey).toBe(1);
+    expect(result.current.xpGainAmount).toBe(50);
+  });
+
+  it("the badge shows the server total when an MC answer earned XP (#110)", async () => {
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
+
+    act(() =>
+      latestChatOptions?.onData?.({
+        type: "data-turn-result",
+        data: {
+          kind: "mid-turn",
+          gradedSignals: [{ kind: "mc-index", questionId: "q1", xpAwarded: 20 }],
+          totalXp: 120,
+        },
+      }),
+    );
+
+    await waitFor(() => expect(result.current.xp).toBe(120));
+  });
+
+  it("a stale localStorage total never reaches the badge (#109)", async () => {
+    // The retired client counter's key, left over from an earlier session.
+    window.localStorage.setItem("nalu:course:c1:xp", "90");
+    currentState = { ...defaultStateData, totalXp: 70 };
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+
+    await waitFor(() => expect(result.current.xp).toBe(70));
+    expect(result.current.xpPulseKey).toBe(0);
+  });
+
+  it("plays the correct sound when a typed answer earned XP", async () => {
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
+
+    act(() =>
+      latestChatOptions?.onData?.({
+        type: "data-turn-result",
+        data: {
+          kind: "mid-turn",
+          gradedSignals: [{ kind: "free-text", questionId: "q1", xpAwarded: 30 }],
+          totalXp: 30,
         },
       }),
     );
 
     await waitFor(() => expect(result.current.xp).toBe(30));
+    expect(playCorrect).toHaveBeenCalledTimes(1);
+  });
+
+  it("ticks silently when only MC answers earned XP", async () => {
+    // Each correct pick already played its sound at confirm.
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
+
+    act(() =>
+      latestChatOptions?.onData?.({
+        type: "data-turn-result",
+        data: {
+          kind: "mid-turn",
+          gradedSignals: [{ kind: "mc-index", questionId: "q1", xpAwarded: 20 }],
+          totalXp: 20,
+        },
+      }),
+    );
+
+    await waitFor(() => expect(result.current.xpPulseKey).toBe(1));
+    expect(playCorrect).not.toHaveBeenCalled();
   });
 
   it("derives streamingText from the last assistant message's text parts", async () => {
@@ -264,7 +341,6 @@ describe("useWaveState", () => {
                   type: "multiple_choice",
                   prompt: "Which?",
                   options: { A: "a", B: "b", C: "c", D: "d" },
-                  tier: 1,
                 },
               ],
             },
@@ -275,14 +351,13 @@ describe("useWaveState", () => {
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
     await waitFor(() => expect(result.current.streamingText).toBe("Clean retry."));
     expect(result.current.streamingQuestions).toEqual([
-      { id: "q1", prompt: "Which?", options: ["a", "b", "c", "d"], tier: 1 },
+      { id: "q1", prompt: "Which?", options: ["a", "b", "c", "d"] },
     ]);
   });
 
-  it("exposes the course topic and current tier", async () => {
+  it("exposes the course topic", async () => {
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
     await waitFor(() => expect(result.current.topic).toBe("Test topic"));
-    expect(result.current.currentTier).toBe(1);
   });
 
   it("passes the server's turn counts through for the progress strip", async () => {

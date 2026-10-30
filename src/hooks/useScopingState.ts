@@ -34,6 +34,8 @@ export interface UseScopingStateResult {
   readonly scopingResult: CourseState["scopingResult"];
   /** Course topic — drives the chat header title. Null until the query resolves. */
   readonly topic: string | null;
+  /** The server's course total for the XP badge. Undefined until the query resolves. */
+  readonly totalXp: number | undefined;
   readonly isPending: boolean;
   /** Non-null while the last scoping Turn failed and awaits a learner Retry. */
   readonly failedTurn: FailedScopingTurn | null;
@@ -45,12 +47,9 @@ export interface UseScopingStateResult {
   ) => void;
   readonly submitBaselineAnswers: (
     answers: readonly QuestionnaireAnswer[],
-    // `onSuccess` carries the free-text XP subtotal so the caller can pop the
-    // header badge; `onError` lets it recover its optimistic UI. Both optional.
-    opts?: {
-      readonly onError?: () => void;
-      readonly onSuccess?: (result: { readonly freeTextXpAwarded: number }) => void;
-    },
+    // `onError` lets the caller recover its optimistic UI. The close's XP
+    // reaches the badge through the refetched `totalXp`, not a callback.
+    opts?: { readonly onError?: () => void },
   ) => void;
 }
 
@@ -195,8 +194,8 @@ export function useScopingState(courseId: string): UseScopingStateResult {
   const submitBaselineAnswers: UseScopingStateResult["submitBaselineAnswers"] = (answers, opts) => {
     // tRPC infers a mutable array shape; our public interface uses readonly.
     // Inputs are structurally identical, so cast through `never` (per plan).
-    // The mutation-level `onSuccess` (invalidateState) still runs first;
-    // react-query then invokes this per-call `onSuccess` with the result.
+    // The mutation-level `onSuccess` refetches getState, whose `totalXp`
+    // carries the baseline XP, in-session and after a reload Retry alike.
     submitBaseline.mutate(
       { courseId, answers: answers as never },
       {
@@ -208,7 +207,6 @@ export function useScopingState(courseId: string): UseScopingStateResult {
           });
           opts?.onError?.();
         },
-        onSuccess: opts?.onSuccess,
       },
     );
   };
@@ -240,6 +238,7 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     activeQuestionnaire,
     scopingResult: state.data?.scopingResult ?? null,
     topic: state.data?.topic ?? null,
+    totalXp: state.data?.totalXp,
     isPending,
     failedTurn: openFailedTurn,
     courseNotFound: isNotFoundError(state.error),

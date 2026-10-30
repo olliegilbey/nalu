@@ -49,7 +49,6 @@ describe("WaveSession wave not found", () => {
       waveNotFound: true,
       status: null,
       topic: null,
-      currentTier: null,
       turnsRemaining: null,
       turnBudget: null,
     });

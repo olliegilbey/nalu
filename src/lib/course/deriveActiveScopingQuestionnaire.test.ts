@@ -35,9 +35,8 @@ const baseline: ScopingQuestionnaireForClient = {
       prompt: "Pick one",
       options: { A: "a", B: "b", C: "c", D: "d" },
       correctEnc: encodeCorrect("b1", KEY_TO_INDEX.B),
-      tier: 1,
     },
-    { id: "b2", type: "free_text", prompt: "Explain", tier: 1 },
+    { id: "b2", type: "free_text", prompt: "Explain" },
   ],
   responses: [],
 };
@@ -89,8 +88,8 @@ describe("deriveActiveScopingQuestionnaire", () => {
       kind: "baseline",
       questions: [
         // Instant MC feedback: the index decodes from the id-bound `correctEnc`.
-        { id: "b1", prompt: "Pick one", options: ["a", "b", "c", "d"], correctIndex: 1, tier: 1 },
-        { id: "b2", prompt: "Explain", options: [], tier: 1 },
+        { id: "b1", prompt: "Pick one", options: ["a", "b", "c", "d"], correctIndex: 1 },
+        { id: "b2", prompt: "Explain", options: [] },
       ],
       questionsKey: "b1|b2",
       persistKey: "nalu:scoping:c:baseline",

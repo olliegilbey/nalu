@@ -10,9 +10,7 @@ export interface RawComposerAnswer {
 
 /**
  * Index of the option an answer names verbatim, or null when it ships as free
- * text. The one MC-vs-free-text rule: the shaper below and the Composer's MC
- * XP award (issue #18) both call it, so the XP badge cannot drift from what
- * ships as MC.
+ * text. The one MC-vs-free-text rule, used by the shaper below.
  */
 export function matchOptionIndex(question: ChoiceQuestion, answer: string): number | null {
   const idx = question.options.indexOf(answer);
