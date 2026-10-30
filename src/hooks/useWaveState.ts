@@ -13,6 +13,7 @@ import {
 } from "@/lib/course/deriveTurnResultEffects";
 import type { StreamingTurn } from "@/lib/course/deriveStreamingTurn";
 import { deriveRetryableWaveTurn } from "@/lib/course/deriveRetryableWaveTurn";
+import { deriveXpTick } from "@/lib/course/deriveXpTick";
 import type { ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
 import { useXpBadge } from "./useXpBadge";
 import { useWaveTurnChat, type SubmitTurnOptions } from "./useWaveTurnChat";
@@ -111,10 +112,17 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
   // side-effects in a fixed order: capture the close result, arm the tick's
   // sound, patch the server total into the cache, then fire the tier-up toast.
   // The sound is armed first, so the rise the patch causes can play it.
+  // It arms only when this result raises the cached total. A replayed result
+  // (no rise) would otherwise leave it armed for a later, unrelated rise.
+  // Clearing it in `onFinish` instead would race: onFinish runs before React
+  // renders the patch's rise, so it would silence a legitimate sound.
   const handleTurnResult = (result: WaveTurnResultData) => {
     const effects = deriveTurnResultEffects(result);
     if (effects.closeResult) setCloseResult(effects.closeResult);
-    badge.soundOnNextRise(effects.typedAnswerEarnedXp);
+    const cachedTotal = qc.getQueryData(stateOpts.queryKey)?.totalXp;
+    badge.soundOnNextRise(
+      effects.typedAnswerEarnedXp && deriveXpTick(cachedTotal, result.totalXp).pulse,
+    );
     qc.setQueryData(stateOpts.queryKey, (prev) =>
       prev ? { ...prev, totalXp: result.totalXp } : prev,
     );

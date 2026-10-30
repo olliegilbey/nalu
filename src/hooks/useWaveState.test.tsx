@@ -59,7 +59,6 @@ const defaultStateData = {
   topic: "Test topic",
   waveId: "w1",
   waveNumber: 1,
-  currentTier: 1,
   status: "active" as const,
   turnsRemaining: 9,
   turnBudget: 10,
@@ -263,7 +262,10 @@ describe("useWaveState", () => {
     const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
     await waitFor(() => expect(result.current.chatEntries.length).toBeGreaterThan(0));
 
-    act(() =>
+    // The refetch after the Turn returns the same total.
+    currentState = { ...defaultStateData, totalXp: 30 };
+    // The SDK runs onFinish right after the last data part, before React renders.
+    act(() => {
       latestChatOptions?.onData?.({
         type: "data-turn-result",
         data: {
@@ -271,11 +273,39 @@ describe("useWaveState", () => {
           gradedSignals: [{ kind: "free-text", questionId: "q1", xpAwarded: 30 }],
           totalXp: 30,
         },
-      }),
-    );
+      });
+      latestChatOptions?.onFinish?.();
+    });
 
     await waitFor(() => expect(result.current.xp).toBe(30));
     expect(playCorrect).toHaveBeenCalledTimes(1);
+  });
+
+  it("a replayed turn result leaves no sound for a later rise", async () => {
+    currentState = { ...defaultStateData, totalXp: 30 };
+    const { result } = renderHook(() => useWaveState("c1", 1), { wrapper });
+    await waitFor(() => expect(result.current.xp).toBe(30));
+
+    // A replayed result: the typed answer's XP was already counted, so the
+    // total does not move. Then the connection drops before any refetch.
+    act(() => {
+      latestChatOptions?.onData?.({
+        type: "data-turn-result",
+        data: {
+          kind: "mid-turn",
+          gradedSignals: [{ kind: "free-text", questionId: "q1", xpAwarded: 30 }],
+          totalXp: 30,
+        },
+      });
+      latestChatOptions?.onError?.(new Error("network"));
+    });
+    // A later refetch, with no turn result of its own, raises the total.
+    currentState = { ...defaultStateData, totalXp: 50 };
+    act(() => latestChatOptions?.onFinish?.());
+
+    await waitFor(() => expect(result.current.xp).toBe(50));
+    expect(result.current.xpPulseKey).toBe(1);
+    expect(playCorrect).not.toHaveBeenCalled();
   });
 
   it("ticks silently when only MC answers earned XP", async () => {
