@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
-import { db } from "@/db/client";
-import { userProfiles } from "@/db/schema";
+import { db, type DbOrTx } from "@/db/client";
+import { courses, userProfiles } from "@/db/schema";
 import { NotFoundError } from "./errors";
 
 /**
@@ -43,6 +43,27 @@ export async function getUserCustomInstructions(userId: string): Promise<string 
     .from(userProfiles)
     .where(eq(userProfiles.id, userId));
   if (!row) throw new NotFoundError("user_profile", userId);
+  return row.customInstructions;
+}
+
+/**
+ * The course owner's custom instructions, raw as stored, read through the
+ * course row inside the caller's tx. Both Wave openers call it to snapshot the
+ * preference onto the Wave they open. A plain select: it takes no lock, so the
+ * close transactions' lock order holds (`src/db/queries/CLAUDE.md`).
+ *
+ * @throws {NotFoundError} when no course has this id.
+ */
+export async function getCourseOwnerCustomInstructionsInTx(
+  courseId: string,
+  tx: DbOrTx,
+): Promise<string | null> {
+  const [row] = await tx
+    .select({ customInstructions: userProfiles.customInstructions })
+    .from(courses)
+    .innerJoin(userProfiles, eq(userProfiles.id, courses.userId))
+    .where(eq(courses.id, courseId));
+  if (!row) throw new NotFoundError("course", courseId);
   return row.customInstructions;
 }
 
