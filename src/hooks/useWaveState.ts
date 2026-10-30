@@ -148,8 +148,8 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     transport: new DefaultChatTransport({
       api: `/api/course/${courseId}/wave/${waveNumber}/turn`,
       // Dev auth stub: the route resolves the user from `x-dev-user-id` in
-      // non-production (same seam as the tRPC link — see resolveOrMintRequestUserId).
-      // Without it every dev streaming request 401s. Prod: session cookie.
+      // non-production (same seam as the tRPC link — see readRequestSession).
+      // Without it every dev streaming request 404s. Prod: session cookie.
       headers: devUserHeaders(),
       // The server rebuilds context from the DB; send ONLY the payload.
       // (messages would otherwise ship the whole transient history.)

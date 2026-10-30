@@ -2,7 +2,7 @@
 
 The learner's own profile, shared by every course. Today it holds custom instructions only.
 
-- `customInstructions.ts`: `getCustomInstructions(userId)` and `saveCustomInstructions(userId, value)`. They call `src/db/queries/userProfiles.ts`. The `profile` router (`src/server/routers/profile.ts`) calls them with `ctx.userId`, so a learner reads and writes only their own text.
+- `customInstructions.ts`: `getCustomInstructions(userId)` and `saveCustomInstructions(userId, value)`. They call `src/db/queries/userProfiles.ts`. The `profile` router (`src/server/routers/profile.ts`) calls them with `ctx.userId`, so a learner reads and writes only their own text. A read with no `userId` is a caller with no session: it answers null and mints nothing (#246).
 - One rule owns trim, cap and clear: `setCustomInstructionsInputSchema` (`src/lib/types/customInstructionsInput.ts`). It trims, then caps the trimmed text at `PROFILE.maxCustomInstructionsLength`. Empty after trim parses to null, which clears the preference. Text reaches this module already parsed.
 - The profile stores the text raw. Escaping happens once, at prompt render.
 - Privacy: no log line, span attribute or analytics event carries the text.

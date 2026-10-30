@@ -6,7 +6,7 @@ import { appRouter } from "./index";
 /**
  * Integration tests for `profile.ts`: the learner saves custom instructions
  * and reads them back. Drives `appRouter.createCaller`, so each call runs
- * `protectedProcedure`, which provisions the caller's `user_profiles` row.
+ * its procedure type, which provisions the caller's `user_profiles` row.
  */
 
 const LEARNER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
