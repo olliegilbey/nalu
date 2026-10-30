@@ -1,11 +1,9 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useTRPC, devUserHeaders } from "@/lib/trpc";
+import { useTRPC } from "@/lib/trpc";
 import { isNotFoundError } from "@/lib/errors";
 import { deriveWaveChatEntries } from "@/lib/course/deriveWaveChatEntries";
 import { deriveActiveQuestionnaire } from "@/lib/course/deriveActiveQuestionnaire";
@@ -13,15 +11,16 @@ import {
   deriveTurnResultEffects,
   type WaveCloseResult,
 } from "@/lib/course/deriveTurnResultEffects";
-import { deriveStreamingTurn, type StreamingTurn } from "@/lib/course/deriveStreamingTurn";
+import type { StreamingTurn } from "@/lib/course/deriveStreamingTurn";
 import { deriveRetryableWaveTurn } from "@/lib/course/deriveRetryableWaveTurn";
 import type { ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
 import { useCourseXp } from "./useCourseXp";
+import { useWaveTurnChat, type SubmitTurnOptions } from "./useWaveTurnChat";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
 import type { WaveState } from "@/lib/course/getWaveState";
-import type { WaveTurnResultData, WaveTurnUIMessage } from "@/lib/types/waveStream";
-import type { SubmitTurnBody, SubmitTurnPayload } from "@/lib/types/waveTurnInput";
+import type { WaveTurnResultData } from "@/lib/types/waveStream";
+import type { SubmitTurnPayload } from "@/lib/types/waveTurnInput";
 
 /**
  * A failed Wave Turn whose learner entry the server saved (issue #231).
@@ -78,20 +77,12 @@ export interface UseWaveStateResult extends StreamingTurn {
   ) => void;
 }
 
-/** Per-call options for one Wave send. `onError` lets the caller restore its input. */
-interface SubmitTurnOptions {
-  readonly onError?: () => void;
-}
-
 /**
  * Drive one Wave's chat scroll + Composer mode (spec §7).
  *
- * Hybrid state model (streaming plan decision 1): `useChat` manages ONLY the
- * in-flight turn (status + streaming assistant text) against the streaming
- * route (`/api/course/[courseId]/wave/[waveNumber]/turn`); committed entries
- * keep rendering from `wave.getState` → `deriveWaveChatEntries`. On finish we
- * invalidate the query, then clear `useChat`'s transient messages so the
- * canonical server-derived entry replaces the streamed bubble.
+ * Hybrid state model (streaming plan decision 1): `useWaveTurnChat` runs the
+ * in-flight turn over `useChat`; committed entries render from
+ * `wave.getState` → `deriveWaveChatEntries`. This hook composes the two.
  *
  * Result `kind` branches (delivered as a transient `data-turn-result` part):
  * - `mid-turn` → sum server-graded free-text XP into the badge counter.
@@ -108,7 +99,6 @@ interface SubmitTurnOptions {
  */
 export function useWaveState(courseId: string, waveNumber: number): UseWaveStateResult {
   const trpc = useTRPC();
-  const qc = useQueryClient();
   const courseXp = useCourseXp(courseId);
 
   const stateOpts = trpc.wave.getState.queryOptions({ courseId, waveNumber });
@@ -118,17 +108,6 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
   // never returns a close-turn payload (see WaveState TSDoc). We capture it
   // from the turn-result data part and surface it to the page.
   const [closeResult, setCloseResult] = useState<WaveCloseResult | null>(null);
-
-  // The Turn in flight: its payload and the caller's per-call error hook.
-  // WaveSession uses the hook to restore its input on failure. `useChat`'s
-  // onError is chat-level and gets only the error, so `sendTurn` sets this ref
-  // just before sendMessage. onError consumes it once; onFinish clears it.
-  const inFlightTurnRef = useRef<
-    (SubmitTurnOptions & { readonly payload: SubmitTurnPayload }) | null
-  >(null);
-  // This tab's last failed payload. A new send clears it.
-  // `deriveRetryableWaveTurn` decides whether a Retry may re-send it.
-  const [failedPayload, setFailedPayload] = useState<SubmitTurnPayload | null>(null);
 
   // Decisions live in `deriveTurnResultEffects` (pure); the hook applies the
   // side-effects in a fixed order: capture the close result, fold XP into the
@@ -142,52 +121,12 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     }
   };
 
-  const chat = useChat<WaveTurnUIMessage>({
-    // One chat instance per wave — id remounts state on wave navigation.
-    id: `wave-${courseId}-${waveNumber}`,
-    transport: new DefaultChatTransport({
-      api: `/api/course/${courseId}/wave/${waveNumber}/turn`,
-      // Dev auth stub: the route resolves the user from `x-dev-user-id` in
-      // non-production (same seam as the tRPC link — see readRequestSession).
-      // Without it every dev streaming request 404s. Prod: session cookie.
-      headers: devUserHeaders(),
-      // The server rebuilds context from the DB. So send ONLY the body that
-      // `sendTurn` built. The default body would also ship `messages`, the
-      // whole transient history. `sendTurn` types its body as `SubmitTurnBody`,
-      // so `tsc` checks what goes on the wire (issue #220). This transport
-      // sets no `body` of its own. Keep it that way: the AI SDK merges that
-      // body in here, and it would ship too.
-      // Returning no `headers` key keeps the transport-level headers above
-      // (HttpChatTransport falls back to baseHeaders when undefined).
-      prepareSendMessagesRequest: ({ body }) => ({ body: body ?? {} }),
-    }),
-    onData: (part) => {
-      if (part.type === "data-turn-result") {
-        handleTurnResult(part.data);
-      }
-    },
-    // The AI SDK runs onFinish after every request, a failed one included.
-    onFinish: () => {
-      inFlightTurnRef.current = null;
-      // Committed state is server-derived; refetch then drop the transient
-      // streaming messages so the bubble is replaced by the canonical turn.
-      void qc.invalidateQueries({ queryKey: stateOpts.queryKey }).then(() => {
-        chat.setMessages([]);
-      });
-    },
-    // Surface turn failures instead of swallowing them. The most common
-    // cause is submitting into an already-closed wave (server guards throw
-    // PRECONDITION_FAILED; the route's onError forwards guard message text).
-    onError: (err) => {
-      toast.error("Couldn't submit that turn", {
-        description: err.message.length > 0 ? err.message : "Please try again.",
-      });
-      const turn = inFlightTurnRef.current;
-      inFlightTurnRef.current = null;
-      turn?.onError?.();
-      setFailedPayload(turn?.payload ?? null);
-      chat.setMessages([]);
-    },
+  // The in-flight Turn: `useChat`, its send, and this tab's last failed payload.
+  const chat = useWaveTurnChat({
+    courseId,
+    waveNumber,
+    stateQueryKey: stateOpts.queryKey,
+    onTurnResult: handleTurnResult,
   });
 
   // Derive ChatEntry[] from chat_log. Pure; safe to run on every render
@@ -206,32 +145,18 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     [state.data],
   );
 
-  const isPending = state.isFetching || chat.status === "submitted" || chat.status === "streaming";
-
-  // In-flight prose + questionnaire preview from the live attempt only.
-  // `deriveStreamingTurn` holds the slicing (failed attempts end at the last
-  // `data-turn-reset` marker). Recomputed each render, like the stream itself.
-  const { streamingText, streamingQuestions } = deriveStreamingTurn(chat.messages);
-
-  // Every send goes through here, a Retry included. The server reads only
-  // `payload`. The message text is useChat's transient copy, never rendered.
-  const sendTurn = (payload: SubmitTurnPayload, opts?: SubmitTurnOptions) => {
-    setFailedPayload(null);
-    inFlightTurnRef.current = { payload, onError: opts?.onError };
-    const text = payload.kind === "chat-text" ? payload.text : "Answers submitted";
-    // Typed from the route's schema: `useChat`'s own `body` is a bare `object`.
-    const body: SubmitTurnBody = { payload };
-    void chat.sendMessage({ text }, { body });
-  };
+  const isPending = state.isFetching || chat.isSending;
 
   // A failed Turn's saved entry, offered for Retry. `deriveRetryableWaveTurn`
   // holds the rule; re-sending the same payload takes the server's resume path.
-  const retryable = state.data ? deriveRetryableWaveTurn(failedPayload, state.data.chatLog) : null;
+  const retryable = state.data
+    ? deriveRetryableWaveTurn(chat.failedPayload, state.data.chatLog)
+    : null;
   const failedTurn: FailedWaveTurn | null =
-    retryable === null ? null : { payload: retryable, retry: () => sendTurn(retryable) };
+    retryable === null ? null : { payload: retryable, retry: () => chat.sendTurn(retryable) };
 
   const submitChatText: UseWaveStateResult["submitChatText"] = (text, opts) => {
-    sendTurn({ kind: "chat-text", text }, opts);
+    chat.sendTurn({ kind: "chat-text", text }, opts);
   };
 
   const submitQuestionnaireAnswers: UseWaveStateResult["submitQuestionnaireAnswers"] = (
@@ -245,8 +170,8 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     // reuse it rather than re-scanning chat_log.
     const questionnaireId = activeQuestionnaire?.questionsKey;
     if (!questionnaireId) return;
-    // The optimistic user bubble stays WaveSession-owned.
-    sendTurn({ kind: "questionnaire-answers", questionnaireId, answers: [...answers] }, opts);
+    // The optimistic user bubble stays WaveSession-owned (`useWaveComposer`).
+    chat.sendTurn({ kind: "questionnaire-answers", questionnaireId, answers: [...answers] }, opts);
   };
 
   return {
@@ -268,8 +193,8 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     isPending,
     failedTurn,
     waveNotFound: isNotFoundError(state.error),
-    streamingText,
-    streamingQuestions,
+    streamingText: chat.streamingText,
+    streamingQuestions: chat.streamingQuestions,
     submitChatText,
     submitQuestionnaireAnswers,
   };

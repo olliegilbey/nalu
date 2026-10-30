@@ -9,9 +9,9 @@ import { shapeClarifyAnswers } from "@/lib/course/shapeClarifyAnswers";
 import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
 import { CourseNotFound } from "./CourseNotFound";
-import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
-import { FrameworkTierList } from "./FrameworkTierList";
+import { MessageBubble, TypingBubble } from "./MessageBubble";
 import { RetryRow } from "./RetryRow";
+import { renderChatEntry } from "./renderChatEntry";
 import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
 import { t, tFill } from "@/i18n";
 
@@ -60,35 +60,8 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
   // another browser started. Say so, rather than show an empty chat.
   if (courseNotFound) return <CourseNotFound message={t<string>("courseNotFound.message")} />;
 
-  // Map ChatEntry[] → array of <MessageBubble> / structured renderers.
-  // The scoping flow never emits `assistant-text-with-questionnaire` (that's a
-  // wave-only variant) — we keep the case for exhaustiveness and fall through
-  // to the plain assistant-text rendering so a misplaced row stays renderable.
-  const scroll = chatEntries.map((entry, idx) => {
-    switch (entry.kind) {
-      case "user-text":
-      case "user-questionnaire-answers": {
-        const msg: ChatMessage = { id: `t${idx}`, role: "user", content: entry.content };
-        return <MessageBubble key={idx} message={msg} />;
-      }
-      case "assistant-text":
-      case "assistant-text-with-questionnaire": {
-        const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: entry.content };
-        return <MessageBubble key={idx} message={msg} />;
-      }
-      case "assistant-text-with-framework": {
-        const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: entry.userMessage };
-        return (
-          <div key={idx}>
-            <MessageBubble message={msg} />
-            <FrameworkTierList tiers={entry.tiers} />
-          </div>
-        );
-      }
-      case "move-on-cta":
-        return null;
-    }
-  });
+  // Map ChatEntry[] → bubbles, with FrameworkTierList for the framework entry.
+  const scroll = chatEntries.map((entry, idx) => renderChatEntry(entry, idx));
 
   // Compute composer mode.
   const moveOn = scopingResult

@@ -1,26 +1,18 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWaveState } from "@/hooks/useWaveState";
-import { shapeQuestionnaireAnswers } from "@/lib/course/shapeQuestionnaireAnswers";
+import { useWaveComposer } from "@/hooks/useWaveComposer";
 import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
 import { CourseNotFound } from "./CourseNotFound";
-import { MessageBubble, TypingBubble, type ChatMessage } from "./MessageBubble";
-import { FrameworkTierList } from "./FrameworkTierList";
+import { MessageBubble, TypingBubble } from "./MessageBubble";
 import { RetryRow } from "./RetryRow";
-import { formatComposerAnswers } from "@/lib/course/formatComposerAnswers";
+import { renderChatEntry } from "./renderChatEntry";
 import { selectComposerQuestionnaire } from "@/lib/course/selectComposerQuestionnaire";
-import {
-  composerTextAfterFailure,
-  composerTextAfterRetry,
-  resendsFailedTurn,
-} from "@/lib/course/failedChatText";
 import { deriveWaveProgress } from "@/lib/course/deriveWaveProgress";
 import { WaveProgressBar } from "./WaveProgressBar";
 import { t, tFill } from "@/i18n";
-import type { ChatEntry } from "@/lib/types/chatEntry";
 
 /**
  * Drives the wave teaching chat scroll + Composer mode (spec §7).
@@ -43,6 +35,7 @@ export function WaveSession({
   readonly waveNumber: number;
 }) {
   const router = useRouter();
+  const wave = useWaveState(courseId, waveNumber);
   const {
     chatEntries,
     activeQuestionnaire,
@@ -61,35 +54,24 @@ export function WaveSession({
     waveNotFound,
     streamingText,
     streamingQuestions,
-    submitChatText,
-    submitQuestionnaireAnswers,
-  } = useWaveState(courseId, waveNumber);
-
-  const [composerValue, setComposerValue] = useState("");
-  // Optimistic user message. `entryCountAtSubmit` is the `chatEntries.length`
-  // captured at submit: the bubble shows while `chatEntries` has not grown past
-  // it (server round-trip not yet landed) and hides the instant the real entry
-  // appears, so it never duplicates the real entry. A failed send drops it:
-  // the Composer gets the text or the card back instead.
-  const [optimistic, setOptimistic] = useState<{
-    readonly content: string;
-    readonly entryCountAtSubmit: number;
-  } | null>(null);
-  // The questionnaire key just submitted — its question card is hidden from the
-  // Composer immediately, rather than lingering until the server round-trip.
-  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  } = wave;
+  // Composer text, the optimistic bubble, and the send and Retry handlers.
+  const composer = useWaveComposer(wave);
 
   // getState found no such Wave for this learner: a wrong URL, a course
   // another browser started, or a Wave number this course lacks. One NOT_FOUND
   // covers all three, so the copy says "lesson", which is true of each (#230).
   if (waveNotFound) return <CourseNotFound message={t<string>("waveNotFound.message")} />;
 
-  // Map ChatEntry[] → scroll JSX. The switch is exhaustive over ChatEntry's
-  // kinds so a future variant addition becomes a compile-time error here.
+  // Map ChatEntry[] → scroll JSX. `renderChatEntry` is shared with Onboarding.
   const scroll = chatEntries.map((entry, idx) => renderChatEntry(entry, idx));
 
   // The answer card the Composer shows, with its own buffer key.
-  const card = selectComposerQuestionnaire(activeQuestionnaire, dismissedKey, streamingQuestions);
+  const card = selectComposerQuestionnaire(
+    activeQuestionnaire,
+    composer.dismissedKey,
+    streamingQuestions,
+  );
 
   // Move-on CTA: shown whenever the wave is finished, NOT only when the
   // transient `closeResult` is present. `closeResult` is component-local state
@@ -127,29 +109,9 @@ export function WaveSession({
       subheader={progress && <WaveProgressBar progress={progress} />}
       composer={
         <Composer
-          value={composerValue}
-          onChange={setComposerValue}
-          onSend={() => {
-            // Free-text send path: submit chat-text turn. Composer-side guard
-            // already filters empty strings (it disables the send button).
-            const text = composerValue.trim();
-            if (text.length === 0) return;
-            // The failed Turn's own text reuses the entry the server already
-            // shows, so it needs no optimistic copy.
-            if (!resendsFailedTurn(failedTurn?.payload ?? null, text)) {
-              setOptimistic({ content: text, entryCountAtSubmit: chatEntries.length });
-            }
-            setComposerValue("");
-            // On failure, hand the text back and drop its optimistic copy:
-            // retyped text would spend a second Turn (issue #231). A saved
-            // entry comes back with the refetch.
-            submitChatText(text, {
-              onError: () => {
-                setComposerValue((value) => composerTextAfterFailure(value, text));
-                setOptimistic(null);
-              },
-            });
-          }}
+          value={composer.composerValue}
+          onChange={composer.setComposerValue}
+          onSend={composer.sendChatText}
           disabled={isPending}
           // Committed questionnaire (server-derived, interactive) wins;
           // while a turn streams, the tool-part preview shows instead. The
@@ -164,33 +126,15 @@ export function WaveSession({
           waveTier={currentTier ?? undefined}
           onCorrectAnswer={awardMcXp}
           moveOn={moveOn}
-          onComplete={(answers) => {
-            if (!activeQuestionnaire) return;
-            // Optimistic bubble + dismiss the question card at once. Domain-shape
-            // mapper lives in `src/lib/` so this component stays a thin shell.
-            setOptimistic({
-              content: formatComposerAnswers(answers),
-              entryCountAtSubmit: chatEntries.length,
-            });
-            setDismissedKey(activeQuestionnaire.questionsKey);
-            // On submit failure, un-dismiss the question card and drop the
-            // optimistic bubble. The Composer restores the learner's answers
-            // from its localStorage buffer, so they only re-do the final step.
-            // If the server saved the answers, the refetch closes the card
-            // instead, and the Retry row re-sends them.
-            submitQuestionnaireAnswers(shapeQuestionnaireAnswers(answers), {
-              onError: () => {
-                setDismissedKey(null);
-                setOptimistic(null);
-              },
-            });
-          }}
+          onComplete={composer.completeQuestionnaire}
         />
       }
     >
       {scroll}
-      {optimistic && chatEntries.length === optimistic.entryCountAtSubmit && (
-        <MessageBubble message={{ id: "pending", role: "user", content: optimistic.content }} />
+      {composer.optimisticContent !== null && (
+        <MessageBubble
+          message={{ id: "pending", role: "user", content: composer.optimisticContent }}
+        />
       )}
       {/* Streaming bubble: teaching prose arrives token-by-token from the
           in-flight turn (useChat). Markup matches committed assistant bubbles
@@ -205,56 +149,7 @@ export function WaveSession({
           payload, so the server reuses that entry. No card can be open here:
           the saved entry is a `text` entry, or answers that close the
           questionnaire. */}
-      {failedTurn && (
-        <RetryRow
-          disabled={isPending}
-          onRetry={() => {
-            if (isPending) return;
-            setComposerValue((value) => composerTextAfterRetry(value, failedTurn.payload));
-            failedTurn.retry();
-          }}
-        />
-      )}
+      {failedTurn && <RetryRow disabled={isPending} onRetry={composer.retryFailedTurn} />}
     </ChatShell>
   );
-}
-
-/**
- * Render one ChatEntry as scroll JSX. Hoisted out so the switch is easy to scan
- * and the parent's render body stays compact. Exhaustive over ChatEntry's kinds.
- *
- * `assistant-text-with-framework` and `move-on-cta` are not emitted by
- * `deriveWaveChatEntries` in the current spec — they exist in the union for
- * surface symmetry with the scoping projection. The framework case has a
- * defensive render path; move-on is driven by the Composer's `moveOn` prop
- * (see WaveSession above) and renders nothing inline.
- */
-function renderChatEntry(entry: ChatEntry, idx: number) {
-  switch (entry.kind) {
-    case "user-text":
-    case "user-questionnaire-answers": {
-      const msg: ChatMessage = { id: `t${idx}`, role: "user", content: entry.content };
-      return <MessageBubble key={idx} message={msg} />;
-    }
-    case "assistant-text":
-    case "assistant-text-with-questionnaire": {
-      // The questionnaire itself is rendered via the Composer; the prose
-      // body of this entry still renders inline as an assistant bubble.
-      const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: entry.content };
-      return <MessageBubble key={idx} message={msg} />;
-    }
-    case "assistant-text-with-framework": {
-      const msg: ChatMessage = { id: `t${idx}`, role: "assistant", content: entry.userMessage };
-      return (
-        <div key={idx}>
-          <MessageBubble message={msg} />
-          <FrameworkTierList tiers={entry.tiers} />
-        </div>
-      );
-    }
-    case "move-on-cta":
-      // CTA is rendered via the Composer's moveOn prop, not inline. Returning
-      // null keeps the switch exhaustive.
-      return null;
-  }
 }
