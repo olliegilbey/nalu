@@ -5,7 +5,7 @@ describe("sitemap", () => {
   const urls = sitemap().map((entry) => entry.url);
 
   it("lists the home page, the only public page", () => {
-    expect(urls).toEqual(["https://nalu-phi.vercel.app/"]);
+    expect(urls).toEqual(["https://nalu.ollie.gg/"]);
   });
 
   it("lists no learner-private course page and no API route", () => {
