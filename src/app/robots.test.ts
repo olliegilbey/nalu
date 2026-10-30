@@ -22,6 +22,6 @@ describe("robots", () => {
   });
 
   it("points crawlers at the production sitemap", () => {
-    expect(robots().sitemap).toBe("https://nalu-phi.vercel.app/sitemap.xml");
+    expect(robots().sitemap).toBe("https://nalu.ollie.gg/sitemap.xml");
   });
 });

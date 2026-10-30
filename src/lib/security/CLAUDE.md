@@ -1,9 +1,9 @@
 # src/lib/security
 
-All user-supplied text must be escaped before it enters a prompt. Wave learner replies and custom instructions pass through `sanitiseUserInput`. Scoping input is escaped by `escapeXmlText` inside `renderStageEnvelope`, without the wrapper (see `src/lib/course/clarify.ts`).
+All user-supplied text must be escaped before it enters a prompt. Wave learner replies pass through `sanitiseUserInput`. Custom instructions take `escapeXmlText` in their own `<custom_instructions>` tag, with no wrapper: the teaching Security block tells the model to honour them, and a `<user_message>` wrapper would mark them as data (issue #236). Scoping input is escaped by `escapeXmlText` inside `renderStageEnvelope`, without the wrapper (see `src/lib/course/clarify.ts`).
 
 - `sanitiseUserInput.ts`: HTML-encode `&`, `<`, `>` (in that order — `&` first to prevent double-decode resurrection), wrap in `<user_message>…</user_message>`. Pure.
-- `escapeXmlText.ts`: the encoding alone, no wrapper. Use it for text whose tag the prompt author fixes (topic, framework JSON, concept names).
+- `escapeXmlText.ts`: the encoding alone, no wrapper. Use it for text whose tag the prompt author fixes (topic, framework JSON, concept names, custom instructions).
 - The teaching and scoping system prompts both name the learner tags as data and the Harness tags in user messages, `<harness_feedback>` included, as instructions to follow. That holds only while no learner can forge a Harness tag. `harnessTagForge.test.ts` drives a forged tag through each real call site, from learner text into a prompt; add a case when you add a path.
 - If you add a new prompt entry point, route untrusted input here first.
 - `clientErrorText.ts`: the one rule for what error text may reach the client (issues #169, #171). A `NotFoundError` or a `TRPCError`'s own message passes. A `TRPCError` built without a message copies its cause's message, so the cause decides; tRPC wraps every unexpected throw that way. A cause whose `message` is not a string is unsafe. tRPC's Zod input-validation message passes: it describes the requester's own input. Everything else gets fixed text, because a failed DB write's message lists its params. The Wave-turn route and the tRPC `errorFormatter` both send it.

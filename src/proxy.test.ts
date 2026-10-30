@@ -70,8 +70,8 @@ describe("proxy", () => {
 
   it("production, no session: mints nothing and sets no cookie (#232)", async () => {
     // Crawlers, link unfurlers and uptime checks arrive with no cookie. A page
-    // load must not create an `auth.users` row for them; the first API request
-    // that needs a learner mints instead (`src/server/requestUser.ts`).
+    // load must not create an `auth.users` row for them; the learner's first
+    // write mints instead (`src/server/requestUser.ts`).
     vi.stubEnv("NODE_ENV", "production");
     const client = fakeClient({ user: null });
     mockedCreateServerClient.mockReturnValue(client as never);

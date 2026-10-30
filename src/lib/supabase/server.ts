@@ -5,11 +5,12 @@ import { getEnv } from "@/lib/config";
 /**
  * Supabase server client bound to the Next.js request cookie store.
  *
- * Used by `resolveOrMintRequestUserId` (`src/server/requestUser.ts`) in the API
- * Route Handlers. There `setAll` writes a freshly minted or refreshed session
- * through `cookies()`, and Next merges it into the handler's response. The
- * `try/catch` tolerates the read-only cookie store of a Server Component, so
- * this client is safe to construct anywhere on the server.
+ * Used by `readRequestSession` and `mintAnonymousLearner`
+ * (`src/server/requestUser.ts`) in the API Route Handlers. There `setAll`
+ * writes a freshly minted or refreshed session through `cookies()`, and Next
+ * merges it into the handler's response. The `try/catch` tolerates the
+ * read-only cookie store of a Server Component, so this client is safe to
+ * construct anywhere on the server.
  *
  * `setAll`'s second argument, the `Cache-Control` headers @supabase/ssr asks
  * us to forward, is dropped: `cookies()` cannot set response headers. Safe on

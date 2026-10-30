@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { router, protectedProcedure } from "../trpc";
+import { router, learnerProcedure, mintingProcedure } from "../trpc";
 import { clarify } from "@/lib/course/clarify";
 import { getState } from "@/lib/course/getState";
 import { generateFramework } from "@/lib/course/generateFramework";
@@ -17,17 +17,20 @@ import { questionnaireAnswerSchema } from "@/lib/types/questionnaireAnswer";
  */
 export const courseRouter = router({
   /** Return the current persisted state for a course (used by the UI to restore in-progress scoping). */
-  getState: protectedProcedure
+  getState: learnerProcedure
     .input(z.object({ courseId: z.uuid() }))
     .query(({ ctx, input }) => getState({ userId: ctx.userId, courseId: input.courseId })),
 
-  /** Initiate scoping for a new topic: creates a course and returns clarifying questions. */
-  clarify: protectedProcedure
+  /**
+   * Initiate scoping for a new topic: creates a course and returns clarifying
+   * questions. A caller with no session mints its learner first.
+   */
+  clarify: mintingProcedure
     .input(z.object({ topic: z.string().min(1).max(SCOPING.maxTopicLength) }))
     .mutation(({ ctx, input }) => clarify({ userId: ctx.userId, topic: input.topic })),
 
   /** Generate the tier framework from the learner's clarification answers. */
-  generateFramework: protectedProcedure
+  generateFramework: learnerProcedure
     .input(
       z.object({
         courseId: z.uuid(),
@@ -53,14 +56,14 @@ export const courseRouter = router({
     ),
 
   /** Generate the baseline assessment questions from the stored framework. */
-  generateBaseline: protectedProcedure
+  generateBaseline: learnerProcedure
     .input(z.object({ courseId: z.uuid() }))
     .mutation(({ ctx, input }) =>
       generateBaseline({ userId: ctx.userId, courseId: input.courseId }),
     ),
 
   /** Close scoping: grade the baseline, prime Wave 1, flip status to active. */
-  submitBaseline: protectedProcedure
+  submitBaseline: learnerProcedure
     .input(
       z.object({
         courseId: z.uuid(),

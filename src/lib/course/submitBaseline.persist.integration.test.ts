@@ -10,7 +10,14 @@ import { openWave } from "@/db/queries/waves.writes";
 import { getOpenWaveByCourse, getWaveByCourseAndNumber } from "@/db/queries/waves";
 import { getMessagesForWave } from "@/db/queries/contextMessages";
 import { getOpenScopingPassByCourse } from "@/db/queries/scopingPasses";
-import { FRAMEWORK, PARSED, MERGED, seedScopingCourseAndRun } from "./submitBaseline.fixtures";
+import { saveCustomInstructions } from "@/lib/learner-profile/customInstructions";
+import {
+  FRAMEWORK,
+  PARSED,
+  MERGED,
+  USER_ID,
+  seedScopingCourseAndRun,
+} from "./submitBaseline.fixtures";
 
 /**
  * Integration tests for `persistScopingClose`.
@@ -117,6 +124,30 @@ describe("persistScopingClose (integration)", () => {
           content: PARSED.nextUnitBlueprint.openingText,
         },
       ]);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Custom instructions (issue #236): Wave 1 snapshots the learner's saved
+  // preference as it opens. The snapshot is raw: the render escapes it.
+  // -------------------------------------------------------------------------
+  it("snapshots the learner's saved custom instructions onto Wave 1", async () => {
+    await seedScopingCourseAndRun(async (courseId, scopingPassId) => {
+      const preference = "I learn best through analogies <and> stories & examples.";
+      await saveCustomInstructions(USER_ID, preference);
+      await persistScopingClose({ courseId, scopingPassId, parsed: PARSED, merged: MERGED });
+      const wave1 = await getWaveByCourseAndNumber(courseId, 1);
+      if (!wave1) throw new Error("Wave 1 must exist after scoping close");
+      expect(wave1.customInstructionsSnapshot).toBe(preference);
+    });
+  });
+
+  it("snapshots null onto Wave 1 when the learner saved no custom instructions", async () => {
+    await seedScopingCourseAndRun(async (courseId, scopingPassId) => {
+      await persistScopingClose({ courseId, scopingPassId, parsed: PARSED, merged: MERGED });
+      const wave1 = await getWaveByCourseAndNumber(courseId, 1);
+      if (!wave1) throw new Error("Wave 1 must exist after scoping close");
+      expect(wave1.customInstructionsSnapshot).toBeNull();
     });
   });
 

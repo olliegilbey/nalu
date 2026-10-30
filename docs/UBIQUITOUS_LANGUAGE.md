@@ -22,6 +22,10 @@ What the User submits when the assessment-card UI replaces the chat input. A tur
 
 The text on `courses.summary`. The scoping close turn writes the first one, from its `summary` field. Each Wave close rewrites it whole from its own `summary` field: the model compresses the prior summary and folds in the lesson. Every Wave's system prompt renders it as `<progress_summary>`. A Wave close also keeps the same text on `waves.summary`, a per-Wave snapshot that no code reads back.
 
+## Custom instructions
+
+The learner's free-text learning preferences, such as "I learn best through analogies". They live on `user_profiles.custom_instructions` and apply to every course. Each Wave holds a snapshot taken when it opens, on `waves.custom_instructions_snapshot`. A change applies from the next Wave. The teaching system prompt renders the snapshot, escaped, as `<custom_instructions>`. The model honours it within the lesson rules; it never overrides them.
+
 ## Baseline
 
 The 7-9 assessment questions generated after the framework is confirmed. Mix of multiple choice (graded mechanically by `submitBaseline`, no LLM) and free-text (graded by a single batched LLM call inside `submitBaseline`). Its per-tier results set the learner's starting tier: `determineStartingTier` in `src/lib/scoring/startingTier.ts`, with the threshold `BASELINE.tierMasteryRatio`. The model grades answers; it never picks the tier.
@@ -37,7 +41,7 @@ The conversation state sent to the LLM on each turn — the entire message list 
 Nalu has distinct phases, each with its own Context:
 
 - **Scoping context** — one Context for the entire scoping phase (clarify → framework → baseline → grade). `renderScopingSystem` renders its system prompt; each scoping stage appends user/assistant messages to the growing prefix.
-- **Wave context** — a fresh Context per Wave. `renderTeachingSystem` renders its system prompt from the Wave row: framework snapshot, tier, due-concepts snapshot, and the seeding _blueprint_ (`waves.seed_source`). It also renders the course summary. Wave 1's blueprint comes from the scoping close turn. Each later Wave's blueprint comes from the previous Wave's final turn.
+- **Wave context** — a fresh Context per Wave. `renderTeachingSystem` renders its system prompt from the Wave row: framework snapshot, tier, custom-instructions snapshot, due-concepts snapshot, and the seeding _blueprint_ (`waves.seed_source`). It also renders the course summary. Wave 1's blueprint comes from the scoping close turn. Each later Wave's blueprint comes from the previous Wave's final turn.
 
 Within a phase the prefix is byte-stable (keeps prompt cache warm). At phase boundaries the closing Context stays in the DB but never replays into future prompts. The DB stores Contexts as a row-per-message table; no prompt-from-components reassembly happens per turn.
 
@@ -129,7 +133,7 @@ Never use "turn" for a single contribution or a single API call — say ChatEntr
 
 ## User
 
-The learner. Distinct from the developer, admin, or agent. When docs say "the user," they mean the learner interacting with the UI unless context says otherwise. There is no sign-up. In production, the learner's first API request mints a Supabase anonymous user (`src/server/requestUser.ts`); page loads never do. Outside production, the `x-dev-user-id` header stands in (`src/server/requestUser.ts`).
+The learner. Distinct from the developer, admin, or agent. When docs say "the user," they mean the learner interacting with the UI unless context says otherwise. There is no sign-up. In production, the learner's first write mints a Supabase anonymous user (`src/server/requestUser.ts`); page loads and reads never do. Only a write that needs no existing course mints: submitting a topic or saving custom instructions (`mintingProcedure`, `src/server/trpc.ts`). A write to an existing course, such as submitting the baseline, needs the learner who owns it, so it never mints. Outside production, the `x-dev-user-id` header stands in (`src/server/requestUser.ts`).
 
 ## Wave
 

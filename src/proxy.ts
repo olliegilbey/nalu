@@ -11,12 +11,12 @@ import { errorLogLine } from "@/lib/security/errorLogLine";
  *
  * It never mints. A visitor with no session cookie leaves without one, so
  * crawlers, link unfurlers and uptime checks create no `auth.users` row
- * (#232). The first API request that needs a learner mints the anonymous
- * session instead (`src/server/requestUser.ts`). A returning visitor's
+ * (#232). The learner's first write mints the anonymous session instead
+ * (`src/server/requestUser.ts`). A returning visitor's
  * `getUser()` validates the cookie and refreshes it via the `setAll` adapter.
  *
  * Gated on `NODE_ENV === "production"`: in dev/test this is a passthrough so
- * the `x-dev-user-id` stub seam (see `src/server/trpc.ts`) is untouched.
+ * the `x-dev-user-id` stub seam (see `src/server/requestUser.ts`) is untouched.
  *
  * Fails open — a Supabase auth error is logged and the page still serves;
  * the subsequent tRPC call degrades to `UNAUTHORIZED`, which the UI already

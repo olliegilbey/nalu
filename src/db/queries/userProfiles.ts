@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
-import { db } from "@/db/client";
-import { userProfiles } from "@/db/schema";
+import { db, type DbOrTx } from "@/db/client";
+import { courses, userProfiles } from "@/db/schema";
 import { NotFoundError } from "./errors";
 
 /**
@@ -16,11 +16,12 @@ export { NotFoundError } from "./errors";
  * Insert a `user_profiles` row for an authenticated user if one does not
  * already exist.
  *
- * Called from `protectedProcedure` on every authenticated request. A visitor
- * who just signed in anonymously (see `src/server/requestUser.ts`) has an
- * `auth.users` row but no `user_profiles` row yet — and `courses.user_id`
- * references `user_profiles.id`. `onConflictDoNothing` makes repeated calls
- * cheap and race-safe: first write wins, later calls are no-ops.
+ * Called from every tRPC learner procedure (`src/server/trpc.ts`) and the
+ * wave-turn route. A freshly minted anonymous user (see
+ * `src/server/requestUser.ts`) has an `auth.users` row but no
+ * `user_profiles` row yet — and `courses.user_id` references
+ * `user_profiles.id`. `onConflictDoNothing` makes repeated calls cheap and
+ * race-safe: first write wins, later calls are no-ops.
  *
  * `displayName` is `NOT NULL`; anonymous users have no name, so it defaults
  * to `"Learner"`.
@@ -43,6 +44,27 @@ export async function getUserCustomInstructions(userId: string): Promise<string 
     .from(userProfiles)
     .where(eq(userProfiles.id, userId));
   if (!row) throw new NotFoundError("user_profile", userId);
+  return row.customInstructions;
+}
+
+/**
+ * The course owner's custom instructions, raw as stored, read through the
+ * course row inside the caller's tx. Both Wave openers call it to snapshot the
+ * preference onto the Wave they open. A plain select: it takes no lock, so the
+ * close transactions' lock order holds (`src/db/queries/CLAUDE.md`).
+ *
+ * @throws {NotFoundError} when no course has this id.
+ */
+export async function getCourseOwnerCustomInstructionsInTx(
+  courseId: string,
+  tx: DbOrTx,
+): Promise<string | null> {
+  const [row] = await tx
+    .select({ customInstructions: userProfiles.customInstructions })
+    .from(courses)
+    .innerJoin(userProfiles, eq(userProfiles.id, courses.userId))
+    .where(eq(courses.id, courseId));
+  if (!row) throw new NotFoundError("course", courseId);
   return row.customInstructions;
 }
 

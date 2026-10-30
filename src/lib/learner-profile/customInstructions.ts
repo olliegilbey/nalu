@@ -1,12 +1,15 @@
 import { getUserCustomInstructions, updateUserCustomInstructions } from "@/db/queries/userProfiles";
 
 /**
- * Read the learner's custom instructions. Null means none set.
+ * Read the learner's custom instructions. Null means none set. An undefined
+ * `userId` is a caller with no session: they have set none, so it is null
+ * too, and the read mints nothing (#246).
  *
  * @throws {NotFoundError} when the learner has no profile row. Callers run
- * behind `protectedProcedure`, which provisions it first.
+ * behind `optionalLearnerProcedure`, which provisions it first.
  */
-export async function getCustomInstructions(userId: string): Promise<string | null> {
+export async function getCustomInstructions(userId: string | undefined): Promise<string | null> {
+  if (!userId) return null;
   return getUserCustomInstructions(userId);
 }
 
