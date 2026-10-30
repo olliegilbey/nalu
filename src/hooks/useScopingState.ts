@@ -11,7 +11,7 @@ import { deriveActiveScopingQuestionnaire } from "@/lib/course/deriveActiveScopi
 import { deriveStrandedScopingTurn } from "@/lib/course/deriveStrandedScopingTurn";
 import { hasScopingTurnLanded, type ScopingTurnKind } from "@/lib/course/hasScopingTurnLanded";
 import type { ShapedClarifyAnswer } from "@/lib/course/shapeClarifyAnswers";
-import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
+import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { CourseState } from "@/lib/course/getState";
 
@@ -44,7 +44,7 @@ export interface UseScopingStateResult {
     opts?: { readonly onError?: () => void },
   ) => void;
   readonly submitBaselineAnswers: (
-    answers: readonly ShapedQuestionnaireAnswer[],
+    answers: readonly QuestionnaireAnswer[],
     // `onSuccess` carries the free-text XP subtotal so the caller can pop the
     // header badge; `onError` lets it recover its optimistic UI. Both optional.
     opts?: {

@@ -1,19 +1,6 @@
-import { MC_OPTION_KEYS, type McOptionKey } from "@/lib/types/mcOptionKey";
+import { MC_OPTION_KEYS } from "@/lib/types/mcOptionKey";
+import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
 import type { ChoiceQuestion } from "./adaptQuestionnaire";
-
-/**
- * One entry in the answer payload submitted to questionnaire consumers
- * (`course.submitBaseline`, and the Wave turn route's
- * `questionnaire-answers` branch). Same wire shape across phases.
- */
-export type ShapedQuestionnaireAnswer =
-  | { readonly id: string; readonly kind: "mc"; readonly selected: McOptionKey }
-  | {
-      readonly id: string;
-      readonly kind: "freetext";
-      readonly text: string;
-      readonly fromEscape: boolean;
-    };
 
 /** One raw `{ question, answer }` pair as emitted by the Composer. */
 export interface RawComposerAnswer {
@@ -36,9 +23,10 @@ export function matchOptionIndex(question: ChoiceQuestion, answer: string): numb
 }
 
 /**
- * Shape Composer-emitted `{ question, answer }` pairs into the discriminated
- * union that questionnaire consumers expect (`submitBaseline` and the Wave
- * turn route's `questionnaire-answers` branch share this wire shape).
+ * Shape Composer-emitted `{ question, answer }` pairs into
+ * {@link QuestionnaireAnswer}s, the wire shape both questionnaire consumers
+ * parse (`submitBaseline` and the Wave turn route's `questionnaire-answers`
+ * branch).
  *
  * MC vs free-text is disambiguated by `matchOptionIndex` — the Composer
  * returns the option text verbatim for taps, or the user's typed reply for
@@ -49,7 +37,7 @@ export function matchOptionIndex(question: ChoiceQuestion, answer: string): numb
  */
 export function shapeQuestionnaireAnswers(
   answers: readonly RawComposerAnswer[],
-): readonly ShapedQuestionnaireAnswer[] {
+): readonly QuestionnaireAnswer[] {
   return answers.map(({ question, answer }) => {
     const idx = matchOptionIndex(question, answer);
     const letter = idx === null ? undefined : MC_OPTION_KEYS[idx];

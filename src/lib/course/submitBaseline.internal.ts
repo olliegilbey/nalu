@@ -3,16 +3,7 @@ import { typedMcGradingRule } from "@/lib/prompts/questionnaire";
 import type { McOptionKey, McOptions } from "@/lib/types/mcOptionKey";
 import type { z } from "zod";
 import type { baselineGradingSchema } from "@/lib/types/jsonb";
-
-/** One learner answer in a baseline submission; MC selects a key, free-text carries prose. */
-export type BaselineAnswer =
-  | { readonly id: string; readonly kind: "mc"; readonly selected: McOptionKey }
-  | {
-      readonly id: string;
-      readonly kind: "freetext";
-      readonly text: string;
-      readonly fromEscape: boolean;
-    };
+import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
 
 /** The new unified grading shape (camelCase, matches baselineGradingSchema). */
 export type GradingEntry = z.infer<typeof baselineGradingSchema>;
@@ -157,7 +148,7 @@ export function toEvaluationItem(
  * MC question). A mismatch — an `mc` answer submitted against a
  * `free_text` question — is a UI bug and fails loud here.
  */
-export function splitOne(question: StoredQuestion, answer: BaselineAnswer): QuestionSplit {
+export function splitOne(question: StoredQuestion, answer: QuestionnaireAnswer): QuestionSplit {
   if (answer.kind === "mc") {
     if (question.type !== "multiple_choice") {
       throw new Error(`mc answer submitted for free_text question ${answer.id}`);
@@ -185,7 +176,7 @@ export function splitOne(question: StoredQuestion, answer: BaselineAnswer): Ques
  */
 export function buildScopingCloseLearnerInput(params: {
   readonly questions: readonly StoredQuestion[];
-  readonly answers: readonly BaselineAnswer[];
+  readonly answers: readonly QuestionnaireAnswer[];
   readonly mechanicalGradings: readonly GradingEntry[];
 }): string {
   const questionById = new Map(params.questions.map((q) => [q.id, q] as const));

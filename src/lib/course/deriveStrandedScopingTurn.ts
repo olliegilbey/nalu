@@ -1,6 +1,6 @@
 import type { CourseState } from "./getState";
 import type { ShapedClarifyAnswer } from "./shapeClarifyAnswers";
-import type { ShapedQuestionnaireAnswer } from "./shapeQuestionnaireAnswers";
+import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
 import type { V3Response } from "@/lib/types/jsonb";
 
 /**
@@ -10,7 +10,7 @@ import type { V3Response } from "@/lib/types/jsonb";
  */
 export type StrandedScopingTurn =
   | { readonly kind: "framework"; readonly responses: readonly ShapedClarifyAnswer[] }
-  | { readonly kind: "scopingClose"; readonly answers: readonly ShapedQuestionnaireAnswer[] };
+  | { readonly kind: "scopingClose"; readonly answers: readonly QuestionnaireAnswer[] };
 
 /**
  * Find the scoping Turn a reload would strand (issue #103), from server state alone.
@@ -50,7 +50,7 @@ export function deriveStrandedScopingTurn(state: CourseState): StrandedScopingTu
     );
     return {
       kind: "scopingClose",
-      answers: baseline.responses.map((r): ShapedQuestionnaireAnswer => {
+      answers: baseline.responses.map((r): QuestionnaireAnswer => {
         if (r.choice !== undefined) {
           return { id: r.questionId, kind: "mc", selected: r.choice };
         }

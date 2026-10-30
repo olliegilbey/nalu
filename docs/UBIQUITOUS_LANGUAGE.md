@@ -67,7 +67,7 @@ One of two shapes: `free_text` (with a grading rubric) or `multiple_choice` (wit
 
 ## Response
 
-The learner's reply to one Question: either a `choice` (MC option key) or a `freetext` body, never both. Distinct from MC `options`, which are the four candidate answers the model emits as part of the Question.
+The learner's reply to one Question: either a `choice` (MC option key) or a `freetext` body, never both. Distinct from MC `options`, which are the four candidate answers the model emits as part of the Question. This is the stored shape. On the wire the client sends each reply as a `QuestionnaireAnswer` (`questionnaireAnswerSchema` in `src/lib/types/questionnaireAnswer.ts`): an `mc` answer with a `selected` key, or a `freetext` answer with `text` and `fromEscape`. A **Card answer** is a list of them, one per question. The Harness turns each one into a Response.
 
 ## Harness injection
 

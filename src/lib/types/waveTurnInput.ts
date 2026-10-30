@@ -1,20 +1,5 @@
 import { z } from "zod/v4";
-import { MC_OPTION_KEYS } from "./mcOptionKey";
-
-/** One answer in a questionnaire-answers submission: a tapped MC key, or typed text. */
-const submittedAnswerSchema = z.discriminatedUnion("kind", [
-  z.object({
-    id: z.string().min(1),
-    kind: z.literal("mc"),
-    selected: z.enum(MC_OPTION_KEYS),
-  }),
-  z.object({
-    id: z.string().min(1),
-    kind: z.literal("freetext"),
-    text: z.string().min(1),
-    fromEscape: z.boolean(),
-  }),
-]);
+import { questionnaireAnswerSchema } from "./questionnaireAnswer";
 
 /** What the learner sent in one Wave turn: chat text, or answers to the open questionnaire. */
 const submitTurnPayloadSchema = z.discriminatedUnion("kind", [
@@ -22,7 +7,7 @@ const submitTurnPayloadSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("questionnaire-answers"),
     questionnaireId: z.string().min(1),
-    answers: z.array(submittedAnswerSchema).min(1),
+    answers: z.array(questionnaireAnswerSchema).min(1),
   }),
 ]);
 
@@ -43,3 +28,11 @@ export const submitTurnInputSchema = z.object({
  * One schema owns the parse and the type, so the two cannot drift (issue #124).
  */
 export type SubmitTurnPayload = z.infer<typeof submitTurnPayloadSchema>;
+
+/**
+ * The JSON body the Wave client posts to the turn route: the route's input
+ * minus its path params. `z.input`, since the client sends what the schema
+ * parses. `useWaveState` builds each request body as this type, so a body
+ * field the schema changes fails `tsc` there too (issue #220).
+ */
+export type SubmitTurnBody = Omit<z.input<typeof submitTurnInputSchema>, "courseId" | "waveNumber">;

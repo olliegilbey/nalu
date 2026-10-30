@@ -18,10 +18,10 @@ import { deriveRetryableWaveTurn } from "@/lib/course/deriveRetryableWaveTurn";
 import type { ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
 import { useCourseXp } from "./useCourseXp";
 import type { ChatEntry } from "@/lib/types/chatEntry";
-import type { ShapedQuestionnaireAnswer } from "@/lib/course/shapeQuestionnaireAnswers";
+import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
 import type { WaveState } from "@/lib/course/getWaveState";
 import type { WaveTurnResultData, WaveTurnUIMessage } from "@/lib/types/waveStream";
-import type { SubmitTurnPayload } from "@/lib/types/waveTurnInput";
+import type { SubmitTurnBody, SubmitTurnPayload } from "@/lib/types/waveTurnInput";
 
 /**
  * A failed Wave Turn whose learner entry the server saved (issue #231).
@@ -73,7 +73,7 @@ export interface UseWaveStateResult extends StreamingTurn {
   readonly waveNotFound: boolean;
   readonly submitChatText: (text: string, opts?: SubmitTurnOptions) => void;
   readonly submitQuestionnaireAnswers: (
-    answers: readonly ShapedQuestionnaireAnswer[],
+    answers: readonly QuestionnaireAnswer[],
     opts?: SubmitTurnOptions,
   ) => void;
 }
@@ -151,11 +151,15 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
       // non-production (same seam as the tRPC link — see readRequestSession).
       // Without it every dev streaming request 404s. Prod: session cookie.
       headers: devUserHeaders(),
-      // The server rebuilds context from the DB; send ONLY the payload.
-      // (messages would otherwise ship the whole transient history.)
+      // The server rebuilds context from the DB. So send ONLY the body that
+      // `sendTurn` built. The default body would also ship `messages`, the
+      // whole transient history. `sendTurn` types its body as `SubmitTurnBody`,
+      // so `tsc` checks what goes on the wire (issue #220). This transport
+      // sets no `body` of its own. Keep it that way: the AI SDK merges that
+      // body in here, and it would ship too.
       // Returning no `headers` key keeps the transport-level headers above
       // (HttpChatTransport falls back to baseHeaders when undefined).
-      prepareSendMessagesRequest: ({ body }) => ({ body: { payload: body?.["payload"] } }),
+      prepareSendMessagesRequest: ({ body }) => ({ body: body ?? {} }),
     }),
     onData: (part) => {
       if (part.type === "data-turn-result") {
@@ -215,7 +219,9 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     setFailedPayload(null);
     inFlightTurnRef.current = { payload, onError: opts?.onError };
     const text = payload.kind === "chat-text" ? payload.text : "Answers submitted";
-    void chat.sendMessage({ text }, { body: { payload } });
+    // Typed from the route's schema: `useChat`'s own `body` is a bare `object`.
+    const body: SubmitTurnBody = { payload };
+    void chat.sendMessage({ text }, { body });
   };
 
   // A failed Turn's saved entry, offered for Retry. `deriveRetryableWaveTurn`

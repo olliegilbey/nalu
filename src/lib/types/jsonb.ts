@@ -113,7 +113,7 @@ export type { BaselineClosedJsonb, BaselineJsonb } from "./jsonbBaseline";
  * Captures which concepts SM-2 scheduled for review and their last quality.
  */
 export const dueConceptSnapshotEntrySchema = z.object({
-  conceptId: z.string().uuid(),
+  conceptId: z.uuid(),
   name: z.string(),
   tier: z.number().int().min(1),
   /** Null for concepts that have never been assessed (first appearance). */
@@ -170,7 +170,7 @@ export const seedSourceSchema = z.discriminatedUnion("kind", [
   /** Wave N>1: seeded from the prior Wave's emitted blueprint. */
   z.object({
     kind: z.literal("prior_blueprint"),
-    priorWaveId: z.string().uuid(),
+    priorWaveId: z.uuid(),
     blueprint: blueprintSchema,
   }),
 ]);
