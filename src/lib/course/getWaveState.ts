@@ -49,7 +49,6 @@ export interface WaveState {
   readonly topic: string;
   readonly waveId: string;
   readonly waveNumber: number;
-  readonly currentTier: number;
   readonly status: "active" | "closed";
   readonly turnsRemaining: number;
   /** Turns in this Wave: `WAVE.turnCount`, the budget the Harness enforces. */
@@ -162,7 +161,6 @@ export async function getWaveState(params: GetWaveStateParams): Promise<WaveStat
     topic: course.topic,
     waveId: wave.id,
     waveNumber: wave.waveNumber,
-    currentTier: wave.tier,
     status: wireStatus,
     turnsRemaining,
     turnBudget: WAVE.turnCount,

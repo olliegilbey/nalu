@@ -102,9 +102,6 @@ export const MERGED: ScoreBaselineResult = {
   startingTier: 2,
   // What `scoreBaseline` computes: one q5 grading at tier 2 is 2×10×1.5.
   totalXp: 30,
-  // This fixture's only grading is free-text (no mechanical MC), so the
-  // free-text subtotal equals the total.
-  freeTextXp: 30,
 };
 
 /**

@@ -4,10 +4,10 @@
  * WHY this exists: Bun + jsdom in this repo exposes a `window.localStorage`
  * object whose methods (`getItem`/`setItem`/`clear`/...) are all `undefined` —
  * Bun's experimental native `--localstorage-file` stub shadows jsdom's working
- * implementation. Hooks that read/write storage (`useCourseXp`, and anything
- * that depends on it like `useWaveState`) guard with `try/catch` and survive
- * the broken stub gracefully, but a test that asserts XP *persistence* or
- * *accumulation* needs a real working Storage. This module provides one.
+ * implementation. Hooks that read/write storage (the Composer's answer buffer
+ * in `useQuestionnaire`) guard with `try/catch` and survive the broken stub
+ * gracefully, but a test that asserts a buffer restore, or seeds a stored key,
+ * needs a real working Storage. This module provides one.
  *
  * `installMemoryStorage()` installs a fresh empty instance per call, so calling
  * it in a `beforeEach` both fixes the stub and resets state between tests — no

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
 import { isNotFoundError } from "@/lib/errors";
@@ -13,8 +13,9 @@ import {
 } from "@/lib/course/deriveTurnResultEffects";
 import type { StreamingTurn } from "@/lib/course/deriveStreamingTurn";
 import { deriveRetryableWaveTurn } from "@/lib/course/deriveRetryableWaveTurn";
+import { deriveXpTick } from "@/lib/course/deriveXpTick";
 import type { ActiveQuestionnaire } from "@/lib/course/adaptQuestionnaire";
-import { useCourseXp } from "./useCourseXp";
+import { useXpBadge } from "./useXpBadge";
 import { useWaveTurnChat, type SubmitTurnOptions } from "./useWaveTurnChat";
 import type { ChatEntry } from "@/lib/types/chatEntry";
 import type { QuestionnaireAnswer } from "@/lib/types/questionnaireAnswer";
@@ -33,8 +34,8 @@ export interface FailedWaveTurn {
 }
 
 /**
- * Return shape of {@link useWaveState}; chat entries, active questionnaire, XP
- * counters, submit handlers, and the in-flight {@link StreamingTurn}.
+ * Return shape of {@link useWaveState}; chat entries, active questionnaire, the
+ * XP badge, submit handlers, and the in-flight {@link StreamingTurn}.
  */
 export interface UseWaveStateResult extends StreamingTurn {
   readonly chatEntries: readonly ChatEntry[];
@@ -51,20 +52,16 @@ export interface UseWaveStateResult extends StreamingTurn {
   readonly status: WaveState["status"] | null;
   /** Course topic — drives the wave header title. Null until the query resolves. */
   readonly topic: string | null;
-  /** Wave tier — fallback for client-side MC XP. Null until the query resolves. */
-  readonly currentTier: number | null;
   /** Turns left in the Wave, from `wave.getState`. Null until the query resolves. */
   readonly turnsRemaining: number | null;
   /** Turns in the Wave, from `wave.getState`. Null until the query resolves. */
   readonly turnBudget: number | null;
-  /** Running XP total for the course (display counter). */
+  /** The server's course total (`totalXp`), shown in the header badge. */
   readonly xp: number;
-  /** Bumped on each XP gain — drives the header badge animation. */
+  /** Bumped on each rise of the total — drives the header badge animation. */
   readonly xpPulseKey: number;
-  /** Amount of the most recent XP gain. */
+  /** Amount of the most recent rise. */
   readonly xpGainAmount: number;
-  /** Records exact MC XP from a correct answer. Wired to the Composer. */
-  readonly awardMcXp: (amount: number) => void;
   readonly isPending: boolean;
   /** Non-null while a failed Turn's saved entry awaits a learner Retry. */
   readonly failedTurn: FailedWaveTurn | null;
@@ -84,11 +81,11 @@ export interface UseWaveStateResult extends StreamingTurn {
  * in-flight turn over `useChat`; committed entries render from
  * `wave.getState` → `deriveWaveChatEntries`. This hook composes the two.
  *
- * Result `kind` branches (delivered as a transient `data-turn-result` part):
- * - `mid-turn` → sum server-graded free-text XP into the badge counter.
- * - `close-turn` → store `closeResult` so the page can render the move-on CTA;
- *   add completion XP + final-turn free-text XP to the badge, fire the tier-up
- *   toast if a tier advanced.
+ * Each `data-turn-result` part (transient) patches the cached Wave state's
+ * `totalXp` with the result's, so the badge ticks when the Turn lands; the
+ * refetch after the Turn then replaces it. The client computes no XP.
+ * A `close-turn` result also stores `closeResult`, so the page can render the
+ * move-on CTA, and fires the tier-up toast if a tier advanced.
  *
  * A failed Turn whose learner entry the server saved lands in `failedTurn`
  * (`deriveRetryableWaveTurn`). Its Retry re-sends the same payload, so the
@@ -99,10 +96,12 @@ export interface UseWaveStateResult extends StreamingTurn {
  */
 export function useWaveState(courseId: string, waveNumber: number): UseWaveStateResult {
   const trpc = useTRPC();
-  const courseXp = useCourseXp(courseId);
+  const qc = useQueryClient();
 
   const stateOpts = trpc.wave.getState.queryOptions({ courseId, waveNumber });
   const state = useQuery(stateOpts);
+  // The badge reads the one cached total: getState's, or a turn result's patch.
+  const badge = useXpBadge(state.data?.totalXp);
 
   // closeResult lives in component-local state because the wire's `getState`
   // never returns a close-turn payload (see WaveState TSDoc). We capture it
@@ -110,12 +109,23 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
   const [closeResult, setCloseResult] = useState<WaveCloseResult | null>(null);
 
   // Decisions live in `deriveTurnResultEffects` (pure); the hook applies the
-  // side-effects in a fixed order: capture the close result, fold XP into the
-  // badge, then fire the tier-up toast. `addXp` runs even for a 0 gain.
+  // side-effects in a fixed order: capture the close result, arm the tick's
+  // sound, patch the server total into the cache, then fire the tier-up toast.
+  // The sound is armed first, so the rise the patch causes can play it.
+  // It arms only when this result raises the cached total. A replayed result
+  // (no rise) would otherwise leave it armed for a later, unrelated rise.
+  // Clearing it in `onFinish` instead would race: onFinish runs before React
+  // renders the patch's rise, so it would silence a legitimate sound.
   const handleTurnResult = (result: WaveTurnResultData) => {
     const effects = deriveTurnResultEffects(result);
     if (effects.closeResult) setCloseResult(effects.closeResult);
-    courseXp.addXp(effects.xpGain);
+    const cachedTotal = qc.getQueryData(stateOpts.queryKey)?.totalXp;
+    badge.soundOnNextRise(
+      effects.typedAnswerEarnedXp && deriveXpTick(cachedTotal, result.totalXp).pulse,
+    );
+    qc.setQueryData(stateOpts.queryKey, (prev) =>
+      prev ? { ...prev, totalXp: result.totalXp } : prev,
+    );
     if (effects.tierUp !== undefined) {
       toast.success(`Tier up → ${effects.tierUp}`, { duration: 3000 });
     }
@@ -181,15 +191,13 @@ export function useWaveState(courseId: string, waveNumber: number): UseWaveState
     // Server-authoritative status; null until the query resolves.
     status: state.data?.status ?? null,
     topic: state.data?.topic ?? null,
-    currentTier: state.data?.currentTier ?? null,
     // Turn counts for the progress strip. They refetch with the state after
     // each landed Turn, so the strip advances when the Turn lands.
     turnsRemaining: state.data?.turnsRemaining ?? null,
     turnBudget: state.data?.turnBudget ?? null,
-    xp: courseXp.xp,
-    xpPulseKey: courseXp.pulseKey,
-    xpGainAmount: courseXp.gainAmount,
-    awardMcXp: courseXp.addXp,
+    xp: badge.xp,
+    xpPulseKey: badge.pulseKey,
+    xpGainAmount: badge.gainAmount,
     isPending,
     failedTurn,
     waveNotFound: isNotFoundError(state.error),

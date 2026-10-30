@@ -42,13 +42,11 @@ export function WaveSession({
     closeResult,
     status,
     topic,
-    currentTier,
     turnsRemaining,
     turnBudget,
     xp,
     xpPulseKey,
     xpGainAmount,
-    awardMcXp,
     isPending,
     failedTurn,
     waveNotFound,
@@ -123,8 +121,6 @@ export function WaveSession({
           // Composer re-inits when the committed key arrives (issue #118).
           questions={card ? [...card.questions] : null}
           persistKey={card?.persistKey}
-          waveTier={currentTier ?? undefined}
-          onCorrectAnswer={awardMcXp}
           moveOn={moveOn}
           onComplete={composer.completeQuestionnaire}
         />

@@ -27,14 +27,12 @@ describe("adaptOpenQuestion", () => {
         prompt: "What is 2+2?",
         options: { A: "3", B: "4", C: "5", D: "6" },
         correctEnc: encodeCorrect("b1", KEY_TO_INDEX.B),
-        tier: 1,
       }),
     ).toEqual({
       id: "b1",
       prompt: "What is 2+2?",
       options: ["3", "4", "5", "6"],
       correctIndex: 1,
-      tier: 1,
     });
   });
 
@@ -61,19 +59,7 @@ describe("adaptOpenQuestion", () => {
 
   it("adapts free-text questions to ChoiceQuestion with empty options array", () => {
     expect(
-      adaptOpenQuestion({ id: "f1", type: "free_text", prompt: "Why are you learning?", tier: 4 }),
-    ).toEqual({ id: "f1", prompt: "Why are you learning?", options: [], tier: 4 });
-  });
-
-  it("carries the optional tier through", () => {
-    const adapted = adaptOpenQuestion({
-      id: "q1",
-      type: "multiple_choice",
-      prompt: "?",
-      options: { A: "1", B: "2", C: "3", D: "4" },
-      correctEnc: "unused",
-      tier: 2,
-    });
-    expect(adapted.tier).toBe(2);
+      adaptOpenQuestion({ id: "f1", type: "free_text", prompt: "Why are you learning?" }),
+    ).toEqual({ id: "f1", prompt: "Why are you learning?", options: [] });
   });
 });

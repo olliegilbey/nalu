@@ -29,14 +29,6 @@ export interface ScoreBaselineResult {
   /** Tier Wave 1 starts at, from `determineStartingTier`. Baseline XP is scored at it. */
   readonly startingTier: number;
   readonly totalXp: number;
-  /**
-   * XP subtotal for free-text (LLM-graded) baseline questions only — i.e.
-   * `totalXp` minus the mechanical-MC contribution. The client needs this
-   * separately: correct MC answers are scored instantly client-side
-   * (`calculateMcXp`), so the post-close badge must add ONLY the free-text
-   * portion or MC XP would be counted twice.
-   */
-  readonly freeTextXp: number;
 }
 
 /**
@@ -108,15 +100,5 @@ export function scoreBaseline(params: ScoreBaselineParams): ScoreBaselineResult 
   // repair recomputes the same sum from the stored gradings.
   const totalXp = calculateBaselineXp(startingTier, merged);
 
-  // Free-text subtotal: same XP formula, but restricted to questions with no
-  // mechanical (MC-click) grading. A question is free-text iff its id is not
-  // in `mechanicalGradings` — this also correctly includes a freetext-escape
-  // answer on an MC question, which is LLM-graded rather than mechanical.
-  const mechanicalQids = new Set(params.mechanicalGradings.map((g) => g.questionId));
-  const freeTextXp = calculateBaselineXp(
-    startingTier,
-    merged.filter((g) => !mechanicalQids.has(g.questionId)),
-  );
-
-  return { gradings: merged, startingTier, totalXp, freeTextXp };
+  return { gradings: merged, startingTier, totalXp };
 }

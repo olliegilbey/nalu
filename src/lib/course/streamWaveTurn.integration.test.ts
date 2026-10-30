@@ -566,15 +566,15 @@ describe("streamWaveTurn (integration)", () => {
       expect(inputAvailable["toolCallId"]).toBe("c1");
       expect(inputAvailable["toolName"]).toBe("presentQuestionnaire");
       // The forwarded input is the allowlist-redacted projection: grading
-      // keys (`correct`, `freetextRubric`) and conceptName never cross the wire.
-      expect(inputAvailable["input"]).toEqual({
+      // keys (`correct`, `freetextRubric`), conceptName and tier never cross
+      // the wire. `toStrictEqual`, so a forwarded `tier: undefined` fails too.
+      expect(inputAvailable["input"]).toStrictEqual({
         questions: [
           {
             id: "q1",
             type: "multiple_choice",
             prompt: "Which binding moves?",
             options: { A: "let", B: "const", C: "both", D: "neither" },
-            tier: 1,
           },
         ],
       });

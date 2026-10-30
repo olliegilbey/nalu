@@ -33,9 +33,8 @@ export function calculateXP(tier: number, qualityScore: number): number {
  *
  *   XP = correct ? round(tier × XP.basePerTier × XP.mcCorrectMultiplier) : 0
  *
- * Used by the Wave instant-toast path (correctness decoded client-side from
- * `correctEnc`) AND by the server-side reconciliation in `applyAssessmentGrading`.
- * Both sides must agree — discrepancies log a warning and trust the server.
+ * Server-only: `applyAssessmentGrading` calls it. The client computes no XP;
+ * its header badge shows the server's `totalXp` (issue #240).
  *
  * `mcCorrectMultiplier = 1` makes this equivalent to a free-text q=4 award
  * (correct and clear). Free-text retains the q=5 ceiling so a learner who

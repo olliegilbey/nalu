@@ -147,7 +147,6 @@ describe("deriveChatEntries", () => {
               prompt: "What is 2+2?",
               options: { A: "3", B: "4", C: "5", D: "6" },
               correctEnc: "unused",
-              tier: 1,
             },
           ],
           responses: [{ questionId: "b1", choice: "B" }],
