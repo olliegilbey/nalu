@@ -104,7 +104,9 @@ describe("wave.saveRating", () => {
       const { courseId } = await seedClosedWave();
       const caller = appRouter.createCaller({ userId: LEARNER_A });
       await caller.wave.saveRating({ courseId, waveNumber: 1, overall: 2, difficulty: 3 });
-      const [first] = await ratingRows();
+      // Backdate the first save, so a stale `rated_at` cannot pass as "moved".
+      const earlier = new Date("2020-01-01T00:00:00Z");
+      await db.update(waveRatings).set({ ratedAt: earlier });
 
       const saved = await caller.wave.saveRating({ courseId, waveNumber: 1, overall: 5 });
 
@@ -114,7 +116,7 @@ describe("wave.saveRating", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ overall: 5, difficulty: null });
       // `rated_at` moves to the latest save.
-      expect(rows[0]!.ratedAt.getTime()).toBeGreaterThanOrEqual(first!.ratedAt.getTime());
+      expect(rows[0]!.ratedAt.getTime()).toBeGreaterThan(earlier.getTime());
     });
   });
 
@@ -152,6 +154,23 @@ describe("wave.saveRating", () => {
 
       // The same message as an unknown Wave: it never discloses A's course.
       await expect(refusal).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: `wave 1 not found for course ${courseId}`,
+      });
+      expect(await ratingRows()).toHaveLength(0);
+    });
+  });
+
+  it("refuses another learner's open Wave with NOT_FOUND, not PRECONDITION_FAILED", async () => {
+    await withTestDb(async () => {
+      const { courseId } = await seedCourse();
+      const learnerB = appRouter.createCaller({ userId: LEARNER_B });
+
+      // Ownership runs before the closed check. Otherwise B would learn that
+      // A's course exists and holds an open Wave.
+      await expect(
+        learnerB.wave.saveRating({ courseId, waveNumber: 1, overall: 4 }),
+      ).rejects.toMatchObject({
         code: "NOT_FOUND",
         message: `wave 1 not found for course ${courseId}`,
       });
