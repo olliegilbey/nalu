@@ -4,7 +4,7 @@ Thin interceptor between User and LLM. All logic lives in `src/lib/`.
 
 - Every LLM-calling procedure: Zod-validate input → call the relevant function in `src/lib/course/` (which owns prompt assembly, LLM dispatch, Zod validation of the reply, and persistence) → return a typed payload.
 - No imports from `src/components/`. API layer is UI-independent.
-- Split by turn if a file exceeds 150 lines (e.g. `course/clarify.ts`, `course/framework.ts`, `course/submitBaseline.ts`).
+- Split by turn if a file exceeds 150 lines (e.g. `course/clarify.ts`, `course/frameworkAndBaseline.ts`, `course/submitBaseline.ts`).
 
 Every procedure returns a typed, hand-shaped payload, never raw LLM text. No payload carries a plaintext answer key: `correct` → `correctEnc`, `freetextRubric` dropped. Every question goes through `redactQuestion` (`src/lib/course/redactQuestionnaire.ts`): `wave.getState` via `redactWaveChatLog`, and `course.clarify`, `course.generateFrameworkAndBaseline` and `course.getState` directly. `course.submitBaseline` takes only the learner's picks and grades against the stored keys. The `nextStage` field tells the client which procedure to call next; the client maintains stage-state and dispatches accordingly.
 

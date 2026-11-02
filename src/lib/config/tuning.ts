@@ -106,7 +106,7 @@ export const PROGRESSION = {
 
 /**
  * Scoping flow tunables: bounds for input validation and the retry policy on
- * the clarify → framework → baseline pipeline.
+ * the clarify → framework-and-baseline pipeline.
  *
  * `maxParseRetries` is *retries* after the first attempt — total = retries + 1.
  * Low by design: with well-authored ValidationGateFailure messages, recovery
