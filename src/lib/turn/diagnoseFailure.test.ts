@@ -24,15 +24,22 @@ const emptyString = (key: string) => ({
 });
 
 // Minimal right-stage bodies: each carries its stage's top-level keys.
-const frameworkBody = {
-  userMessage: "hi",
-  tiers: [{ number: 1, name: "a", description: "d", exampleConcepts: ["x"] }],
-  estimatedStartingTier: 1,
-  baselineScopeTiers: [1],
-};
-const baselineBody = {
+const clarifyBody = {
   userMessage: "hi",
   questions: {
+    questions: [{ id: "q1", type: "free_text", prompt: "p", freetextRubric: "no grading" }],
+  },
+};
+// The merged scoping Turn (issue #15): the framework, then the flat baseline.
+const frameworkAndBaselineBody = {
+  framework: {
+    userMessage: "hi",
+    tiers: [{ number: 1, name: "a", description: "d", exampleConcepts: ["x"] }],
+    estimatedStartingTier: 1,
+    baselineScopeTiers: [1],
+  },
+  baseline: {
+    userMessage: "hi",
     questions: [
       {
         id: "b1",
@@ -81,14 +88,16 @@ const rawWithout = (body: Record<string, unknown>, ...dropped: readonly string[]
 describe("diagnoseFailure (JSON contract)", () => {
   it("calls out a non-JSON response", () => {
     const err = fail("Your previous response did not parse as JSON.");
-    expect(diagnoseFailure(err, "<framework>...</framework>", "framework")).toMatch(/json/i);
+    expect(diagnoseFailure(err, "<framework>...</framework>", "framework-and-baseline")).toMatch(
+      /json/i,
+    );
   });
 
   // Every stage requires `userMessage`. A body missing it is still this
   // turn's body, so it must not read as a wrong turn (issue #130).
   it.each([
-    ["framework", frameworkBody],
-    ["baseline", baselineBody],
+    ["clarify", clarifyBody],
+    ["scoping-close", scopingCloseBody],
   ] as const)("calls out a missing userMessage on a %s body", (label, body) => {
     const err = failWith(missing("userMessage", "string"));
     const out = diagnoseFailure(err, rawWithout(body, "userMessage"), label);
@@ -96,10 +105,23 @@ describe("diagnoseFailure (JSON contract)", () => {
     expect(out).not.toMatch(/wrong turn/);
   });
 
-  it("notes a cross-stage payload (framework keys in a baseline turn)", () => {
+  // The merged scoping Turn nests a `userMessage` in each half (issue #15).
+  it("calls out a missing nested userMessage on a framework-and-baseline body", () => {
+    const err = failWith({
+      ...missing("userMessage", "string"),
+      path: ["baseline", "userMessage"],
+    });
+    const { userMessage: _dropped, ...baseline } = frameworkAndBaselineBody.baseline;
+    const raw = JSON.stringify({ ...frameworkAndBaselineBody, baseline });
+    const out = diagnoseFailure(err, raw, "framework-and-baseline");
+    expect(out).toMatch(/`baseline\.userMessage`.*every turn must include/);
+    expect(out).not.toMatch(/wrong turn/);
+  });
+
+  it("notes a cross-stage payload (a framework-and-baseline body in a clarify turn)", () => {
     const err = failWith(missing("questions", "object"));
-    const out = diagnoseFailure(err, rawWithout(frameworkBody), "baseline");
-    expect(out).toMatch(/framework stage .* wrong turn/);
+    const out = diagnoseFailure(err, rawWithout(frameworkAndBaselineBody), "clarify");
+    expect(out).toMatch(/framework-and-baseline stage .* wrong turn/);
   });
 
   // The Wave close's `conceptUpdates` is the one key the scoping close lacks,
@@ -117,29 +139,36 @@ describe("diagnoseFailure (JSON contract)", () => {
     const err = failWith({
       expected: "string",
       code: "invalid_type",
-      path: ["questions", "questions", 0, "prompt"],
+      path: ["baseline", "questions", 0, "prompt"],
       message: "Invalid input: expected string, received undefined",
     });
-    const out = diagnoseFailure(err, rawWithout(baselineBody), "baseline");
-    expect(out).toContain("questions.questions.0.prompt: Invalid input");
+    const out = diagnoseFailure(
+      err,
+      rawWithout(frameworkAndBaselineBody),
+      "framework-and-baseline",
+    );
+    expect(out).toContain("baseline.questions.0.prompt: Invalid input");
     expect(out).not.toMatch(/wrong turn/);
   });
 
-  it("lists a mistyped top-level key on a right-stage framework body", () => {
+  it("lists a mistyped framework key on a right-stage framework-and-baseline body", () => {
     const err = failWith({
       expected: "number",
       code: "invalid_type",
-      path: ["estimatedStartingTier"],
+      path: ["framework", "estimatedStartingTier"],
       message: "Invalid input: expected number, received string",
     });
-    const raw = JSON.stringify({ ...frameworkBody, estimatedStartingTier: "1" });
-    const out = diagnoseFailure(err, raw, "framework");
+    const raw = JSON.stringify({
+      ...frameworkAndBaselineBody,
+      framework: { ...frameworkAndBaselineBody.framework, estimatedStartingTier: "1" },
+    });
+    const out = diagnoseFailure(err, raw, "framework-and-baseline");
     expect(out).toContain("estimatedStartingTier: Invalid input: expected number");
     expect(out).not.toMatch(/wrong turn/);
   });
 
   it.each([
-    // A close body also matches three baseline keys; it must not read as one.
+    // A close body also matches three framework-and-baseline keys; it must not read as one.
     ["scoping-close", "summary", "string", scopingCloseBody],
     ["wave-close", "summary", "string", waveCloseBody],
     // Ties the scoping-close signature on the shared close keys.
@@ -168,7 +197,7 @@ describe("diagnoseFailure (JSON contract)", () => {
   // A label with no stage signature cannot name the expected stage.
   it("lists the issues when the label names no known stage", () => {
     const err = failWith(missing("questions", "object"));
-    const out = diagnoseFailure(err, rawWithout(frameworkBody), "scoping");
+    const out = diagnoseFailure(err, rawWithout(frameworkAndBaselineBody), "scoping");
     expect(out).toContain("questions: Invalid input");
     expect(out).not.toMatch(/wrong turn/);
   });
@@ -179,18 +208,22 @@ describe("diagnoseFailure (JSON contract)", () => {
   it("names the broken rule when only a refine failed on a well-formed body", () => {
     const err = failWith({
       code: "custom",
-      path: ["questions", "questions", 6, "tier"],
-      message: "question b7 tier 3 is outside the requested scope [1, 2]",
+      path: ["baseline", "questions", 6, "tier"],
+      message: "question b7 tier 3 is outside baselineScopeTiers [1, 2]",
     });
-    const out = diagnoseFailure(err, rawWithout(baselineBody), "baseline");
+    const out = diagnoseFailure(
+      err,
+      rawWithout(frameworkAndBaselineBody),
+      "framework-and-baseline",
+    );
     expect(out).toContain(
-      "questions.questions.6.tier: question b7 tier 3 is outside the requested scope [1, 2]",
+      "baseline.questions.6.tier: question b7 tier 3 is outside baselineScopeTiers [1, 2]",
     );
     expect(out).not.toMatch(/wrong turn/);
   });
 
   it("falls back to a generic message when the detail is no issue list", () => {
     const err = fail("something else");
-    expect(diagnoseFailure(err, '{"x":"y"}', "framework")).toMatch(/gate .* tripped/);
+    expect(diagnoseFailure(err, '{"x":"y"}', "framework-and-baseline")).toMatch(/gate .* tripped/);
   });
 });

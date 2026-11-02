@@ -81,7 +81,8 @@ export function redactScopingQuestionnaire(
 
 /**
  * Client-safe payload of a clarify or baseline Turn, as `course.clarify` and
- * `course.generateBaseline` return it. Keeps the model's nesting.
+ * `course.generateFrameworkAndBaseline` return it. Keeps clarify's wire nesting;
+ * the baseline wire is flat, so its caller wraps the questions.
  */
 export interface QuestionnaireTurnForClient {
   readonly userMessage: string;

@@ -29,14 +29,13 @@ type DrizzleClient = ReturnType<typeof drizzle<typeof schema>>;
 
 /**
  * Turn-index → step label for scoping. Matches the fixed order
- * clarify(0) → framework(1) → baseline(2) → close(3). Reused for the
+ * clarify(0) → framework-and-baseline(1) → close(2). Reused for the
  * retry-count summary line.
  */
 const SCOPING_STEP_BY_TURN: Readonly<Record<number, string>> = {
   0: "clarify",
-  1: "framework",
-  2: "baseline",
-  3: "close",
+  1: "framework-and-baseline",
+  2: "close",
 };
 
 /** Args for {@link emitSmokeFinalSnapshot}; identifies the course to reconstruct. */

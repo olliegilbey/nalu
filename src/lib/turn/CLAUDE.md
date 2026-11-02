@@ -125,7 +125,7 @@ success to a one-line ✓ summary and only flushes the prompt/response
 trail on failure. Prompt and response bodies are uncolored (raw bytes);
 status, diagnosis, and retry directives use ANSI color when stderr is a
 TTY and `NO_COLOR` is unset. Callers tag their turns with `label`
-(`"clarify"`, `"framework"`, `"baseline"`, `"scoping-close"`,
+(`"clarify"`, `"framework-and-baseline"`, `"scoping-close"`,
 `"wave-close"`) and may pass a `successSummary` projection
 for the ✓ line.
 

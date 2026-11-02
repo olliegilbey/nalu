@@ -63,7 +63,7 @@ const TWO_TIER_GRADINGS: CloseTurnBase["gradings"] = [
  * the way production code will observe them.
  *
  * Why an integration test for the orchestrator (vs unit-style mocking of
- * every dep, à la `generateBaseline.test.ts`): `submitBaseline` is the
+ * every dep, à la `generateFrameworkAndBaseline.test.ts`): `submitBaseline` is the
  * keystone that proves the persist transaction works end-to-end from the
  * orchestrator's call site, including the cross-task fix to
  * `submitBaseline.persist.ts` (userMessage overwrite on close). Mocking the

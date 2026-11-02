@@ -63,8 +63,8 @@ export interface ExecuteTurnParams<T> {
   readonly responseSchemaName?: string;
   /**
    * Optional human label for live-smoke observability (`CEREBRAS_LIVE=1`).
-   * Names the per-turn stage in the banner — e.g. "clarify", "framework",
-   * "baseline". Unused in production; falls back to `seed.kind`.
+   * Names the per-turn stage in the banner — e.g. "clarify",
+   * "framework-and-baseline". Unused in production; falls back to `seed.kind`.
    */
   readonly label?: string;
   /**

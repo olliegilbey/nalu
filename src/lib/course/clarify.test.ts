@@ -75,7 +75,7 @@ describe("clarify", () => {
     // clarification is the client projection of the clarify Turn.
     expect(out.clarification.questions.questions).toHaveLength(2);
     expect(out.clarification.questions.questions[0]?.prompt).toBe("What is your goal?");
-    expect(out.nextStage).toBe("framework");
+    expect(out.nextStage).toBe("frameworkAndBaseline");
     // Persistence called with the JSONB shape (userMessage + questions + empty responses).
     expect(updateCourseScopingState).toHaveBeenCalledWith(
       COURSE.id,

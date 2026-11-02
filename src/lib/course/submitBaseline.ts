@@ -55,7 +55,7 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
   // Idempotent replay: already-active course returns the persisted payload
   // without re-running the LLM. `baseline` is typed `unknown` on the row but
   // `courseRowGuard` has Zod-validated it through `baselineJsonbSchema`, so
-  // the cast is safe at this trust boundary (same pattern as generateBaseline).
+  // the cast is safe at this trust boundary (same pattern as generateFrameworkAndBaseline).
   if (course.status === "active") {
     return buildCachedPayload(course.id, course.baseline as BaselineJsonb | null);
   }
@@ -157,8 +157,8 @@ export async function submitBaseline(params: SubmitBaselineParams): Promise<Subm
 
   // Persist the learner's answers on the baseline row before calling the LLM,
   // so a retry does not lose them and `deriveChatEntries` can render the user-baseline
-  // bubble from `baseline.responses`. Mirrors generateFramework.ts:86-92.
-  // Idempotent: overwrites the empty `responses: []` initialised by generateBaseline.
+  // bubble from `baseline.responses`. Mirrors generateFrameworkAndBaseline.ts, which saves the clarify answers.
+  // Idempotent: overwrites the empty `responses: []` initialised by generateFrameworkAndBaseline.
   // The same Responses feed the issue #22 debug log after the close turn.
   const responses = params.answers.map((a) =>
     a.kind === "mc"

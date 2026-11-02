@@ -6,7 +6,8 @@ import type { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
  *
  * Under JSON-everywhere all parse failures fall into a small set:
  *   1. Non-JSON response — directive starts with "Your previous response did not parse as JSON".
- *   2. Missing `userMessage` — Zod reports `invalid_type` at `["userMessage"]`.
+ *   2. Missing `userMessage` — Zod reports `invalid_type` at `["userMessage"]`,
+ *      or at `["framework" | "baseline", "userMessage"]` on the merged scoping Turn.
  *   3. Refine failure — the shape parsed; only `.refine` / `.superRefine` rules broke.
  *   4. Wrong stage payload — the body's keys fit another stage better than this turn's.
  *   5. Shape failure — list the Zod issues; any other detail gets a short gloss.
@@ -30,9 +31,9 @@ const zodIssueListSchema = z
 // `includes` check and avoids chained string ops that trip typed-lint rules.
 // The scoping close emits only the close-turn base, so its signature is the
 // base's keys, the blueprint's included. A close body also matches three of
-// the baseline's keys (`conceptName`, `tier`, and `"correct"` as a verdict),
-// so the blueprint keys keep a close body with one broken key ahead of the
-// baseline. The Wave close adds `conceptUpdates`: a body with it fits the
+// the framework-and-baseline keys (`conceptName`, `tier`, and `"correct"` as a
+// verdict), so the blueprint keys keep a close body with one broken key ahead
+// of that Turn. The Wave close adds `conceptUpdates`: a body with it fits the
 // Wave close better. A body without it ties the two, and a tie never claims
 // a wrong turn.
 const CLOSE_TURN_KEYS = [
@@ -45,8 +46,16 @@ const CLOSE_TURN_KEYS = [
 ] as const;
 const STAGE_KEY_SIGNATURES = {
   clarify: ["questions", "freetextRubric"],
-  framework: ["tiers", "estimatedStartingTier", "baselineScopeTiers"],
-  baseline: ["questions", "conceptName", "tier", "correct"],
+  // One Turn emits both artifacts (issue #15): the framework's keys, then the baseline's.
+  "framework-and-baseline": [
+    "tiers",
+    "estimatedStartingTier",
+    "baselineScopeTiers",
+    "questions",
+    "conceptName",
+    "tier",
+    "correct",
+  ],
   "scoping-close": CLOSE_TURN_KEYS,
   "wave-close": [...CLOSE_TURN_KEYS, "conceptUpdates"],
 } as const satisfies Record<string, readonly string[]>;
@@ -117,13 +126,13 @@ export function diagnoseFailure(err: ValidationGateFailure, raw: string, label: 
     .join("; ");
 
   // (2) Missing userMessage — every stage requires it, so it says nothing
-  // about which stage the body is.
-  const userMessageBroken = issues.data.some(
-    (issue) =>
-      issue.code === "invalid_type" && issue.path.length === 1 && issue.path[0] === "userMessage",
+  // about which stage the body is. The merged scoping Turn nests one in each
+  // half, so match on the last path segment and name the full path.
+  const missingUserMessage = issues.data.find(
+    (issue) => issue.code === "invalid_type" && issue.path.at(-1) === "userMessage",
   );
-  if (userMessageBroken) {
-    return "response is missing the required `userMessage` field — every turn must include it.";
+  if (missingUserMessage) {
+    return `response is missing the required \`${missingUserMessage.path.join(".")}\` field — every turn must include it.`;
   }
 
   // (3) Refine failure. Zod emits `custom` issues only from refines, and a

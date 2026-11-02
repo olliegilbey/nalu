@@ -158,10 +158,12 @@ describe.skipIf(!LIVE)("Wave teaching loop — live Cerebras", () => {
         questionId: q.id,
         freetext: TOPIC.answerPool[i % TOPIC.answerPool.length]!,
       }));
-      const { framework } = await caller.course.generateFramework({ courseId, responses });
+      const { framework, baseline } = await caller.course.generateFrameworkAndBaseline({
+        courseId,
+        responses,
+      });
       assertFrameworkStructural(framework);
 
-      const { baseline } = await caller.course.generateBaseline({ courseId });
       // The wire drops concept names and rubrics; the JSONB keeps them. So
       // the structural check reads the persisted baseline. Free text answers
       // correctly from the persisted rubric (issue #22), so the scoping-close

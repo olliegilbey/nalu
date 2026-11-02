@@ -28,7 +28,7 @@ The learner's free-text learning preferences, such as "I learn best through anal
 
 ## Baseline
 
-The 7-9 assessment questions generated after the framework is confirmed. Mix of multiple choice (graded mechanically by `submitBaseline`, no LLM) and free-text (graded by a single batched LLM call inside `submitBaseline`). Its per-tier results set the learner's starting tier: `determineStartingTier` in `src/lib/scoring/startingTier.ts`, with the threshold `BASELINE.tierMasteryRatio`. The model grades answers; it never picks the tier.
+The 7-9 assessment questions, generated with the framework in one Turn (`generateFrameworkAndBaseline`) and drawn from its baseline-scope tiers. Mix of multiple choice (graded mechanically by `submitBaseline`, no LLM) and free-text (graded by a single batched LLM call inside `submitBaseline`). Its per-tier results set the learner's starting tier: `determineStartingTier` in `src/lib/scoring/startingTier.ts`, with the threshold `BASELINE.tierMasteryRatio`. The model grades answers; it never picks the tier.
 
 ## Concept
 
@@ -40,7 +40,7 @@ The conversation state sent to the LLM on each turn — the entire message list 
 
 Nalu has distinct phases, each with its own Context:
 
-- **Scoping context** — one Context for the entire scoping phase (clarify → framework → baseline → grade). `renderScopingSystem` renders its system prompt; each scoping stage appends user/assistant messages to the growing prefix.
+- **Scoping context** — one Context for the entire scoping phase (clarify → framework and baseline → grade). `renderScopingSystem` renders its system prompt; each scoping stage appends user/assistant messages to the growing prefix.
 - **Wave context** — a fresh Context per Wave. `renderTeachingSystem` renders its system prompt from the Wave row: framework snapshot, tier, custom-instructions snapshot, due-concepts snapshot, and the seeding _blueprint_ (`waves.seed_source`). It also renders the course summary. Wave 1's blueprint comes from the scoping close turn. Each later Wave's blueprint comes from the previous Wave's final turn.
 
 Within a phase the prefix is byte-stable (keeps prompt cache warm). At phase boundaries the closing Context stays in the DB but never replays into future prompts. The DB stores Contexts as a row-per-message table; no prompt-from-components reassembly happens per turn.
@@ -55,11 +55,11 @@ The harness-built `role: user` message sent to the LLM each turn. Wraps the Lear
 
 ## Per-stage schema
 
-The Zod schema describing the LLM's expected output for one scoping stage (clarify, framework, baseline, scoping close). Single source of truth: produces the wire schema (Cerebras `response_format`), the runtime validator, and — via `.describe()` annotations rendered into the decoder's context — the model's own field-level guidance.
+The Zod schema describing the LLM's expected output for one scoping stage (clarify, framework and baseline, scoping close). Single source of truth: produces the wire schema (Cerebras `response_format`), the runtime validator, and — via `.describe()` annotations rendered into the decoder's context — the model's own field-level guidance.
 
 ## Questionnaire
 
-A `{ questions: Question[] }` payload with at least one question. Used identically across clarify, baseline, and teaching quizzes. The UI renders questions one at a time as an answer card.
+A `{ questions: Question[] }` payload with at least one question. Used by clarify and teaching quizzes. The baseline's wire is flat (`questions: Question[]`) to fit Cerebras's 5000-char schema cap; the client still receives it in this nested shape. The UI renders questions one at a time as an answer card.
 
 ## Question
 
@@ -95,11 +95,11 @@ The stateless text model, served by Cerebras through an OpenAI-compatible API. T
 
 ## Scoping
 
-The first set of turns when a User starts a new course: clarify → framework → baseline → grade. One append-only conversation — `renderScopingSystem` renders one system prompt for the whole pass; each stage appends user/assistant messages onto the growing, byte-stable prefix (keeps the prompt cache warm, so extra round trips are cheap). Scoping rows stay in the DB once scoping completes, but they never replay into teaching.
+The first set of turns when a User starts a new course: clarify → framework and baseline → grade. One append-only conversation — `renderScopingSystem` renders one system prompt for the whole pass; each stage appends user/assistant messages onto the growing, byte-stable prefix (keeps the prompt cache warm, so extra round trips are cheap). Scoping rows stay in the DB once scoping completes, but they never replay into teaching.
 
 ## Scoping pass
 
-One row in `scoping_passes`, opened by the first scoping call (`ensureOpenScopingPass`). Parents all scoping `context_messages` rows (clarification turns, framework turns, baseline turns). The structured outputs live on `courses.{clarification, framework, baseline}`, not on the pass. Teaching reads only those outputs; the scoping message history never reaches a Wave prompt (P-ON-05). The rows are kept, not deleted. The scoping-close transaction (`persistScopingClose`) closes the pass and stamps `closed_at`.
+One row in `scoping_passes`, opened by the first scoping call (`ensureOpenScopingPass`). Parents all scoping `context_messages` rows (clarification turns, framework-and-baseline turns, the close turn). The structured outputs live on `courses.{clarification, framework, baseline}`, not on the pass. Teaching reads only those outputs; the scoping message history never reaches a Wave prompt (P-ON-05). The rows are kept, not deleted. The scoping-close transaction (`persistScopingClose`) closes the pass and stamps `closed_at`.
 
 ## Seed source
 

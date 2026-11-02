@@ -125,16 +125,15 @@ User types a topic
     -> Create the course and open its scoping pass
     -> Model returns 2-4 targeted questions about scope and interest
     -> Render questions as cards; user answers
-  -> tRPC: course.generateFramework
+  -> tRPC: course.generateFrameworkAndBaseline (one LLM call)
     -> Call LLM with topic + clarification answers
     -> Generate 3-8 proficiency tiers with names, descriptions, example concepts,
        and a baseline scope of up to 3 tiers
-    -> Validate with Zod; store on courses.framework
+    -> In the same response, generate 7-9 baseline questions spanning the
+       baseline-scope tiers: 7 for one tier, 4 per tier for two, 3 per tier for three
+    -> Validate with Zod; store courses.framework and courses.baseline in one write
     -> Unbuilt: the user cannot edit the framework before continuing
-  -> tRPC: course.generateBaseline
-    -> Generate 7-9 questions spanning the baseline-scope tiers:
-       7 for one tier, 4 per tier for two, 3 per tier for three
-    -> Render as assessment cards
+    -> Render the questions as assessment cards
     -> User answers each
   -> tRPC: course.submitBaseline (grading lives in src/lib)
     -> Grade multiple-choice mechanically (key compare, no LLM)
@@ -156,7 +155,7 @@ User types a topic
   -> Transition to Wave 1
 ```
 
-**Failed scoping Turns.** If `generateFramework`, `generateBaseline` or `submitBaseline` fails, a toast announces the error. If the failed Turn's question card comes back, its submit is the retry. Otherwise the scoping chat shows a Retry row where Nalu's next message would appear. Retry re-sends the same Turn with the same input. A failed `course.clarify` returns the learner to the topic input to resubmit. A reload keeps the way on. `generateBaseline` re-fires on mount. A `generateFramework` or `submitBaseline` Turn saved the learner's answers before its LLM call, so the reloaded chat derives its Retry row from server state, and Retry re-sends the saved answers.
+**Failed scoping Turns.** If `generateFrameworkAndBaseline` or `submitBaseline` fails, a toast announces the error. If the failed Turn's question card comes back, its submit is the retry. Otherwise the scoping chat shows a Retry row where Nalu's next message would appear. Retry re-sends the same Turn with the same input. A failed `course.clarify` returns the learner to the topic input to resubmit. A reload keeps the way on. A `generateFrameworkAndBaseline` or `submitBaseline` Turn saved the learner's answers before its LLM call, so the reloaded chat derives its Retry row from server state, and Retry re-sends the saved answers. No Turn fires on its own. A course framed before the two steps merged (issue #15) can hold a framework with no baseline; it shows the same Retry row, and Retry rebuilds both.
 
 **Scoping vs. teaching prompts.** Scoping is one append-only Context. `renderScopingSystem` (`src/lib/prompts/scoping.ts`) emits its only `role: system` message. Each later scoping prompt appends user/assistant messages, so the cache prefix stays byte-stable and the extra LLM round trips stay cheap. Teaching never replays the scoping Context. Wave 1 renders a _fresh_ system prompt (Section 5.1) from DB state: topic, `<topic_scope>` from clarification answers, framework, starting tier, `courses.summary`, Wave 1's blueprint, and the initial SM-2 due concepts. Scoping instructions never leak into Wave turns.
 

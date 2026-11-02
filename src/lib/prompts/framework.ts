@@ -131,6 +131,3 @@ export const frameworkSchema = z
       });
     }
   });
-
-/** Inferred framework type. Re-exported via `prompts/index.ts`. */
-export type Framework = z.infer<typeof frameworkSchema>;

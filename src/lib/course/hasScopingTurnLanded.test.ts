@@ -33,7 +33,7 @@ function state(overrides: Partial<CourseState>): CourseState {
 
 /** Which kinds count as landed for one state, so each test pins the whole mapping. */
 function landedKinds(s: CourseState): readonly ScopingTurnKind[] {
-  const kinds: readonly ScopingTurnKind[] = ["framework", "baseline", "scopingClose"];
+  const kinds: readonly ScopingTurnKind[] = ["frameworkAndBaseline", "scopingClose"];
   return kinds.filter((kind) => hasScopingTurnLanded(s, kind));
 }
 
@@ -42,12 +42,14 @@ describe("hasScopingTurnLanded", () => {
     expect(landedKinds(state({}))).toEqual([]);
   });
 
-  it("reports the framework Turn once a framework exists", () => {
-    expect(landedKinds(state({ framework }))).toEqual(["framework"]);
+  // A course framed before the merge (issue #15) can hold a framework alone.
+  // The merged Turn writes both columns at once, so it has not landed.
+  it("reports nothing landed for a framework with no baseline", () => {
+    expect(landedKinds(state({ framework }))).toEqual([]);
   });
 
-  it("reports the baseline Turn once a baseline exists, even with answers saved", () => {
-    expect(landedKinds(state({ framework, baseline }))).toEqual(["framework", "baseline"]);
+  it("reports the merged Turn once a baseline exists, even with answers saved", () => {
+    expect(landedKinds(state({ framework, baseline }))).toEqual(["frameworkAndBaseline"]);
   });
 
   it("reports the scoping close only once a scoping result exists", () => {
@@ -57,6 +59,6 @@ describe("hasScopingTurnLanded", () => {
       baseline,
       scopingResult: { closingMessage: "Ready.", startingTier: 1 },
     });
-    expect(landedKinds(closed)).toEqual(["framework", "baseline", "scopingClose"]);
+    expect(landedKinds(closed)).toEqual(["frameworkAndBaseline", "scopingClose"]);
   });
 });

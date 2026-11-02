@@ -76,7 +76,7 @@ The asymmetry of `context_messages` is what makes it the honest replay log. Type
 
 Scoping and wave share the **primitives** but pick different **column shapes** because their cardinalities differ.
 
-**Scoping** — fixed-cardinality stages (clarify → framework → baseline). One typed JSONB column per stage on `courses`:
+**Scoping** — fixed-cardinality stages (clarify → framework and baseline → grade). One typed JSONB column per artifact on `courses`. The framework-and-baseline Turn writes both of its columns in one statement:
 
 ```text
 courses.clarification = { userMessage, questions, responses }

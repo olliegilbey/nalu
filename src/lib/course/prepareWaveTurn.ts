@@ -147,7 +147,7 @@ export async function prepareWaveTurn(params: PrepareWaveTurnParams): Promise<Pr
 
   // Dual-write (learner side): persist the learner's chat_log entry BEFORE
   // dispatching the LLM call. Mirrors scoping's pre-LLM persistence pattern
-  // (`generateFramework.ts`, `submitBaseline.persist.ts`) — if the LLM
+  // (`generateFrameworkAndBaseline.ts`, `submitBaseline.persist.ts`) — if the LLM
   // transport fails, the learner's submission survives in `waves.chat_log`
   // (the UI source of truth) even though `context_messages` (the LLM replay
   // log) only gains its `user_message` row on LLM success

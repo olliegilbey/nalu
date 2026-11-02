@@ -1,6 +1,6 @@
 ---
 name: debugging-nalu-llm-pipeline
-description: Use when a Nalu LLM-backed request — course.clarify, generateFramework, generateBaseline, submitBaseline, or a wave/teaching turn — hangs, times out, or fails on the hosted/production deployment. Symptoms include the request spinning ~2 minutes then erroring, "Failed after N attempts. Last error: ...", "Too Many Requests" / HTTP 429, HTTP 401, an HTTP 500 / INTERNAL_SERVER_ERROR whose toast reads only "Something went wrong. Please try again.", or a course stuck in scoping. Also use to inspect production DB state after such a failure.
+description: Use when a Nalu LLM-backed request — course.clarify, generateFrameworkAndBaseline, submitBaseline, or a wave/teaching turn — hangs, times out, or fails on the hosted/production deployment. Symptoms include the request spinning ~2 minutes then erroring, "Failed after N attempts. Last error: ...", "Too Many Requests" / HTTP 429, HTTP 401, an HTTP 500 / INTERNAL_SERVER_ERROR whose toast reads only "Something went wrong. Please try again.", or a course stuck in scoping. Also use to inspect production DB state after such a failure.
 ---
 
 # Debugging the Nalu LLM Pipeline

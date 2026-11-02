@@ -1,5 +1,5 @@
 /**
- * Live smoke tests for the scoping flow (clarify → generateFramework → generateBaseline).
+ * Live smoke tests for the scoping flow (clarify → generateFrameworkAndBaseline).
  *
  * WHY this file: the integration tests mock `generateChat`. This file exercises
  * the exact same router procedures against real Cerebras + a testcontainers
@@ -9,12 +9,12 @@
  * or `just check`; run via `just smoke` (manual, opt-in only).
  *
  * Design:
- * - One `describe` per topic; one test per topic (chains all three procedures).
+ * - One `describe` per topic; one test per topic (chains both procedures).
  * - Per-turn observability — banner, prompt, response, parse outcome — is
  *   emitted to stderr by `executeTurn` itself (gated on `CEREBRAS_LIVE=1`).
  *   Set `NALU_SMOKE_QUIET=1` to suppress prompt/response on success.
- * - Idempotency check: a second `generateBaseline` call must return from DB
- *   cache (< 200ms) without calling the LLM again.
+ * - Idempotency check: a second `generateFrameworkAndBaseline` call must
+ *   return from DB cache (< 200ms) without calling the LLM again.
  */
 
 import { describe, test, expect, beforeAll } from "vitest";
@@ -57,7 +57,7 @@ beforeAll(() => {
 describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
   for (const topic of SCOPING_TOPICS) {
     describe(topic.slug, () => {
-      test("clarify → generateFramework → generateBaseline + idempotency", async () => {
+      test("clarify → generateFrameworkAndBaseline + idempotency", async () => {
         await withTestDb(async (db) => {
           // Seed a test user (withTestDb truncates tables before each call).
           await db
@@ -81,7 +81,7 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           expect(clarifyingQuestions.length, "clarify: question count ≤ 4").toBeLessThanOrEqual(4);
 
           // ---------------------------------------------------------------
-          // 2. generateFramework
+          // 2. generateFrameworkAndBaseline: one LLM call (issue #15)
           // ---------------------------------------------------------------
           // Build responses from the clarifying questions — cycle the answer pool.
           const responses = clarifyingQuestions.map((q, i) => ({
@@ -89,14 +89,12 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
             freetext: topic.answerPool[i % topic.answerPool.length]!,
           }));
 
-          const { framework } = await caller.course.generateFramework({ courseId, responses });
+          const { framework, baseline } = await caller.course.generateFrameworkAndBaseline({
+            courseId,
+            responses,
+          });
 
           assertFrameworkStructural(framework);
-
-          // ---------------------------------------------------------------
-          // 3. generateBaseline
-          // ---------------------------------------------------------------
-          const { baseline } = await caller.course.generateBaseline({ courseId });
 
           // The router returns the client projection, which drops concept
           // names and rubrics. Check the persisted questions instead.
@@ -106,14 +104,17 @@ describe.skipIf(!LIVE)("scoping flow — live Cerebras", () => {
           assertBaselineStructural(persistedBaseline, framework);
 
           // ---------------------------------------------------------------
-          // 4. Idempotency — second call must hit DB, not LLM
+          // 3. Idempotency — second call must hit DB, not LLM
           // ---------------------------------------------------------------
           // The cached path skips `generateChat` entirely, so it is unpaced
           // and fast — which is exactly what `assertIdempotency` checks for.
           const start = Date.now();
-          const { baseline: cached } = await caller.course.generateBaseline({ courseId });
-          assertIdempotency(Date.now() - start, `generateBaseline(${topic.slug})`);
-          expect(cached, "idempotency: cached baseline equals original").toEqual(baseline);
+          const cached = await caller.course.generateFrameworkAndBaseline({ courseId, responses });
+          assertIdempotency(Date.now() - start, `generateFrameworkAndBaseline(${topic.slug})`);
+          expect(cached.framework, "idempotency: cached framework equals original").toEqual(
+            framework,
+          );
+          expect(cached.baseline, "idempotency: cached baseline equals original").toEqual(baseline);
 
           // End-of-test forensics — see submitBaseline.live.test.ts for
           // rationale. Per-topic block at the bottom of stderr; lets a

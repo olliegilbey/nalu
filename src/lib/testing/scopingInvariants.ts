@@ -29,7 +29,7 @@ import { BASELINE, FRAMEWORK } from "@/lib/config/tuning";
  * - `baselineScopeTiers` is non-empty and every entry is a real tier number.
  * - `estimatedStartingTier` is a real tier number.
  *
- * @param framework - The JSONB payload returned by the generateFramework router.
+ * @param framework - The JSONB payload returned by the generateFrameworkAndBaseline router.
  */
 export function assertFrameworkStructural(framework: FrameworkJsonb): void {
   // --- tier count ---
@@ -92,7 +92,7 @@ export function assertFrameworkStructural(framework: FrameworkJsonb): void {
  * the answering + grading flows.
  *
  * Accepts the persisted `courses.baseline` JSONB, `{ questions: [...] }`. The
- * `generateBaseline` router result is the client projection: it carries no
+ * `generateFrameworkAndBaseline` router's `baseline` is the client projection: it carries no
  * `conceptName` or `freetextRubric`, so the check reads the stored questions.
  *
  * @param baseline - The persisted baseline, parsed with `baselineJsonbSchema`.
@@ -156,7 +156,7 @@ export function assertBaselineStructural(
  * so you immediately see *which* procedure was supposed to be cached.
  *
  * @param elapsedMs - Wall-clock milliseconds for the repeated call.
- * @param label - Human-readable name (e.g. `"generateBaseline(rust-ownership)"`).
+ * @param label - Human-readable name (e.g. `"generateFrameworkAndBaseline(rust-ownership)"`).
  */
 export function assertIdempotency(elapsedMs: number, label: string): void {
   expect(

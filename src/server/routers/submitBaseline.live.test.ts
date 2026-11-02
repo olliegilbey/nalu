@@ -1,11 +1,11 @@
 /**
  * Live smoke test for the scoping CLOSE step: chains the full pipeline
- * (clarify → generateFramework → generateBaseline → submitBaseline) against
+ * (clarify → generateFrameworkAndBaseline → submitBaseline) against
  * real Cerebras + testcontainers Postgres. Verifies the close-turn schema,
  * persistence widening, Wave 1 opening, and XP bookkeeping under real model output.
  *
  * WHY one topic (not three): `course.live.test.ts` already covers clarify →
- * framework → baseline across three diverse topics. The close turn is
+ * framework-and-baseline across three diverse topics. The close turn is
  * topic-agnostic — running it once adds ~30-60s to `just smoke` instead of
  * tripling the runtime.
  *
@@ -68,17 +68,19 @@ describe.skipIf(!LIVE)("scoping CLOSE flow — live Cerebras", () => {
       const clarifyingQuestions = clarifyResult.clarification.questions.questions;
       expect(clarifyingQuestions.length, "clarify: ≥ 2 questions").toBeGreaterThanOrEqual(2);
 
-      // 2. generateFramework — cycle the answer pool to fill however many
-      //    clarifying questions the model returned (2–4).
+      // 2. generateFrameworkAndBaseline — one call (issue #15). Cycle the
+      //    answer pool to fill however many clarifying questions the model
+      //    returned (2–4).
       const responses = clarifyingQuestions.map((q, i) => ({
         questionId: q.id,
         freetext: TOPIC.answerPool[i % TOPIC.answerPool.length]!,
       }));
-      const { framework } = await caller.course.generateFramework({ courseId, responses });
+      const { framework, baseline } = await caller.course.generateFrameworkAndBaseline({
+        courseId,
+        responses,
+      });
       assertFrameworkStructural(framework);
 
-      // 3. generateBaseline
-      const { baseline } = await caller.course.generateBaseline({ courseId });
       // The wire `baseline` drops concept names, rubrics and plaintext MC
       // keys, so the structural check and the answer keys below both read
       // the persisted `courses.baseline` JSONB.

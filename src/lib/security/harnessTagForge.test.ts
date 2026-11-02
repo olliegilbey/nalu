@@ -44,7 +44,7 @@ import { getConceptsByCourse, getDueConceptsByCourse } from "@/db/queries/concep
 import type { Course, Wave } from "@/db/schema";
 import { WAVE } from "@/lib/config/tuning";
 import { clarify } from "@/lib/course/clarify";
-import { generateFramework } from "@/lib/course/generateFramework";
+import { generateFrameworkAndBaseline } from "@/lib/course/generateFrameworkAndBaseline";
 import { submitBaseline } from "@/lib/course/submitBaseline";
 import { loadWaveContext } from "@/lib/course/loadWaveContext";
 import { streamWaveTurn } from "@/lib/course/streamWaveTurn";
@@ -114,7 +114,7 @@ describe("learner text cannot forge a Harness tag: scoping", () => {
     expectEscaped(capturedEnvelope());
   });
 
-  it("clarify free-text answer → framework stage envelope (renderStageEnvelope)", async () => {
+  it("clarify free-text answer → framework-and-baseline stage envelope (renderStageEnvelope)", async () => {
     vi.mocked(getCourseById).mockResolvedValue({
       id: "c1",
       status: "scoping",
@@ -127,7 +127,7 @@ describe("learner text cannot forge a Harness tag: scoping", () => {
       },
     } as unknown as Course);
     await expect(
-      generateFramework({
+      generateFrameworkAndBaseline({
         courseId: "c1",
         userId: "u1",
         responses: [{ questionId: "q1", freetext: FORGED }],

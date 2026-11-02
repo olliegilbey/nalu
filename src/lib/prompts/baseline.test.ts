@@ -1,13 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { BASELINE, FRAMEWORK, QUESTIONNAIRE } from "@/lib/config/tuning";
 import { toCerebrasJsonSchema } from "@/lib/llm/toCerebrasJsonSchema";
-import { makeBaselineSchema } from "./baseline";
+import { baselineSchema } from "./baseline";
 import { UNGRADED_RUBRIC, placeholderRubricDirective } from "./questionnaire";
 
-describe("makeBaselineSchema", () => {
-  // Scope tiers used throughout this block.
-  const SCOPE_TIERS = [1, 2, 3] as const;
-
+describe("baselineSchema", () => {
   /**
    * Builds a complete MC question payload matching `questionSchema`.
    * Uses `prompt` (not `question`) per the shared question shape.
@@ -41,18 +38,17 @@ describe("makeBaselineSchema", () => {
   }
 
   /**
-   * Wraps a question list in the factory's nested `{ userMessage, questions: { questions: [...] } }` shape.
-   * Outer `questions` is the questionnaire wrapper; inner array is the questions.
+   * Wraps a question list in the schema's flat `{ userMessage, questions: [...] }` shape.
    * Takes `unknown[]` so tests for "missing field" fixtures don't need to match the full type.
    */
   function wrap(qs: unknown[]) {
     return {
       userMessage: "Here are your baseline questions.",
-      questions: { questions: qs },
+      questions: qs,
     };
   }
 
-  it("accepts a valid payload within scope", () => {
+  it("accepts a valid payload", () => {
     // minQuestions (7) questions spread across tiers 1/2/3.
     const qs = [
       fullMc("b1", 1),
@@ -63,22 +59,21 @@ describe("makeBaselineSchema", () => {
       fullMc("b6", 2),
       fullMc("b7", 3),
     ];
-    const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
-    expect(() => schema.parse(wrap(qs))).not.toThrow();
+    expect(() => baselineSchema.parse(wrap(qs))).not.toThrow();
   });
 
-  it("rejects a question with a tier outside the requested scope", () => {
-    const qs = [
-      fullMc("b1", 1),
-      fullFt("b2", 1),
-      fullMc("b3", 1),
-      fullMc("b4", 2),
-      fullFt("b5", 2),
-      fullMc("b6", 2),
-      fullMc("b7", 99), // tier 99 is out of scope
-    ];
-    const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
-    expect(() => schema.parse(wrap(qs))).toThrow(/outside the requested scope/i);
+  it("rejects fewer than BASELINE.minQuestions questions", () => {
+    const qs = Array.from({ length: BASELINE.minQuestions - 1 }, (_, i) => fullMc(`b${i + 1}`, 1));
+    expect(() => baselineSchema.parse(wrap(qs))).toThrow(
+      `between ${BASELINE.minQuestions} and ${BASELINE.maxQuestions} questions`,
+    );
+  });
+
+  it("rejects more than BASELINE.maxQuestions questions", () => {
+    const qs = Array.from({ length: BASELINE.maxQuestions + 1 }, (_, i) => fullMc(`b${i + 1}`, 1));
+    expect(() => baselineSchema.parse(wrap(qs))).toThrow(
+      `between ${BASELINE.minQuestions} and ${BASELINE.maxQuestions} questions`,
+    );
   });
 
   it("rejects a question missing conceptName", () => {
@@ -95,8 +90,7 @@ describe("makeBaselineSchema", () => {
       noConceptQ,
       ...Array.from({ length: BASELINE.minQuestions - 1 }, (_, i) => fullMc(`b${i + 2}`, 1)),
     ];
-    const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
-    expect(() => schema.parse(wrap(qs))).toThrow(/missing required conceptname/i);
+    expect(() => baselineSchema.parse(wrap(qs))).toThrow(/missing required conceptname/i);
   });
 
   it("rejects a question missing tier", () => {
@@ -112,8 +106,7 @@ describe("makeBaselineSchema", () => {
       noTierQ,
       ...Array.from({ length: BASELINE.minQuestions - 1 }, (_, i) => fullMc(`b${i + 2}`, 1)),
     ];
-    const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
-    expect(() => schema.parse(wrap(qs))).toThrow(/missing required tier/i);
+    expect(() => baselineSchema.parse(wrap(qs))).toThrow(/missing required tier/i);
   });
 
   it("rejects an MC question missing the correct key", () => {
@@ -131,8 +124,7 @@ describe("makeBaselineSchema", () => {
       noCorrectQ,
       ...Array.from({ length: BASELINE.minQuestions - 1 }, (_, i) => fullMc(`b${i + 2}`, 1)),
     ];
-    const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
-    expect(() => schema.parse(wrap(qs))).toThrow(/missing required correct key/i);
+    expect(() => baselineSchema.parse(wrap(qs))).toThrow(/missing required correct key/i);
   });
 
   // Issue #22: the model copied clarify's placeholder onto graded baseline
@@ -146,13 +138,13 @@ describe("makeBaselineSchema", () => {
         ...Array.from({ length: BASELINE.minQuestions - 2 }, (_, i) => fullMc(`b${i + 3}`, 1)),
       ];
     }
-    const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
+    const schema = baselineSchema;
 
     it("rejects the clarify placeholder with a teacher-style directive on the rubric path", () => {
       const result = schema.safeParse(wrap(withFtRubric(UNGRADED_RUBRIC)));
       expect(result.success).toBe(false);
       const issue = result.error?.issues.find((i) => i.path.at(-1) === "freetextRubric");
-      expect(issue?.path).toEqual(["questions", "questions", 1, "freetextRubric"]);
+      expect(issue?.path).toEqual(["questions", 1, "freetextRubric"]);
       expect(issue?.message).toBe(placeholderRubricDirective("b2"));
     });
 
@@ -191,52 +183,45 @@ describe("makeBaselineSchema", () => {
     );
     // Force the last question to also have id "b1".
     const withDupe = [...qs.slice(0, -1), { ...qs[qs.length - 1]!, id: "b1" }];
-    const schema = makeBaselineSchema({ scopeTiers: SCOPE_TIERS });
-    expect(() => schema.parse(wrap(withDupe))).toThrow(/duplicate question ids/i);
+    expect(() => baselineSchema.parse(wrap(withDupe))).toThrow(/duplicate question ids/i);
   });
 
   // Issue #129: a flat "3 per tier" rule asks for 6 questions on a 2-tier
   // scope, below the floor of 7, so the model padded with out-of-scope tiers.
-  // Every legal scope size (1..maxBaselineScopeSize) must render a count rule
-  // the model can satisfy, and a baseline that follows it must parse.
+  // The framework picks the scope in the same response (issue #15), so the
+  // wire states the count for every legal scope size (1..maxBaselineScopeSize),
+  // and a baseline that follows it must parse.
   describe("count rule per scope size", () => {
-    const scopes = Array.from({ length: FRAMEWORK.maxBaselineScopeSize }, (_, i) => ({
-      scopeTiers: Array.from({ length: i + 1 }, (_, t) => t + 1),
-    }));
+    const description = baselineSchema.shape.questions.description ?? "";
+    const scopeSizes = Array.from({ length: FRAMEWORK.maxBaselineScopeSize }, (_, i) => i + 1);
+
+    /** The per-tier count the description states for one scope size. */
+    function perTierFor(size: number): number {
+      const rule = size === 1 ? /1 tier → (\d+)/ : new RegExp(`${size} tiers → (\\d+) per tier`);
+      return Number(rule.exec(description)?.[1]);
+    }
 
     // PRD §4.1 states these counts. Pin them so the PRD and the formula agree.
     it("renders 7 for one tier, 4 per tier for two, 3 per tier for three", () => {
-      const perTierFor = (scopeTiers: readonly number[]) =>
-        Number(
-          /(\d+) per tier/.exec(
-            makeBaselineSchema({ scopeTiers }).shape.questions.shape.questions.description ?? "",
-          )?.[1],
-        );
-      expect([[1], [1, 2], [1, 2, 3]].map(perTierFor)).toEqual([7, 4, 3]);
+      expect(scopeSizes.map(perTierFor)).toEqual([7, 4, 3]);
     });
 
-    it.each(scopes)(
-      "scope $scopeTiers renders a satisfiable count that parses",
-      ({ scopeTiers }) => {
-        const schema = makeBaselineSchema({ scopeTiers });
-        const description = schema.shape.questions.shape.questions.description ?? "";
+    it("ties the count to the framework's baselineScopeTiers", () => {
+      expect(description).toContain("baselineScopeTiers");
+    });
 
-        // Read the per-tier count the model is told to write.
-        const perTier = Number(/(\d+) per tier/.exec(description)?.[1]);
-        const total = perTier * scopeTiers.length;
-        expect(total).toBeGreaterThanOrEqual(BASELINE.minQuestions);
-        expect(total).toBeLessThanOrEqual(BASELINE.maxQuestions);
-        // The rule states the same total and names the in-scope tiers.
-        expect(description).toContain(`Exactly ${total} questions`);
-        expect(description).toContain(`[${scopeTiers.join(", ")}]`);
+    it.each(scopeSizes)("scope size %i renders a satisfiable count that parses", (size) => {
+      const perTier = perTierFor(size);
+      const total = perTier * size;
+      expect(total).toBeGreaterThanOrEqual(BASELINE.minQuestions);
+      expect(total).toBeLessThanOrEqual(BASELINE.maxQuestions);
 
-        // A baseline that follows the rule exactly: perTier questions per tier,
-        // alternating MC and free text, ids b1..bN in order.
-        const qs = scopeTiers
-          .flatMap((tier) => Array.from({ length: perTier }, () => tier))
-          .map((tier, i) => (i % 2 === 0 ? fullMc(`b${i + 1}`, tier) : fullFt(`b${i + 1}`, tier)));
-        expect(() => schema.parse(wrap(qs))).not.toThrow();
-      },
-    );
+      // A baseline that follows the rule exactly: perTier questions per tier,
+      // alternating MC and free text, ids b1..bN in order.
+      const qs = Array.from({ length: size }, (_, t) => t + 1)
+        .flatMap((tier) => Array.from({ length: perTier }, () => tier))
+        .map((tier, i) => (i % 2 === 0 ? fullMc(`b${i + 1}`, tier) : fullFt(`b${i + 1}`, tier)));
+      expect(() => baselineSchema.parse(wrap(qs))).not.toThrow();
+    });
   });
 });

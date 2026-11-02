@@ -180,12 +180,12 @@ describe("assertBaselineStructural", () => {
 
 describe("assertIdempotency", () => {
   it("passes when elapsed < 200ms", () => {
-    expect(() => assertIdempotency(50, "generateBaseline(test)")).not.toThrow();
+    expect(() => assertIdempotency(50, "generateFrameworkAndBaseline(test)")).not.toThrow();
   });
 
   it("throws with the label in the message when elapsed >= 200ms", () => {
-    expect(() => assertIdempotency(250, "generateBaseline(my-topic)")).toThrow(
-      /generateBaseline\(my-topic\)/,
+    expect(() => assertIdempotency(250, "generateFrameworkAndBaseline(my-topic)")).toThrow(
+      /generateFrameworkAndBaseline\(my-topic\)/,
     );
   });
 });

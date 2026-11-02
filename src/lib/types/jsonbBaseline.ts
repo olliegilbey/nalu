@@ -95,7 +95,7 @@ export const baselineGradingSchema = z
   });
 
 /**
- * What `generateBaseline` writes after questions are generated, before close.
+ * What `generateFrameworkAndBaseline` writes after questions are generated, before close.
  * `gradings` is initialised empty here and populated by `submitBaseline`.
  *
  * `.strict()` is required for union discrimination in `baselineJsonbSchema`:
@@ -109,7 +109,7 @@ export const baselineQuestionsJsonbSchema = z
      * The model's framing message for this baseline payload. Persisted so
      * cached replay can return the model's exact wording. In the pre-close
      * shape this is the baseline-presentation framing written by
-     * `generateBaseline`; on close `submitBaseline` overwrites it with the
+     * `generateFrameworkAndBaseline`; on close `submitBaseline` overwrites it with the
      * model's closing-turn framing so a cached replay of `submitBaseline`
      * returns the close message (not the presentation message, which still
      * lives in `context_messages`).

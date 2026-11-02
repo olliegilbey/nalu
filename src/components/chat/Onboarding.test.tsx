@@ -91,7 +91,7 @@ describe("Onboarding retry affordance", () => {
 
   it("renders the retry row and re-sends the turn on click when a turn failed", () => {
     const retry = vi.fn();
-    scopingState.value = baseState({ failedTurn: { kind: "framework", retry } });
+    scopingState.value = baseState({ failedTurn: { kind: "frameworkAndBaseline", retry } });
     render(<Onboarding courseId="c1" />);
 
     const button = screen.getByRole("button", { name: "Retry" });
@@ -103,7 +103,7 @@ describe("Onboarding retry affordance", () => {
   it("disables Retry and ignores clicks while a scoping turn is pending", () => {
     const retry = vi.fn();
     scopingState.value = baseState({
-      failedTurn: { kind: "baseline", retry },
+      failedTurn: { kind: "frameworkAndBaseline", retry },
       isPending: true,
     });
     render(<Onboarding courseId="c1" />);
@@ -118,7 +118,7 @@ describe("Onboarding retry affordance", () => {
     // The card's own submit is the retry, so the row would be a second,
     // stale-answer affordance.
     scopingState.value = baseState({
-      failedTurn: { kind: "framework", retry: vi.fn() },
+      failedTurn: { kind: "frameworkAndBaseline", retry: vi.fn() },
       activeQuestionnaire: {
         kind: "clarify",
         questions: [],
