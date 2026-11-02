@@ -16,3 +16,4 @@ export * from "./waves";
 export * from "./contextMessages";
 export * from "./concepts";
 export * from "./assessments";
+export * from "./waveRatings";

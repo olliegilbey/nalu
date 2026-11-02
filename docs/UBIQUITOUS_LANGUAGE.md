@@ -146,3 +146,7 @@ A single ~5-7 minute teaching unit within a Teaching session — Nalu's equivale
 **Terminology split.** Internally (code, DB, docs, UI) the term is **Wave**. In LLM-facing prompt text the term is **lesson** — the model has strong priors around "lesson" and no pre-existing understanding of "Wave" in this domain. Structured JSON field names in the LLM's output can use either. See **LLM-facing terminology** for where the split lives.
 
 The wave motif persists as design language (Hokusai palette). Tiers of the framework (e.g. "Tier 2: Borrowing Basics") are **not** Waves — they are tiers of the proficiency framework.
+
+## Wave rating
+
+Learner feedback on one closed Wave: an overall rating of 1 to 5 stars, with optional difficulty, pacing and usefulness stars. More stars is always better. The learner rates in the rating step above the move-on button; move-on saves it. It lives in `wave_ratings`, one row per rated Wave, and a later save replaces the row. A Wave rating is never score: it never touches XP, SM-2, tiers or any prompt, and the LLM never sees it.

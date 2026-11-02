@@ -3,11 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useWaveState } from "@/hooks/useWaveState";
 import { useWaveComposer } from "@/hooks/useWaveComposer";
+import { useWaveRating } from "@/hooks/useWaveRating";
 import { ChatShell } from "./ChatShell";
 import { Composer } from "./Composer";
 import { CourseNotFound } from "./CourseNotFound";
 import { MessageBubble, TypingBubble } from "./MessageBubble";
 import { RetryRow } from "./RetryRow";
+import { WaveRatingStep } from "./WaveRatingStep";
 import { renderChatEntry } from "./renderChatEntry";
 import { selectComposerQuestionnaire } from "@/lib/course/selectComposerQuestionnaire";
 import { deriveWaveProgress } from "@/lib/course/deriveWaveProgress";
@@ -24,6 +26,7 @@ import { t, tFill } from "@/i18n";
  * `closeResult` from this tab's close-turn, or a server-reported
  * `status === "closed"` after a reload). The move-on branch replaces the input
  * row entirely, so a finished wave never presents a live-but-dead composer.
+ * Above the move-on button sits the Wave rating step; move-on saves it (#260).
  * A failed chat-text send puts its text back in the Composer, and a failed
  * Turn the server saved gets a Retry row (issue #231).
  */
@@ -55,6 +58,8 @@ export function WaveSession({
   } = wave;
   // Composer text, the optimistic bubble, and the send and Retry handlers.
   const composer = useWaveComposer(wave);
+  // The closed Wave's rating stars; move-on saves them (issue #260).
+  const rating = useWaveRating(courseId, waveNumber);
 
   // getState found no such Wave for this learner: a wrong URL, a course
   // another browser started, or a Wave number this course lacks. One NOT_FOUND
@@ -87,7 +92,12 @@ export function WaveSession({
   const moveOn = isClosed
     ? {
         label: tFill("moveOn.toWave", { n: nextWaveNumber }),
-        onAdvance: () => router.push(`/course/${courseId}/wave/${nextWaveNumber}`),
+        aboveButton: <WaveRatingStep stars={rating.stars} onChange={rating.setStars} />,
+        // Save the rating, if given, then navigate at once: never wait for it.
+        onAdvance: () => {
+          rating.submit();
+          router.push(`/course/${courseId}/wave/${nextWaveNumber}`);
+        },
       }
     : undefined;
 

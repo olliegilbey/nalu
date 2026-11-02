@@ -104,6 +104,7 @@ The Drizzle schema lives in `src/db/schema/`, one file per table.
 | `context_messages` | Append-only Context rows for scoping or one Wave. No system rows: the Harness re-renders the system prompt from seed columns.                                           |
 | `concepts`         | Per-course concepts with SM-2 state.                                                                                                                                    |
 | `assessments`      | In-Wave graded answers that earn XP. Baseline grades live on `courses.baseline`, not here.                                                                              |
+| `wave_ratings`     | One row per rated Wave: the learner's 1-5 stars (overall, plus optional difficulty, pacing and usefulness). Feedback, never score; no XP, SM-2 or prompt code reads it. |
 
 Product rules:
 
@@ -398,6 +399,7 @@ The side menu's Settings button opens a settings sheet on every page. The sheet 
 - **Assessment cards**: Visually distinct from chat. MC options as tappable buttons. Free-text as input field. Submit button. Result shown inline after submission.
 - **Comprehension signals**: Invisible to user. XP gain ("+15 XP") pulses on the header badge.
 - **Wave progress**: A slim strip under the header reads "Turn N of M" over a thin bar. The bar fills as Turns land. A closed Wave reads "Wave complete" with a full bar. Display only: it never touches XP.
+- **Wave rating**: A closed Wave asks "How was this Wave?" with 1-5 stars, directly above the move-on button. It is optional, and starts blank on every visit. Move-on saves the rating, if given, and opens the next Wave without waiting. A failed save shows a toast. The rating never touches XP, SM-2, tiers or any prompt.
 - **Progress sidebar** (collapsible): Current tier, wave XP progress bar, session XP, review count. **Unbuilt.**
 - **Nalu opens**: Every Wave starts with a Nalu message. Returning users see the Wave's chat history in the UI. Closed Waves are never replayed to the model; it gets the summary and blueprint.
 

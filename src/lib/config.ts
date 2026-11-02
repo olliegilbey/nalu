@@ -18,7 +18,8 @@ const envSchema = z.object({
   DIRECT_URL: z.url(), // direct, used by drizzle-kit migrate
   DEV_USER_ID: z.uuid(), // seed user id; the dev-stub user outside production
   // PostHog EU project public key (phc_…). Server-side only — proxy.ts captures
-  // a $pageview per visit. Optional: absent = analytics disabled.
+  // a $pageview per visit, and a Wave rating save captures `wave_rated`
+  // (src/lib/analytics/captureWaveRated.ts). Optional: absent = analytics disabled.
   POSTHOG_KEY: z.string().optional(),
   // Observability flags LLM_TELEMETRY (src/lib/llm/telemetry.ts),
   // LLM_DEVTOOLS (src/lib/llm/provider.ts), and LLM_DEBUG_GRADINGS

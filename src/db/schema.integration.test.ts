@@ -11,6 +11,7 @@ import {
   contextMessages,
   concepts,
   assessments,
+  waveRatings,
 } from "@/db/schema";
 
 /**
@@ -446,6 +447,59 @@ describe("assessments constraints", () => {
       const rows = await db.select().from(assessments);
       expect(rows).toHaveLength(1);
       expect(rows[0]?.question).toBeNull();
+    });
+  });
+});
+
+describe("wave_ratings constraints", () => {
+  const seedWave = async (db: Parameters<Parameters<typeof withTestDb>[0]>[0]): Promise<string> => {
+    const courseId = await seedCourse(db);
+    const [w] = await db
+      .insert(waves)
+      .values({
+        courseId,
+        waveNumber: 1,
+        tier: 1,
+        frameworkSnapshot: {},
+        dueConceptsSnapshot: [],
+        seedSource: { kind: "scoping_handoff" },
+        turnBudget: WAVE.turnCount,
+      })
+      .returning();
+    if (!w) throw new Error("missing wave row");
+    return w.id;
+  };
+
+  it("wave_ratings rejects a star outside 1-5", async () => {
+    await withTestDb(async (db) => {
+      const waveId = await seedWave(db);
+      // Each star column has its own CHECK; probe both bounds on each.
+      const bad = [
+        { overall: 0 },
+        { overall: 6 },
+        { overall: 3, difficulty: 0 },
+        { overall: 3, pacing: 6 },
+        { overall: 3, usefulness: -1 },
+      ];
+      for (const stars of bad) {
+        await expect(db.insert(waveRatings).values({ waveId, ...stars })).rejects.toMatchObject({
+          cause: { code: "23514" },
+        });
+      }
+      // The bounds themselves pass, and a null dimension passes its CHECK.
+      await db.insert(waveRatings).values({ waveId, overall: 5, difficulty: 1, pacing: null });
+      expect(await db.select().from(waveRatings)).toHaveLength(1);
+    });
+  });
+
+  it("deleting a Wave deletes its rating", async () => {
+    await withTestDb(async (db) => {
+      const waveId = await seedWave(db);
+      await db.insert(waveRatings).values({ waveId, overall: 4 });
+
+      await db.delete(waves).where(eq(waves.id, waveId));
+
+      expect(await db.select().from(waveRatings)).toHaveLength(0);
     });
   });
 });
