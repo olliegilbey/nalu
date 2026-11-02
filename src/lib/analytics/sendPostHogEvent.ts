@@ -4,6 +4,8 @@
  * the event body with a pure `build*Event` and hand it over.
  */
 
+import { errorLogLine } from "@/lib/security/errorLogLine";
+
 /** PostHog EU single-event capture endpoint. */
 const CAPTURE_URL = "https://eu.i.posthog.com/i/v0/e/";
 
@@ -28,7 +30,10 @@ export async function sendPostHogEvent(event: { readonly event: string }): Promi
     if (!response.ok) {
       console.error(`[posthog] ${event.event} capture failed: HTTP ${response.status}`);
     }
-  } catch {
-    // Swallow: a failed analytics call must never surface to the learner.
+  } catch (error) {
+    // A network error or the timeout. Log it and go on: a failed analytics
+    // call must never surface to the learner. `errorLogLine` keeps the error's
+    // class name (e.g. `TimeoutError`) and never its message.
+    console.error(errorLogLine(`[posthog] ${event.event} capture failed`, {}, error));
   }
 }
