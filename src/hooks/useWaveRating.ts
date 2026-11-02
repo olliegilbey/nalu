@@ -5,15 +5,19 @@ import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
 import { formatMutationError } from "@/lib/errors";
-import { deriveWaveRatingSave, type WaveRatingDraft } from "@/lib/wave-rating/deriveWaveRatingSave";
+import {
+  deriveWaveRatingSave,
+  type WaveRatingDraft,
+  type WaveRatingPrompt,
+} from "@/lib/wave-rating/deriveWaveRatingSave";
 import { t } from "@/i18n";
 
 /** Return shape of {@link useWaveRating}: the step's stars, a setter, and the move-on save. */
 export interface UseWaveRatingResult {
   /** The stars tapped so far. Blank on every visit: nothing reads a saved rating back. */
   readonly stars: WaveRatingDraft;
-  /** Set one or more prompts. A tap on another star replaces the value. */
-  readonly setStars: (patch: WaveRatingDraft) => void;
+  /** Set one prompt's stars. A tap on another star replaces the value. */
+  readonly setStars: (prompt: WaveRatingPrompt, stars: number) => void;
   /** Save the stars, if the learner gave an overall rating. Never waits for the save. */
   readonly submit: () => void;
 }
@@ -50,7 +54,7 @@ export function useWaveRating(courseId: string, waveNumber: number): UseWaveRati
 
   return {
     stars,
-    setStars: (patch) => setStarsState((prev) => ({ ...prev, ...patch })),
+    setStars: (prompt, value) => setStarsState((prev) => ({ ...prev, [prompt]: value })),
     submit: () => {
       const input = deriveWaveRatingSave({ courseId, waveNumber, stars });
       if (!input || sent.current) return;
