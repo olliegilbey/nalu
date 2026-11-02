@@ -129,6 +129,20 @@ describe("WaveSession rating step", () => {
     expect(save.fn.mock.calls[0]![0]).toStrictEqual({ courseId: "c1", waveNumber: 1, overall: 4 });
   });
 
+  it("a double tap on move-on sends one save", async () => {
+    wave.value = waveStateFixture({ closeResult: CLOSE_RESULT });
+    renderSession();
+
+    fireEvent.click(star(4));
+    // `router.push` waits on the server, so the button stays live for a beat.
+    fireEvent.click(moveOnButton());
+    fireEvent.click(moveOnButton());
+    await flush();
+
+    // One save per visit: one row write and one `wave_rated` event.
+    expect(save.fn).toHaveBeenCalledOnce();
+  });
+
   it("a failed save shows a toast", async () => {
     save.fn.mockRejectedValue(new Error("boom"));
     wave.value = waveStateFixture({ closeResult: CLOSE_RESULT });
