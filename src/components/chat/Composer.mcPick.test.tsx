@@ -21,14 +21,12 @@ const questions: ChoiceQuestion[] = [
     prompt: "Capital of France?",
     options: ["Paris", "Lyon", "Nice", "Lille"],
     correctIndex: 0,
-    tier: 1,
   },
   {
     id: "q2",
     prompt: "Capital of Italy?",
     options: ["Milan", "Rome", "Turin", "Naples"],
     correctIndex: 1,
-    tier: 1,
   },
 ];
 
@@ -40,14 +38,12 @@ const nextQuestions: ChoiceQuestion[] = [
     prompt: "Largest planet?",
     options: ["Mars", "Jupiter", "Venus", "Earth"],
     correctIndex: 1,
-    tier: 1,
   },
   {
     id: "q2",
     prompt: "Smallest planet?",
     options: ["Mercury", "Saturn", "Uranus", "Neptune"],
     correctIndex: 0,
-    tier: 1,
   },
 ];
 

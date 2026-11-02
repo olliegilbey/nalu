@@ -64,7 +64,7 @@ describe("Composer pre-hydration recovery (issue #14)", () => {
   it("does not adopt in questionnaire mode (the buffer-restore effect owns state)", () => {
     const onChange = vi.fn();
     const questions: ChoiceQuestion[] = [
-      { id: "q1", prompt: "Pick one", options: ["A", "B"], correctIndex: 0, tier: 1 },
+      { id: "q1", prompt: "Pick one", options: ["A", "B"], correctIndex: 0 },
     ];
     const ui = <Composer value="" onChange={onChange} onSend={noop} questions={questions} />;
 

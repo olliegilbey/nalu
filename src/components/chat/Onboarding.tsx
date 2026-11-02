@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useScopingState } from "@/hooks/useScopingState";
-import { useCourseXp } from "@/hooks/useCourseXp";
+import { useXpBadge } from "@/hooks/useXpBadge";
+import { holdsTypedAnswer } from "@/lib/course/deriveXpTick";
 import { shapeQuestionnaireAnswers } from "@/lib/course/shapeQuestionnaireAnswers";
 import { shapeClarifyAnswers } from "@/lib/course/shapeClarifyAnswers";
 import { ChatShell } from "./ChatShell";
@@ -29,17 +30,16 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
     activeQuestionnaire,
     scopingResult,
     topic,
+    totalXp,
     isPending,
     failedTurn,
     courseNotFound,
     submitClarify,
     submitBaselineAnswers,
   } = useScopingState(courseId);
-  // Per-course XP display counter — surfaces the header XP badge during
-  // scoping so learners feel the reward loop from their first correct baseline
-  // answer. localStorage-backed and keyed by courseId, so the running total
-  // carries into the wave flow (whose `useWaveState` reads the same counter).
-  const courseXp = useCourseXp(courseId);
+  // The header badge shows the server's course total from getState. The
+  // scoping close's refetch carries the baseline XP, so the badge ticks then.
+  const badge = useXpBadge(totalXp);
 
   const [composerValue, setComposerValue] = useState("");
   // Optimistic user message. `entryCountAtSubmit` is the `chatEntries.length`
@@ -81,9 +81,9 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
     <ChatShell
       title={topic}
       onNew={() => router.push("/")}
-      xp={courseXp.xp}
-      xpPulseKey={courseXp.pulseKey}
-      xpGainAmount={courseXp.gainAmount}
+      xp={badge.xp}
+      xpPulseKey={badge.pulseKey}
+      xpGainAmount={badge.gainAmount}
       showXp
       composer={
         <Composer
@@ -98,7 +98,6 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
           disabled={isPending}
           questions={cardQuestions}
           persistKey={activeQuestionnaire?.persistKey}
-          onCorrectAnswer={courseXp.addXp}
           moveOn={moveOn}
           onComplete={(answers) => {
             if (!activeQuestionnaire) return;
@@ -121,14 +120,12 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
             if (activeQuestionnaire.kind === "clarify") {
               submitClarify(shapeClarifyAnswers(answers), { onError });
             } else {
-              submitBaselineAnswers(shapeQuestionnaireAnswers(answers), {
-                onError,
-                // Free-text baseline answers are graded server-side; pop the
-                // header badge with that subtotal on success. MC XP is already
-                // counted instantly via `onCorrectAnswer`, so the subtotal
-                // deliberately excludes it (no double-count).
-                onSuccess: (result) => courseXp.addXp(result.freeTextXpAwarded),
-              });
+              const shaped = shapeQuestionnaireAnswers(answers);
+              // One sound per answer. The close returns no per-answer
+              // grading, so a typed answer sounds on the close's tick. An
+              // all-MC card ticks silently: each pick sounded at confirm.
+              badge.soundOnNextRise(holdsTypedAnswer(shaped));
+              submitBaselineAnswers(shaped, { onError });
             }
           }}
         />

@@ -39,9 +39,7 @@ const hoisted = vi.hoisted(() => {
     // (tests assert on it) while the implementation itself ignores the arg.
     frameworkFn: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({})),
     baselineFn: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({})),
-    submitBaselineFn: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({
-      freeTextXpAwarded: 0,
-    })),
+    submitBaselineFn: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({})),
   };
 });
 
@@ -72,6 +70,7 @@ const baselineState: Record<string, unknown> = {
     responses: [],
   },
   scopingResult: null,
+  totalXp: 0,
 };
 
 // Framework present, baseline still null → the auto-dispatch effect fires
@@ -113,10 +112,12 @@ import { createQueryClient } from "@/lib/queryClient";
 import { useScopingState } from "./useScopingState";
 
 // Scoping closed: the state a refetch returns once submitBaseline committed.
+// The close added the baseline XP to the course total.
 const closedState: Record<string, unknown> = {
   ...baselineState,
   status: "active",
   scopingResult: { closingMessage: "done", startingTier: 1 },
+  totalXp: 45,
 };
 
 // A reload after a failed framework Turn: the clarify answers were saved
@@ -161,7 +162,7 @@ beforeEach(() => {
   hoisted.submitBaselineFn.mockReset();
   hoisted.frameworkFn.mockResolvedValue({});
   hoisted.baselineFn.mockResolvedValue({});
-  hoisted.submitBaselineFn.mockResolvedValue({ freeTextXpAwarded: 0 });
+  hoisted.submitBaselineFn.mockResolvedValue({});
   // Best-effort localStorage clear. Some Bun + jsdom combinations expose a
   // partial Storage shim without `.clear()` — guard the call.
   if (typeof window !== "undefined" && typeof window.localStorage?.clear === "function") {
@@ -265,6 +266,36 @@ describe("useScopingState", () => {
     });
     await waitFor(() => expect(result.current.scopingResult).not.toBeNull());
     expect(result.current.failedTurn).toBeNull();
+  });
+
+  it("the badge shows getState's totalXp after the scoping close", async () => {
+    hoisted.stateData = baselineState;
+    // The close commits server-side; the refetch after it returns the total.
+    hoisted.submitBaselineFn.mockImplementationOnce(async () => {
+      hoisted.stateData = closedState;
+      return {};
+    });
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+    await waitFor(() => expect(result.current.totalXp).toBe(0));
+
+    act(() => result.current.submitBaselineAnswers([{ id: "b1", kind: "mc", selected: "A" }]));
+
+    await waitFor(() => expect(result.current.totalXp).toBe(45));
+  });
+
+  it("the badge shows getState's totalXp after a reload Retry closes scoping (#113)", async () => {
+    // A replayed close returns no XP of its own; the refetched total carries it.
+    hoisted.stateData = strandedCloseState;
+    hoisted.submitBaselineFn.mockImplementationOnce(async () => {
+      hoisted.stateData = closedState;
+      return {};
+    });
+    const { result } = renderHook(() => useScopingState("c1"), { wrapper });
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("scopingClose"));
+
+    act(() => result.current.failedTurn?.retry());
+
+    await waitFor(() => expect(result.current.totalXp).toBe(45));
   });
 
   it("offers a framework Retry on reload when clarify answers were saved but no framework landed", async () => {

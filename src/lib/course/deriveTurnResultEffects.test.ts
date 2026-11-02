@@ -28,21 +28,25 @@ const closeTurn = (
 });
 
 describe("deriveTurnResultEffects", () => {
-  it("mid-turn: sums free-text XP and skips mc-index signals", () => {
+  it("mid-turn: a typed answer that earned XP sounds on the tick", () => {
     const result = midTurn([
-      { kind: "free-text", questionId: "q1", xpAwarded: 5 },
-      { kind: "mc-index", questionId: "q2", xpAwarded: 3 },
-      { kind: "free-text", questionId: "q3", xpAwarded: 2 },
+      { kind: "mc-index", questionId: "q1", xpAwarded: 3 },
+      { kind: "free-text", questionId: "q2", xpAwarded: 5 },
     ]);
-    expect(deriveTurnResultEffects(result)).toEqual({ xpGain: 7 });
+    expect(deriveTurnResultEffects(result)).toEqual({ typedAnswerEarnedXp: true });
   });
 
-  it("mid-turn: xpGain is 0 when there are no free-text signals", () => {
+  it("mid-turn: MC XP alone stays silent; its pick sounded at confirm", () => {
     const result = midTurn([{ kind: "mc-index", questionId: "q1", xpAwarded: 9 }]);
-    expect(deriveTurnResultEffects(result)).toEqual({ xpGain: 0 });
+    expect(deriveTurnResultEffects(result)).toEqual({ typedAnswerEarnedXp: false });
   });
 
-  it("close-turn: folds completion + free-text XP, carries closeResult and tier-up", () => {
+  it("mid-turn: a typed answer that earned no XP stays silent", () => {
+    const result = midTurn([{ kind: "free-text", questionId: "q1", xpAwarded: 0 }]);
+    expect(deriveTurnResultEffects(result).typedAnswerEarnedXp).toBe(false);
+  });
+
+  it("close-turn: carries closeResult and tier-up, and reads the typed answer's XP", () => {
     const result = closeTurn({
       completionXpAwarded: 20,
       tierAdvancedTo: 2,
@@ -52,7 +56,7 @@ describe("deriveTurnResultEffects", () => {
       ],
     });
     expect(deriveTurnResultEffects(result)).toEqual({
-      xpGain: 24,
+      typedAnswerEarnedXp: true,
       closeResult: {
         closingMessage: "Nice wave.",
         nextWaveNumber: 2,
@@ -63,10 +67,10 @@ describe("deriveTurnResultEffects", () => {
     });
   });
 
-  it("close-turn: omits tierUp when no tier advanced", () => {
+  it("close-turn: omits tierUp when no tier advanced; completion XP alone is silent", () => {
     const result = closeTurn({ completionXpAwarded: 15, tierAdvancedTo: null });
     const effects = deriveTurnResultEffects(result);
-    expect(effects.xpGain).toBe(15);
+    expect(effects.typedAnswerEarnedXp).toBe(false);
     expect(effects.closeResult).toEqual({
       closingMessage: "Nice wave.",
       nextWaveNumber: 2,

@@ -1,8 +1,10 @@
 # Design decision: client XP display counting (issues #18, #21, #19)
 
-**Status:** decision doc, 2026-07-20. All three verified present on
-`main`@`f3fbc25`. Priority P3 (display-only drift + a refactor gated on a
-product call). **Nothing here is implemented yet — Ollie picks a direction.**
+**Status:** Option A implemented (issue #240, parent #237). The header badge
+shows the server's `totalXp` and ticks when it rises; the client computes no
+XP. One sound per answer: a correct MC pick plays at confirm, and the tick
+sounds only for a typed answer. The text below is the original 2026-07-20
+decision record.
 
 **Update 2026-10-12:** #18 and #21 are fixed without a UX change (branch
 `fix/xp-display-drift`). Instant client MC XP stays. The Composer now awards a

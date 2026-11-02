@@ -22,8 +22,6 @@ export type QuestionForClient =
        * Absent on an ungraded MC question, such as clarify's.
        */
       readonly correctEnc?: string;
-      /** Concept tier — drives client-side `calculateMcXp`. Optional on the source. */
-      readonly tier?: number;
       readonly correct?: never;
       readonly freetextRubric?: never;
     }
@@ -31,17 +29,16 @@ export type QuestionForClient =
       readonly id: string;
       readonly type: "free_text";
       readonly prompt: string;
-      /** Concept tier — present for symmetry; free-text XP is server-graded. */
-      readonly tier?: number;
       readonly freetextRubric?: never;
     };
 
 /**
  * Project one stored question to its client-safe shape.
  *
- * Drops `freetextRubric` and `conceptName`, and swaps an MC `correct` for its
- * id-bound `correctEnc`. Server code keeps the stored question for grading;
- * only this projection crosses the wire. Pure.
+ * Drops `freetextRubric`, `conceptName` and `tier`, and swaps an MC `correct`
+ * for its id-bound `correctEnc`. The client computes no XP, so it has no use
+ * for a tier. Server code keeps the stored question for grading; only this
+ * projection crosses the wire. Pure.
  */
 export function redactQuestion(q: V3Question): QuestionForClient {
   if (q.type === "multiple_choice") {
@@ -52,10 +49,9 @@ export function redactQuestion(q: V3Question): QuestionForClient {
       options: q.options,
       correctEnc:
         q.correct === undefined ? undefined : encodeCorrect(q.id, KEY_TO_INDEX[q.correct]),
-      tier: q.tier,
     };
   }
-  return { id: q.id, type: "free_text", prompt: q.prompt, tier: q.tier };
+  return { id: q.id, type: "free_text", prompt: q.prompt };
 }
 
 /**

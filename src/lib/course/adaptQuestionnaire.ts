@@ -9,8 +9,6 @@ export interface ChoiceQuestion {
   /** Empty array means free-text-only. */
   readonly options: readonly string[];
   readonly correctIndex?: number;
-  /** Concept tier — drives client-side `calculateMcXp` for correct MC answers. */
-  readonly tier?: number;
 }
 
 /**
@@ -50,7 +48,7 @@ export function deriveMcFeedback(
  * instant-feedback toast locally without round-tripping. An ungraded MC
  * question (clarify) has no `correctEnc`; a failed decode returns `null`. Both
  * leave `correctIndex` undefined, and the Composer shows no verdict; server
- * grading stays authoritative. `tier` carries through for `calculateMcXp`.
+ * grading stays authoritative.
  *
  * Free-text branch: `options: []`, no `correctIndex` — the Composer renders
  * the textarea path.
@@ -63,10 +61,9 @@ export function adaptOpenQuestion(q: QuestionForClient): ChoiceQuestion {
       prompt: q.prompt,
       options: MC_OPTION_KEYS.map((key) => q.options[key]),
       correctIndex: decoded ?? undefined,
-      tier: q.tier,
     };
   }
-  return { id: q.id, prompt: q.prompt, options: [], tier: q.tier };
+  return { id: q.id, prompt: q.prompt, options: [] };
 }
 
 /**
@@ -80,7 +77,6 @@ export interface StreamedToolQuestion {
   readonly type: "multiple_choice" | "free_text";
   readonly prompt: string;
   readonly options?: McOptions;
-  readonly tier?: number;
 }
 
 /**
@@ -97,8 +93,7 @@ export function adaptStreamedToolQuestion(q: StreamedToolQuestion): ChoiceQuesti
       id: q.id,
       prompt: q.prompt,
       options: MC_OPTION_KEYS.map((key) => options[key]),
-      tier: q.tier,
     };
   }
-  return { id: q.id, prompt: q.prompt, options: [], tier: q.tier };
+  return { id: q.id, prompt: q.prompt, options: [] };
 }

@@ -62,7 +62,7 @@ describe("deriveStreamingTurn", () => {
     expect(deriveStreamingTurn(messages).streamingText).toBe("One attempt.");
   });
 
-  it("adapts the questionnaire part once its input is available", () => {
+  it("adapts the questionnaire part once its input is available, without a tier", () => {
     const messages = [
       assistant("a1", [
         text("Try this:"),
@@ -85,16 +85,17 @@ describe("deriveStreamingTurn", () => {
         },
       ]),
     ];
+    // The tool input type still carries `tier`; the client card drops it.
     expect(deriveStreamingTurn(messages).streamingQuestions).toEqual([
-      { id: "q1", prompt: "Which?", options: ["a", "b", "c", "d"], tier: 2 },
-      { id: "q2", prompt: "Why?", options: [], tier: undefined },
+      { id: "q1", prompt: "Which?", options: ["a", "b", "c", "d"] },
+      { id: "q2", prompt: "Why?", options: [] },
     ]);
   });
 
   it("keeps the questionnaire preview once the tool output is available", () => {
     const messages = [assistant("a1", [questionnaire("output-available", "q1")])];
     expect(deriveStreamingTurn(messages).streamingQuestions).toEqual([
-      { id: "q1", prompt: "q1?", options: [], tier: undefined },
+      { id: "q1", prompt: "q1?", options: [] },
     ]);
   });
 
@@ -111,7 +112,7 @@ describe("deriveStreamingTurn", () => {
     };
     const messages = [assistant("a1", [errored, questionnaire("input-available", "q2")])];
     expect(deriveStreamingTurn(messages).streamingQuestions).toEqual([
-      { id: "q2", prompt: "q2?", options: [], tier: undefined },
+      { id: "q2", prompt: "q2?", options: [] },
     ]);
   });
 
@@ -126,7 +127,7 @@ describe("deriveStreamingTurn", () => {
       ]),
     ];
     expect(deriveStreamingTurn(messages).streamingQuestions).toEqual([
-      { id: "q1", prompt: "q1?", options: [], tier: undefined },
+      { id: "q1", prompt: "q1?", options: [] },
     ]);
   });
 
@@ -139,7 +140,7 @@ describe("deriveStreamingTurn", () => {
     ];
     expect(deriveStreamingTurn(messages)).toEqual({
       streamingText: "Here is the idea.",
-      streamingQuestions: [{ id: "q1", prompt: "q1?", options: [], tier: undefined }],
+      streamingQuestions: [{ id: "q1", prompt: "q1?", options: [] }],
     });
   });
 

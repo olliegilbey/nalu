@@ -150,7 +150,8 @@ User types a topic
     -> UPDATE courses SET current_tier, starting_tier, baseline, summary, total_xp, status = 'active'
     -> Open Wave 1 from the blueprint; seed its opening text
     -> Close the scoping pass (stamps scoping_passes.closed_at)
-    -> Return { userMessage, wave1Id, freeTextXpAwarded }
+    -> Return { userMessage, wave1Id }
+       (the XP badge reads the new total from the getState refetch)
   -> Transition to Wave 1
 ```
 

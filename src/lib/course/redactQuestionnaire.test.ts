@@ -7,7 +7,7 @@ import { KEY_TO_INDEX } from "@/lib/types/mcOptionKey";
 const OPTIONS = { A: "3", B: "4", C: "5", D: "6" } as const;
 
 describe("redactQuestion", () => {
-  it("swaps a graded MC key for an id-bound correctEnc and drops the server fields", () => {
+  it("swaps a graded MC key for an id-bound correctEnc and drops the server fields and tier", () => {
     const q = redactQuestion({
       id: "b1",
       type: "multiple_choice",
@@ -19,14 +19,8 @@ describe("redactQuestion", () => {
       tier: 2,
     });
     if (q.type !== "multiple_choice") throw new Error("expected an MC question");
-    expect(Object.keys(q).sort()).toEqual([
-      "correctEnc",
-      "id",
-      "options",
-      "prompt",
-      "tier",
-      "type",
-    ]);
+    // No `tier`: the client computes no XP, so it has no use for one.
+    expect(Object.keys(q).sort()).toEqual(["correctEnc", "id", "options", "prompt", "type"]);
     expect(decodeCorrect("b1", q.correctEnc ?? "")).toBe(KEY_TO_INDEX.B);
   });
 
@@ -43,7 +37,7 @@ describe("redactQuestion", () => {
     expectNoPlaintextAnswerKey(q);
   });
 
-  it("drops a free-text rubric and concept name", () => {
+  it("drops a free-text rubric, concept name and tier", () => {
     expect(
       redactQuestion({
         id: "f1",
@@ -53,7 +47,7 @@ describe("redactQuestion", () => {
         conceptName: "counting",
         tier: 1,
       }),
-    ).toEqual({ id: "f1", type: "free_text", prompt: "Why?", tier: 1 });
+    ).toEqual({ id: "f1", type: "free_text", prompt: "Why?" });
   });
 });
 

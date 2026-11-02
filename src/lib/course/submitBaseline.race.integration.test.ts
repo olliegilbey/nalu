@@ -48,7 +48,6 @@ describe("submitBaseline racing the original close (integration)", () => {
       expect(result).toEqual({
         userMessage: PARSED.userMessage,
         wave1Id: wave1?.id,
-        freeTextXpAwarded: 0,
       });
       // The closed baseline survives, so the course still loads.
       const state = await getState({ userId: USER_ID, courseId });

@@ -72,7 +72,7 @@ async function seedCourseWithOpenWave(): Promise<{
 describe("wave.getState", () => {
   // -------------------------------------------------------------------------
   // 1. Active wave with one consumed user-turn → router returns the projected
-  //    WaveState shape: status='active', currentTier echoed, turnsRemaining
+  //    WaveState shape: status='active', turnsRemaining
   //    reflects the chat_log (single source of truth post-T11), chatLog
   //    contains the redacted entries, closeResult always null on getState.
   // -------------------------------------------------------------------------
@@ -114,7 +114,6 @@ describe("wave.getState", () => {
 
       expect(state.status).toBe("active");
       expect(state.waveId).toBe(waveId);
-      expect(state.currentTier).toBe(1);
       expect(state.turnsRemaining).toBe(WAVE.turnCount - 1);
       // chatLog wire: two redacted entries (user text + assistant text).
       // No `text_with_questionnaire` present, so no open questionnaire is

@@ -155,7 +155,7 @@ describe("getState", () => {
     const [mc, ft] = result.baseline?.questions ?? [];
     if (mc?.type !== "multiple_choice") throw new Error("expected an MC question");
     expect(decodeCorrect("b1", mc.correctEnc ?? "")).toBe(KEY_TO_INDEX.C);
-    expect(ft).toEqual({ id: "b2", type: "free_text", prompt: "Why does 2+2 make 4?", tier: 1 });
+    expect(ft).toEqual({ id: "b2", type: "free_text", prompt: "Why does 2+2 make 4?" });
     // An ungraded clarify MC has no key to encode.
     const [clarifyMc] = result.clarification?.questions ?? [];
     if (clarifyMc?.type !== "multiple_choice") throw new Error("expected an MC question");

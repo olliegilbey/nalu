@@ -98,7 +98,7 @@ describe("redactWaveChatLog", () => {
     }
   });
 
-  it("projects the optional per-question tier onto the client question", () => {
+  it("drops the per-question tier from the client question", () => {
     const result = redactWaveChatLog([
       {
         role: "assistant",
@@ -122,7 +122,8 @@ describe("redactWaveChatLog", () => {
     if (entry?.role !== "assistant" || entry.kind !== "text_with_questionnaire") {
       throw new Error("expected a text_with_questionnaire entry");
     }
-    expect(entry.questions[0]?.tier).toBe(3);
+    // The client computes no XP, so the tier stays server-side.
+    expect(entry.questions[0] && "tier" in entry.questions[0]).toBe(false);
   });
 
   it("throws if an MC question is missing the correct key", () => {
