@@ -105,6 +105,19 @@ describe("diagnoseFailure (JSON contract)", () => {
     expect(out).not.toMatch(/wrong turn/);
   });
 
+  // The merged scoping Turn nests a `userMessage` in each half (issue #15).
+  it("calls out a missing nested userMessage on a framework-and-baseline body", () => {
+    const err = failWith({
+      ...missing("userMessage", "string"),
+      path: ["baseline", "userMessage"],
+    });
+    const { userMessage: _dropped, ...baseline } = frameworkAndBaselineBody.baseline;
+    const raw = JSON.stringify({ ...frameworkAndBaselineBody, baseline });
+    const out = diagnoseFailure(err, raw, "framework-and-baseline");
+    expect(out).toMatch(/`baseline\.userMessage`.*every turn must include/);
+    expect(out).not.toMatch(/wrong turn/);
+  });
+
   it("notes a cross-stage payload (a framework-and-baseline body in a clarify turn)", () => {
     const err = failWith(missing("questions", "object"));
     const out = diagnoseFailure(err, rawWithout(frameworkAndBaselineBody), "clarify");

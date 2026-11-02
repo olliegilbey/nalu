@@ -6,7 +6,8 @@ import type { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
  *
  * Under JSON-everywhere all parse failures fall into a small set:
  *   1. Non-JSON response — directive starts with "Your previous response did not parse as JSON".
- *   2. Missing `userMessage` — Zod reports `invalid_type` at `["userMessage"]`.
+ *   2. Missing `userMessage` — Zod reports `invalid_type` at `["userMessage"]`,
+ *      or at `["framework" | "baseline", "userMessage"]` on the merged scoping Turn.
  *   3. Refine failure — the shape parsed; only `.refine` / `.superRefine` rules broke.
  *   4. Wrong stage payload — the body's keys fit another stage better than this turn's.
  *   5. Shape failure — list the Zod issues; any other detail gets a short gloss.
@@ -125,13 +126,13 @@ export function diagnoseFailure(err: ValidationGateFailure, raw: string, label: 
     .join("; ");
 
   // (2) Missing userMessage — every stage requires it, so it says nothing
-  // about which stage the body is.
-  const userMessageBroken = issues.data.some(
-    (issue) =>
-      issue.code === "invalid_type" && issue.path.length === 1 && issue.path[0] === "userMessage",
+  // about which stage the body is. The merged scoping Turn nests one in each
+  // half, so match on the last path segment and name the full path.
+  const missingUserMessage = issues.data.find(
+    (issue) => issue.code === "invalid_type" && issue.path.at(-1) === "userMessage",
   );
-  if (userMessageBroken) {
-    return "response is missing the required `userMessage` field — every turn must include it.";
+  if (missingUserMessage) {
+    return `response is missing the required \`${missingUserMessage.path.join(".")}\` field — every turn must include it.`;
   }
 
   // (3) Refine failure. Zod emits `custom` issues only from refines, and a
