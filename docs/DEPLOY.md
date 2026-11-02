@@ -44,7 +44,7 @@ All files hold plain values, with no `op://` references (see `justfile`).
 | `DATABASE_URL`                         | also `.env.production.local` | **pooled** connection (`?pgbouncer=true`) — required for serverless      |
 | `DIRECT_URL`                           | also `.env.production.local` | direct connection; used by the `-prod` recipes                           |
 | `DEV_USER_ID`                          | any valid UUID               | schema-required even in prod; unused by the prod auth path (see Gotchas) |
-| `POSTHOG_KEY`                          | `phc_…` ingestion key        | optional — absent disables analytics; read by `src/proxy.ts`             |
+| `POSTHOG_KEY`                          | `phc_…` ingestion key        | optional — absent disables analytics; sends `$pageview` and `wave_rated` |
 
 `NEXT_PUBLIC_DEV_USER_ID` is **not** needed in production (dev-stub only).
 `POSTHOG_PERSONAL_API_KEY` is not needed in Vercel either. Only the local

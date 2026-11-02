@@ -31,8 +31,8 @@ next Wave's snapshot (`getCourseOwnerCustomInstructionsInTx` in
 
 Modules: one base file per table (`userProfiles.ts`, `courses.ts`,
 `scopingPasses.ts`, `waves.ts`, `contextMessages.ts`, `concepts.ts`,
-`assessments.ts`). A base file past ~200 lines splits into dot-suffixed
-siblings, one concern each:
+`assessments.ts`, `waveRatings.ts`). A base file past ~200 lines splits
+into dot-suffixed siblings, one concern each:
 
 - `courses.ts`: row guard, create, reads. `courses.scoping.ts`: scoping-phase
   writes. `courses.tx.ts`: the close transactions' reads and writes:
@@ -49,6 +49,8 @@ siblings, one concern each:
   locks it first (`lockAssessmentForGradingInTx`) so the course XP bump
   follows the row. `assessments.fixtures.ts` seeds the two integration
   suites; tests import it, production never does.
+- `waveRatings.ts`: `upsertWaveRating`, keyed on `wave_id`. A later save
+  overwrites every star column, nulls included, and moves `rated_at`.
 
 Integration tests split the same way and sit beside their module
 (`courses.scoping.integration.test.ts`). The barrel `index.ts` re-exports

@@ -15,6 +15,7 @@ import { getTestDbUrl } from "./setup";
 // keys (e.g. via Object.values(schema).map(t => getTableName(t))) if drift
 // becomes a problem; explicit list is fine while the schema is small.
 const TABLES_LEAF_FIRST = [
+  "wave_ratings",
   "assessments",
   "context_messages",
   "concepts",

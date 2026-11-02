@@ -113,6 +113,11 @@
     "baseline": { "indicator": "Baseline check" }
   },
   "moveOn": { "toWave": "Move on to Wave {n}" },
+  "waveRating": {
+    "overallPrompt": "How was this Wave?",
+    "star": "{n} of 5 stars",
+    "saveFailed": "Couldn't save your rating"
+  },
   "waveProgress": {
     "label": "Wave progress",
     "turn": "Turn {current} of {total}",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { ArrowUp, Check, Mic, Plus } from "lucide-react";
 import { t } from "@/i18n";
 import { useQuestionnaire, type UseQuestionnaireOptions } from "@/hooks/useQuestionnaire";
@@ -13,8 +13,15 @@ export type { ChoiceQuestion } from "@/lib/course/adaptQuestionnaire";
 interface ComposerProps extends UseQuestionnaireOptions {
   /** When true, show the "What do you want to learn…" prompt. */
   readonly isFirstMessage?: boolean;
-  /** When set, replaces the input row with a single advance button. */
-  readonly moveOn?: { readonly label: string; readonly onAdvance: () => void };
+  /**
+   * When set, replaces the input row with a single advance button.
+   * `aboveButton` renders directly above it, such as the Wave rating step.
+   */
+  readonly moveOn?: {
+    readonly label: string;
+    readonly onAdvance: () => void;
+    readonly aboveButton?: ReactNode;
+  };
 }
 
 /** Chat input bar that swaps in an answer card; `useQuestionnaire` owns the card's state. */
@@ -51,6 +58,7 @@ export function Composer({ isFirstMessage, moveOn, ...options }: ComposerProps) 
   if (moveOn) {
     return (
       <div className="px-3 pb-4 pt-3 bg-sumi-1/85 backdrop-blur-xl border-t border-sumi-4/60">
+        {moveOn.aboveButton}
         <button
           onClick={moveOn.onAdvance}
           className="w-full h-11 inline-flex items-center justify-center rounded-2xl bg-spring-green text-sumi-0 font-medium tracking-tight transition active:scale-[0.99] hover:brightness-110"

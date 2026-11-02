@@ -34,6 +34,10 @@ vi.mock("@/lib/sound", () => ({ playWrong: vi.fn(), playCorrect: vi.fn() }));
 
 const wave = vi.hoisted(() => ({ value: {} as UseWaveStateResult }));
 vi.mock("@/hooks/useWaveState", () => ({ useWaveState: () => wave.value }));
+// The rating save needs a tRPC provider; `WaveSession.rating.test.tsx` covers it.
+vi.mock("@/hooks/useWaveRating", () => ({
+  useWaveRating: () => ({ stars: {}, setStars: vi.fn(), submit: vi.fn() }),
+}));
 
 import { WaveSession } from "./WaveSession";
 import { waveStateFixture } from "./WaveSession.fixtures";

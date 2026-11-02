@@ -66,6 +66,14 @@ describe("capturePageview", () => {
 
   it("never throws when the network call fails (analytics must not break page delivery)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
     await expect(run({})).resolves.toBeUndefined();
+
+    // A DNS failure or a timeout logs too: nothing is swallowed silently. The
+    // line names the event and the error class, never the error's message.
+    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(errorSpy.mock.calls[0]![0]).toMatch(/^\[posthog\] \$pageview capture failed/);
+    expect(errorSpy.mock.calls[0]![0]).not.toContain("network down");
   });
 });

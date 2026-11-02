@@ -23,3 +23,4 @@ export * from "./concepts.writes";
 export * from "./assessments";
 export * from "./assessments.open";
 export * from "./assessments.grade";
+export * from "./waveRatings";
