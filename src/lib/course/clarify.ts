@@ -19,7 +19,7 @@ export interface ClarifyResult {
   readonly courseId: string;
   /** The clarify Turn, projected: rubrics stay server-side. */
   readonly clarification: QuestionnaireTurnForClient;
-  readonly nextStage: "framework";
+  readonly nextStage: "frameworkAndBaseline";
 }
 
 /**
@@ -55,7 +55,7 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
         userMessage: stored.userMessage,
         questions: { questions: stored.questions },
       }),
-      nextStage: "framework",
+      nextStage: "frameworkAndBaseline",
     };
   }
 
@@ -90,6 +90,6 @@ export async function clarify(params: ClarifyParams): Promise<ClarifyResult> {
   return {
     courseId: course.id,
     clarification: redactQuestionnaireTurn(parsed),
-    nextStage: "framework",
+    nextStage: "frameworkAndBaseline",
   };
 }

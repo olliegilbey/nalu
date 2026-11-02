@@ -88,13 +88,9 @@ export async function generateFrameworkAndBaseline(
   // through: the Turn reruns and rewrites the framework with its baseline, so
   // the baseline's tiers always match the stored `baselineScopeTiers`.
   if (course.framework !== null && course.baseline !== null) {
-    const stored = course.baseline as BaselineJsonb;
     return {
       framework: course.framework as FrameworkJsonb,
-      baseline: redactQuestionnaireTurn({
-        userMessage: stored.userMessage,
-        questions: { questions: stored.questions },
-      }),
+      baseline: redactStoredBaseline(course.baseline as BaselineJsonb),
       nextStage: "answering",
     };
   }
@@ -162,12 +158,16 @@ export async function generateFrameworkAndBaseline(
   // One write, so no reader ever sees this Turn's framework without its baseline.
   await updateCourseScopingState(course.id, { framework, baseline });
 
-  return {
-    framework,
-    baseline: redactQuestionnaireTurn({
-      userMessage: baseline.userMessage,
-      questions: { questions: baseline.questions },
-    }),
-    nextStage: "answering",
-  };
+  return { framework, baseline: redactStoredBaseline(baseline), nextStage: "answering" };
+}
+
+/**
+ * Project a stored baseline for the client. The column keeps its questions
+ * flat; the client's questionnaire Turn nests them, as clarify's does.
+ */
+function redactStoredBaseline(baseline: BaselineJsonb): QuestionnaireTurnForClient {
+  return redactQuestionnaireTurn({
+    userMessage: baseline.userMessage,
+    questions: { questions: baseline.questions },
+  });
 }

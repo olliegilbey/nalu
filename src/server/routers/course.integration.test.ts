@@ -246,7 +246,7 @@ describe("course.clarify", () => {
 
       // Router return value — clarification is { userMessage, questions: { questions: [...] } }.
       expect(result.clarification.questions.questions).toHaveLength(2);
-      expect(result.nextStage).toBe("framework");
+      expect(result.nextStage).toBe("frameworkAndBaseline");
       expect(result.courseId).toBeTruthy();
 
       // DB: context_messages for this scoping pass — 2 rows in order.
@@ -492,6 +492,9 @@ describe("course.generateFrameworkAndBaseline", () => {
         framework: oldFramework,
       });
       const oldRows = await contextRows(db);
+      // The system prompt the clarify Turn sent. The prefix stays byte-stable
+      // only if the merged Turn sends the same bytes.
+      const [clarifyMessages] = vi.mocked(generateChat).mock.calls.at(-1)!;
       vi.mocked(generateChat).mockClear();
       vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validFrameworkAndBaselineText()));
 
@@ -501,6 +504,7 @@ describe("course.generateFrameworkAndBaseline", () => {
       const [messages] = vi.mocked(generateChat).mock.calls[0]!;
       const contents = messages.map((m) => m.content);
       expect(messages[0]?.role).toBe("system");
+      expect(messages[0]).toEqual(clarifyMessages[0]);
       expect(contents.slice(1, 1 + oldRows.length)).toEqual(oldRows.map((r) => r.content));
       expect(contents.at(-1)).toContain("<stage>generate framework and baseline</stage>");
 
