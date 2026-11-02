@@ -38,14 +38,12 @@ const hoisted = vi.hoisted(() => {
     // Typed via `vi.fn`'s generic so `.mock.calls[i][0]` is the passed vars
     // (tests assert on it) while the implementation itself ignores the arg.
     frameworkFn: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({})),
-    baselineFn: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({})),
     submitBaselineFn: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({})),
   };
 });
 
-// Framework present + baseline pending → baseline questionnaire is active and
-// the auto-dispatch effect is inert (baseline already exists), so this state
-// isolates the submitBaseline submit path.
+// Framework and baseline present, no baseline answers yet → the baseline
+// questionnaire is active. This state isolates the submitBaseline submit path.
 const baselineState: Record<string, unknown> = {
   courseId: "c1",
   status: "scoping",
@@ -73,8 +71,8 @@ const baselineState: Record<string, unknown> = {
   totalXp: 0,
 };
 
-// Framework present, baseline still null → the auto-dispatch effect fires
-// generateBaseline. Exercises the baseline auto-dispatch failure path.
+// A course framed before the merge (issue #15): framework present, baseline
+// still null. The old client fired a separate baseline Turn on mount.
 const frameworkOnlyState: Record<string, unknown> = {
   ...baselineState,
   baseline: null,
@@ -94,11 +92,8 @@ vi.mock("@/lib/trpc", () => {
     useTRPC: () => ({
       course: {
         getState: { queryOptions: () => stateOpts },
-        generateFramework: {
+        generateFrameworkAndBaseline: {
           mutationOptions: (o: Opts) => ({ ...o, mutationFn: hoisted.frameworkFn }),
-        },
-        generateBaseline: {
-          mutationOptions: (o: Opts) => ({ ...o, mutationFn: hoisted.baselineFn }),
         },
         submitBaseline: {
           mutationOptions: (o: Opts) => ({ ...o, mutationFn: hoisted.submitBaselineFn }),
@@ -158,10 +153,8 @@ beforeEach(() => {
   hoisted.stateError = null;
   hoisted.getStateCalls = 0;
   hoisted.frameworkFn.mockReset();
-  hoisted.baselineFn.mockReset();
   hoisted.submitBaselineFn.mockReset();
   hoisted.frameworkFn.mockResolvedValue({});
-  hoisted.baselineFn.mockResolvedValue({});
   hoisted.submitBaselineFn.mockResolvedValue({});
   // Best-effort localStorage clear. Some Bun + jsdom combinations expose a
   // partial Storage shim without `.clear()` — guard the call.
@@ -196,7 +189,7 @@ describe("useScopingState", () => {
     expect(result.current.failedTurn).toBeNull();
   });
 
-  it("records a failed framework turn, then a retry re-dispatches identical variables and clears it", async () => {
+  it("records a failed framework-and-baseline turn, then a retry re-dispatches identical variables and clears it", async () => {
     hoisted.frameworkFn.mockRejectedValueOnce(new Error("429"));
     const { result } = renderHook(() => useScopingState("c1"), { wrapper });
     await waitFor(() => expect(result.current.activeQuestionnaire?.kind).toBe("clarify"));
@@ -204,7 +197,7 @@ describe("useScopingState", () => {
     const answers = [{ questionId: "q1", freetext: "because" }];
     act(() => result.current.submitClarify(answers));
 
-    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("framework"));
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("frameworkAndBaseline"));
     expect(hoisted.frameworkFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1", responses: answers });
 
     // Retry succeeds (default resolve): identical variables re-sent, row cleared.
@@ -233,21 +226,21 @@ describe("useScopingState", () => {
     expect(hoisted.submitBaselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1", answers });
   });
 
-  it("records a failed baseline auto-dispatch with the baseline kind, then a retry re-sends identical variables and clears it", async () => {
+  it("fires no Turn on its own for a framework with no baseline, and offers a Retry that re-sends the saved clarify answers", async () => {
     hoisted.stateData = frameworkOnlyState;
-    hoisted.baselineFn.mockRejectedValue(new Error("429"));
     const { result } = renderHook(() => useScopingState("c1"), { wrapper });
 
-    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("baseline"));
-    expect(hoisted.baselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1" });
+    // No auto-dispatch: the Retry row is the way on (issue #15).
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("frameworkAndBaseline"));
+    expect(hoisted.frameworkFn).not.toHaveBeenCalled();
+    expect(result.current.activeQuestionnaire).toBeNull();
 
-    // The guard stays set on error, so only Retry re-sends. Make it succeed.
-    hoisted.baselineFn.mockReset();
-    hoisted.baselineFn.mockResolvedValue({});
     act(() => result.current.failedTurn?.retry());
-    await waitFor(() => expect(result.current.failedTurn).toBeNull());
-    expect(hoisted.baselineFn).toHaveBeenCalledTimes(1);
-    expect(hoisted.baselineFn.mock.calls[0]?.[0]).toEqual({ courseId: "c1" });
+    await waitFor(() => expect(hoisted.frameworkFn).toHaveBeenCalledTimes(1));
+    expect(hoisted.frameworkFn.mock.calls[0]?.[0]).toEqual({
+      courseId: "c1",
+      responses: [{ questionId: "q1", freetext: "x" }],
+    });
   });
 
   it("drops a failed scopingClose once a refetch shows scoping closed on the server", async () => {
@@ -298,12 +291,12 @@ describe("useScopingState", () => {
     await waitFor(() => expect(result.current.totalXp).toBe(45));
   });
 
-  it("offers a framework Retry on reload when clarify answers were saved but no framework landed", async () => {
+  it("offers a framework-and-baseline Retry on reload when clarify answers were saved but no framework landed", async () => {
     hoisted.stateData = strandedFrameworkState;
     const { result } = renderHook(() => useScopingState("c1"), { wrapper });
 
     // No question card comes back, so the Retry row is the only way on.
-    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("framework"));
+    await waitFor(() => expect(result.current.failedTurn?.kind).toBe("frameworkAndBaseline"));
     expect(result.current.activeQuestionnaire).toBeNull();
 
     // Retry re-sends the saved answers.

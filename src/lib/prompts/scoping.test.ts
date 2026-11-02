@@ -45,10 +45,10 @@ describe("renderScopingSystem", () => {
 describe("renderStageEnvelope", () => {
   it("wraps learner input with bare stage label", () => {
     const out = renderStageEnvelope({
-      stage: "generate framework",
+      stage: "generate framework and baseline",
       learnerInput: "A: Rust beginner",
     });
-    expect(out).toContain("<stage>generate framework</stage>");
+    expect(out).toContain("<stage>generate framework and baseline</stage>");
     expect(out).toContain("<learner_input>");
     expect(out).toContain("A: Rust beginner");
   });

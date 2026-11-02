@@ -28,7 +28,7 @@ The learner's free-text learning preferences, such as "I learn best through anal
 
 ## Baseline
 
-The 7-9 assessment questions generated after the framework is confirmed. Mix of multiple choice (graded mechanically by `submitBaseline`, no LLM) and free-text (graded by a single batched LLM call inside `submitBaseline`). Its per-tier results set the learner's starting tier: `determineStartingTier` in `src/lib/scoring/startingTier.ts`, with the threshold `BASELINE.tierMasteryRatio`. The model grades answers; it never picks the tier.
+The 7-9 assessment questions, generated with the framework in one Turn (`generateFrameworkAndBaseline`) and drawn from its baseline-scope tiers. Mix of multiple choice (graded mechanically by `submitBaseline`, no LLM) and free-text (graded by a single batched LLM call inside `submitBaseline`). Its per-tier results set the learner's starting tier: `determineStartingTier` in `src/lib/scoring/startingTier.ts`, with the threshold `BASELINE.tierMasteryRatio`. The model grades answers; it never picks the tier.
 
 ## Concept
 
@@ -99,7 +99,7 @@ The first set of turns when a User starts a new course: clarify â†’ framework â†
 
 ## Scoping pass
 
-One row in `scoping_passes`, opened by the first scoping call (`ensureOpenScopingPass`). Parents all scoping `context_messages` rows (clarification turns, framework turns, baseline turns). The structured outputs live on `courses.{clarification, framework, baseline}`, not on the pass. Teaching reads only those outputs; the scoping message history never reaches a Wave prompt (P-ON-05). The rows are kept, not deleted. The scoping-close transaction (`persistScopingClose`) closes the pass and stamps `closed_at`.
+One row in `scoping_passes`, opened by the first scoping call (`ensureOpenScopingPass`). Parents all scoping `context_messages` rows (clarification turns, framework-and-baseline turns, the close turn). The structured outputs live on `courses.{clarification, framework, baseline}`, not on the pass. Teaching reads only those outputs; the scoping message history never reaches a Wave prompt (P-ON-05). The rows are kept, not deleted. The scoping-close transaction (`persistScopingClose`) closes the pass and stamps `closed_at`.
 
 ## Seed source
 

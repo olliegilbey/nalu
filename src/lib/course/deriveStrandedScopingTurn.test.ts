@@ -58,18 +58,22 @@ describe("deriveStrandedScopingTurn", () => {
     expect(deriveStrandedScopingTurn(state({}))).toBeNull();
   });
 
-  it("returns the framework Turn with the saved answers when no framework landed", () => {
+  it("returns the merged Turn with the saved answers when no framework landed", () => {
     const saved = { ...clarification, responses: [{ questionId: "q1", freetext: "an exam" }] };
     expect(deriveStrandedScopingTurn(state({ clarification: saved }))).toEqual({
-      kind: "framework",
+      kind: "frameworkAndBaseline",
       responses: [{ questionId: "q1", freetext: "an exam" }],
     });
   });
 
-  it("returns null once the framework landed and the baseline is not yet built", () => {
-    // The hook re-fires the baseline Turn on mount, so it needs no Retry here.
+  // A course framed before the merge (issue #15) holds a framework with no
+  // baseline. No client fires a baseline Turn any more, so it strands too.
+  it("returns the merged Turn with the saved answers for a framework with no baseline", () => {
     const saved = { ...clarification, responses: [{ questionId: "q1", freetext: "an exam" }] };
-    expect(deriveStrandedScopingTurn(state({ clarification: saved, framework }))).toBeNull();
+    expect(deriveStrandedScopingTurn(state({ clarification: saved, framework }))).toEqual({
+      kind: "frameworkAndBaseline",
+      responses: [{ questionId: "q1", freetext: "an exam" }],
+    });
   });
 
   it("returns null while the baseline questions still await answers", () => {
@@ -114,7 +118,7 @@ describe("deriveStrandedScopingTurn", () => {
   });
 
   it("throws when a saved clarify response carries no free text", () => {
-    // Clarify is free-text only; generateFramework never saves a choice.
+    // Clarify is free-text only; generateFrameworkAndBaseline never saves a choice.
     const corrupt = { ...clarification, responses: [{ questionId: "q1", choice: "A" as const }] };
     expect(() => deriveStrandedScopingTurn(state({ clarification: corrupt }))).toThrow(/q1/);
   });

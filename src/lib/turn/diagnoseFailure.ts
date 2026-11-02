@@ -30,9 +30,9 @@ const zodIssueListSchema = z
 // `includes` check and avoids chained string ops that trip typed-lint rules.
 // The scoping close emits only the close-turn base, so its signature is the
 // base's keys, the blueprint's included. A close body also matches three of
-// the baseline's keys (`conceptName`, `tier`, and `"correct"` as a verdict),
-// so the blueprint keys keep a close body with one broken key ahead of the
-// baseline. The Wave close adds `conceptUpdates`: a body with it fits the
+// the framework-and-baseline keys (`conceptName`, `tier`, and `"correct"` as a
+// verdict), so the blueprint keys keep a close body with one broken key ahead
+// of that Turn. The Wave close adds `conceptUpdates`: a body with it fits the
 // Wave close better. A body without it ties the two, and a tie never claims
 // a wrong turn.
 const CLOSE_TURN_KEYS = [
@@ -45,8 +45,16 @@ const CLOSE_TURN_KEYS = [
 ] as const;
 const STAGE_KEY_SIGNATURES = {
   clarify: ["questions", "freetextRubric"],
-  framework: ["tiers", "estimatedStartingTier", "baselineScopeTiers"],
-  baseline: ["questions", "conceptName", "tier", "correct"],
+  // One Turn emits both artifacts (issue #15): the framework's keys, then the baseline's.
+  "framework-and-baseline": [
+    "tiers",
+    "estimatedStartingTier",
+    "baselineScopeTiers",
+    "questions",
+    "conceptName",
+    "tier",
+    "correct",
+  ],
   "scoping-close": CLOSE_TURN_KEYS,
   "wave-close": [...CLOSE_TURN_KEYS, "conceptUpdates"],
 } as const satisfies Record<string, readonly string[]>;

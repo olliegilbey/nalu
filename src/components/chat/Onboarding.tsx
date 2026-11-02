@@ -45,9 +45,8 @@ export function Onboarding({ courseId }: { readonly courseId: string }) {
   // Optimistic user message. `entryCountAtSubmit` is the `chatEntries.length`
   // captured at submit: the bubble shows while `chatEntries` has not grown past
   // it (server round-trip not yet landed, or it failed) and hides the instant
-  // the real entry appears. This prevents a duplicate during the
-  // framework→baseline gap (the real entry lands while baseline is still
-  // dispatching) and keeps the bubble visible on error.
+  // the real entry appears. This prevents a duplicate once the real entry
+  // lands and keeps the bubble visible on error.
   const [optimistic, setOptimistic] = useState<{
     readonly content: string;
     readonly entryCountAtSubmit: number;

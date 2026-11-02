@@ -23,9 +23,9 @@ export function deriveChatEntries(state: CourseState): readonly ChatEntry[] {
   }
 
   // Once the framework lands, clarify responses are guaranteed to be saved
-  // (generateFramework persists them before calling the LLM — see
-  // src/lib/course/generateFramework.ts:82-92). Emit the user-questionnaire-answers
-  // entry from the persisted responses so a reload renders identically.
+  // (generateFrameworkAndBaseline persists them before calling the LLM). Emit
+  // the user-questionnaire-answers entry from the persisted responses so a
+  // reload renders identically.
   if (state.framework && state.clarification) {
     chatEntries.push({
       kind: "user-questionnaire-answers",

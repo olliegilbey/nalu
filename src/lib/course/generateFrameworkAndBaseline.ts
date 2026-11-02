@@ -4,28 +4,35 @@ import { getCourseById } from "@/db/queries/courses";
 import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { SCOPING } from "@/lib/config/tuning";
-import { frameworkSchema, type Framework } from "@/lib/prompts/framework";
+import { frameworkAndBaselineSchema } from "@/lib/prompts/frameworkAndBaseline";
 import { renderStageEnvelope } from "@/lib/prompts/scoping";
-import type { ClarificationJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
+import type { BaselineJsonb, ClarificationJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
+import { redactQuestionnaireTurn, type QuestionnaireTurnForClient } from "./redactQuestionnaire";
 
-/** Parameters for {@link generateFramework}; responses are the learner's clarify answers. */
-export interface GenerateFrameworkParams {
+/** Parameters for {@link generateFrameworkAndBaseline}; responses are the learner's clarify answers. */
+export interface GenerateFrameworkAndBaselineParams {
   readonly courseId: string;
   readonly userId: string;
   /** Learner responses, one per clarify question. Same order as the stored questions. */
   readonly responses: readonly { readonly questionId: string; readonly freetext: string }[];
 }
 
-/** Result of {@link generateFramework}; persisted framework JSONB + next scoping stage. */
-export interface GenerateFrameworkResult {
+/** Result of {@link generateFrameworkAndBaseline}; the framework, the baseline Turn, next stage. */
+export interface GenerateFrameworkAndBaselineResult {
   readonly framework: FrameworkJsonb;
-  readonly nextStage: "baseline";
+  /** The baseline Turn, projected: rubrics stay server-side; MC keys ship as `correctEnc`. */
+  readonly baseline: QuestionnaireTurnForClient;
+  readonly nextStage: "answering";
 }
 
-/** Scoping framework turn: validates clarify answers, emits tier ladder, persists JSONB. */
-export async function generateFramework(
-  params: GenerateFrameworkParams,
-): Promise<GenerateFrameworkResult> {
+/**
+ * Merged scoping Turn (issue #15): validates the clarify answers, then one LLM
+ * call emits the tier ladder and the baseline written against its scope.
+ * Persists both JSONB columns in one write.
+ */
+export async function generateFrameworkAndBaseline(
+  params: GenerateFrameworkAndBaselineParams,
+): Promise<GenerateFrameworkAndBaselineResult> {
   if (params.responses.length === 0) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "responses cannot be empty" });
   }
@@ -40,13 +47,13 @@ export async function generateFramework(
   if (course.status !== "scoping") {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
-      message: `generateFramework: course ${course.id} is in status '${course.status}'`,
+      message: `generateFrameworkAndBaseline: course ${course.id} is in status '${course.status}'`,
     });
   }
   if (course.clarification === null) {
     throw new TRPCError({
       code: "PRECONDITION_FAILED",
-      message: `generateFramework: course ${course.id} has no clarification`,
+      message: `generateFrameworkAndBaseline: course ${course.id} has no clarification`,
     });
   }
   const clarification = course.clarification as ClarificationJsonb;
@@ -75,13 +82,25 @@ export async function generateFramework(
       message: `duplicate questionId(s): ${[...new Set(dupIds)].join(", ")}`,
     });
   }
-  // Idempotency.
-  if (course.framework !== null) {
-    return { framework: course.framework as FrameworkJsonb, nextStage: "baseline" };
+  // Idempotency. This Turn writes both columns at once, so a course holding
+  // both has run it. A framework with no baseline is a course framed before
+  // the merge (issue #15), whose separate baseline Turn never landed. It falls
+  // through: the Turn reruns and rewrites the framework with its baseline, so
+  // the baseline's tiers always match the stored `baselineScopeTiers`.
+  if (course.framework !== null && course.baseline !== null) {
+    const stored = course.baseline as BaselineJsonb;
+    return {
+      framework: course.framework as FrameworkJsonb,
+      baseline: redactQuestionnaireTurn({
+        userMessage: stored.userMessage,
+        questions: { questions: stored.questions },
+      }),
+      nextStage: "answering",
+    };
   }
 
   // Persist the learner's responses on the clarification row before calling the LLM,
-  // so a retry of generateFramework does not lose them. Idempotent: overwrites the
+  // so a retry of this Turn does not lose them. Idempotent: overwrites the
   // empty `responses: []` initialised by clarify.
   // Preserve the existing userMessage so the parse-before-persist guard passes.
   await updateCourseScopingState(course.id, {
@@ -100,7 +119,11 @@ export async function generateFramework(
   const qaPairs = params.responses
     .map((r) => {
       const q = questionById.get(r.questionId);
-      if (!q) throw new Error(`generateFramework: invariant — unknown questionId ${r.questionId}`);
+      if (!q) {
+        throw new Error(
+          `generateFrameworkAndBaseline: invariant — unknown questionId ${r.questionId}`,
+        );
+      }
       return `Q: ${q.prompt}\nA: ${r.freetext}`;
     })
     .join("\n\n");
@@ -110,28 +133,41 @@ export async function generateFramework(
     parent: { kind: "scoping", id: pass.id },
     seed: { kind: "scoping", topic: course.topic },
     userMessageContent: renderStageEnvelope({
-      stage: "generate framework",
+      stage: "generate framework and baseline",
       learnerInput: qaPairs,
     }),
-    responseSchema: frameworkSchema,
-    responseSchemaName: "framework",
-    label: "framework",
-    successSummary: (p) => `tiers=${p.tiers.length} startTier=${p.estimatedStartingTier}`,
+    responseSchema: frameworkAndBaselineSchema,
+    responseSchemaName: "framework_and_baseline",
+    label: "framework-and-baseline",
+    successSummary: (p) =>
+      `tiers=${p.framework.tiers.length} startTier=${p.framework.estimatedStartingTier} ` +
+      `scope=[${p.framework.baselineScopeTiers.join(",")}] questions=${p.baseline.questions.length}`,
   });
 
-  // Wire shape IS storage shape — write the structured fields directly (no translator).
-  // userMessage persisted so cached-replay returns the model's framing, not "" —
-  // symmetric with clarify/baseline.
-  const jsonb: FrameworkJsonb = {
-    userMessage: parsed.userMessage,
-    tiers: parsed.tiers,
-    estimatedStartingTier: parsed.estimatedStartingTier,
-    baselineScopeTiers: parsed.baselineScopeTiers,
+  // Wire shape IS storage shape: write the structured fields directly (no
+  // translator). Both userMessages persist, so the chat renders the framework
+  // bubble and the baseline bubble it rendered before the merge.
+  const framework: FrameworkJsonb = {
+    userMessage: parsed.framework.userMessage,
+    tiers: parsed.framework.tiers,
+    estimatedStartingTier: parsed.framework.estimatedStartingTier,
+    baselineScopeTiers: parsed.framework.baselineScopeTiers,
   };
-  await updateCourseScopingState(course.id, { framework: jsonb });
+  const baseline: BaselineJsonb = {
+    userMessage: parsed.baseline.userMessage,
+    questions: parsed.baseline.questions,
+    responses: [],
+    gradings: [],
+  };
+  // One write, so no reader ever sees this Turn's framework without its baseline.
+  await updateCourseScopingState(course.id, { framework, baseline });
 
-  return { framework: jsonb, nextStage: "baseline" };
+  return {
+    framework,
+    baseline: redactQuestionnaireTurn({
+      userMessage: baseline.userMessage,
+      questions: { questions: baseline.questions },
+    }),
+    nextStage: "answering",
+  };
 }
-
-/** Re-exported for routers + tests. */
-export type { Framework };

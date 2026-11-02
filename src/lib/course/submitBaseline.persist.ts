@@ -99,9 +99,9 @@ export async function persistScopingClose(
     //    any gradings that may already sit on the pre-close payload.
     //    `userMessage` is OVERWRITTEN with the model's closing framing
     //    (`parsed.userMessage`) — replacing the baseline-presentation framing
-    //    that `generateBaseline` wrote earlier. The presentation message is
-    //    NOT lost: it still lives in `context_messages` as the assistant turn
-    //    that emitted the baseline questions. The closing message is the one
+    //    that `generateFrameworkAndBaseline` wrote earlier. The presentation
+    //    message is NOT lost: it still lives in `context_messages` as the
+    //    assistant turn that emitted the baseline questions. The closing message is the one
     //    a cached-replay of `submitBaseline` must return, since `submitBaseline`
     //    is the producer of that payload (cross-task fix per plan §7).
     const widened = baselineClosedJsonbSchema.parse({

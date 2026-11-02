@@ -1,7 +1,10 @@
 import type { CourseState } from "./getState";
 
-/** A scoping Turn that can fail and offer a Retry. `scopingClose` is `submitBaseline`. */
-export type ScopingTurnKind = "framework" | "baseline" | "scopingClose";
+/**
+ * A scoping Turn that can fail and offer a Retry. `frameworkAndBaseline` is
+ * `generateFrameworkAndBaseline`; `scopingClose` is `submitBaseline`.
+ */
+export type ScopingTurnKind = "frameworkAndBaseline" | "scopingClose";
 
 /**
  * True once server state holds the Turn's model output. Pure.
@@ -12,9 +15,9 @@ export type ScopingTurnKind = "framework" | "baseline" | "scopingClose";
  */
 export function hasScopingTurnLanded(state: CourseState, kind: ScopingTurnKind): boolean {
   switch (kind) {
-    case "framework":
-      return state.framework !== null;
-    case "baseline":
+    // The Turn writes both columns at once, so the baseline marks it landed.
+    // A framework alone is a course framed before the merge (issue #15).
+    case "frameworkAndBaseline":
       return state.baseline !== null;
     case "scopingClose":
       return state.scopingResult !== null;

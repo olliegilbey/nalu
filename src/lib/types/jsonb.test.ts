@@ -111,7 +111,7 @@ describe("jsonb trust-boundary schemas", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // baselineQuestionsJsonbSchema — pre-close shape (after generateBaseline)
+  // baselineQuestionsJsonbSchema — pre-close shape (after generateFrameworkAndBaseline)
   // ---------------------------------------------------------------------------
 
   it("validates a pre-close baseline payload (questions/responses/gradings only)", () => {

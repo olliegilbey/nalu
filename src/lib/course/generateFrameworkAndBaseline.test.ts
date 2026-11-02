@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { expectNoPlaintextAnswerKey } from "@/lib/testing/expectNoPlaintextAnswerKey";
 
 // Mock all external dependencies before importing SUT.
 vi.mock("@/lib/turn/executeTurn", () => ({ executeTurn: vi.fn() }));
@@ -17,14 +18,17 @@ vi.mock("@/db/queries/scopingPasses", () => ({
   ensureOpenScopingPass: vi.fn(),
 }));
 
-import { generateFramework } from "./generateFramework";
+import { generateFrameworkAndBaseline } from "./generateFrameworkAndBaseline";
 import { executeTurn } from "@/lib/turn/executeTurn";
 import { getCourseById } from "@/db/queries/courses";
 import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { ensureOpenScopingPass } from "@/db/queries/scopingPasses";
 import { SCOPING } from "@/lib/config/tuning";
+import { frameworkAndBaselineSchema } from "@/lib/prompts/frameworkAndBaseline";
+import { decodeCorrect } from "@/lib/security/obfuscateCorrect";
+import { KEY_TO_INDEX } from "@/lib/types/mcOptionKey";
 import type { Course } from "@/db/schema";
-import type { FrameworkJsonb } from "@/lib/types/jsonb";
+import type { BaselineJsonb, FrameworkJsonb } from "@/lib/types/jsonb";
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -72,11 +76,12 @@ const SCOPING_COURSE = {
   status: "scoping",
   clarification: CLARIFICATION,
   framework: null,
+  baseline: null,
 } as unknown as Course;
 
 /**
- * Minimal valid Framework (camelCase, as frameworkSchema emits).
- * One tier, estimatedStartingTier in tier set, baselineScopeTiers includes it.
+ * Minimal Framework (camelCase, as frameworkSchema emits).
+ * estimatedStartingTier in tier set, baselineScopeTiers includes it.
  */
 const PARSED_FRAMEWORK = {
   userMessage: "Here is the framework.",
@@ -98,6 +103,29 @@ const PARSED_FRAMEWORK = {
   baselineScopeTiers: [1, 2],
 };
 
+/** A graded MC baseline question on `tier`. */
+function mcQuestion(id: string, tier: number) {
+  return {
+    id,
+    tier,
+    conceptName: "c",
+    type: "multiple_choice" as const,
+    prompt: "q?",
+    options: { A: "a", B: "b", C: "c", D: "d" },
+    correct: "A" as const,
+    freetextRubric: "rubric",
+  };
+}
+
+/** Baseline half of the merged response: flat `{ userMessage, questions }`, 7 questions in scope. */
+const PARSED_BASELINE = {
+  userMessage: "Here is your baseline.",
+  questions: [1, 2, 1, 2, 1, 2, 1].map((tier, i) => mcQuestion(`b${i + 1}`, tier)),
+};
+
+/** The merged Turn's parsed response: both halves in one object. */
+const PARSED = { framework: PARSED_FRAMEWORK, baseline: PARSED_BASELINE };
+
 /** Full AI SDK v5 `LanguageModelUsage` shape — sub-objects are required by the type. */
 const MOCK_USAGE = {
   inputTokens: 10,
@@ -116,68 +144,138 @@ beforeEach(() => {
   vi.mocked(ensureOpenScopingPass).mockReset();
 });
 
-describe("generateFramework", () => {
-  it("happy path: fetches course, opens pass, calls executeTurn, persists FrameworkJsonb, returns it", async () => {
-    vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
+describe("generateFrameworkAndBaseline", () => {
+  /** Mock one successful merged Turn against `course`. */
+  function mockTurn(course: Course) {
+    vi.mocked(getCourseById).mockResolvedValue(course);
     vi.mocked(ensureOpenScopingPass).mockResolvedValue({ id: "p1" } as never);
-    vi.mocked(executeTurn).mockResolvedValue({
-      parsed: PARSED_FRAMEWORK,
-      usage: MOCK_USAGE,
-    });
-    vi.mocked(updateCourseScopingState).mockResolvedValue(SCOPING_COURSE);
+    vi.mocked(executeTurn).mockResolvedValue({ parsed: PARSED, usage: MOCK_USAGE });
+    vi.mocked(updateCourseScopingState).mockResolvedValue(course);
+  }
 
-    const result = await generateFramework({
+  it("happy path: one merged Turn against the merged schema, returns both artifacts", async () => {
+    mockTurn(SCOPING_COURSE);
+
+    const result = await generateFrameworkAndBaseline({
       courseId: COURSE_ID,
       userId: USER_ID,
       responses: RESPONSES,
     });
 
-    // nextStage advances to baseline
-    expect(result.nextStage).toBe("baseline");
-    // framework is returned as FrameworkJsonb (camelCase — new shape)
-    expect(result.framework.estimatedStartingTier).toBe(1);
-    expect(result.framework.tiers[0]?.exampleConcepts).toBeDefined();
-    // persistence called with the jsonb shape
-    expect(updateCourseScopingState).toHaveBeenCalledWith(
-      COURSE_ID,
-      expect.objectContaining({
-        framework: expect.objectContaining({ estimatedStartingTier: 1 }),
-      }),
-    );
-    // executeTurn was called once
+    // One LLM call builds both artifacts.
     expect(executeTurn).toHaveBeenCalledTimes(1);
+    const callArgs = vi.mocked(executeTurn).mock.calls[0]?.[0];
+    expect(callArgs?.responseSchema).toBe(frameworkAndBaselineSchema);
+    expect(callArgs?.userMessageContent).toContain(
+      "<stage>generate framework and baseline</stage>",
+    );
+    // The client skips the baseline Turn: the next stage is answering.
+    expect(result.nextStage).toBe("answering");
+    expect(result.framework.estimatedStartingTier).toBe(1);
+    expect(result.baseline.questions.questions).toHaveLength(7);
   });
 
-  it("idempotency: returns cached FrameworkJsonb when framework already populated", async () => {
+  it("persists both columns in one write, in the shapes the two old steps wrote", async () => {
+    mockTurn(SCOPING_COURSE);
+
+    await generateFrameworkAndBaseline({
+      courseId: COURSE_ID,
+      userId: USER_ID,
+      responses: RESPONSES,
+    });
+
+    // Two writes: the clarify answers before the LLM call, then both artifacts.
+    expect(updateCourseScopingState).toHaveBeenCalledTimes(2);
+    expect(updateCourseScopingState).toHaveBeenNthCalledWith(1, COURSE_ID, {
+      clarification: { ...CLARIFICATION, responses: RESPONSES },
+    });
+    const framework: FrameworkJsonb = PARSED_FRAMEWORK;
+    const baseline: BaselineJsonb = {
+      userMessage: PARSED_BASELINE.userMessage,
+      questions: PARSED_BASELINE.questions,
+      responses: [],
+      gradings: [],
+    };
+    // One write, so no reader ever sees a framework without its baseline.
+    expect(updateCourseScopingState).toHaveBeenNthCalledWith(2, COURSE_ID, { framework, baseline });
+  });
+
+  it("returns no plaintext answer key: rubric dropped, MC correct sent as correctEnc", async () => {
+    mockTurn(SCOPING_COURSE);
+
+    const result = await generateFrameworkAndBaseline({
+      courseId: COURSE_ID,
+      userId: USER_ID,
+      responses: RESPONSES,
+    });
+
+    expectNoPlaintextAnswerKey(result);
+    const [first] = result.baseline.questions.questions;
+    if (first?.type !== "multiple_choice") throw new Error("expected an MC question");
+    // Every fixture question's key is A.
+    expect(decodeCorrect("b1", first.correctEnc ?? "")).toBe(KEY_TO_INDEX.A);
+  });
+
+  it("idempotency: returns the stored framework and baseline without an LLM call", async () => {
     const storedFramework: FrameworkJsonb = {
       userMessage: "Cached framework framing.",
       estimatedStartingTier: 1,
       baselineScopeTiers: [1, 2],
-      tiers: [
-        {
-          number: 1,
-          name: "Foundations",
-          description: "desc",
-          exampleConcepts: ["x"],
-        },
-      ],
+      tiers: [{ number: 1, name: "Foundations", description: "desc", exampleConcepts: ["x"] }],
     };
-    const courseWithFramework = {
+    const storedBaseline: BaselineJsonb = {
+      userMessage: "Cached baseline framing.",
+      questions: PARSED_BASELINE.questions,
+      responses: [],
+      gradings: [],
+    };
+    vi.mocked(getCourseById).mockResolvedValue({
       ...SCOPING_COURSE,
       framework: storedFramework,
-    } as unknown as Course;
-    vi.mocked(getCourseById).mockResolvedValue(courseWithFramework);
+      baseline: storedBaseline,
+    } as unknown as Course);
 
-    const result = await generateFramework({
+    const result = await generateFrameworkAndBaseline({
       courseId: COURSE_ID,
       userId: USER_ID,
       responses: RESPONSES,
     });
 
     expect(result.framework).toEqual(storedFramework);
-    expect(result.nextStage).toBe("baseline");
-    // Must NOT hit the LLM
+    expect(result.baseline.userMessage).toBe("Cached baseline framing.");
+    expect(result.baseline.questions.questions).toHaveLength(7);
+    expect(result.nextStage).toBe("answering");
+    // The replay is projected too: stored keys stay server-side.
+    expectNoPlaintextAnswerKey(result);
+    // Must NOT hit the LLM or write.
     expect(executeTurn).not.toHaveBeenCalled();
+    expect(updateCourseScopingState).not.toHaveBeenCalled();
+  });
+
+  // A course framed before the merge (issue #15) can hold a framework with no
+  // baseline. The merged Turn reruns and writes both, so the pair agrees.
+  it("a framework with no baseline reruns the merged Turn and rewrites both columns", async () => {
+    const preMergeCourse = {
+      ...SCOPING_COURSE,
+      framework: { ...PARSED_FRAMEWORK, userMessage: "Old framing." },
+    } as unknown as Course;
+    mockTurn(preMergeCourse);
+
+    const result = await generateFrameworkAndBaseline({
+      courseId: COURSE_ID,
+      userId: USER_ID,
+      responses: RESPONSES,
+    });
+
+    expect(executeTurn).toHaveBeenCalledTimes(1);
+    expect(result.framework.userMessage).toBe("Here is the framework.");
+    expect(updateCourseScopingState).toHaveBeenLastCalledWith(
+      COURSE_ID,
+      expect.objectContaining({
+        framework: expect.objectContaining({ userMessage: "Here is the framework." }),
+        baseline: expect.objectContaining({ userMessage: "Here is your baseline." }),
+      }),
+    );
   });
 
   it("throws PRECONDITION_FAILED when course status is not 'scoping'", async () => {
@@ -185,7 +283,7 @@ describe("generateFramework", () => {
     vi.mocked(getCourseById).mockResolvedValue(activeCourse);
 
     await expect(
-      generateFramework({ courseId: COURSE_ID, userId: USER_ID, responses: RESPONSES }),
+      generateFrameworkAndBaseline({ courseId: COURSE_ID, userId: USER_ID, responses: RESPONSES }),
     ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     expect(executeTurn).not.toHaveBeenCalled();
   });
@@ -195,7 +293,7 @@ describe("generateFramework", () => {
     vi.mocked(getCourseById).mockResolvedValue(noClarification);
 
     await expect(
-      generateFramework({ courseId: COURSE_ID, userId: USER_ID, responses: RESPONSES }),
+      generateFrameworkAndBaseline({ courseId: COURSE_ID, userId: USER_ID, responses: RESPONSES }),
     ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     expect(executeTurn).not.toHaveBeenCalled();
   });
@@ -220,19 +318,16 @@ describe("generateFramework", () => {
             freetextRubric: "r",
           },
         ],
-        // stored responses are empty — generateFramework uses params.responses
+        // stored responses are empty — the step uses params.responses
         responses: [],
       },
     } as unknown as Course;
     vi.mocked(getCourseById).mockResolvedValue(xssCourse);
     vi.mocked(ensureOpenScopingPass).mockResolvedValue({ id: "p2" } as never);
-    vi.mocked(executeTurn).mockResolvedValue({
-      parsed: PARSED_FRAMEWORK,
-      usage: MOCK_USAGE,
-    });
+    vi.mocked(executeTurn).mockResolvedValue({ parsed: PARSED, usage: MOCK_USAGE });
     vi.mocked(updateCourseScopingState).mockResolvedValue(xssCourse);
 
-    await generateFramework({
+    await generateFrameworkAndBaseline({
       courseId: COURSE_ID,
       userId: USER_ID,
       responses: [
@@ -252,7 +347,7 @@ describe("generateFramework", () => {
     vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
 
     await expect(
-      generateFramework({ courseId: COURSE_ID, userId: USER_ID, responses: [] }),
+      generateFrameworkAndBaseline({ courseId: COURSE_ID, userId: USER_ID, responses: [] }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "responses cannot be empty" });
     expect(executeTurn).not.toHaveBeenCalled();
   });
@@ -266,7 +361,7 @@ describe("generateFramework", () => {
     }));
 
     await expect(
-      generateFramework({ courseId: COURSE_ID, userId: USER_ID, responses: tooMany }),
+      generateFrameworkAndBaseline({ courseId: COURSE_ID, userId: USER_ID, responses: tooMany }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(executeTurn).not.toHaveBeenCalled();
   });
@@ -277,7 +372,7 @@ describe("generateFramework", () => {
     vi.mocked(getCourseById).mockResolvedValue(SCOPING_COURSE);
 
     await expect(
-      generateFramework({
+      generateFrameworkAndBaseline({
         courseId: COURSE_ID,
         userId: USER_ID,
         responses: [{ questionId: "q1", freetext: "only one" }],

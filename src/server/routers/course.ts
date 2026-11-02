@@ -2,8 +2,7 @@ import { z } from "zod/v4";
 import { router, learnerProcedure, mintingProcedure } from "../trpc";
 import { clarify } from "@/lib/course/clarify";
 import { getState } from "@/lib/course/getState";
-import { generateFramework } from "@/lib/course/generateFramework";
-import { generateBaseline } from "@/lib/course/generateBaseline";
+import { generateFrameworkAndBaseline } from "@/lib/course/generateFrameworkAndBaseline";
 import { submitBaseline } from "@/lib/course/submitBaseline";
 import { SCOPING } from "@/lib/config/tuning";
 import { questionnaireAnswerSchema } from "@/lib/types/questionnaireAnswer";
@@ -29,8 +28,11 @@ export const courseRouter = router({
     .input(z.object({ topic: z.string().min(1).max(SCOPING.maxTopicLength) }))
     .mutation(({ ctx, input }) => clarify({ userId: ctx.userId, topic: input.topic })),
 
-  /** Generate the tier framework from the learner's clarification answers. */
-  generateFramework: learnerProcedure
+  /**
+   * Generate the tier framework and the baseline questions from the learner's
+   * clarification answers, in one LLM call (issue #15).
+   */
+  generateFrameworkAndBaseline: learnerProcedure
     .input(
       z.object({
         courseId: z.uuid(),
@@ -48,18 +50,11 @@ export const courseRouter = router({
       }),
     )
     .mutation(({ ctx, input }) =>
-      generateFramework({
+      generateFrameworkAndBaseline({
         userId: ctx.userId,
         courseId: input.courseId,
         responses: input.responses,
       }),
-    ),
-
-  /** Generate the baseline assessment questions from the stored framework. */
-  generateBaseline: learnerProcedure
-    .input(z.object({ courseId: z.uuid() }))
-    .mutation(({ ctx, input }) =>
-      generateBaseline({ userId: ctx.userId, courseId: input.courseId }),
     ),
 
   /** Close scoping: grade the baseline, prime Wave 1, flip status to active. */

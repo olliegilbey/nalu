@@ -9,14 +9,15 @@ import type { V3Response } from "@/lib/types/jsonb";
  * Retry can re-send them.
  */
 export type StrandedScopingTurn =
-  | { readonly kind: "framework"; readonly responses: readonly ShapedClarifyAnswer[] }
+  | { readonly kind: "frameworkAndBaseline"; readonly responses: readonly ShapedClarifyAnswer[] }
   | { readonly kind: "scopingClose"; readonly answers: readonly QuestionnaireAnswer[] };
 
 /**
  * Find the scoping Turn a reload would strand (issue #103), from server state alone.
  *
- * `generateFramework` and `submitBaseline` save the learner's answers before the
- * LLM call. Saved answers with no model output after them mean that Turn failed.
+ * `generateFrameworkAndBaseline` and `submitBaseline` save the learner's answers
+ * before the LLM call. Saved answers with no model output after them mean that
+ * Turn failed.
  * Its question card does not come back, because the card shows only while no
  * answers are saved. So the caller offers a Retry that re-sends the saved
  * answers. Both procedures replay idempotently, so a re-send is safe.
@@ -24,17 +25,19 @@ export type StrandedScopingTurn =
  * The same state also holds while the Turn is still in flight. The caller must
  * skip this check while it has a Turn pending.
  *
- * The baseline Turn needs no entry here: it takes no learner input, and the
- * hook re-fires it on mount.
+ * The merged Turn's output is the baseline: it writes the framework and the
+ * baseline at once. A course framed before the merge (issue #15) can hold a
+ * framework with no baseline. Its separate baseline Turn no longer exists, so
+ * it strands the same way, and the Retry reruns the merged Turn.
  */
 export function deriveStrandedScopingTurn(state: CourseState): StrandedScopingTurn | null {
   // An active course has closed scoping; nothing is stranded.
   if (state.status !== "scoping") return null;
-  const { clarification, framework, baseline } = state;
+  const { clarification, baseline } = state;
 
-  if (clarification && clarification.responses.length > 0 && framework === null) {
+  if (clarification && clarification.responses.length > 0 && baseline === null) {
     return {
-      kind: "framework",
+      kind: "frameworkAndBaseline",
       responses: clarification.responses.map((r) => ({
         questionId: r.questionId,
         freetext: requireFreetext(r),

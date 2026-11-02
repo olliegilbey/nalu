@@ -33,7 +33,7 @@ Security:
 /** Inputs for {@link renderStageEnvelope}; the per-turn user-role wrapper params. */
 export interface RenderStageEnvelopeParams {
   /** Bare stage label — appears verbatim inside `<stage>...</stage>`. */
-  readonly stage: "clarify" | "generate framework" | "generate baseline" | "close scoping";
+  readonly stage: "clarify" | "generate framework and baseline" | "close scoping";
   /** Learner input — XML-escaped before embedding. May be empty for stage-only envelopes. */
   readonly learnerInput: string;
 }

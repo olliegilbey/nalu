@@ -1,153 +1,5 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`schemas carrying an MC option key keep their bytes > baseline response_format 1`] = `
-"{
-  "type": "json",
-  "name": "baseline",
-  "schema": {
-    "type": "object",
-    "properties": {
-      "userMessage": {
-        "type": "string",
-        "description": "[chat] Warm chat-bubble framing the baseline. Do NOT enumerate the questions; the UI renders cards."
-      },
-      "questions": {
-        "type": "object",
-        "properties": {
-          "questions": {
-            "type": "array",
-            "items": {
-              "anyOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "description": "[server] Stable identifier so responses can be matched back to questions."
-                    },
-                    "type": {
-                      "type": "string",
-                      "const": "free_text",
-                      "description": "[server] Question kind discriminator."
-                    },
-                    "prompt": {
-                      "type": "string",
-                      "description": "[UI] The question shown to the learner."
-                    },
-                    "freetextRubric": {
-                      "type": "string",
-                      "description": "[server] How to grade a free-text response. Never shown to the learner."
-                    },
-                    "conceptName": {
-                      "description": "[server] Concept this question probes. Required for baseline + teaching quizzes.",
-                      "type": "string"
-                    },
-                    "tier": {
-                      "description": "[server] Framework tier this question targets. Required for baseline + teaching quizzes.",
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "type",
-                    "prompt",
-                    "freetextRubric"
-                  ],
-                  "additionalProperties": false
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "description": "[server] Stable identifier."
-                    },
-                    "type": {
-                      "type": "string",
-                      "const": "multiple_choice",
-                      "description": "[server] Question kind discriminator."
-                    },
-                    "prompt": {
-                      "type": "string",
-                      "description": "[UI] The question shown to the learner."
-                    },
-                    "options": {
-                      "type": "object",
-                      "properties": {
-                        "A": {
-                          "type": "string"
-                        },
-                        "B": {
-                          "type": "string"
-                        },
-                        "C": {
-                          "type": "string"
-                        },
-                        "D": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "A",
-                        "B",
-                        "C",
-                        "D"
-                      ],
-                      "additionalProperties": false,
-                      "description": "[UI] Four keyed options shown to the learner. Learner can also bypass via the free-text escape rendered alongside the buttons."
-                    },
-                    "correct": {
-                      "description": "[server] Correct option key. NEVER shown to the learner. PRESENT for graded questions (baseline, quiz) so the client can score MC immediately without a round-trip; ABSENT for elicitation (clarify) where there is no right answer.",
-                      "type": "string",
-                      "enum": [
-                        "A",
-                        "B",
-                        "C",
-                        "D"
-                      ]
-                    },
-                    "freetextRubric": {
-                      "type": "string",
-                      "description": "[server] How to grade if the learner uses the free-text escape. Never shown."
-                    },
-                    "conceptName": {
-                      "description": "[server] Concept probed.",
-                      "type": "string"
-                    },
-                    "tier": {
-                      "description": "[server] Framework tier targeted.",
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "type",
-                    "prompt",
-                    "options",
-                    "freetextRubric"
-                  ],
-                  "additionalProperties": false
-                }
-              ]
-            },
-            "description": "[UI] Exactly 9 questions: 3 per tier, for tiers [1, 2, 3] only. Every question is STANDALONE — never reference another question. Mix multiple_choice and free_text. MC: 4 keyed options A/B/C/D, no 'Not sure' option. Every question carries \`conceptName\`, \`tier\`, and \`freetextRubric\`. Every MC carries \`correct\`. Every question is graded: each free_text \`freetextRubric\` states what a correct answer must contain, naming the key idea the grader checks the learner's text for, in at least 20 characters. Use ids b1, b2, b3, … in order."
-          }
-        },
-        "required": [
-          "questions"
-        ],
-        "additionalProperties": false
-      }
-    },
-    "required": [
-      "userMessage",
-      "questions"
-    ],
-    "additionalProperties": false
-  }
-}"
-`;
-
 exports[`schemas carrying an MC option key keep their bytes > clarify response_format 1`] = `
 "{
   "type": "json",
@@ -981,6 +833,217 @@ exports[`schemas carrying an MC option key keep their bytes > courses.clarificat
     "responses"
   ],
   "additionalProperties": false
+}"
+`;
+
+exports[`schemas carrying an MC option key keep their bytes > framework_and_baseline response_format 1`] = `
+"{
+  "type": "json",
+  "name": "framework_and_baseline",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "framework": {
+        "type": "object",
+        "properties": {
+          "userMessage": {
+            "type": "string",
+            "description": "[chat] Warm chat-bubble framing the framework you produced. Do NOT enumerate the tiers here — the UI renders them from \`tiers\`."
+          },
+          "tiers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "type": "integer",
+                  "description": "[UI] Tier number, starting at 1. Must be contiguous (1, 2, 3, …)."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "[UI] Short human-readable tier name."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "[UI] One-to-two-sentence description of what a learner at this tier knows."
+                },
+                "exampleConcepts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "[UI] Between 4 and 7 concrete example concepts a learner at this tier studies. Pick specific concepts ('borrow checker lifetimes'), not vague themes ('memory stuff')."
+                }
+              },
+              "required": [
+                "number",
+                "name",
+                "description",
+                "exampleConcepts"
+              ],
+              "additionalProperties": false
+            },
+            "description": "[UI] Between 3 and 8 tiers, ordered foundational (1) → advanced. Each tier presupposes the prior one."
+          },
+          "estimatedStartingTier": {
+            "type": "integer",
+            "description": "[server] Best-guess tier number for the learner's current level, inferred from their clarification answers. When the answers are ambiguous or suggest a beginner, guess low — the baseline can still place the learner higher, and a low guess keeps the foundational tiers inside the baseline's scope. A baseline assessment confirms it."
+          },
+          "baselineScopeTiers": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "[server] Contiguous, ascending-sorted tier numbers the baseline will probe. At most 3 tiers. Must include estimatedStartingTier. Default: [estimatedStartingTier−1, estimatedStartingTier, estimatedStartingTier+1], clamped to range."
+          }
+        },
+        "required": [
+          "userMessage",
+          "tiers",
+          "estimatedStartingTier",
+          "baselineScopeTiers"
+        ],
+        "additionalProperties": false
+      },
+      "baseline": {
+        "type": "object",
+        "properties": {
+          "userMessage": {
+            "type": "string",
+            "description": "[chat] Warm chat-bubble framing the baseline. Do NOT enumerate the questions; the UI renders cards."
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "[server] Stable identifier so responses can be matched back to questions."
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "free_text",
+                      "description": "[server] Question kind discriminator."
+                    },
+                    "prompt": {
+                      "type": "string",
+                      "description": "[UI] The question shown to the learner."
+                    },
+                    "freetextRubric": {
+                      "type": "string",
+                      "description": "[server] How to grade a free-text response. Never shown to the learner."
+                    },
+                    "conceptName": {
+                      "description": "[server] Concept this question probes. Required for baseline + teaching quizzes.",
+                      "type": "string"
+                    },
+                    "tier": {
+                      "description": "[server] Framework tier this question targets. Required for baseline + teaching quizzes.",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "type",
+                    "prompt",
+                    "freetextRubric"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "[server] Stable identifier."
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "multiple_choice",
+                      "description": "[server] Question kind discriminator."
+                    },
+                    "prompt": {
+                      "type": "string",
+                      "description": "[UI] The question shown to the learner."
+                    },
+                    "options": {
+                      "type": "object",
+                      "properties": {
+                        "A": {
+                          "type": "string"
+                        },
+                        "B": {
+                          "type": "string"
+                        },
+                        "C": {
+                          "type": "string"
+                        },
+                        "D": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "A",
+                        "B",
+                        "C",
+                        "D"
+                      ],
+                      "additionalProperties": false,
+                      "description": "[UI] Four keyed options shown to the learner. Learner can also bypass via the free-text escape rendered alongside the buttons."
+                    },
+                    "correct": {
+                      "description": "[server] Correct option key. NEVER shown to the learner. PRESENT for graded questions (baseline, quiz) so the client can score MC immediately without a round-trip; ABSENT for elicitation (clarify) where there is no right answer.",
+                      "type": "string",
+                      "enum": [
+                        "A",
+                        "B",
+                        "C",
+                        "D"
+                      ]
+                    },
+                    "freetextRubric": {
+                      "type": "string",
+                      "description": "[server] How to grade if the learner uses the free-text escape. Never shown."
+                    },
+                    "conceptName": {
+                      "description": "[server] Concept probed.",
+                      "type": "string"
+                    },
+                    "tier": {
+                      "description": "[server] Framework tier targeted.",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "type",
+                    "prompt",
+                    "options",
+                    "freetextRubric"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "description": "[UI] Questions on the tiers in baselineScopeTiers only. Count by its size: 1 tier → 7 questions; 2 tiers → 4 per tier (8); 3 tiers → 3 per tier (9). Every question is STANDALONE — never reference another question. Mix multiple_choice and free_text. MC: 4 keyed options A/B/C/D, no 'Not sure' option. Every question carries \`conceptName\`, \`tier\`, and \`freetextRubric\`. Every MC carries \`correct\`. Every question is graded: each free_text \`freetextRubric\` states what a correct answer must contain, naming the key idea the grader checks the learner's text for, in at least 20 characters. Use ids b1, b2, b3, … in order."
+          }
+        },
+        "required": [
+          "userMessage",
+          "questions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "required": [
+      "framework",
+      "baseline"
+    ],
+    "additionalProperties": false
+  }
 }"
 `;
 

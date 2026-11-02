@@ -15,11 +15,12 @@ import { expectNoPlaintextAnswerKey } from "@/lib/testing/expectNoPlaintextAnswe
 import { NoObjectGeneratedError } from "ai";
 import { withTestDb } from "@/db/testing/withTestDb";
 import { appRouter } from "./index";
-import { userProfiles, contextMessages, courses } from "@/db/schema";
+import { userProfiles, contextMessages, courses, scopingPasses } from "@/db/schema";
 import { asc } from "drizzle-orm";
 import { getCourseById } from "@/db/queries/courses";
 import { updateCourseScopingState } from "@/db/queries/courses.scoping";
 import { createCourse } from "@/db/queries/courses";
+import { appendMessages } from "@/db/queries/contextMessages.writes";
 import {
   clarificationJsonbSchema,
   frameworkJsonbSchema,
@@ -117,11 +118,11 @@ function validClarifyText(): string {
 }
 
 /**
- * Valid framework LLM response — pure JSON matching frameworkSchema.
+ * Valid framework half of the merged response — matches frameworkSchema.
  * 3+ tiers (FRAMEWORK.minTiers=3); estimatedStartingTier in scope; baselineScopeTiers contiguous.
  */
-function validFrameworkText(): string {
-  return JSON.stringify({
+function validFramework() {
+  return {
     userMessage: "Here is the framework.",
     tiers: [
       {
@@ -146,28 +147,31 @@ function validFrameworkText(): string {
     estimatedStartingTier: 1,
     // baselineScopeTiers must include estimatedStartingTier and be contiguous.
     baselineScopeTiers: [1, 2],
-  });
+  };
 }
 
 /**
- * Valid baseline LLM response — pure JSON matching makeBaselineSchema.
- * Exactly 7 questions (BASELINE.minQuestions=7), all tiers in [1, 2] (scope from validFrameworkText).
+ * Valid baseline half of the merged response — matches baselineSchema (flat questions).
+ * Exactly 7 questions (BASELINE.minQuestions=7), all tiers in [1, 2] (the framework's scope).
  */
-function validBaselineText(): string {
-  return JSON.stringify({
+function validBaseline() {
+  return {
     userMessage: "Here is the baseline.",
-    questions: {
-      questions: [
-        mcQuestion("b1", 1),
-        mcQuestion("b2", 2),
-        mcQuestion("b3", 1),
-        mcQuestion("b4", 2),
-        mcQuestion("b5", 1),
-        mcQuestion("b6", 2),
-        mcQuestion("b7", 1),
-      ],
-    },
-  });
+    questions: [
+      mcQuestion("b1", 1),
+      mcQuestion("b2", 2),
+      mcQuestion("b3", 1),
+      mcQuestion("b4", 2),
+      mcQuestion("b5", 1),
+      mcQuestion("b6", 2),
+      mcQuestion("b7", 1),
+    ],
+  };
+}
+
+/** Valid merged LLM response (issue #15) — pure JSON matching frameworkAndBaselineSchema. */
+function validFrameworkAndBaselineText(): string {
+  return JSON.stringify({ framework: validFramework(), baseline: validBaseline() });
 }
 
 // Answers matching the 2 questions emitted by validClarifyText.
@@ -180,7 +184,7 @@ const CLARIFY_ANSWERS: string[] = ["Learn systems programming.", "C++ background
  * verdict/qualityScore bands aligned (correct → 5 ∈ [4,5]).
  */
 function validScopingCloseText(): string {
-  // Question ids must exactly match those emitted by validBaselineText.
+  // Question ids must exactly match those emitted by validBaseline.
   const questionIds = ["b1", "b2", "b3", "b4", "b5", "b6", "b7"] as const;
   return JSON.stringify({
     userMessage: "Nice work — your first lesson is ready.",
@@ -352,107 +356,218 @@ describe("course.clarify", () => {
 });
 
 // ===========================================================================
-// generateFramework
+// generateFrameworkAndBaseline
 // ===========================================================================
 
-describe("course.generateFramework", () => {
+describe("course.generateFrameworkAndBaseline", () => {
+  /** The clarify answers, in the procedure's wire shape. */
+  const RESPONSES = [
+    { questionId: "q1", freetext: CLARIFY_ANSWERS[0]! },
+    { questionId: "q2", freetext: CLARIFY_ANSWERS[1]! },
+  ];
+
+  /** Run clarify for USER and return its caller and course id. */
+  async function clarifyCourse(db: Parameters<Parameters<typeof withTestDb>[0]>[0]) {
+    await seedUser(db);
+    vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validClarifyText()));
+    const caller = appRouter.createCaller({ userId: USER });
+    const { courseId } = await caller.course.clarify({ topic: "Rust" });
+    return { caller, courseId };
+  }
+
+  /** Every scoping Context row, in replay order. */
+  async function contextRows(db: Parameters<Parameters<typeof withTestDb>[0]>[0]) {
+    return db
+      .select()
+      .from(contextMessages)
+      .orderBy(asc(contextMessages.turnIndex), asc(contextMessages.seq));
+  }
+
   // -------------------------------------------------------------------------
-  // Case 5: happy path after clarify
+  // Case 5: happy path after clarify — one LLM call, both artifacts
   // -------------------------------------------------------------------------
-  it("happy path: runs after clarify, returns FrameworkJsonb, persists to DB", async () => {
+  it("happy path: one LLM call returns and persists the framework and the baseline", async () => {
     await withTestDb(async (db) => {
-      await seedUser(db);
+      const { caller, courseId } = await clarifyCourse(db);
+      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validFrameworkAndBaselineText()));
 
-      // Step 1: clarify to populate the course.
-      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validClarifyText()));
-      const caller = appRouter.createCaller({ userId: USER });
-      const clarifyResult = await caller.course.clarify({ topic: "Rust" });
-
-      // Step 2: mock framework LLM call.
-      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validFrameworkText()));
-
-      const result = await caller.course.generateFramework({
-        courseId: clarifyResult.courseId,
-        responses: [
-          { questionId: "q1", freetext: CLARIFY_ANSWERS[0]! },
-          { questionId: "q2", freetext: CLARIFY_ANSWERS[1]! },
-        ],
+      const result = await caller.course.generateFrameworkAndBaseline({
+        courseId,
+        responses: RESPONSES,
       });
 
-      // Router return value — camelCase FrameworkJsonb.
-      expect(result.nextStage).toBe("baseline");
+      // Two LLM calls in all: clarify, then the merged Turn.
+      expect(generateChat).toHaveBeenCalledTimes(2);
+      // Router return value — FrameworkJsonb + the baseline's client projection.
+      expect(result.nextStage).toBe("answering");
       expect(result.framework.estimatedStartingTier).toBe(1);
       expect(result.framework.tiers).toHaveLength(3);
+      expect(result.baseline.questions.questions).toHaveLength(7);
 
-      // DB: courses.framework is populated and valid.
-      const course = await getCourseById(clarifyResult.courseId);
-      expect(course.framework).not.toBeNull();
-      const parsed = frameworkJsonbSchema.safeParse(course.framework);
-      expect(parsed.success).toBe(true);
+      // DB: both columns populated, in the shapes the two old steps wrote.
+      const course = await getCourseById(courseId);
+      expect(frameworkJsonbSchema.safeParse(course.framework).success).toBe(true);
+      expect(baselineJsonbSchema.safeParse(course.baseline).success).toBe(true);
+      expect(course.framework).toEqual(validFramework());
+      expect(course.baseline).toEqual({ ...validBaseline(), responses: [], gradings: [] });
+
+      // The scoping Context gains one Turn: the stage envelope and the raw
+      // model output, stored byte for byte (append-only, cache-stable).
+      const rows = await contextRows(db);
+      expect(rows.map((r) => [r.turnIndex, r.kind])).toEqual([
+        [0, "user_message"],
+        [0, "assistant_response"],
+        [1, "user_message"],
+        [1, "assistant_response"],
+      ]);
+      expect(rows[2]?.content).toContain("<stage>generate framework and baseline</stage>");
+      expect(rows[2]?.content).toContain(`A: ${CLARIFY_ANSWERS[0]!}`);
+      expect(rows[3]?.content).toBe(validFrameworkAndBaselineText());
     });
   });
 
   // -------------------------------------------------------------------------
-  // Case 6: idempotency — pre-populated framework, LLM not called
+  // Case 6: idempotency — pre-populated framework and baseline, LLM not called
   // -------------------------------------------------------------------------
-  it("idempotency: returns cached framework, does not call generateChat", async () => {
+  it("idempotency: returns the cached framework and baseline, does not call generateChat", async () => {
     await withTestDb(async (db) => {
-      await seedUser(db);
-
-      // Run clarify to create the course.
-      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validClarifyText()));
-      const caller = appRouter.createCaller({ userId: USER });
-      const clarifyResult = await caller.course.clarify({ topic: "Rust" });
-
-      // Pre-populate the framework directly — simulates a prior successful call.
-      const storedFramework = {
-        userMessage: "Cached framework framing.",
-        estimatedStartingTier: 1,
-        baselineScopeTiers: [1, 2],
-        tiers: [
-          {
-            number: 1,
-            name: "Foundations",
-            description: "Core.",
-            exampleConcepts: ["borrow checker", "lifetimes", "move semantics", "references"],
-          },
-          {
-            number: 2,
-            name: "Intermediate",
-            description: "Traits.",
-            exampleConcepts: ["traits", "generics", "closures", "iterators"],
-          },
-          {
-            number: 3,
-            name: "Advanced",
-            description: "Advanced.",
-            exampleConcepts: ["unsafe", "FFI", "macros", "async"],
-          },
-        ],
-      };
-      await updateCourseScopingState(clarifyResult.courseId, { framework: storedFramework });
-
+      const { caller, courseId } = await clarifyCourse(db);
+      // Pre-populate both columns — simulates a prior successful call.
+      await updateCourseScopingState(courseId, {
+        framework: validFramework(),
+        baseline: { ...validBaseline(), responses: [], gradings: [] },
+      });
       // Reset mock — any call now would be unexpected.
       vi.mocked(generateChat).mockReset();
 
-      const result = await caller.course.generateFramework({
-        courseId: clarifyResult.courseId,
-        responses: [
-          { questionId: "q1", freetext: CLARIFY_ANSWERS[0]! },
-          { questionId: "q2", freetext: CLARIFY_ANSWERS[1]! },
-        ],
+      const result = await caller.course.generateFrameworkAndBaseline({
+        courseId,
+        responses: RESPONSES,
       });
 
-      // Returns the pre-populated framework unchanged.
       expect(result.framework).toMatchObject({ estimatedStartingTier: 1 });
-      expect(result.nextStage).toBe("baseline");
-      // LLM must NOT be called.
+      expect(result.baseline.questions.questions).toHaveLength(7);
+      expect(result.nextStage).toBe("answering");
       expect(generateChat).not.toHaveBeenCalled();
     });
   });
 
   // -------------------------------------------------------------------------
-  // Case 7: PRECONDITION_FAILED — clarification null
+  // Case 7: a course framed before the merge (issue #15)
+  // -------------------------------------------------------------------------
+  // Production can hold a course whose framework Turn landed under the old
+  // two-step flow, but whose baseline Turn never did. Its Context ends with
+  // the old framework Turn. The merged Turn must replay that Context byte for
+  // byte, append after it, and write a framework and baseline that agree.
+  it("a pre-merge course with a framework and no baseline reruns the merged Turn after its old Context", async () => {
+    await withTestDb(async (db) => {
+      const { caller, courseId } = await clarifyCourse(db);
+      const [pass] = await db.select().from(scopingPasses);
+      const oldFramework = { ...validFramework(), userMessage: "The old framework." };
+      // The old framework Turn, as the two-step flow persisted it.
+      await appendMessages([
+        {
+          parent: { kind: "scoping", id: pass!.id },
+          turnIndex: 1,
+          seq: 0,
+          kind: "user_message",
+          role: "user",
+          content:
+            "<stage>generate framework</stage>\n<learner_input>\nQ: Goal?\nA: Learn\n</learner_input>",
+        },
+        {
+          parent: { kind: "scoping", id: pass!.id },
+          turnIndex: 1,
+          seq: 1,
+          kind: "assistant_response",
+          role: "assistant",
+          content: JSON.stringify(oldFramework),
+        },
+      ]);
+      await updateCourseScopingState(courseId, {
+        clarification: {
+          ...(await getCourseById(courseId)).clarification!,
+          responses: RESPONSES,
+        },
+        framework: oldFramework,
+      });
+      const oldRows = await contextRows(db);
+      vi.mocked(generateChat).mockClear();
+      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validFrameworkAndBaselineText()));
+
+      await caller.course.generateFrameworkAndBaseline({ courseId, responses: RESPONSES });
+
+      // The model saw the old Context unchanged, then the merged envelope.
+      const [messages] = vi.mocked(generateChat).mock.calls[0]!;
+      const contents = messages.map((m) => m.content);
+      expect(messages[0]?.role).toBe("system");
+      expect(contents.slice(1, 1 + oldRows.length)).toEqual(oldRows.map((r) => r.content));
+      expect(contents.at(-1)).toContain("<stage>generate framework and baseline</stage>");
+
+      // The merged Turn appends at the next turn index.
+      const rows = await contextRows(db);
+      expect(rows.slice(0, oldRows.length)).toEqual(oldRows);
+      expect(rows.slice(oldRows.length).map((r) => [r.turnIndex, r.kind])).toEqual([
+        [2, "user_message"],
+        [2, "assistant_response"],
+      ]);
+
+      // Both columns now come from the merged Turn, so they agree on scope.
+      const course = await getCourseById(courseId);
+      expect(course.framework).toEqual(validFramework());
+      expect(course.baseline).toEqual({ ...validBaseline(), responses: [], gradings: [] });
+
+      // The chat renders: getState projects both columns.
+      const state = await caller.course.getState({ courseId });
+      expect(state.framework?.userMessage).toBe("Here is the framework.");
+      expect(state.baseline?.questions).toHaveLength(7);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Case 8: validation retry — a baseline question outside the framework's scope
+  // -------------------------------------------------------------------------
+  it("retry-then-success: a baseline off the framework's scope gets a retry directive naming it", async () => {
+    await withTestDb(async (db) => {
+      const { caller, courseId } = await clarifyCourse(db);
+      // First attempt: well-formed, but b7 probes tier 3 outside scope [1, 2].
+      const offScope = JSON.stringify({
+        framework: validFramework(),
+        baseline: {
+          ...validBaseline(),
+          questions: [
+            ...validBaseline().questions.slice(0, 6),
+            { ...mcQuestion("b7", 1), tier: 3 },
+          ],
+        },
+      });
+      vi.mocked(generateChat)
+        .mockRejectedValueOnce(noObjectError(offScope))
+        .mockResolvedValueOnce(llmSuccess(validFrameworkAndBaselineText()));
+
+      const result = await caller.course.generateFrameworkAndBaseline({
+        courseId,
+        responses: RESPONSES,
+      });
+
+      expect(result.baseline.questions.questions).toHaveLength(7);
+      const rows = (await contextRows(db)).filter((r) => r.turnIndex === 1);
+      expect(rows.map((r) => r.kind)).toEqual([
+        "user_message",
+        "failed_assistant_response",
+        "harness_retry_directive",
+        "assistant_response",
+      ]);
+      expect(rows[1]?.content).toBe(offScope);
+      // The cross-half refine reaches the model verbatim, with its field path.
+      expect(rows[2]?.content).toContain(
+        "baseline.questions.6.tier: question b7 tier 3 is outside baselineScopeTiers [1, 2]",
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Case 9: PRECONDITION_FAILED — clarification null
   // -------------------------------------------------------------------------
   it("PRECONDITION_FAILED when clarification is null (clarify not run)", async () => {
     await withTestDb(async (db) => {
@@ -463,7 +578,7 @@ describe("course.generateFramework", () => {
       const caller = appRouter.createCaller({ userId: USER });
 
       await expect(
-        caller.course.generateFramework({
+        caller.course.generateFrameworkAndBaseline({
           courseId: course.id,
           responses: [
             { questionId: "q1", freetext: "answer one" },
@@ -476,19 +591,13 @@ describe("course.generateFramework", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Case 8: NOT_FOUND for different user
+  // Case 10: NOT_FOUND for different user
   // -------------------------------------------------------------------------
-  it("NOT_FOUND when a different user attempts generateFramework on another user's course", async () => {
+  it("NOT_FOUND when a different user calls it on another user's course", async () => {
     await withTestDb(async (db) => {
-      await seedUser(db, USER);
+      const { courseId } = await clarifyCourse(db);
       await seedUser(db, OTHER_USER);
 
-      // UserA creates and clarifies a course.
-      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validClarifyText()));
-      const callerA = appRouter.createCaller({ userId: USER });
-      const clarifyResult = await callerA.course.clarify({ topic: "Rust" });
-
-      // UserB attempts to run generateFramework on UserA's course.
       // getCourseById throws NotFoundError on ownership mismatch; the trpc
       // mapNotFound middleware translates that to TRPCError(NOT_FOUND) so the
       // client gets a semantic 404, not a 500. Ownership remains info-leak
@@ -496,199 +605,8 @@ describe("course.generateFramework", () => {
       // another user.
       const callerB = appRouter.createCaller({ userId: OTHER_USER });
       await expect(
-        callerB.course.generateFramework({
-          courseId: clarifyResult.courseId,
-          responses: [
-            { questionId: "q1", freetext: CLARIFY_ANSWERS[0]! },
-            { questionId: "q2", freetext: CLARIFY_ANSWERS[1]! },
-          ],
-        }),
+        callerB.course.generateFrameworkAndBaseline({ courseId, responses: RESPONSES }),
       ).rejects.toMatchObject({ code: "NOT_FOUND" });
-    });
-  });
-});
-
-// ===========================================================================
-// generateBaseline
-// ===========================================================================
-
-describe("course.generateBaseline", () => {
-  /**
-   * Seed a course with clarification + framework already populated.
-   * Avoids two extra generateChat mocks just to reach baseline state.
-   */
-  async function seedCourseWithFramework(
-    db: Parameters<Parameters<typeof withTestDb>[0]>[0],
-  ): Promise<string> {
-    await seedUser(db);
-    const course = await createCourse({ userId: USER, topic: "Rust" });
-    // Populate clarification — camelCase v3 shape.
-    await updateCourseScopingState(course.id, {
-      clarification: {
-        userMessage: "Let me ask you a few questions.",
-        questions: [
-          {
-            id: "q1",
-            prompt: "What is your goal?",
-            type: "free_text" as const,
-            freetextRubric: "r",
-          },
-          { id: "q2", prompt: "Your background?", type: "free_text" as const, freetextRubric: "r" },
-        ],
-        responses: [],
-      },
-    });
-    // Populate framework — camelCase FrameworkJsonb.
-    await updateCourseScopingState(course.id, {
-      framework: {
-        userMessage: "Here's the framework.",
-        estimatedStartingTier: 1,
-        baselineScopeTiers: [1, 2],
-        tiers: [
-          {
-            number: 1,
-            name: "Foundations",
-            description: "Core.",
-            exampleConcepts: ["borrow checker", "lifetimes", "move semantics", "references"],
-          },
-          {
-            number: 2,
-            name: "Intermediate",
-            description: "Traits.",
-            exampleConcepts: ["traits", "generics", "closures", "iterators"],
-          },
-          {
-            number: 3,
-            name: "Advanced",
-            description: "Advanced.",
-            exampleConcepts: ["unsafe", "FFI", "macros", "async"],
-          },
-        ],
-      },
-    });
-    return course.id;
-  }
-
-  // -------------------------------------------------------------------------
-  // Case 9: happy path after framework
-  // -------------------------------------------------------------------------
-  it("happy path: returns baseline with >=7 questions, nextStage=answering, persists BaselineJsonb", async () => {
-    await withTestDb(async (db) => {
-      const courseId = await seedCourseWithFramework(db);
-
-      vi.mocked(generateChat).mockResolvedValueOnce(llmSuccess(validBaselineText()));
-
-      const caller = appRouter.createCaller({ userId: USER });
-      const result = await caller.course.generateBaseline({ courseId });
-
-      // Router return value — the client projection: { userMessage, questions: { questions: [...] } }.
-      expect(result.nextStage).toBe("answering");
-      expect(result.baseline.questions.questions.length).toBeGreaterThanOrEqual(7);
-
-      // DB: courses.baseline is populated and valid.
-      const course = await getCourseById(courseId);
-      expect(course.baseline).not.toBeNull();
-      const parsed = baselineJsonbSchema.safeParse(course.baseline);
-      expect(parsed.success).toBe(true);
-      // responses and gradings initialised to [].
-      expect((course.baseline as { responses: unknown[] }).responses).toEqual([]);
-      expect((course.baseline as { gradings: unknown[] }).gradings).toEqual([]);
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Case 10: idempotency — pre-populated baseline, LLM not called
-  // -------------------------------------------------------------------------
-  it("idempotency: returns cached baseline, does not call generateChat", async () => {
-    await withTestDb(async (db) => {
-      const courseId = await seedCourseWithFramework(db);
-
-      // Pre-populate baseline directly — camelCase BaselineJsonb.
-      const storedBaseline = {
-        userMessage: "Here is your baseline.",
-        questions: [
-          mcQuestion("b1", 1),
-          mcQuestion("b2", 2),
-          mcQuestion("b3", 1),
-          mcQuestion("b4", 2),
-          mcQuestion("b5", 1),
-          mcQuestion("b6", 2),
-          mcQuestion("b7", 1),
-        ],
-        responses: [],
-        gradings: [],
-      };
-      await updateCourseScopingState(courseId, { baseline: storedBaseline });
-
-      vi.mocked(generateChat).mockReset();
-
-      const caller = appRouter.createCaller({ userId: USER });
-      const result = await caller.course.generateBaseline({ courseId });
-
-      expect(result.nextStage).toBe("answering");
-      // baseline is the client projection: { userMessage, questions: { questions: [...] } }
-      expect(result.baseline.questions.questions).toHaveLength(7);
-      // LLM must NOT be called.
-      expect(generateChat).not.toHaveBeenCalled();
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Case 11: PRECONDITION_FAILED — framework null
-  // -------------------------------------------------------------------------
-  it("PRECONDITION_FAILED when framework is null", async () => {
-    await withTestDb(async (db) => {
-      await seedUser(db);
-      // Create a course with only clarification — no framework.
-      const course = await createCourse({ userId: USER, topic: "Rust" });
-      await updateCourseScopingState(course.id, {
-        clarification: {
-          userMessage: "Let me ask you a few questions.",
-          questions: [
-            { id: "q1", prompt: "Goal?", type: "free_text" as const, freetextRubric: "r" },
-          ],
-          responses: [],
-        },
-      });
-
-      const caller = appRouter.createCaller({ userId: USER });
-      await expect(caller.course.generateBaseline({ courseId: course.id })).rejects.toMatchObject({
-        code: "PRECONDITION_FAILED",
-      });
-      expect(generateChat).not.toHaveBeenCalled();
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Case 12: retry-then-success for baseline
-  // -------------------------------------------------------------------------
-  it("retry-then-success: first response is invalid JSON, second valid — returns success", async () => {
-    await withTestDb(async (db) => {
-      const courseId = await seedCourseWithFramework(db);
-
-      // First call: not valid JSON → executeTurn surfaces a ValidationGateFailure.
-      vi.mocked(generateChat)
-        .mockRejectedValueOnce(noObjectError("<response>thinking...</response>"))
-        .mockResolvedValueOnce(llmSuccess(validBaselineText()));
-
-      const caller = appRouter.createCaller({ userId: USER });
-      const result = await caller.course.generateBaseline({ courseId });
-
-      expect(result.nextStage).toBe("answering");
-      expect(result.baseline.questions.questions.length).toBeGreaterThanOrEqual(7);
-
-      // DB: 4 rows — user, failed, directive, assistant.
-      const rows = await db
-        .select()
-        .from(contextMessages)
-        .orderBy(asc(contextMessages.turnIndex), asc(contextMessages.seq));
-      expect(rows).toHaveLength(4);
-      expect(rows.map((r) => r.kind)).toEqual([
-        "user_message",
-        "failed_assistant_response",
-        "harness_retry_directive",
-        "assistant_response",
-      ]);
     });
   });
 });
@@ -702,7 +620,7 @@ describe("course.submitBaseline", () => {
   // Case 13: full pipeline end-to-end
   // -------------------------------------------------------------------------
   // Exercises the complete scoping pipeline through the tRPC router:
-  // clarify → generateFramework → generateBaseline → submitBaseline. Each
+  // clarify → generateFrameworkAndBaseline → submitBaseline. Each
   // stage mocks `generateChat` (LLM boundary) with a fixture matching the
   // stage's Zod schema. All persistence is real DB so we assert the final
   // course.status flip and the returned wave1Id are consistent end-to-end.
@@ -711,14 +629,13 @@ describe("course.submitBaseline", () => {
       await seedUser(db);
 
       // Stage 1: clarify. Mock returns 2 free-text questions.
-      // Stage 2: framework. Mock returns 3 tiers, baselineScopeTiers=[1,2].
-      // Stage 3: baseline. Mock returns 7 MC questions, all `correct: "A"`.
-      // Stage 4: scoping-close. Mock returns gradings covering all 7 ids
+      // Stage 2: framework and baseline in one call. Mock returns 3 tiers,
+      //          baselineScopeTiers=[1,2], and 7 MC questions, all `correct: "A"`.
+      // Stage 3: scoping-close. Mock returns gradings covering all 7 ids
       //          and a valid blueprint. The Harness computes the starting tier.
       vi.mocked(generateChat)
         .mockResolvedValueOnce(llmSuccess(validClarifyText()))
-        .mockResolvedValueOnce(llmSuccess(validFrameworkText()))
-        .mockResolvedValueOnce(llmSuccess(validBaselineText()))
+        .mockResolvedValueOnce(llmSuccess(validFrameworkAndBaselineText()))
         .mockResolvedValueOnce(llmSuccess(validScopingCloseText()));
 
       const caller = appRouter.createCaller({ userId: USER });
@@ -728,22 +645,19 @@ describe("course.submitBaseline", () => {
       const courseId = clarifyResult.courseId;
 
       // Stage 2.
-      await caller.course.generateFramework({
+      const baselineResult = await caller.course.generateFrameworkAndBaseline({
         courseId,
         responses: [
           { questionId: "q1", freetext: CLARIFY_ANSWERS[0]! },
           { questionId: "q2", freetext: CLARIFY_ANSWERS[1]! },
         ],
       });
-
-      // Stage 3.
-      const baselineResult = await caller.course.generateBaseline({ courseId });
       // Sanity: ensure mock emitted 7 questions so the submitBaseline answers
       // below cover every id (precondition enforced server-side).
       expect(baselineResult.baseline.questions.questions).toHaveLength(7);
 
-      // Stage 4: submit one MC answer per question. All `selected: "A"` =
-      // correct (matches validBaselineText's `correct: "A"` on every q).
+      // Stage 3: submit one MC answer per question. All `selected: "A"` =
+      // correct (matches validBaseline's `correct: "A"` on every q).
       const answers = baselineResult.baseline.questions.questions.map((q) => ({
         id: q.id,
         kind: "mc" as const,
@@ -775,28 +689,25 @@ describe("scoping wire", () => {
   // Mirrors the Wave's guard (`getWaveState.integration.test.ts`): every
   // scoping payload the client receives drops rubrics, and a graded MC key
   // arrives only as the id-bound `correctEnc`.
-  it("clarify, generateBaseline and getState ship no plaintext answer key", async () => {
+  it("clarify, generateFrameworkAndBaseline and getState ship no plaintext answer key", async () => {
     await withTestDb(async (db) => {
       await seedUser(db);
       vi.mocked(generateChat)
         .mockResolvedValueOnce(llmSuccess(validClarifyText()))
-        .mockResolvedValueOnce(llmSuccess(validFrameworkText()))
-        .mockResolvedValueOnce(llmSuccess(validBaselineText()))
+        .mockResolvedValueOnce(llmSuccess(validFrameworkAndBaselineText()))
         .mockResolvedValueOnce(llmSuccess(validScopingCloseText()));
       const caller = appRouter.createCaller({ userId: USER });
 
       const clarifyResult = await caller.course.clarify({ topic: "Rust" });
       expectNoPlaintextAnswerKey(clarifyResult);
       const { courseId } = clarifyResult;
-      await caller.course.generateFramework({
+      const baselineResult = await caller.course.generateFrameworkAndBaseline({
         courseId,
         responses: [
           { questionId: "q1", freetext: CLARIFY_ANSWERS[0]! },
           { questionId: "q2", freetext: CLARIFY_ANSWERS[1]! },
         ],
       });
-
-      const baselineResult = await caller.course.generateBaseline({ courseId });
       expectNoPlaintextAnswerKey(baselineResult);
 
       // Before submit: the open baseline card's MC keys decode to the stored `A`.

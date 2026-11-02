@@ -3,7 +3,7 @@ import type { Schema } from "ai";
 import { z } from "zod/v4";
 import { toCerebrasJsonSchema } from "@/lib/llm/toCerebrasJsonSchema";
 import { clarifySchema } from "@/lib/prompts/clarify";
-import { makeBaselineSchema } from "@/lib/prompts/baseline";
+import { frameworkAndBaselineSchema } from "@/lib/prompts/frameworkAndBaseline";
 import { responsesSchema } from "@/lib/prompts/questionnaire";
 import { buildWaveMidTurnTools } from "@/lib/course/waveTurnTools";
 import { courseRouter } from "@/server/routers/course";
@@ -32,9 +32,10 @@ describe("schemas carrying an MC option key keep their bytes", () => {
     expect(toJson(toCerebrasJsonSchema(clarifySchema, { name: "clarify" }))).toMatchSnapshot();
   });
 
-  it("baseline response_format", () => {
-    const schema = makeBaselineSchema({ scopeTiers: [1, 2, 3] });
-    expect(toJson(toCerebrasJsonSchema(schema, { name: "baseline" }))).toMatchSnapshot();
+  it("framework_and_baseline response_format", () => {
+    expect(
+      toJson(toCerebrasJsonSchema(frameworkAndBaselineSchema, { name: "framework_and_baseline" })),
+    ).toMatchSnapshot();
   });
 
   it("presentQuestionnaire tool input", async () => {

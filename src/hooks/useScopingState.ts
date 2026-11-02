@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useTRPC } from "@/lib/trpc";
@@ -57,9 +57,9 @@ export interface UseScopingStateResult {
  * Drive the scoping flow for one course.
  *
  * Reads server state via `course.getState`; on mutation success, invalidates
- * the query so derived `chatEntries` re-compute. Auto-dispatches `generateBaseline`
- * once `framework` lands and `baseline` is still null — gated on the mutation
- * not already being in flight to avoid double-fire during refetch races.
+ * the query so derived `chatEntries` re-compute. Submitting the clarify answers
+ * runs one Turn that builds the framework and the baseline (issue #15), so no
+ * Turn fires on its own.
  * A failed scoping Turn lands in `failedTurn`, with a closure that re-sends it.
  * A `getState` NOT_FOUND sets `courseNotFound`. The app's QueryClient
  * (`src/lib/queryClient.ts`) never retries it.
@@ -90,8 +90,8 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     return invalidateState();
   };
 
-  const generateFramework = useMutation(
-    trpc.course.generateFramework.mutationOptions({
+  const generateFrameworkAndBaseline = useMutation(
+    trpc.course.generateFrameworkAndBaseline.mutationOptions({
       onMutate: clearFailedTurn,
       onSuccess: onTurnSuccess,
       onError: (err) => {
@@ -99,12 +99,6 @@ export function useScopingState(courseId: string): UseScopingStateResult {
           description: formatMutationError(err),
         });
       },
-    }),
-  );
-  const generateBaseline = useMutation(
-    trpc.course.generateBaseline.mutationOptions({
-      onMutate: clearFailedTurn,
-      onSuccess: onTurnSuccess,
     }),
   );
   const submitBaseline = useMutation(
@@ -131,60 +125,24 @@ export function useScopingState(courseId: string): UseScopingStateResult {
     [state.data],
   );
 
-  // Auto-dispatch generateBaseline when framework is present and baseline is not.
-  // Use a ref guard so we don't re-fire during refetch settling.
-  const baselineDispatchedFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!state.data) return;
-    if (state.data.framework && !state.data.baseline && state.status === "success") {
-      if (baselineDispatchedFor.current === state.data.courseId) return;
-      if (generateBaseline.isPending) return;
-      const dispatchedCourseId = state.data.courseId;
-      baselineDispatchedFor.current = dispatchedCourseId;
-      // `fire` sends the baseline Turn. It backs both the auto-dispatch below
-      // and the Retry closure. The baseline Turn has no learner submit handler
-      // (it fires on its own), so its retry lives here, not in a submit* method.
-      const fire = () => {
-        generateBaseline.mutate(
-          { courseId: dispatchedCourseId },
-          {
-            // Keep the guard set on error. Resetting it lets the effect re-run
-            // (its deps include the mutation result, whose reference flips on
-            // the error transition) and re-fire at once: an infinite loop on any
-            // persistent failure, such as a sustained 429. The Retry row is the
-            // recovery path, and a fresh mount still re-fires via a new guard
-            // ref. `retry: fire` re-sends directly, bypassing the guarded effect.
-            onError: (err) => {
-              toast.error("Couldn't create your baseline quiz", {
-                description: formatMutationError(err),
-              });
-              setFailedTurn({ kind: "baseline", retry: fire });
-            },
-          },
-        );
-      };
-      fire();
-    }
-  }, [state.data, state.status, generateBaseline]);
-
   const isPending =
-    state.isFetching ||
-    generateFramework.isPending ||
-    generateBaseline.isPending ||
-    submitBaseline.isPending;
+    state.isFetching || generateFrameworkAndBaseline.isPending || submitBaseline.isPending;
 
   const submitClarify: UseScopingStateResult["submitClarify"] = (answers, opts) => {
     // tRPC infers a mutable array shape; our public interface uses readonly.
     // Inputs are structurally identical, so cast through `never` (mirrors
     // submitBaselineAnswers below). The per-call `onError` lets the caller
     // recover its optimistic UI on failure — the mutation-level toast still fires.
-    generateFramework.mutate(
+    generateFrameworkAndBaseline.mutate(
       { courseId, responses: answers as never },
       {
         onError: () => {
           // Retry re-invokes this same handler with the same variables, so the
           // caller's optimistic-recovery wiring re-runs on any repeat failure.
-          setFailedTurn({ kind: "framework", retry: () => submitClarify(answers, opts) });
+          setFailedTurn({
+            kind: "frameworkAndBaseline",
+            retry: () => submitClarify(answers, opts),
+          });
           opts?.onError?.();
         },
       },
@@ -223,13 +181,13 @@ export function useScopingState(courseId: string): UseScopingStateResult {
   // refetch looks the same as a failure. The gate is in-tab only. After a
   // reload mid-Turn, or in a second tab, Retry shows while the server still
   // runs the original. The server keeps that re-send safe (`submitBaseline`).
-  const turnInFlight = generateFramework.isPending || submitBaseline.isPending;
+  const turnInFlight = generateFrameworkAndBaseline.isPending || submitBaseline.isPending;
   const stranded = state.data && !turnInFlight ? deriveStrandedScopingTurn(state.data) : null;
   const strandedTurn: FailedScopingTurn | null =
     stranded === null
       ? null
-      : stranded.kind === "framework"
-        ? { kind: "framework", retry: () => submitClarify(stranded.responses) }
+      : stranded.kind === "frameworkAndBaseline"
+        ? { kind: "frameworkAndBaseline", retry: () => submitClarify(stranded.responses) }
         : { kind: "scopingClose", retry: () => submitBaselineAnswers(stranded.answers) };
   const openFailedTurn = failedTurn && !staleFailure ? failedTurn : strandedTurn;
 
