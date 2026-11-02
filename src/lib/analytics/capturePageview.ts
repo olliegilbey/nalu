@@ -1,5 +1,6 @@
 import { buildPageviewEvent } from "./buildPageviewEvent";
 import { getServerEnvironmentContext } from "./environmentContext";
+import { sendPostHogEvent } from "./sendPostHogEvent";
 
 /**
  * Server-side `$pageview` capture to PostHog EU. Called from `src/proxy.ts` via
@@ -10,13 +11,6 @@ import { getServerEnvironmentContext } from "./environmentContext";
  * `$ip`, so PostHog Cloud's GeoIP resolves the visitor's location rather than
  * our server's. See the spec's Revision section.
  */
-
-/** PostHog EU single-event capture endpoint. */
-const CAPTURE_URL = "https://eu.i.posthog.com/i/v0/e/";
-
-/** Abort a hung capture — it runs in `waitUntil`, so an unbounded request
- * would keep the invocation alive for best-effort analytics. */
-const CAPTURE_TIMEOUT_MS = 5_000;
 
 /** Extract the originating client IP (first hop) from an `x-forwarded-for` value. */
 function clientIp(headers: Headers): string | null {
@@ -32,8 +26,9 @@ export async function capturePageview(input: {
   readonly headers: Headers;
   readonly timestamp: string;
 }): Promise<void> {
-  try {
-    const event = buildPageviewEvent({
+  // Pure build, then the shared send, which never throws.
+  await sendPostHogEvent(
+    buildPageviewEvent({
       apiKey: input.apiKey,
       distinctId: input.distinctId,
       url: input.url,
@@ -43,20 +38,6 @@ export async function capturePageview(input: {
       ip: clientIp(input.headers),
       timestamp: input.timestamp,
       environment: getServerEnvironmentContext(),
-    });
-    const response = await fetch(CAPTURE_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(event),
-      signal: AbortSignal.timeout(CAPTURE_TIMEOUT_MS),
-    });
-    // `fetch` only rejects on network errors — a bad key or PostHog outage
-    // returns 4xx/5xx "successfully". Log it (greppable, like the proxy's
-    // auth-failure log) so production analytics can't die silently.
-    if (!response.ok) {
-      console.error(`[capturePageview] PostHog capture failed: HTTP ${response.status}`);
-    }
-  } catch {
-    // Swallow — a failed analytics call must never surface to the visitor.
-  }
+    }),
+  );
 }
