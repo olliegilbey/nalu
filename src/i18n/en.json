@@ -115,6 +115,9 @@
   "moveOn": { "toWave": "Move on to Wave {n}" },
   "waveRating": {
     "overallPrompt": "How was this Wave?",
+    "difficultyPrompt": "Right difficulty for me",
+    "pacingPrompt": "Right pace for me",
+    "usefulnessPrompt": "Useful to me",
     "star": "{n} of 5 stars",
     "saveFailed": "Couldn't save your rating"
   },

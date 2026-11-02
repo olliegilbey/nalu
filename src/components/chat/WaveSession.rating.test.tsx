@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { UseWaveStateResult } from "@/hooks/useWaveState";
 
 /*
  * Issue #260: a closed Wave asks for one overall rating above the move-on
  * button. Move-on saves the rating, if given, and opens the next Wave without
- * waiting for the save.
+ * waiting for the save. Issue #261: once overall holds a value, three detail
+ * prompts appear under it, and move-on saves every star given.
  *
  * Renders the real WaveSession, Composer, rating step and `useWaveRating`.
  * ChatShell renders only its composer slot. The seams are the tRPC mutation,
@@ -58,10 +59,22 @@ function renderSession() {
   );
 }
 
-const ratingGroup = () => screen.queryByRole("radiogroup", { name: "How was this Wave?" });
-const moveOnButton = () => screen.getByRole("button", { name: "Move on to Wave 2" });
-const star = (n: number) =>
-  screen.getByRole<HTMLInputElement>("radio", { name: `${n} of 5 stars` });
+const OVERALL = "How was this Wave?";
+const DIFFICULTY = "Right difficulty for me";
+const PACING = "Right pace for me";
+const USEFULNESS = "Useful to me";
+const DETAILS = [DIFFICULTY, PACING, USEFULNESS] as const;
+
+/** A prompt's radio group by its label, or null when it is not on screen. */
+const promptGroup = (name: string) => screen.queryByRole("radiogroup", { name });
+const ratingGroup = () => promptGroup(OVERALL);
+const moveOnButton = () =>
+  screen.getByRole<HTMLButtonElement>("button", { name: "Move on to Wave 2" });
+/** Star `n` of one prompt. Every prompt labels its stars alike, so scope to its group. */
+const star = (n: number, prompt: string = OVERALL) =>
+  within(screen.getByRole("radiogroup", { name: prompt })).getByRole<HTMLInputElement>("radio", {
+    name: `${n} of 5 stars`,
+  });
 
 /** Let any queued mutation start, so a test can assert none did. */
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -157,5 +170,81 @@ describe("WaveSession rating step", () => {
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith("Couldn't save your rating", expect.anything()),
     );
+  });
+
+  it("the three detail prompts appear after the overall rating", () => {
+    wave.value = waveStateFixture({ closeResult: CLOSE_RESULT });
+    renderSession();
+
+    // A blank step asks one question: the learner never faces a form.
+    for (const name of DETAILS) expect(promptGroup(name)).toBeNull();
+
+    fireEvent.click(star(4));
+
+    expect(star(4).checked).toBe(true);
+    const groups = DETAILS.map((name) => promptGroup(name));
+    for (const group of groups) {
+      expect(group).not.toBeNull();
+      // Five blank stars each.
+      const radios = within(group!).getAllByRole<HTMLInputElement>("radio");
+      expect(radios).toHaveLength(5);
+      expect(radios.some((r) => r.checked)).toBe(false);
+    }
+    // In order: overall, difficulty, pacing, usefulness, then move-on.
+    const order = [ratingGroup()!, ...groups.map((g) => g!), moveOnButton()];
+    for (const [i, node] of order.slice(1).entries()) {
+      expect(order[i]!.compareDocumentPosition(node)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+  });
+
+  it("move-on stays enabled while the detail prompts show", () => {
+    wave.value = waveStateFixture({ closeResult: CLOSE_RESULT });
+    renderSession();
+
+    fireEvent.click(star(4));
+    expect(promptGroup(PACING)).not.toBeNull();
+    expect(moveOnButton().disabled).toBe(false);
+
+    fireEvent.click(moveOnButton());
+    expect(router.push).toHaveBeenCalledWith("/course/c1/wave/2");
+  });
+
+  it("move-on after all four ratings sends all four", async () => {
+    wave.value = waveStateFixture({ closeResult: CLOSE_RESULT });
+    renderSession();
+
+    fireEvent.click(star(4));
+    fireEvent.click(star(5, DIFFICULTY));
+    fireEvent.click(star(2, PACING));
+    fireEvent.click(star(3, USEFULNESS));
+    fireEvent.click(moveOnButton());
+
+    expect(router.push).toHaveBeenCalledWith("/course/c1/wave/2");
+    await waitFor(() => expect(save.fn).toHaveBeenCalledOnce());
+    expect(save.fn.mock.calls[0]![0]).toStrictEqual({
+      courseId: "c1",
+      waveNumber: 1,
+      overall: 4,
+      difficulty: 5,
+      pacing: 2,
+      usefulness: 3,
+    });
+  });
+
+  it("move-on after overall and pacing sends only those two", async () => {
+    wave.value = waveStateFixture({ closeResult: CLOSE_RESULT });
+    renderSession();
+
+    fireEvent.click(star(2));
+    fireEvent.click(star(4, PACING));
+    fireEvent.click(moveOnButton());
+
+    await waitFor(() => expect(save.fn).toHaveBeenCalledOnce());
+    expect(save.fn.mock.calls[0]![0]).toStrictEqual({
+      courseId: "c1",
+      waveNumber: 1,
+      overall: 2,
+      pacing: 4,
+    });
   });
 });

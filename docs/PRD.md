@@ -398,7 +398,7 @@ The side menu's Settings button opens a settings sheet on every page. The sheet 
 - **Assessment cards**: Visually distinct from chat. MC options as tappable buttons. Free-text as input field. Submit button. Result shown inline after submission.
 - **Comprehension signals**: Invisible to user. XP gain ("+15 XP") pulses on the header badge.
 - **Wave progress**: A slim strip under the header reads "Turn N of M" over a thin bar. The bar fills as Turns land. A closed Wave reads "Wave complete" with a full bar. Display only: it never touches XP.
-- **Wave rating**: A closed Wave asks "How was this Wave?" with 1-5 stars, directly above the move-on button. It is optional, and starts blank on every visit. Move-on saves the rating, if given, and opens the next Wave without waiting. A failed save shows a toast. The rating never touches XP, SM-2, tiers or any prompt.
+- **Wave rating**: A closed Wave asks "How was this Wave?" with 1-5 stars, directly above the move-on button. Once the learner gives it, three detail prompts appear under it: difficulty, pacing and usefulness. More stars is always better; difficulty and pacing ask how well each suited the learner. Every prompt is optional, and the step starts blank on every visit. Move-on stays live throughout. It saves every star given, if overall is among them, and opens the next Wave without waiting. A failed save shows a toast. The rating never touches XP, SM-2, tiers or any prompt.
 - **Progress sidebar** (collapsible): Current tier, wave XP progress bar, session XP, review count. **Unbuilt.**
 - **Nalu opens**: Every Wave starts with a Nalu message. Returning users see the Wave's chat history in the UI. Closed Waves are never replayed to the model; it gets the summary and blueprint.
 
