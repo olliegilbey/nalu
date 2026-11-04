@@ -300,7 +300,8 @@ export const QUESTIONNAIRE = {
  * attempt retries (`executeToolTurnStream`), so a false cut costs one retry.
  * Structured calls (`generateChat`) carry no cap. Their Steps run longer
  * (11,720 max), and a cut inside reasoning leaves no text: the SDK then
- * throws `NoOutputGeneratedError`, and the Turn fails with no retry.
+ * throws `NoOutputGeneratedError`, and `executeTurn` spends a retry on it
+ * (#191). So a false cut would cost a whole retry.
  */
 export const LLM = {
   defaultTemperature: 0.3,

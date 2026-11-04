@@ -65,7 +65,10 @@ export interface ChatResult<T = unknown> {
  * Since ai 6.0.267 that includes a truncated response: the SDK parses any
  * non-empty text whose finish reason is not `stop` or `tool-calls`, such
  * as `length`, so a cut-off reply spends a retry. Before, it threw
- * `NoOutputGeneratedError` and the Turn failed with no rows.
+ * `NoOutputGeneratedError` and the Turn failed with no rows. A reply with
+ * no text at all, such as reasoning cut off at the provider's output cap,
+ * still throws `NoOutputGeneratedError` from `result.output`. `executeTurn`
+ * retries that too (#191).
  *
  * Docs: node_modules/ai/docs/03-ai-sdk-core/10-generating-structured-data.mdx
  *       (https://ai-sdk.dev/docs/ai-sdk-core/generating-structured-data)
@@ -132,6 +135,9 @@ export async function generateChat<T>(
         name,
       }),
     });
+    // Record before reading `result.output`: that getter throws
+    // NoOutputGeneratedError on a reply with no text, and Cerebras billed
+    // that Step too (#191).
     recordStepFinished(result.response.headers, result.usage);
     return { text: result.text, parsed: result.output, usage: result.usage };
   } catch (err) {

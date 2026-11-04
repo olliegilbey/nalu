@@ -69,7 +69,13 @@ change hold a `{text, steps}` JSON envelope; they render unchanged.
   a truncated reply counts too: the SDK parses non-empty text whose finish
   reason is not `stop` or `tool-calls`, such as `length`. So a cut-off
   reply spends a retry and writes retry rows. Before, it failed the Turn
-  with no rows. The `<detail>` is re-derived from the raw text, so its
+  with no rows. A reply with no text at all still throws
+  `NoOutputGeneratedError`. Seen live: reasoning cut off at the provider's
+  output cap (#191). `executeTurn` converts it to
+  `ValidationGateFailure("no_output", NO_OUTPUT_RETRY_DIRECTIVE)`, so it
+  spends a retry from the same budget. The failed row is `""`, and the
+  directive is that fixed text, with no schema. Any other error still
+  throws on attempt 1. The `<detail>` is re-derived from the raw text, so its
   strings are identical to the pre-SDK implementation: Zod's issue-list
   JSON, with field paths, issue codes, and refine `.message` strings. `executeTurn` then builds the
   directive with `buildRetryDirective` (`retryDirective.ts`). It flattens

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { NoObjectGeneratedError } from "ai";
+import { NoObjectGeneratedError, NoOutputGeneratedError } from "ai";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { clarifySchema } from "@/lib/prompts/clarify";
@@ -126,6 +126,30 @@ describe("retry directive bytes at call sites", () => {
         "",
         "Here is the schema your reply must match. Emit exactly one JSON object matching this schema, with no surrounding prose:",
         `<response_schema>\n${schemaJson}\n</response_schema>`,
+        "</harness_feedback>",
+      ].join("\n"),
+    );
+  });
+
+  // Issue #191: a reply with no text has nothing to correct, so the
+  // directive is fixed prose with no schema.
+  it("clarify: a no-output reply yields the fixed no-output prose, with no schema", async () => {
+    vi.mocked(createCourse).mockResolvedValue({
+      id: "c1",
+      topic: "Rust",
+      clarification: null,
+    } as unknown as Course);
+    vi.mocked(ensureOpenScopingPass).mockResolvedValue({ id: "p1" } as never);
+    vi.mocked(generateChat).mockRejectedValue(new NoOutputGeneratedError());
+
+    await expect(clarify({ userId: "u1", topic: "Rust" })).rejects.toBeInstanceOf(
+      ValidationGateFailure,
+    );
+
+    expect(firstPersistedDirective()).toBe(
+      [
+        "<harness_feedback>",
+        "Your previous reply ended before it gave an answer, so it was discarded. Answer this turn again: keep your reasoning brief, then reply with the required JSON object.",
         "</harness_feedback>",
       ].join("\n"),
     );
