@@ -30,6 +30,18 @@ export const OUTPUT_TRUNCATED_RETRY_DIRECTIVE =
   "Your previous reply hit the output length limit and was cut off, so it was discarded. Write this turn again, more concisely: keep your reasoning focused and keep every tool call's input compact.";
 
 /**
+ * Retry directive when a structured reply ended with no answer text
+ * (`NoOutputGeneratedError`, issue #191). Seen live as 40k tokens of
+ * high-effort reasoning, cut off at the provider's output cap before any
+ * JSON. The failed reply replays as an empty message, so this text is all
+ * the model learns of it. It does not name the length limit: the SDK
+ * error does not say why the reply ended. It attaches no schema: nothing
+ * was written to correct, and the wire's `response_format` carries it.
+ */
+export const NO_OUTPUT_RETRY_DIRECTIVE =
+  "Your previous reply ended before it gave an answer, so it was discarded. Answer this turn again: keep your reasoning brief, then reply with the required JSON object.";
+
+/**
  * Wrap a retry directive in the Harness-owned `<harness_feedback>` tag.
  *
  * Directives ride in user-role rows, beside learner text. Both system

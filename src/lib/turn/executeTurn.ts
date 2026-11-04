@@ -6,11 +6,15 @@ import {
   type AppendMessageParams,
   type ContextParent,
 } from "@/db/queries/contextMessages";
-import { NoObjectGeneratedError } from "ai";
+import { NoObjectGeneratedError, NoOutputGeneratedError } from "ai";
 import { generateChat } from "@/lib/llm/generate";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
-import { JSON_PARSE_RETRY_DIRECTIVE, renderHarnessFeedback } from "@/lib/prompts/turn";
+import {
+  JSON_PARSE_RETRY_DIRECTIVE,
+  NO_OUTPUT_RETRY_DIRECTIVE,
+  renderHarnessFeedback,
+} from "@/lib/prompts/turn";
 import { SCOPING } from "@/lib/config/tuning";
 import {
   formatParseFailureDebugLine,
@@ -97,7 +101,10 @@ export interface ExecuteTurnResult<T> {
  *      from that detail plus the schema (`buildRetryDirective`), append a
  *      `failed_assistant_response` + `harness_retry_directive` (holding the
  *      directive) to the in-memory batch and re-attempt up to
- *      `SCOPING.maxParseRetries` more times.
+ *      `SCOPING.maxParseRetries` more times. `NoOutputGeneratedError` (a
+ *      reply with no text, #191) takes the same path, as a `no_output`
+ *      failure with an empty failed row and the fixed
+ *      `NO_OUTPUT_RETRY_DIRECTIVE`.
  *   6. Terminal exhaust: persist `[user, failed, directive, ..., failed]`
  *      (drop trailing directive — the caller's next turn IS the recovery
  *      context) and throw the `ValidationGateFailure`.
@@ -219,19 +226,23 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
       await appendMessages([...batch, successRow]);
       return { parsed: result.parsed, usage: result.usage };
     } catch (err) {
-      // Only the SDK's structured-output failure enters the retry flow;
-      // transport-class errors propagate without persisting — the batch
-      // never commits (same contract as before).
-      if (!NoObjectGeneratedError.isInstance(err)) throw err;
+      // Only the SDK's two output errors enter the retry flow (see
+      // `toAttemptFailure`). Transport-class errors propagate without
+      // persisting — the batch never commits (same contract as before).
+      const failure = toAttemptFailure(err, params.responseSchema);
+      if (failure === undefined) throw err;
       const dt = Date.now() - t0;
-      const raw = err.text ?? "";
-      const gate = toValidationGateFailure(raw, params.responseSchema);
+      const { raw, gate } = failure;
       // The text the model reads on its next attempt. Built once so the live
-      // banner prints the same bytes the directive row persists. It flattens
-      // the Zod issues to prose bullets and re-attaches the schema; weak
-      // models misread the raw issue JSON (`retryDirective.ts`). The
-      // `<harness_feedback>` tag marks it as Harness text to follow (#123).
-      const directive = renderHarnessFeedback(buildRetryDirective(gate, schemaJson()));
+      // banner prints the same bytes the directive row persists. A parse
+      // failure flattens the Zod issues to prose bullets and re-attaches the
+      // schema; weak models misread the raw issue JSON (`retryDirective.ts`).
+      // A no-output failure has nothing to correct, so its fixed detail is
+      // the whole directive, as in the tool loop. The `<harness_feedback>`
+      // tag marks it as Harness text to follow (#123).
+      const directive = renderHarnessFeedback(
+        gate.reason === "no_output" ? gate.detail : buildRetryDirective(gate, schemaJson()),
+      );
       // Issue #22 Zod-drop visibility (gated by LLM_DEBUG_GRADINGS — no-op when
       // off). On a validation failure the raw candidate is persisted as a
       // `failed_assistant_response` row but never reaches stderr outside
@@ -248,7 +259,7 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
         if (quiet) {
           process.stderr.write(formatPromptBlock(llmMessages, liveSchemaJson));
         }
-        process.stderr.write(formatResponseBlock(raw, dt, err.usage));
+        process.stderr.write(formatResponseBlock(raw, dt, failure.usage));
         const diagnosis = diagnoseFailure(gate, raw, label);
         process.stderr.write(formatParseFailure(label, gate, diagnosis, directive));
       }
@@ -281,6 +292,33 @@ export async function executeTurn<T>(params: ExecuteTurnParams<T>): Promise<Exec
   }
 
   return attempt(0, [userRow]);
+}
+
+/** A failed attempt that spends a retry: the text to persist, its gate failure, and the Step's usage when the error carries it. */
+interface AttemptFailure {
+  readonly raw: string;
+  readonly gate: ValidationGateFailure;
+  readonly usage?: LlmUsage;
+}
+
+/**
+ * Map an attempt's error to a retryable failure, or `undefined` for any
+ * other error. Two SDK errors qualify; both mean the HTTP call succeeded:
+ * - `NoObjectGeneratedError`: the reply failed JSON-parse or Zod.
+ * - `NoOutputGeneratedError`: the reply had no text, so nothing was parsed
+ *   (#191). Seen live as reasoning cut off at the provider's output cap.
+ *   It carries no text and no usage; `generateChat` has already tallied
+ *   the Step. The failed row is "", as for a cut-off tool-loop Step.
+ */
+function toAttemptFailure<T>(err: unknown, schema: z.ZodType<T>): AttemptFailure | undefined {
+  if (NoObjectGeneratedError.isInstance(err)) {
+    const raw = err.text ?? "";
+    return { raw, gate: toValidationGateFailure(raw, schema), usage: err.usage };
+  }
+  if (NoOutputGeneratedError.isInstance(err)) {
+    return { raw: "", gate: new ValidationGateFailure("no_output", NO_OUTPUT_RETRY_DIRECTIVE) };
+  }
+  return undefined;
 }
 
 /**

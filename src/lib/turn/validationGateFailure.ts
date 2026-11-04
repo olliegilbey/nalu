@@ -6,11 +6,14 @@ export class ValidationGateFailure extends Error {
     // questions left ungraded) — see src/lib/course/waveMidTurnGate.ts.
     // "output_truncated": a tool-loop Step hit the output cap (#181) — see
     // src/lib/turn/executeToolTurnStream.ts.
+    // "no_output": a structured reply had no text, such as reasoning cut
+    // off at the provider's output cap (#191) — see src/lib/turn/executeTurn.ts.
     public readonly reason:
       | "missing_response"
       | "missing_final_turn_tags"
       | "tool_turn_gate"
-      | "output_truncated",
+      | "output_truncated"
+      | "no_output",
     public readonly detail: string,
   ) {
     super(`validation gate failed: ${reason} — ${detail}`);

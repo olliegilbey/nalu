@@ -10,7 +10,9 @@ import { escapeXmlText } from "@/lib/security/escapeXmlText";
  * instead of treating it as compiler-style feedback. Wrapping the issues in
  * imperative prose and re-attaching the schema flips the framing back to
  * "fix your last reply", which the same models actually act on.
- * `executeTurn` calls this on every validation failure; call sites never do.
+ * `executeTurn` calls this on every parse or validation failure; call sites
+ * never do. A reply with no text gets the fixed `NO_OUTPUT_RETRY_DIRECTIVE`
+ * instead (`src/lib/prompts/turn.ts`, #191).
  * `executeTurn` then wraps the result in `<harness_feedback>`
  * (`renderHarnessFeedback`); this builder returns the bare body.
  *

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { z } from "zod/v4";
-import { NoObjectGeneratedError } from "ai";
+import { NoObjectGeneratedError, NoOutputGeneratedError, RetryError } from "ai";
 import { ValidationGateFailure } from "@/lib/turn/validationGateFailure";
+import { NO_OUTPUT_RETRY_DIRECTIVE, renderHarnessFeedback } from "@/lib/prompts/turn";
 import { executeTurn } from "./executeTurn";
 
 vi.mock("@/lib/llm/generate", () => ({
@@ -27,6 +28,7 @@ vi.mock("@/lib/llm/toCerebrasJsonSchema", async (importOriginal) => {
 });
 
 import { generateChat } from "@/lib/llm/generate";
+import { renderContext } from "@/lib/llm/renderContext";
 import { toSchemaJsonString } from "@/lib/llm/toCerebrasJsonSchema";
 import { appendMessages } from "@/db/queries/contextMessages.writes";
 import {
@@ -71,6 +73,7 @@ beforeEach(() => {
   vi.mocked(getNextTurnIndex).mockResolvedValue(0);
   vi.mocked(appendMessages).mockResolvedValue([]);
   vi.mocked(toSchemaJsonString).mockClear();
+  vi.mocked(renderContext).mockClear();
 });
 
 describe("executeTurn", () => {
@@ -255,8 +258,20 @@ describe("executeTurn", () => {
     expect(getMessagesForScopingPass).not.toHaveBeenCalled();
   });
 
-  it("transport error mid-loop: propagates without persisting", async () => {
-    vi.mocked(generateChat).mockRejectedValueOnce(new Error("LLM 503"));
+  // Only the two SDK output errors spend a retry. Anything else, an SDK
+  // error included, throws on attempt 1 (#191 keeps the change narrow).
+  it.each([
+    { name: "a plain transport error", error: new Error("LLM 503") },
+    {
+      name: "an SDK RetryError",
+      error: new RetryError({
+        message: "Failed after 7 attempts.",
+        reason: "maxRetriesExceeded",
+        errors: [new Error("LLM 503")],
+      }),
+    },
+  ])("$name: propagates at once, with no retry and no rows", async ({ error }) => {
+    vi.mocked(generateChat).mockRejectedValue(error);
     await expect(
       executeTurn({
         parent: { kind: "scoping", id: SCOPING_ID },
@@ -264,8 +279,70 @@ describe("executeTurn", () => {
         userMessageContent: "hi",
         responseSchema: VALUE_SCHEMA,
       }),
-    ).rejects.toThrow("LLM 503");
+    ).rejects.toBe(error);
+    expect(generateChat).toHaveBeenCalledOnce();
     expect(appendMessages).not.toHaveBeenCalled();
+  });
+
+  // Issue #191: a reply that is all reasoning, cut off at the provider's
+  // output cap, has no text. The SDK throws NoOutputGeneratedError.
+  it("no-output reply: retries, and the retry carries the fixed no-output directive", async () => {
+    vi.mocked(generateChat)
+      .mockRejectedValueOnce(new NoOutputGeneratedError())
+      .mockResolvedValueOnce({
+        text: '{"value":"GOOD"}',
+        parsed: { value: "GOOD" },
+        usage: FAKE_USAGE,
+      });
+
+    const r = await executeTurn({
+      parent: { kind: "scoping", id: SCOPING_ID },
+      seed: SEED,
+      userMessageContent: "hi",
+      responseSchema: VALUE_SCHEMA,
+    });
+
+    expect(r.parsed).toEqual({ value: "GOOD" });
+    expect(generateChat).toHaveBeenCalledTimes(2);
+    const directive = renderHarnessFeedback(NO_OUTPUT_RETRY_DIRECTIVE);
+    const batch = vi.mocked(appendMessages).mock.calls[0]![0];
+    expect(batch.map((b) => [b.kind, b.content])).toEqual([
+      ["user_message", "hi"],
+      // No text came back, so the failed row is empty.
+      ["failed_assistant_response", ""],
+      ["harness_retry_directive", directive],
+      ["assistant_response", '{"value":"GOOD"}'],
+    ]);
+    // The second attempt's Context ends with that directive.
+    const secondAttemptRows = vi.mocked(renderContext).mock.calls[1]![1];
+    expect(secondAttemptRows.at(-1)).toMatchObject({
+      kind: "harness_retry_directive",
+      content: directive,
+    });
+  });
+
+  it("no-output on every attempt: exhausts the budget and throws ValidationGateFailure", async () => {
+    vi.mocked(generateChat).mockRejectedValue(new NoOutputGeneratedError());
+
+    const failure = await executeTurn({
+      parent: { kind: "scoping", id: SCOPING_ID },
+      seed: SEED,
+      userMessageContent: "hi",
+      responseSchema: VALUE_SCHEMA,
+    }).catch((err: unknown) => err);
+
+    expect(failure).toBeInstanceOf(ValidationGateFailure);
+    expect(failure).toMatchObject({ reason: "no_output", detail: NO_OUTPUT_RETRY_DIRECTIVE });
+    expect(generateChat).toHaveBeenCalledTimes(3);
+    const batch = vi.mocked(appendMessages).mock.calls[0]![0];
+    expect(batch.map((b) => b.kind)).toEqual([
+      "user_message",
+      "failed_assistant_response",
+      "harness_retry_directive",
+      "failed_assistant_response",
+      "harness_retry_directive",
+      "failed_assistant_response",
+    ]);
   });
 
   it("invalid JSON from model: throws ValidationGateFailure with JSON parse directive", async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { z } from "zod/v4";
 import { MockLanguageModelV3 } from "ai/test";
-import { NoObjectGeneratedError } from "ai";
+import { NoObjectGeneratedError, NoOutputGeneratedError } from "ai";
 import { generateChat } from "./generate";
 import { getRunUsageTally, resetRunUsageTally } from "./runUsageTally";
 import { LLM } from "@/lib/config/tuning";
@@ -146,5 +146,33 @@ describe("generateChat", () => {
     ).rejects.toSatisfy((err: unknown) => NoObjectGeneratedError.isInstance(err));
 
     expect(getRunUsageTally()).toMatchObject({ steps: 1, inputTokens: 10, outputTokens: 20 });
+  });
+
+  // Issue #191, seen live: 40,000 output tokens, 39,997 of them reasoning.
+  // Pins the SDK contract executeTurn relies on: an empty-text reply that
+  // ends on `length` throws NoOutputGeneratedError, and the billed Step
+  // still reaches the tally first.
+  it("throws NoOutputGeneratedError for a reasoning-only reply cut off at the output cap", async () => {
+    const model = new MockLanguageModelV3({
+      doGenerate: async () => ({
+        content: [{ type: "reasoning", text: "thinking" }],
+        finishReason: { unified: "length", raw: "length" },
+        usage: {
+          inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
+          outputTokens: { total: 40_000, text: 3, reasoning: 39_997 },
+        },
+        warnings: [],
+      }),
+    });
+
+    await expect(
+      generateChat([{ role: "user", content: "hi" }], {
+        model,
+        promptCacheKey: CACHE_KEY,
+        responseSchema: z.object({ x: z.string() }),
+      }),
+    ).rejects.toSatisfy((err: unknown) => NoOutputGeneratedError.isInstance(err));
+
+    expect(getRunUsageTally()).toMatchObject({ steps: 1, outputTokens: 40_000 });
   });
 });
