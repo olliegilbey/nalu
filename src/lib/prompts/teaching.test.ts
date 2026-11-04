@@ -186,7 +186,7 @@ describe("renderTeachingSystem (output contract)", () => {
     expect(out).toContain("getConceptHistory");
     expect(out).toContain("Never invent or assume review history");
     // Close turns still run the blocking single-JSON path under this prompt.
-    expect(out).toContain("final turn no tools are available");
+    expect(out).toContain("final turn, where N is 0, no tools are available");
     expect(out).toContain("single JSON object");
     // The retired mega-schema's field vocabulary must not come back.
     expect(out).not.toContain("the questionnaire field");
@@ -197,6 +197,16 @@ describe("renderTeachingSystem (output contract)", () => {
   it("does not limit recordComprehensionSignals to one call", () => {
     const out = renderTeachingSystem(baseInputs);
     expect(out).toContain("- recordComprehensionSignals: call it before anything else,");
+  });
+
+  // Issue #164: at <turns_remaining>1</turns_remaining> the model took the
+  // last mid-turn for the close and answered in JSON. The prompt never
+  // defined the tag. Probe 2026-11-04, Turn 9: JSON text 14/20 on main.
+  it("defines turns_remaining beside the final-turn rule", () => {
+    const out = renderTeachingSystem(baseInputs);
+    expect(out).toContain(
+      "<turns_remaining>N</turns_remaining> in each user message counts the learner turns left in this lesson after this one. While N is 1 or more, this is a teaching turn: use the tools above and write prose, even when N is 1.\nOn the lesson's final turn, where N is 0, no tools are available;",
+    );
   });
 
   // gpt-oss ends its turn with the learner-facing message, so "call the tool

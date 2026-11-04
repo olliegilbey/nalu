@@ -19,7 +19,7 @@ export interface WaveMidTurn {
 export interface RenderWaveTurnEnvelopeParams {
   /** Pre-built envelope body (e.g. `<learner_reply>…</learner_reply>` or `<questionnaire_answers>…</questionnaire_answers>`). */
   readonly learnerInput: string;
-  /** Turns remaining AFTER this turn completes (0 means the next call is the close turn). */
+  /** Learner turns left AFTER this one. A mid-turn carries 1 or more; 1 means the next call is the close turn. */
   readonly turnsRemaining: number;
 }
 
