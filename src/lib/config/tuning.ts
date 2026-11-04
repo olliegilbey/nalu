@@ -137,6 +137,18 @@ export const PROFILE = {
 } as const;
 
 /**
+ * Orphan anonymous-user cleanup (issue #55). An anonymous user who owns no
+ * course and shows no activity for `orphanIdleDays` is an orphan
+ * (`isOrphanAnonymousUser`); `scripts/delete-orphan-anonymous-users.ts`
+ * deletes them. 30 days is the window Supabase's own cleanup SQL uses
+ * (docs: Anonymous Sign-Ins). A learner who returns after it loses no
+ * course, only their saved custom instructions, if any.
+ */
+export const ANONYMOUS_USERS = {
+  orphanIdleDays: 30,
+} as const;
+
+/**
  * Proficiency-framework generation bounds. Consumed by
  * `src/lib/prompts/framework.ts` (prompt instructions + Zod schema) so the
  * two never drift. Tier counts are PRD-sourced.

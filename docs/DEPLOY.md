@@ -77,11 +77,13 @@ Two gitignored files split dev from production:
 - `.env.local` holds dev values only (`.env.local.example`). Its database is
   the `just db-up` container: `postgresql://postgres@127.0.0.1:54322/postgres`
   for both URLs, with no password and no `?pgbouncer=true`. `just db-migrate`,
-  `db-seed`, `db-reset` and `recompute-course-xp` refuse any other host.
+  `db-seed`, `db-reset`, `recompute-course-xp` and `delete-orphan-anon-users`
+  refuse any other host.
 - `.env.production.local` holds three production values:
   - `DATABASE_URL`, the pooled URL, for the read-only inspectors in
     `.claude/skills/`.
-  - `DIRECT_URL`, for `just db-migrate-prod` and `just recompute-course-xp-prod`.
+  - `DIRECT_URL`, for `just db-migrate-prod`, `just recompute-course-xp-prod`
+    and `just delete-orphan-anon-users-prod`.
   - `POSTHOG_PERSONAL_API_KEY`, a `phx_` personal key with scope
     `query:read`, for the visitor-forensics script. It reads production
     analytics, so it stays out of `.env.local`.
@@ -144,6 +146,16 @@ different: `next start` sets `NODE_ENV=production`, so `src/proxy.ts` and
   counts only. It keeps no undo record, so take a database backup first. Run
   the dry run, then `--apply`, then `--apply` again: the second apply must
   print `courses changed: 0`.
+- **The orphan anonymous-user cleanup is a manual run** (issue #55).
+  `just delete-orphan-anon-users-prod` deletes each anonymous user who owns
+  no course and has been idle for `ANONYMOUS_USERS.orphanIdleDays` (30 days).
+  Idle means no sign-in, creation or session refresh since the cutoff. It
+  deletes the user's `user_profiles` row and `auth.users` row; Postgres
+  cascades the second to their sessions. It reads `.env.production.local`
+  and guards `DIRECT_URL` the way `db-migrate-prod` does, then connects
+  through that URL. It prints counts only. It keeps no undo record, so take a
+  database backup first. Run the dry run, then `--apply`, then `--apply`
+  again: the second apply must print `users deleted: 0`.
 - **Next.js and Bun read `.env.production.local` whenever
   `NODE_ENV=production`**, ahead of `.env.local`. `just build` and
   `just start` export `.env.local` first, and an exported value wins, so they

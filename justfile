@@ -186,6 +186,26 @@ recompute-course-xp-prod *args:
     bun --env-file=.env.production.local src/db/assertRemoteDirectUrl.ts
     bun --env-file=.env.production.local scripts/recompute-course-total-xp.ts {{args}}
 
+# The orphan cleanup (issue #55) deletes anonymous users who own no course and
+# have been idle for ANONYMOUS_USERS.orphanIdleDays, with their profile rows.
+# A dry run by default: it prints counts and deletes nothing. Pass --apply to
+# delete. The deletion keeps no undo record. It connects through DIRECT_URL,
+# behind the same gates as the XP repair.
+# Delete orphan anonymous users on the dev database (DIRECT_URL in `.env.local`).
+delete-orphan-anon-users *args:
+    bun src/db/assertLocalDirectUrl.ts
+    bun scripts/delete-orphan-anonymous-users.ts {{args}}
+
+# Same env handling as `recompute-course-xp-prod`. The deletion keeps no undo
+# record: take a backup before `--apply`.
+# Delete orphan anonymous users on production, from `.env.production.local`.
+delete-orphan-anon-users-prod *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    unset DATABASE_URL DIRECT_URL
+    bun --env-file=.env.production.local src/db/assertRemoteDirectUrl.ts
+    bun --env-file=.env.production.local scripts/delete-orphan-anonymous-users.ts {{args}}
+
 # drizzle-kit history check: fails on an inconsistent migration chain. It does
 # not diff schema TS against the migrations, so it misses an ungenerated change.
 # `just test` catches that: see src/db/schemaMigrationDrift.test.ts.

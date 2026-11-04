@@ -10,6 +10,9 @@
     // The `!` makes it a production entry: the repair calls production code
     // (`recomputeCourseTotalXp`, `listCourseIds`) that nothing else imports.
     "scripts/recompute-course-total-xp.ts!",
+    // Production entry too: the orphan cleanup calls production code
+    // (`deleteOrphanAnonymousUsers`, the `authUsers` queries) nothing else imports.
+    "scripts/delete-orphan-anonymous-users.ts!",
     ".claude/skills/debugging-nalu-llm-pipeline/inspect-db.ts",
     ".claude/skills/debugging-nalu-llm-pipeline/dump-chat.ts",
     ".claude/skills/nalu-visitor-forensics/inspect-visitor.ts",
