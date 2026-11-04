@@ -220,4 +220,13 @@ describe("renderTeachingSystem (output contract)", () => {
     expect(out).toContain("after any tool calls finish, write your message.");
     expect(out).not.toContain("after your teaching prose");
   });
+
+  // Issue #215: the message restated the quiz question the card shows.
+  // A positive target, a short lead-in, replaces the bare prohibition.
+  it("asks the message to end with a lead-in to the quiz card", () => {
+    const out = renderTeachingSystem(baseInputs);
+    expect(out).toContain(
+      'The learner sees the quiz card below your message, so end your message with a short lead-in to it, such as "Try this one below.", and never write the quiz questions in your message.',
+    );
+  });
 });
