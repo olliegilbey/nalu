@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { scoreToolProbe, type ProbeTrial } from "./toolProbeScore";
+import {
+  restatesQuizQuestion,
+  scoreQuizRequestStep,
+  scoreToolProbe,
+  type ProbeTrial,
+} from "./toolProbeScore";
 
 /** A finished trial that made one valid `presentQuestionnaire` call in `steps` steps. */
 function passing(steps = 2): ProbeTrial {
@@ -123,5 +128,80 @@ describe("scoreToolProbe", () => {
     expect(score.scoredTrials).toBe(0);
     expect(score.passRate).toBe(0);
     expect(score.verdict).toBe("INCONCLUSIVE");
+  });
+});
+
+describe("scoreQuizRequestStep", () => {
+  it("reads a presentQuestionnaire call as the quiz posed", () => {
+    const score = scoreQuizRequestStep({
+      toolNames: ["presentQuestionnaire"],
+      text: "",
+    });
+    expect(score).toEqual({ calledQuiz: true, jsonInText: false });
+  });
+
+  it("reads a lookup call alone as no quiz posed", () => {
+    const score = scoreQuizRequestStep({ toolNames: ["getConceptHistory"], text: "" });
+    expect(score.calledQuiz).toBe(false);
+  });
+
+  it("flags prose that ends in a JSON object, as issue #164 saw", () => {
+    const text =
+      'Here is one more idea about borrowing.\n{\n  "explanation": "A shared borrow reads over a plain mutable reference."\n}';
+    expect(scoreQuizRequestStep({ toolNames: [], text })).toEqual({
+      calledQuiz: false,
+      jsonInText: true,
+    });
+  });
+
+  it("passes prose with a fenced code block, braces and all", () => {
+    const text =
+      "Look at this:\n```rust\nfn main() {\n    let s = String::new();\n}\n```\nWhat do you notice?";
+    expect(scoreQuizRequestStep({ toolNames: [], text }).jsonInText).toBe(false);
+  });
+});
+
+describe("restatesQuizQuestion", () => {
+  const prompt = "In your own words, explain why `let s2 = s1;` makes s1 unusable afterwards.";
+
+  it("flags the prompt written out verbatim, whatever its case and markdown", () => {
+    const message = `Nice work so far. **Quick check:** in your own words, explain why let s2 = s1; makes \`s1\` unusable afterwards.`;
+    expect(restatesQuizQuestion(message, [prompt])).toBe(true);
+  });
+
+  it("flags a verbatim prompt that spans two sentences", () => {
+    const twoSentences = "Consider a String moved into s2. What happens if you then print s1?";
+    const message = `Your turn. Consider a String moved into s2. What happens if you then print s1?`;
+    expect(restatesQuizQuestion(message, [twoSentences])).toBe(true);
+  });
+
+  it("flags one sentence that holds most of the prompt's words", () => {
+    const message =
+      "Moves are the heart of ownership. So, explain in your own words why s1 becomes unusable after let s2 = s1.";
+    expect(restatesQuizQuestion(message, [prompt])).toBe(true);
+  });
+
+  it("passes a short lead-in to the quiz card", () => {
+    const message = "That is the move rule in action. Try this one below.";
+    expect(restatesQuizQuestion(message, [prompt])).toBe(false);
+  });
+
+  it("passes on-topic prose whose shared words spread over several sentences", () => {
+    // The whole message holds most of the prompt's words, as any lesson on
+    // the topic would. No single sentence does, so it is not a restatement.
+    const message =
+      "When you write let s2 = s1, ownership moves. Rust makes s1 unusable from then on. " +
+      "Afterwards, only s2 owns the heap data. Put it in your own words in the quiz below.";
+    expect(restatesQuizQuestion(message, [prompt])).toBe(false);
+  });
+
+  it("flags a message that restates any one of several questions", () => {
+    const other = "Which keyword makes a binding mutable?";
+    const message = "Two quick ones below. Which keyword makes a binding mutable?";
+    expect(restatesQuizQuestion(message, [prompt, other])).toBe(true);
+  });
+
+  it("passes when the quiz has no questions to restate", () => {
+    expect(restatesQuizQuestion("Anything at all.", [])).toBe(false);
   });
 });
