@@ -3,13 +3,13 @@ import { z } from "zod/v4";
 import { someHostIsLoopbackOrEmpty } from "./everyHostIsLoopback";
 
 /**
- * Gate for `just db-migrate-prod` and `just recompute-course-xp-prod`: exits 1
- * unless `DIRECT_URL` names only hosts other than this machine. Mirror of
- * `assertLocalDirectUrl.ts`.
+ * Gate for `just db-migrate-prod`, `just recompute-course-xp-prod` and
+ * `just delete-orphan-anon-users-prod`: exits 1 unless `DIRECT_URL` names
+ * only hosts other than this machine. Mirror of `assertLocalDirectUrl.ts`.
  *
  * The recipes load `DIRECT_URL` from `.env.production.local`. Without this
- * gate, a missing file or a dev URL pasted into it would migrate or repair
- * the dev container while you believe you changed production.
+ * gate, a missing file or a dev URL pasted into it would migrate, repair or
+ * clean up the dev container while you believe you changed production.
  *
  * Reads `process.env` directly, not `getEnv()`: the recipe supplies only the
  * production values, so the full env schema need not hold here.
@@ -46,6 +46,6 @@ async function main(): Promise<void> {
 main().catch((err: unknown) => {
   console.error("production database gate refused", err);
   // CLI entrypoint must signal failure to the shell, so the recipe stops
-  // before drizzle-kit or the repair runs.
+  // before drizzle-kit, the repair or the cleanup runs.
   process.exitCode = 1;
 });

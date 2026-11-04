@@ -52,10 +52,10 @@ export async function mintAnonymousLearner(): Promise<string | undefined> {
   // Next merges them into this Route Handler's response.
   //
   // Known race (acceptable for MVP): two parallel cookieless API requests
-  // each mint, and the losing cookie leaves a stray session-less
-  // `auth.users` row. `httpBatchLink` folds same-tick tRPC calls into one
+  // each mint, and the losing cookie leaves a stray `auth.users` row that
+  // no browser holds. `httpBatchLink` folds same-tick tRPC calls into one
   // request, and the context memoises its mint, which makes this rare.
-  // Cleanup is issue #55.
+  // `just delete-orphan-anon-users-prod` deletes such users once idle (#55).
   const minted = await supabase.auth.signInAnonymously();
   // A failed mint (Supabase's per-IP rate limit, anonymous sign-ins
   // disabled) throws, so it reaches the server log instead of hiding

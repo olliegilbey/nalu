@@ -133,7 +133,7 @@ Never use "turn" for a single contribution or a single API call — say ChatEntr
 
 ## User
 
-The learner. Distinct from the developer, admin, or agent. When docs say "the user," they mean the learner interacting with the UI unless context says otherwise. There is no sign-up. In production, the learner's first write mints a Supabase anonymous user (`src/server/requestUser.ts`); page loads and reads never do. Only a write that needs no existing course mints: submitting a topic or saving custom instructions (`mintingProcedure`, `src/server/trpc.ts`). A write to an existing course, such as submitting the baseline, needs the learner who owns it, so it never mints. Outside production, the `x-dev-user-id` header stands in (`src/server/requestUser.ts`).
+The learner. Distinct from the developer, admin, or agent. When docs say "the user," they mean the learner interacting with the UI unless context says otherwise. There is no sign-up. In production, the learner's first write mints a Supabase anonymous user (`src/server/requestUser.ts`); page loads and reads never do. Only a write that needs no existing course mints: submitting a topic or saving custom instructions (`mintingProcedure`, `src/server/trpc.ts`). A write to an existing course, such as submitting the baseline, needs the learner who owns it, so it never mints. Outside production, the `x-dev-user-id` header stands in (`src/server/requestUser.ts`). An **orphan** is an anonymous user who owns no course and has been idle for `ANONYMOUS_USERS.orphanIdleDays`; `isOrphanAnonymousUser` (`src/lib/anonymous-users/`) holds the rule, and a manual cleanup deletes them (issue #55).
 
 ## Wave
 

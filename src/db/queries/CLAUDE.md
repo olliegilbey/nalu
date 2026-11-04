@@ -51,6 +51,10 @@ into dot-suffixed siblings, one concern each:
   suites; tests import it, production never does.
 - `waveRatings.ts`: `upsertWaveRating`, keyed on `wave_id`. A later save
   overwrites every star column, nulls included, and moves `rated_at`.
+- `authUsers.ts`: Supabase's `auth.users`, for the orphan anonymous-user
+  cleanup (issue #55). Supabase owns the `auth` schema, so it has no Drizzle
+  table: raw SQL, with each read row Zod-parsed. `deleteUsersInTx` deletes the
+  `user_profiles` row too, which mirrors the auth id with no foreign key.
 
 Integration tests split the same way and sit beside their module
 (`courses.scoping.integration.test.ts`). The barrel `index.ts` re-exports

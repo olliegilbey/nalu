@@ -3,9 +3,9 @@ import { z } from "zod/v4";
 import { everyHostIsLoopback } from "./everyHostIsLoopback";
 
 /**
- * Gate for `just db-migrate`, `just db-seed` and `just recompute-course-xp`:
- * exits 1 unless every host in `DIRECT_URL` is this machine. Mirror of
- * `assertRemoteDirectUrl.ts`.
+ * Gate for `just db-migrate`, `just db-seed`, `just recompute-course-xp` and
+ * `just delete-orphan-anon-users`: exits 1 unless every host in `DIRECT_URL`
+ * is this machine. Mirror of `assertRemoteDirectUrl.ts`.
  *
  * `.env.local` holds dev values only, but an old `.env.local` or an exported
  * `DIRECT_URL` can still name production. This gate leaves the `-prod`
@@ -45,6 +45,6 @@ async function main(): Promise<void> {
 main().catch((err: unknown) => {
   console.error("dev database gate refused", err);
   // CLI entrypoint must signal failure to the shell, so the recipe stops
-  // before it migrates, seeds or repairs.
+  // before it migrates, seeds, repairs or deletes.
   process.exitCode = 1;
 });

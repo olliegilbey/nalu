@@ -9,6 +9,7 @@
 
 export { NotFoundError } from "./errors";
 export * from "./userProfiles";
+export * from "./authUsers";
 export * from "./courses";
 export * from "./courses.scoping";
 export * from "./courses.tx";
