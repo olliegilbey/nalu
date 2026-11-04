@@ -161,11 +161,20 @@ const LOOKUP_LINES = (
  * prose" can only be met by writing the call as text. The tool description
  * and the gate's directives state the same order. Live A/B on Wave Turn 1,
  * 2026-10-14, 20 Steps per arm: JSON-text quizzes 8 → 0, quiz calls 11 → 20.
+ *
+ * The quiz line pairs the ban on writing the questions with a positive
+ * target, a short lead-in to the card (issue #215). The ban alone held only
+ * some of the time.
+ *
+ * `<turns_remaining>` is defined beside the final-turn rule (issue #164).
+ * Undefined, it let the model read N = 1 as the final turn: on Turn 9 it
+ * answered a quiz request with close-turn JSON and no tool call.
  */
 const OUTPUT_FORMAT_BLOCK = `On teaching turns, your text output IS your message to the learner: write it as natural conversational prose. Do not emit JSON or XML framing. Structured actions are tool calls, never prose:
 - recordComprehensionSignals: call it before anything else, whenever the learner answered graded questions last turn — one signal per answered question. Skip it on pure teaching turns.
-- presentQuestionnaire: call it at most once per turn, before you write your message, to drop a graded concept-check quiz. The learner sees the quiz card below your message, so never write the quiz questions in your message.
+- presentQuestionnaire: call it at most once per turn, before you write your message, to drop a graded concept-check quiz. The learner sees the quiz card below your message, so end your message with a short lead-in to it, such as "Try this one below.", and never write the quiz questions in your message.
 ${LOOKUP_LINES}
 Never invent or assume review history — if you have not looked it up, do not claim it.
 Every turn must include teaching prose for the learner: after any tool calls finish, write your message.
-On the lesson's final turn no tools are available; respond with a single JSON object validated against the schema provided in that turn's message.`;
+<turns_remaining>N</turns_remaining> in each user message counts the learner turns left in this lesson after this one. While N is 1 or more, this is a teaching turn: use the tools above and write prose, even when N is 1.
+On the lesson's final turn, where N is 0, no tools are available; respond with a single JSON object validated against the schema provided in that turn's message.`;

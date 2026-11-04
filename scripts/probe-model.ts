@@ -7,6 +7,9 @@
  * Run via: `just probe-model <model-name>`. The recipe sets LLM_MODEL; the
  * rest of the env loads from `.env.local`, which holds plain values.
  *
+ * Modes: `--tools` runs the tool-calling reliability gate. `--final-quiz`
+ * and `--quiz-lead-in` run the teaching-prompt probes in `waveTurnProbe.ts`.
+ *
  * Used when picking the floor model — Cerebras free-tier availability and
  * deprecation cliffs shift; this script verifies a candidate before we
  * commit to it in `.env.local`.
@@ -29,6 +32,7 @@ import { toCerebrasJsonSchema } from "@/lib/llm/toCerebrasJsonSchema";
 import { awaitCerebrasCallSlot, recordCerebrasRateLimitHeaders } from "@/lib/llm/cerebrasRateLimit";
 import { LLM } from "@/lib/config/tuning";
 import { scoreToolProbe, type ProbeTrial, type ToolProbeVerdict } from "./toolProbeScore";
+import { probeFinalMidTurnQuiz, probeQuizLeadIn } from "./waveTurnProbe";
 
 const PROBE_SCHEMA = z.object({
   word: z.literal("OK"),
@@ -302,6 +306,17 @@ async function main(): Promise<void> {
   // (via `just probe-model <model> --tools`). Runs ONLY the tool probe.
   if (process.argv.includes("--tools")) {
     await probeToolCalling();
+    return;
+  }
+
+  // Teaching-prompt probes on a fixed Wave Context (`waveTurnProbe.ts`).
+  // `--final-quiz`: issue #164. `--quiz-lead-in`: issue #215.
+  if (process.argv.includes("--final-quiz")) {
+    await probeFinalMidTurnQuiz();
+    return;
+  }
+  if (process.argv.includes("--quiz-lead-in")) {
+    await probeQuizLeadIn();
     return;
   }
 

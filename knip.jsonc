@@ -26,6 +26,10 @@
     "**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts,css}!",
     // Scorer for the scripts/probe-model.ts dev CLI.
     "!scripts/toolProbeScore.ts!",
+    // Teaching-prompt probes run by the scripts/probe-model.ts dev CLI.
+    "!scripts/waveTurnProbe.ts!",
+    // Fixed Wave Context for those probes.
+    "!scripts/waveTurnProbe.fixtures.ts!",
     // Unit tests: the mocked useWaveState result the WaveSession tests share.
     "!src/components/chat/WaveSession.fixtures.ts!",
     // Loopback rule for the src/db/reset.ts and assert*DirectUrl.ts CLIs.

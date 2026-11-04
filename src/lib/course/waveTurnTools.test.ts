@@ -335,7 +335,7 @@ describe("buildWaveMidTurnTools", () => {
   it("quiz tool description asks for the call before the message", () => {
     const { tools } = buildWaveMidTurnTools(CHAT_TURN);
     expect(tools.presentQuestionnaire.description).toContain(
-      "Call at most once per turn, before you write your message. The learner sees the quiz card below your message, so never write the questions in your message.",
+      'Call at most once per turn, before you write your message. The learner sees the quiz card below your message, so end your message with a short lead-in to it, such as "Try this one below.", and never write the questions in your message.',
     );
   });
 

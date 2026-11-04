@@ -65,7 +65,10 @@ describe("validateWaveMidToolTurn", () => {
       "call the tools for any grading or quiz first, then write your teaching prose as plain text.",
     );
     // A bare `{questions}` dump was the most common shape (PR #190 probe).
-    expect(failure?.detail).toContain("never write the quiz questions in your message.");
+    // The lead-in matches the teaching prompt's wording (issue #215).
+    expect(failure?.detail).toContain(
+      'so end your message with a short lead-in to it, such as "Try this one below.", and never write the quiz questions in your message.',
+    );
   });
 
   it("accepts prose that merely mentions JSON or contains an unrelated snippet", () => {
