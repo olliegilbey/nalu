@@ -42,13 +42,30 @@ export async function listAuthUserActivity(tx: DbOrTx): Promise<readonly AuthUse
  * profile delete is explicit; it cascades to the user's courses. The auth
  * delete cascades, inside Supabase, to the user's sessions, refresh tokens
  * and identities.
+ *
+ * Each DELETE re-checks, in its own statement, that the user is anonymous
+ * and owns no course. Under READ COMMITTED each statement sees courses
+ * committed after the cleanup's read, so a learner who starts a course in
+ * between keeps it. A bug in the orphan rule can never delete a named user
+ * or a course owner either.
  */
 export async function deleteUsersInTx(userIds: readonly string[], tx: DbOrTx): Promise<number> {
   // `IN ()` is a syntax error, and there is nothing to delete.
   if (userIds.length === 0) return 0;
   // Drizzle expands an array into `($1, $2, …)`, one param per id.
-  await tx.execute(sql`DELETE FROM user_profiles WHERE id IN ${userIds}`);
+  await tx.execute(sql`
+    DELETE FROM user_profiles p
+    WHERE p.id IN ${userIds}
+      AND NOT EXISTS (SELECT 1 FROM courses c WHERE c.user_id = p.id)
+      AND EXISTS (SELECT 1 FROM auth.users u WHERE u.id = p.id AND u.is_anonymous)
+  `);
   // `RETURNING id` counts the rows this DELETE removed.
-  const deleted = await tx.execute(sql`DELETE FROM auth.users WHERE id IN ${userIds} RETURNING id`);
+  const deleted = await tx.execute(sql`
+    DELETE FROM auth.users u
+    WHERE u.id IN ${userIds}
+      AND u.is_anonymous
+      AND NOT EXISTS (SELECT 1 FROM courses c WHERE c.user_id = u.id)
+    RETURNING u.id
+  `);
   return deleted.length;
 }

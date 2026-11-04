@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import type { DB } from "@/db/client";
 import { courses, userProfiles } from "@/db/schema";
 import { withTestDb } from "@/db/testing/withTestDb";
+import { deleteUsersInTx } from "@/db/queries/authUsers";
 import { deleteOrphanAnonymousUsers } from "./deleteOrphanAnonymousUsers";
 
 /**
@@ -162,6 +163,46 @@ describe("deleteOrphanAnonymousUsers", () => {
       // A second apply finds nothing left to delete.
       const again = await deleteOrphanAnonymousUsers({ apply: true }, database);
       expect(again).toEqual({ scanned: 4, orphans: 0, deleted: 0 });
+    });
+  });
+
+  it("never deletes a course owner or a named user, even when the id list names them", async () => {
+    await withTestDb(async (database) => {
+      await resetAuthStub(database);
+      // A learner who starts a course between the read and the delete, and
+      // a named account: both slip into the id list, as a race or a rule bug
+      // would put them there.
+      const lateCourseOwner = await seedUser(database, {
+        isAnonymous: true,
+        createdDaysAgo: 60,
+        lastSignInDaysAgo: 60,
+        hasProfile: true,
+        ownsCourse: true,
+      });
+      const namedUser = await seedUser(database, {
+        isAnonymous: false,
+        createdDaysAgo: 60,
+        lastSignInDaysAgo: 60,
+        hasProfile: true,
+      });
+      const orphan = await seedUser(database, {
+        isAnonymous: true,
+        createdDaysAgo: 60,
+        lastSignInDaysAgo: 60,
+        hasProfile: true,
+      });
+
+      const deleted = await database.transaction((tx) =>
+        deleteUsersInTx([lateCourseOwner, namedUser, orphan], tx),
+      );
+
+      // The DELETEs re-check the rule in SQL, so only the orphan goes.
+      expect(deleted).toBe(1);
+      expect(await idsIn(database, "auth.users")).toEqual([lateCourseOwner, namedUser].sort());
+      expect(await idsIn(database, "user_profiles")).toEqual([lateCourseOwner, namedUser].sort());
+      expect(await database.select({ userId: courses.userId }).from(courses)).toEqual([
+        { userId: lateCourseOwner },
+      ]);
     });
   });
 });

@@ -18,10 +18,12 @@ export interface OrphanAnonymousUserCleanup {
  * their profile rows (issue #55). With `apply: false` it is a dry run: it
  * reads and counts only.
  *
- * One transaction: the read and the delete see the same users, so a second
- * run finds no orphans. A learner who returns in the milliseconds between
- * them can still lose their identity; an orphan has been idle for
- * `ANONYMOUS_USERS.orphanIdleDays`, so that is accepted.
+ * One transaction, so a second run finds no orphans. The DELETEs re-check
+ * "anonymous and owns no course" in SQL (`deleteUsersInTx`), so a learner
+ * who starts a course between the read and the delete keeps it. A learner
+ * who only returns in that window loses an identity that holds no course;
+ * an orphan has been idle for `ANONYMOUS_USERS.orphanIdleDays`, so that is
+ * accepted.
  *
  * `database` is the cleanup script's own client on `DIRECT_URL`, the URL its
  * recipe's guard checks.
